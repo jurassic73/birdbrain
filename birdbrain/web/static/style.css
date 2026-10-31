@@ -1088,9 +1088,12 @@ button.save-flash { animation: save-flash 1s ease-out; }
 .scene-list { margin: 0; padding-left: 1.6em; display: grid; gap: 8px; font-size: .92rem; }
 .scene-list li > * { vertical-align: top; }
 .scene-list li div { display: inline; }
-/* Zones list: name on the left, Adjust and Hide lined up on the right of every row. */
-.zones-body .scene-list li div { display: inline-flex; align-items: baseline; gap: 12px; width: calc(100% - 16px); }
-.zones-body .scene-list li div strong { margin-right: auto; }
+/* Zones list as a table: number, swatch, name, Adjust, Hide in aligned columns, never wrapped. */
+.zones-body .scene-list { list-style: none; padding-left: 0; counter-reset: zone; grid-template-columns: auto auto 1fr auto auto; column-gap: 12px; align-items: center; }
+.zones-body .scene-list li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; counter-increment: zone; white-space: nowrap; }
+.zones-body .scene-list li::before { content: counter(zone) "."; text-align: right; }
+.zones-body .scene-list li .scene-swatch { margin-right: 0; }
+.zones-body .scene-list li div { display: contents; }
 .scene-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: currentColor; margin-right: 6px; }
 .scene-birdbath { color: #4fb3ff; }
 .scene-landing_spot { color: #ffb347; }
