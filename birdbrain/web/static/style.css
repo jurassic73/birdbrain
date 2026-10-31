@@ -269,6 +269,10 @@ button.score-range {
 }
 button.score-range:hover { border-color: var(--accent); }
 button.score-range.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.critter-name { color: var(--text); text-decoration: none; }
+.critter-name:hover, .critter-name:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.info-tip.card-tip { cursor: pointer; }
+.info-tip.card-tip:hover, .info-tip.card-tip:focus-visible { color: var(--accent); }
 .critter-n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); text-decoration: none; }
 .critter-n:hover, .critter-n:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .today-foot { margin-top: auto; font-size: .85rem; }

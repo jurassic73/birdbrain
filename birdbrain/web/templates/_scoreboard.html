@@ -1,4 +1,3 @@
-{% from "_macros.html" import sp_name %}
 {# The Today panel's scoreboard: every animal seen in the chosen period, most seen first. #}
 <div class="critters" data-range="{{ score.key }}">
   <div class="score-head">
@@ -15,9 +14,11 @@
   <ul>
     {% for c in score_rows %}
     {% set st = short_status(c.label) %}
-    <li><span>{{ sp_name(c.label) }}</span>
+    {% set href = "/?species=" ~ (c.label | urlencode) ~ ("&date_from=" ~ score.date_from if score.date_from else "") ~ ("&date_to=" ~ score.date_to if score.date_to else "") %}
+    <li><span><a class="critter-name" href="{{ href }}" data-tip="See the {{ c.label }} visits {{ score.words }}">{{ c.label }}</a>
+      {%- if has_card(c.label) %}<span class="info-tip card-tip" data-species="{{ c.label }}" role="button" tabindex="0" aria-label="About {{ c.label }}">i</span>{% endif %}</span>
       <span class="critter-status"{% if st %} data-tip="{{ st[1] }} in this area"{% endif %}>{{ st[0] if st }}</span>
-      <a class="critter-n" href="/?species={{ c.label | urlencode }}{% if score.date_from %}&amp;date_from={{ score.date_from }}{% endif %}{% if score.date_to %}&amp;date_to={{ score.date_to }}{% endif %}"
+      <a class="critter-n" href="{{ href }}"
          data-tip="{{ c.n }} sighting{{ 's' if c.n != 1 }} {{ score.words }}, last at {{ c.last_at | short_time }}">{{ c.n }}</a></li>
     {% endfor %}
   </ul>
