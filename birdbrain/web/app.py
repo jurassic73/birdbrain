@@ -40,7 +40,12 @@ async def read_only(request: Request, call_next):
     """Visitors can browse; changes, Claude calls and the admin pages need the admin login."""
     admin = request.state.admin = auth.is_admin(request)
     path = request.url.path
-    if not admin and path not in ("/login", "/logout"):
+    if auth.public():
+        if request.method not in ("GET", "HEAD"):
+            return Response("This is a read-only copy.", status_code=403)
+        if auth.admin_only(path) or path == "/login":
+            return Response("Not found", status_code=404)
+    elif not admin and path not in ("/login", "/logout"):
         if request.method not in ("GET", "HEAD"):
             return Response("Read-only: log in as admin to change things.", status_code=403)
         if auth.admin_only(path):
@@ -94,7 +99,7 @@ templates.env.globals["photo_marks"] = lambda visit: start_marks(visit)
 templates.env.globals["also_of"] = db.also_of
 templates.env.globals["also_label"] = db.also_label
 # Templates check `request.state.admin` (set by the read_only middleware); this says whether a login exists at all.
-templates.env.globals["login_on"] = lambda: bool(auth.password())
+templates.env.globals["login_on"] = lambda: bool(auth.password()) and not auth.public()
 # Changes whenever a static file changes, so browsers fetch fresh CSS/JS after a deploy.
 templates.env.globals["asset_version"] = int(max(p.stat().st_mtime for p in (HERE / "static").iterdir()))
 
@@ -1164,7 +1169,10 @@ def live_file() -> Path:
 def load_saved_frame() -> None:
     """Start with the frame saved before the last restart so the page has something to show at once."""
     path = live_file()
-    if _live["jpeg"] is None and path.exists():
+    if not path.exists():
+        return
+    # The public mirror gets a new file from the Pi every few minutes, so reload whenever it changes.
+    if _live["jpeg"] is None or (auth.public() and path.stat().st_mtime > _live["at"]):
         _live.update(jpeg=path.read_bytes(), at=path.stat().st_mtime)
 
 
@@ -1212,6 +1220,9 @@ def live_latest():
 
 async def fresh_frame() -> bytes | None:
     """The live frame, grabbed anew if older than LIVE_MAX_AGE; None if the camera is down."""
+    if auth.public():
+        load_saved_frame()
+        return _live["jpeg"]  # never stale-checked: the page labels its age from X-Frame-Age
     async with _live_lock:
         if time.time() - _live["tried"] >= LIVE_MAX_AGE:
             _live["tried"] = time.time()

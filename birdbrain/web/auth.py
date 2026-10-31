@@ -18,6 +18,12 @@ FAIL_WINDOW = 15 * 60
 _fails: dict[str, list[float]] = {}
 
 
+def public() -> bool:
+    """Public mirror (BIRDBRAIN_PUBLIC=1): a copy fed by the home Pi. Nobody is admin, there is no login,
+    and the camera is never contacted; the live frame is whatever data/live.jpg the Pi last sent."""
+    return os.environ.get("BIRDBRAIN_PUBLIC", "").strip().lower() in ("1", "true", "yes")
+
+
 def password() -> str:
     return os.environ.get("ADMIN_PASSWORD", "")
 
@@ -37,6 +43,8 @@ def make_cookie() -> str:
 
 
 def is_admin(request: Request) -> bool:
+    if public():
+        return False
     if not password():
         return True
     expires, _, sig = request.cookies.get(COOKIE, "").partition(".")
@@ -46,7 +54,7 @@ def is_admin(request: Request) -> bool:
 
 
 def check_password(given: str) -> bool:
-    return bool(password()) and secrets.compare_digest(given.encode(), password().encode())
+    return not public() and bool(password()) and secrets.compare_digest(given.encode(), password().encode())
 
 
 def blocked(ip: str) -> bool:

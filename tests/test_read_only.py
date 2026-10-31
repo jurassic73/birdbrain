@@ -69,3 +69,24 @@ def test_login_locks_out_after_repeated_wrong_passwords(client, locked):
 def test_no_admin_password_means_everyone_is_admin(client):
     assert client.get("/settings").status_code == 200
     assert "Log out" not in client.get("/").text and 'href="/login' not in client.get("/").text
+
+
+def test_public_mirror_has_no_admin_and_never_touches_camera(client, add_visit, conn, monkeypatch):
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")  # even with a password set, nobody can log in
+    async def no_camera():
+        raise AssertionError("public mirror contacted the camera")
+    monkeypatch.setattr(webapp, "grab_live_frame", no_camera)
+    vid = add_visit(visitor="bird", species="Dark-eyed Junco")
+    page = client.get(f"/visit/{vid}")
+    assert page.status_code == 200 and "Dark-eyed Junco" in page.text
+    assert 'href="/login' not in page.text and "Log out" not in page.text and "/correct" not in page.text
+    assert client.get("/login").status_code == 404
+    assert client.post("/login", data={"password": "s3cret!"}).status_code == 403
+    assert client.post(f"/visit/{vid}/delete").status_code == 403
+    for path in ("/settings", "/notes", "/review", "/false-triggers", "/settings/camera", "/lessons"):
+        assert client.get(path, follow_redirects=False).status_code == 404
+    for path in ("/", "/species", "/stats", "/about"):
+        assert client.get(path).status_code == 200
+    client.get("/live.jpg")  # 503 without a synced frame; must not reach the camera either way
+    assert db.get_visit(conn, vid) is not None
