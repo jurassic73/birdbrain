@@ -29,7 +29,7 @@ curl -sf --max-time 15 -o "$STAGE/live.jpg" http://127.0.0.1:8000/live.jpg || cp
 
 # Photos first, so the database never names a photo the mirror lacks. rsync writes each file under a
 # temporary name and renames it when done, so the mirror never reads half a database or frame.
-OPTS=(-rtz --chmod=Dg+rwxs,Fg+rw,Fo+r)
+OPTS=(-rtpz --chmod=Dg+rwxs,Fg+rw,Fo+r)  # -p: apply these modes; the app needs group write on the db
 rsync "${OPTS[@]}" --delete "$DATA/images/" "$PUBLIC_DEST/images/"
 rsync "${OPTS[@]}" "$STAGE/birdbrain.db" "$PUBLIC_DEST/birdbrain.db"
 [ ! -f "$STAGE/live.jpg" ] || rsync "${OPTS[@]}" "$STAGE/live.jpg" "$PUBLIC_DEST/live.jpg"
