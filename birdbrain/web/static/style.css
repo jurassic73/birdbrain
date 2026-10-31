@@ -1145,6 +1145,8 @@ button.se-chip.current { border-color: #fff; background: rgba(255, 255, 255, .25
 .se-backdrop .se-end { position: absolute; top: 8px; right: 16px; display: flex; align-items: center; gap: 8px; }
 .se-backdrop .se-status { color: #fff; font-size: .85rem; }
 .se-backdrop .se-save[hidden] { display: none; }
+.se-backdrop .se-undo, .se-backdrop .se-redo { color: #fff; }
+.se-backdrop .se-undo:disabled, .se-backdrop .se-redo:disabled { opacity: .4; cursor: default; }
 .scene-frame.se-big { position: fixed; z-index: 41; left: 50%; top: calc(50% + var(--se-bar, 50px) / 2);
   transform: translate(-50%, -50%); width: min(96vw, calc((100vh - var(--se-bar, 50px) - 20px) * 16 / 9)); }
 .scene-frame .se-hidden { display: none; }

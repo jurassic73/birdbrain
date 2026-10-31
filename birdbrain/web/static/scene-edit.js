@@ -4,6 +4,7 @@
 // move it. The Shape switch turns it into points or an ellipse; the chips hide or show shapes. On points, the faded
 // dot midway along each edge adds a corner there (drag or click it); double-click a corner, or click it and press
 // Delete, to remove it (3 corners at least).
+// Undo / Redo (or Cmd/Ctrl+Z, Shift+Cmd+Z, Ctrl+Y) step back and forward through the changes made since the last Save.
 // Changes stay on the page until Save; closing (Done, Escape, a click outside the photo) asks to save them.
 // Shapes are frame fractions, drawn in the SVG's viewBox (W x H), the same as the server's scene_shape.
 // Settings > Zones uses it too: its svg has data-save (post every shape there at once as {objects}), data-panel and
@@ -69,18 +70,22 @@
     return out;
   }
 
+  // Redraw shape i's outline, ring click target, water line and label from o (no handles).
+  function paint(svg, i, o) {
+    const { width: W, height: H } = box(svg);
+    svg.querySelector(`path[data-i="${i}"]:not(.scene-hit):not(.scene-water)`)?.setAttribute("d", shapePath(svg, o));
+    svg.querySelector(`path.scene-hit[data-i="${i}"]`)?.setAttribute("d", o.inner ? ellipsePath(svg, o.ellipse) : "");
+    svg.querySelector(`path.scene-water[data-i="${i}"]`)?.setAttribute("d", o.inner ? ellipsePath(svg, o.inner) : "");
+    const label = svg.querySelector(`text[data-i="${i}"]`);
+    if (label) { const [lx, ly] = labelAt(o); label.setAttribute("x", lx * W); label.setAttribute("y", ly * H - 1); }
+  }
+
   // Redraw the picked shape (and its ring's click target and water line) and its handles.
   function draw() {
     if (!sel?.obj) return;
     const { svg, i, obj } = sel;
     const { width: W, height: H } = box(svg);
-    svg.querySelector(`path[data-i="${i}"]:not(.scene-hit):not(.scene-water)`)?.setAttribute("d", shapePath(svg, obj));
-    if (obj.inner) {
-      svg.querySelector(`path.scene-hit[data-i="${i}"]`)?.setAttribute("d", ellipsePath(svg, obj.ellipse));
-      svg.querySelector(`path.scene-water[data-i="${i}"]`)?.setAttribute("d", ellipsePath(svg, obj.inner));
-    }
-    const label = svg.querySelector(`text[data-i="${i}"]`);
-    if (label) { const [lx, ly] = labelAt(obj); label.setAttribute("x", lx * W); label.setAttribute("y", ly * H - 1); }
+    paint(svg, i, obj);
     let g = svg.querySelector("g.se-handles");
     if (!g) { g = document.createElementNS(NS, "g"); g.setAttribute("class", "se-handles"); svg.appendChild(g); }
     g.replaceChildren();
@@ -170,7 +175,9 @@
     bar.append(chips, tools);
     const end = document.createElement("div");
     end.className = "se-end";
-    end.innerHTML = '<span class="se-status"></span><button type="button" class="se-save" hidden>Save</button>'
+    end.innerHTML = '<span class="se-status"></span>'
+      + '<button type="button" class="link-btn se-undo" title="Undo (Cmd/Ctrl+Z)" disabled>Undo</button>'
+      + '<button type="button" class="link-btn se-redo" title="Redo (Shift+Cmd+Z or Ctrl+Y)" disabled>Redo</button><button type="button" class="se-save" hidden>Save</button>'
       + '<button type="button" class="se-done">Done</button>';
     back.append(bar, end);
     document.body.append(back);
@@ -186,6 +193,7 @@
     closeView();
     enlarge(svg);
     sel = { svg, which: svg.dataset.which, i: null, obj: null, pending: new Set() };
+    resetHistory();
     svg.classList.add("se-editing");
     if (svg.dataset.which === "zones") window.zonesFreshPhoto?.();  // the live photo, not one from minutes ago
   }
@@ -269,6 +277,37 @@
     const status = document.querySelector(".se-status"), save = document.querySelector(".se-save");
     if (status) status.textContent = n ? `${n} unsaved change${n === 1 ? "" : "s"}` : "";
     if (save) save.hidden = !n;
+    const undo = document.querySelector(".se-undo"), redo = document.querySelector(".se-redo");
+    if (undo) undo.disabled = !sel || sel.pos <= 0;
+    if (redo) redo.disabled = !sel || sel.pos >= sel.hist.length - 1;
+  }
+
+  // Change history since the open (or the last Save): snapshots of every shape and which ones are unsaved.
+  const snap = () => ({ objs: sel.svg.dataset.objs || "[]", pending: [...sel.pending] });
+  function resetHistory() {
+    sel.hist = [snap()];
+    sel.pos = 0;
+    updateStatus();
+  }
+  function record() {
+    sel.hist.length = sel.pos + 1;  // a new change drops the steps that were undone
+    sel.hist.push(snap());
+    sel.pos++;
+  }
+  function stepTo(pos) {
+    if (!sel || document.querySelector(".se-ask") || pos < 0 || pos >= sel.hist.length) return;
+    sel.pos = pos;
+    const { objs: json, pending } = sel.hist[pos], svg = sel.svg;
+    svg.dataset.objs = json;
+    sel.pending = new Set(pending);
+    JSON.parse(json).forEach((o, i) => paint(svg, i, o));
+    if (sel.i !== null) {
+      sel.obj = structuredClone(objs(svg)[sel.i]);
+      sel.corner = null;
+      draw();
+    }
+    updateTools();
+    updateStatus();
   }
 
   // Keep the picked shape's new geometry on the page until Save.
@@ -280,6 +319,7 @@
     all[i] = { ...o, ...geometry(obj) };
     svg.dataset.objs = JSON.stringify(all);
     sel.pending.add(i);
+    record();
     updateStatus();
   }
 
@@ -297,6 +337,7 @@
       }
       pending.clear();
       sel.saved = true;
+      resetHistory();
       return true;
     }
     for (const i of [...pending]) {
@@ -311,6 +352,7 @@
       pending.delete(i);
       sel.saved = true;
     }
+    resetHistory();  // what's saved is the new starting point
     return true;
   }
 
@@ -374,7 +416,8 @@
     for (const k of KEYS) delete obj[k];
     Object.assign(obj, geom);
     // a ring's click target and water line go with the ellipse
-    svg.querySelectorAll(`path.scene-hit[data-i="${i}"], path.scene-water[data-i="${i}"]`).forEach((p) => p.remove());
+    // (emptied, not removed, so Undo can bring the ring back)
+    svg.querySelectorAll(`path.scene-hit[data-i="${i}"], path.scene-water[data-i="${i}"]`).forEach((p) => p.setAttribute("d", ""));
     draw();
     updateTools();
     stage();
@@ -451,6 +494,8 @@
     if (e.target.closest?.(".se-ask-keep")) return document.querySelector(".se-ask")?.remove();
     if (e.target.closest?.(".se-save")) return sel && saveAll().then(updateStatus);
     if (e.target.closest?.(".se-done")) return requestClose();
+    if (e.target.closest?.(".se-undo")) return sel && stepTo(sel.pos - 1);
+    if (e.target.closest?.(".se-redo")) return sel && stepTo(sel.pos + 1);
     const tool = e.target.closest?.(".se-tool");
     if (tool && sel?.obj) return convert(tool.dataset.to);
     const all = e.target.closest?.(".se-all");
@@ -477,6 +522,11 @@
   });
 
   document.addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    if (sel && (e.metaKey || e.ctrlKey) && (k === "z" || k === "y") && !e.target.closest?.("input, textarea")) {
+      e.preventDefault();
+      return stepTo(sel.pos + (k === "y" || e.shiftKey ? 1 : -1));
+    }
     if ((e.key === "Delete" || e.key === "Backspace") && sel?.corner && !document.querySelector(".se-ask")) {
       e.preventDefault();
       return removeCorner(sel.corner);
