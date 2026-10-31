@@ -8,6 +8,7 @@ User=__USER__
 WorkingDirectory=/opt/birdbrain
 Environment=BIRDBRAIN_DATA=/var/lib/birdbrain
 Environment=BIRDBRAIN_PUBLIC=1
+Environment=BIRDBRAIN_BASE=/birdbrain
 Environment=BIRDBRAIN_NO_DOTENV=1
 ExecStart=/opt/birdbrain/venv/bin/uvicorn birdbrain.web.app:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=always

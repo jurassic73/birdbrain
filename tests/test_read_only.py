@@ -90,3 +90,14 @@ def test_public_mirror_has_no_admin_and_never_touches_camera(client, add_visit, 
         assert client.get(path).status_code == 200
     client.get("/live.jpg")  # 503 without a synced frame; must not reach the camera either way
     assert db.get_visit(conn, vid) is not None
+
+
+def test_base_path_prefixes_links_redirects_and_fetch(client, add_visit, monkeypatch):
+    monkeypatch.setattr(webapp, "BASE", "/birdbrain")
+    vid = add_visit(visitor="bird", species="Dark-eyed Junco")
+    page = client.get("/").text
+    assert f'href="/birdbrain/visit/{vid}"' in page and 'href="/visit/' not in page
+    assert 'src="/birdbrain/static/' in page and 'src="/static/' not in page
+    assert "window.BB_BASE=\"/birdbrain\"" in page
+    r = client.post("/logout", follow_redirects=False)
+    assert r.headers["location"] == "/birdbrain/"

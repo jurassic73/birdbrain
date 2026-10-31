@@ -1,6 +1,7 @@
 import asyncio
 import json
 import math
+import os
 import re
 import time
 from contextlib import asynccontextmanager
@@ -51,6 +52,33 @@ async def read_only(request: Request, call_next):
         if auth.admin_only(path):
             return RedirectResponse("/login?" + urlencode({"next": path}), status_code=303)
     return await call_next(request)
+
+
+# Serving under a path such as somegeek.com/birdbrain/: the proxy strips the prefix on the way in, and this
+# puts it back on the way out (links, forms, redirects), so the templates can keep their plain "/..." URLs.
+BASE = os.environ.get("BIRDBRAIN_BASE", "").strip().rstrip("/")
+_URL_ATTR = re.compile(r'(\s(?:href|src|action|formaction|hx-get|hx-post|data-[a-z-]+)=")/(?!/)')
+# fetch() calls in the page and in static/*.js use "/..." too; this shim prefixes those.
+_FETCH_SHIM = ('<script>window.BB_BASE={base};(()=>{{const f=window.fetch;window.fetch=(u,o)=>f('
+               'typeof u==="string"&&u.startsWith("/")&&!u.startsWith("//")?{base}+u:u,o)}})();</script>')
+
+
+@app.middleware("http")
+async def base_path(request: Request, call_next):
+    response = await call_next(request)
+    if not BASE:
+        return response
+    loc = response.headers.get("location", "")
+    if loc.startswith("/") and not loc.startswith("//"):
+        response.headers["location"] = BASE + loc
+    if not response.headers.get("content-type", "").startswith("text/html"):
+        return response
+    body = b"".join([chunk async for chunk in response.body_iterator]).decode()
+    body = _URL_ATTR.sub(lambda m: m.group(1) + BASE + "/", body)
+    body = body.replace('"href_matches": "/', '"href_matches": "' + BASE + "/")  # prerender hints
+    body = body.replace("<head>", "<head>" + _FETCH_SHIM.format(base=json.dumps(BASE)), 1)
+    headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+    return Response(body, status_code=response.status_code, headers=headers)
 
 
 def nice_time(value: str) -> str:

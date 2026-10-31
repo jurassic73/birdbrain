@@ -7,7 +7,7 @@
   const SHOW_WHILE_VISIBLE_MS = 15000;
   const icon = document.querySelector('link[rel="icon"][type="image/png"]');
   const normalIcon = icon ? icon.href : null;
-  const greenIcon = "/static/favicon-new-64.png";
+  const greenIcon = (window.BB_BASE || "") + "/static/favicon-new-64.png";
   const baseTitle = document.title;
   let lastSeen = null, lastAny = null;
   let unseen = 0;
