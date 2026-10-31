@@ -606,6 +606,7 @@ button.danger.sending, button.danger.htmx-request {
 /* Zones: automatic recalibration */
 .recal { display: flex; flex-direction: column; gap: 14px; }
 .recal .notice { margin: 0; }
+.recal-timer { align-self: center; font-variant-numeric: tabular-nums; margin-left: auto; }
 .recal-body { display: grid; gap: 14px; }
 /* One grid for the whole list, so times, pills and summaries line up from row to row. */
 .recal-list {

@@ -1,6 +1,7 @@
 {% from "_macros.html" import badge %}
-{# The Zones section's live part; while a recalibration runs it reloads itself every few seconds. #}
-<div id="zones-status" class="recal"{% if recal_pending %} hx-get="/settings/zones" hx-trigger="every 4s" hx-swap="outerHTML"{% endif %}>
+{# The Zones section's live part. While a recalibration runs only the timer ticks (it polls /settings/zones/status);
+   the panel reloads once when the run is done, so the photo and shapes don't redraw. #}
+<div id="zones-status" class="recal">
   {% if not recal_ring or not recal_spots %}
   <p class="notice">Rock tracking needs a birdbath ring and rock spots from a hand calibration (see the README). Camera moves are still caught.</p>
   {% endif %}
@@ -64,6 +65,34 @@
     <form method="post" action="/settings/zones/now">
       <button type="submit" {% if recal_pending %}disabled class="sending"{% endif %}>{{ 'Looking at the bath…' if recal_pending else 'Recalibrate now' }}</button>
     </form>
+    {% if recal_pending %}
+    <span class="recal-timer" id="recal-timer" data-started="{{ recal_status.started }}"
+          data-tip="Time since you pressed Recalibrate now. In brackets: how long the last runs took on average.">
+      <span class="recal-elapsed">0:00</span>{% if recal_status.average %}
+      <span class="muted">(avg {{ '%d:%02d' | format(recal_status.average // 60, recal_status.average % 60) }})</span>{% endif %}</span>
+    <script>
+      (function () {
+        const box = document.getElementById("recal-timer");
+        const started = new Date(box.dataset.started).getTime();
+        const out = box.querySelector(".recal-elapsed");
+        const tick = () => {
+          const s = Math.max(0, Math.round((Date.now() - started) / 1000));
+          out.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+        };
+        tick();
+        const clock = setInterval(tick, 1000);
+        const poll = setInterval(async () => {
+          if (!document.body.contains(box)) { clearInterval(clock); clearInterval(poll); return; }
+          try {
+            const st = await (await fetch("/settings/zones/status")).json();
+            if (st.pending) return;
+            clearInterval(clock); clearInterval(poll);
+            htmx.ajax("GET", "/settings/zones", {target: "#zones-status", swap: "outerHTML"});
+          } catch (e) { /* try again on the next poll */ }
+        }, 3000);
+      })();
+    </script>
+    {% endif %}
     {% if recal_undo and not recal_pending %}
     <form method="post" action="/settings/zones/undo/{{ recal_undo }}"><button type="submit" class="secondary">Undo last change</button></form>
     {% endif %}

@@ -859,7 +859,7 @@ def zones_context(conn) -> dict:
     undo = next((r for r in runs if r["status"] == "moved"), None)
     if undo and zones.Zones.from_dict(json.loads(undo["after_json"])) != current:
         undo = None
-    return {"recal": zones.schedule(conn), "recal_runs": runs, "recal_pending": zones.pending(conn),
+    return {"recal": zones.schedule(conn), "recal_runs": runs, "recal_pending": zones.pending(conn), "recal_status": zones.status(conn),
             "recal_undo": undo["id"] if undo else None, "recal_stored": zones.stored(conn) is not None,
             "recal_spots": len(current.spots), "recal_ring": bool(current.ring), "zones_now": zone_shapes(current),
             "zones_raw": current.to_dict(), "live_refresh": config.LIVE_REFRESH,
@@ -938,6 +938,12 @@ def camera_reboot(request: Request, conn=Depends(get_conn)):
 def zones_panel(request: Request, conn=Depends(get_conn)):
     """The Zones section's status alone; it polls itself while a recalibration is running."""
     return page(request, "_zones.html", **zones_context(conn))
+
+
+@app.get("/settings/zones/status")
+def zones_status(conn=Depends(get_conn)):
+    """Polled by the Zones panel's timer while a run is pending, so the panel itself isn't redrawn."""
+    return zones.status(conn)
 
 
 @app.post("/settings/zones/now")

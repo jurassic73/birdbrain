@@ -267,9 +267,21 @@ def test_settings_shows_the_zones_section_with_its_schedule(client):
 def test_recalibrate_now_shows_progress_that_polls_until_done(client, conn):
     assert client.post("/settings/zones/now", follow_redirects=False).status_code == 303
     panel = client.get("/settings/zones").text
-    assert "Looking at the bath" in panel and 'hx-trigger="every 4s"' in panel
+    assert "Looking at the bath" in panel and 'id="recal-timer"' in panel and "hx-trigger" not in panel
+    assert client.get("/settings/zones/status").json()["pending"] is True
     run_at(conn, datetime.now().replace(microsecond=0).isoformat())
-    assert "hx-trigger" not in client.get("/settings/zones").text
+    assert "recal-timer" not in client.get("/settings/zones").text
+    assert client.get("/settings/zones/status").json()["pending"] is False
+
+
+def test_manual_run_durations_give_the_timer_an_average(conn):
+    from birdbrain import zones
+    db.set_value(conn, "zones_request", "2026-10-31T14:55:00")
+    zones.note_finished(conn, "manual", "2026-10-31T14:56:00")
+    zones.note_finished(conn, "scheduled", "2026-10-31T14:59:00")   # not asked for: ignored
+    db.set_value(conn, "zones_request", "2026-10-31T15:00:00")
+    zones.note_finished(conn, "manual", "2026-10-31T15:01:30")
+    assert zones.durations(conn) == [60, 90] and zones.status(conn)["average"] == 75
 
 
 def test_saving_the_schedule(client, conn):

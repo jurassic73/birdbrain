@@ -298,7 +298,9 @@ def run(frames: list[np.ndarray], reason: str, night: bool = False) -> None:
     with db.session() as conn:
         if out.status == "moved":
             zone_store.save(conn, out.zones)
-        db.add_calibration(conn, ran_at=datetime.now().isoformat(timespec="seconds"), reason=reason,
+        ran_at = datetime.now().isoformat(timespec="seconds")
+        zone_store.note_finished(conn, reason, ran_at)
+        db.add_calibration(conn, ran_at=ran_at, reason=reason,
                            status=out.status, summary=out.summary, before_json=_json(before),
                            after_json=_json(out.zones), image_path=name)
     log.info("recalibration (%s): %s. %s", reason, out.status, out.summary)
@@ -310,7 +312,9 @@ def _json(z: Zones) -> str:
 
 def record_skip(reason: str, summary: str) -> None:
     with db.session() as conn:
-        db.add_calibration(conn, ran_at=datetime.now().isoformat(timespec="seconds"), reason=reason,
+        ran_at = datetime.now().isoformat(timespec="seconds")
+        zone_store.note_finished(conn, reason, ran_at)
+        db.add_calibration(conn, ran_at=ran_at, reason=reason,
                            status="skipped", summary=summary)
     log.info("recalibration (%s) skipped: %s", reason, summary)
 

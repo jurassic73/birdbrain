@@ -280,6 +280,32 @@ def pending(conn) -> bool:
     return bool(req) and (not last or last[0]["ran_at"] < req)
 
 
+DURATIONS_KEPT = 10
+
+
+def note_finished(conn, reason: str, ran_at: str) -> None:
+    """Remember how long an asked-for run took (from the button press), for the Zones panel's timer."""
+    req = db.get_value(conn, "zones_request")
+    if reason != "manual" or not req or ran_at < req:
+        return
+    secs = (datetime.fromisoformat(ran_at) - datetime.fromisoformat(req)).total_seconds()
+    db.set_value(conn, "zones_durations", json.dumps((durations(conn) + [round(secs)])[-DURATIONS_KEPT:]))
+
+
+def durations(conn) -> list[int]:
+    try:
+        return [int(s) for s in json.loads(db.get_value(conn, "zones_durations") or "[]")]
+    except (ValueError, TypeError):
+        return []
+
+
+def status(conn) -> dict:
+    """What the Zones panel's timer needs: is a run pending, since when, and how long runs usually take."""
+    past = durations(conn)
+    return {"pending": pending(conn), "started": db.get_value(conn, "zones_request"),
+            "average": round(sum(past) / len(past)) if past else None}
+
+
 def due(conn, now: datetime) -> str | None:
     """"manual" if recalibration was asked for, "scheduled" if a daily slot has come up, else None."""
     if pending(conn):
