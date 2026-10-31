@@ -80,19 +80,13 @@ uv run python -m birdbrain.watch                       # the watcher (Ctrl-C to 
 4. After that the zones look after themselves. Twice a day (10:30 and 14:30 by default; change or turn off under **Settings > Zones**) the watcher spends about a minute studying the bath and takes the middle value of each pixel, so ripples, drifting leaves and birds drop out. If the camera has shifted a few pixels, every zone moves with it; a big move is only reported, since that needs a fresh hand calibration. Then each rock spot moves back onto its rocks, which by day are dark against the sky reflected in the water. **Recalibrate now** runs it right away, every run is listed with a before/after picture, and **Undo** takes a change back, and you can drag any zone by hand. It only runs by daylight. The adjusted zones live in the database, not `.env`, so redeploying never undoes them; editing the zones in `.env` by hand makes those the starting point again.
 5. Open **Claude's Notes** on the website and describe your setup in three boxes: what the camera sees, what to look for (the visitors you expect and their sizes), and what to ignore (a branch that sways, rocks poking out of the water, a cord). **Refine with Claude** tidies them into short lines, and **Save and outline** has Claude outline each thing on a fresh frame. Claude reads this with every photo. You can see exactly what it's told at the bottom of that page, along with the lessons from your corrections.
 
-## Optional: a local detector to save Claude calls
+## Keeping rain and leaves cheap
 
-Rain and wind can trigger motion every few seconds. Two things keep that cheap:
+Rain and wind can trigger motion every few seconds. Three things keep that cheap:
 
-- **Backoff (always on):** each false trigger in a row doubles the wait before the next try (20 s, 40 s, ... up to 5 minutes), and a real visitor resets it. With the local detector installed, motion during a backoff still gets a free look on the Pi, and only goes to Claude if it finds an animal.
-- **Birds in the water:** besides the rim, the open water is watched with a stricter rule: one solid, bird-sized blob that stays put for over half a second. Ripples and raindrops never qualify, and anything that does is checked by the local detector before Claude. This zone sleeps at night (nothing flies in to land after dark).
-- **Local detector:** a small open model ([YOLOX-tiny](https://github.com/Megvii-BaseDetection/YOLOX), Apache-2.0) runs on the Pi's CPU in well under a second and answers "is there an animal here?" before Claude is asked.
-
-```bash
-scripts/get_model.sh      # downloads and verifies the ~19 MB model into models/
-```
-
-It starts in **shadow mode**: it runs and is recorded on every visit, but Claude still sees everything. The Stats page shows how many calls it would have saved and whether it ever missed an animal Claude found. When you trust it, set `DETECTOR=gate` in `.env` and redeploy: daytime frames where it sees nothing then skip Claude. It never skips at night, because it doesn't know raccoons, possums or squirrels (COCO classes); those often show up as "cat", "dog" or "bear", and anything like that still goes to Claude.
+- **Backoff (always on):** each false trigger in a row doubles the wait before the next try (20 s, 40 s, ... up to 5 minutes), and a real visitor resets it. Motion during a backoff still gets a free look on the Pi from the [local animal check](#local-animal-check), and only goes to Claude if it finds an animal.
+- **Birds in the water:** besides the rim, the open water is watched with a stricter rule: one solid, bird-sized blob that stays put for over half a second. Ripples and raindrops never qualify, and anything that does is checked by the local animal check before Claude. This zone sleeps at night (nothing flies in to land after dark).
+- **Local animal check:** BioCLIP 2 on the Pi decides whether anything is there before Claude is asked (see below). An earlier object detector (YOLOX-tiny) was retired in its favour.
 
 ## Local species classifier (shadow mode)
 
@@ -150,7 +144,6 @@ Everything specific to your installation stays on your machines (see `.gitignore
 | `.env` | Camera password, API key, addresses, calibration. Start from `.env.example`. |
 | `data/` | The database (visits, your Settings, corrections) and photos. On the Pi: `/var/lib/birdbrain`. |
 | `snapshots/` | Test frames from `scripts/snap.sh`. |
-| `models/` | The local detector model, downloaded by `scripts/get_model.sh`. (The species classifier downloads itself into `data/models/`.) |
 | `firmware-backup/` | Your camera's factory firmware backup, if you flashed Thingino. It's unique to that camera; keep a copy somewhere safe. |
 
 The code itself has no addresses, passwords or locations in it.
@@ -172,4 +165,4 @@ The light/dark toggle uses the sun and crescent moon from [Twemoji](https://gith
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The BioCLIP 2 model files are MIT (Imageomics Institute) and YOLOX-tiny is Apache-2.0; each keeps its own license.
+MIT, see [LICENSE](LICENSE). The BioCLIP 2 model files are MIT (Imageomics Institute) and keep their own license.
