@@ -6,7 +6,7 @@
 # rrsync in its data folder, so the path is relative to that). PUBLIC_KEY is the ssh key to use.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-envval() { grep -E "^$1=" .env 2>/dev/null | cut -d= -f2- | awk '{print $1}'; }
+envval() { { grep -E "^$1=" .env 2>/dev/null || true; } | cut -d= -f2- | awk '{print $1}'; }
 PUBLIC_DEST="${PUBLIC_DEST:-$(envval PUBLIC_DEST)}"; : "${PUBLIC_DEST:?set PUBLIC_DEST}"
 PUBLIC_KEY="${PUBLIC_KEY:-$(envval PUBLIC_KEY)}"; PUBLIC_KEY="${PUBLIC_KEY:-$HOME/.ssh/birdbrain_push}"
 DATA="${BIRDBRAIN_DATA:-/var/lib/birdbrain}"
