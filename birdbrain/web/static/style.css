@@ -1136,7 +1136,7 @@ button.link-btn { background: none; border: none; color: var(--accent); padding:
 .scene-frame path.scene-hit { fill: transparent; stroke: none; }
 /* Editing: the photo big over a dimmed page */
 html.se-open { overflow: hidden; }
-.se-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .72); }
+.se-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .94); }
 .se-backdrop .se-bar { position: absolute; top: 8px; left: 16px; right: 300px; display: flex; flex-direction: column; gap: 6px; }
 .se-backdrop .se-tip { margin: 0; color: #fff; font-size: .9rem; }
 .se-chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1151,7 +1151,7 @@ button.se-chip.current { border-color: #fff; background: rgba(255, 255, 255, .25
 .se-backdrop .se-undo, .se-backdrop .se-redo { color: #fff; }
 .se-backdrop .se-undo:disabled, .se-backdrop .se-redo:disabled { opacity: .4; cursor: default; }
 .scene-frame.se-big { position: fixed; z-index: 41; left: 50%; top: calc(50% + var(--se-bar, 50px) / 2);
-  transform: translate(-50%, -50%); width: min(96vw, calc((100vh - var(--se-bar, 50px) - 20px) * 16 / 9)); }
+  transform: translate(-50%, -50%); width: min(95vw, calc((95vh - var(--se-bar, 50px)) * 16 / 9)); }
 .scene-frame .se-hidden { display: none; }
 .scene-frame path.scene-water { fill: none; stroke: #9ff3ff; stroke-width: 2px; stroke-dasharray: 5 3; vector-effect: non-scaling-stroke; pointer-events: none; }
 .scene-list li.se-off > :not(div), .scene-list li.se-off strong { opacity: .45; }
