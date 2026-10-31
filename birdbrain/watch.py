@@ -30,6 +30,20 @@ NIGHT_CHECK_FRAMES = 15  # how often (substream frames, ~1 s) to re-check whethe
 last_visit_id: int | None = None  # set by handle_event, so the watcher can keep that visit open while it stays
 
 
+
+_push: subprocess.Popen | None = None
+
+
+def push_public() -> None:
+    """Send the new visit to the public mirror now instead of waiting for cron (PUBLIC_DEST in .env).
+    Runs in the background; skipped if the previous push is still going (the next one catches up)."""
+    global _push
+    if not os.environ.get("PUBLIC_DEST") or (_push is not None and _push.poll() is None):
+        return
+    script = Path(__file__).resolve().parent.parent / "scripts" / "push_public.sh"
+    if script.exists():
+        _push = subprocess.Popen([str(script)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 def redact(text: str) -> str:
     return re.sub(r"rtsp://[^@/\s]*@", "rtsp://***@", text)
 
@@ -495,6 +509,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             topic = db.get_value(conn, "ntfy_topic") or ""
         click = f"{config.SITE_URL}/visit/{visit_id}" if config.SITE_URL else None
         alert.send(topic, alert_reason, f"Visit #{visit_id} at the birdbath", best, click)
+    if not false_trigger:
+        push_public()
     for _, label in seen:
         species_info.prefetch(label)  # no-op once the card is cached
     det_note = "" if not check or check.get("score") is None else f", animal check {check['score']:.2f}"

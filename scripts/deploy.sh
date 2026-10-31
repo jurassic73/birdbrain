@@ -23,7 +23,7 @@ trap 'rm -f "$reqs"' EXIT
 uv export --frozen --no-dev --no-hashes --no-emit-project --quiet -o "$reqs"
 
 ssh "$TARGET" "sudo mkdir -p $APP $DATA && sudo chown $RUN_AS:$RUN_AS $APP $DATA"
-parts=(birdbrain deploy pyproject.toml uv.lock)
+parts=(birdbrain deploy scripts pyproject.toml uv.lock)
 [ -d models ] && parts+=(models) || echo "No models/ folder: the local detector stays off on the Pi (run scripts/get_model.sh)."
 rsync -az --delete --exclude '__pycache__' "${parts[@]}" "$TARGET:$APP/"
 ssh "$TARGET" "umask 077 && cat > $APP/.env && chmod 600 $APP/.env" < .env
