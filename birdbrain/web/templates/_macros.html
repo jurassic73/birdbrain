@@ -43,7 +43,9 @@
   "Claude saw": "Claude saw: the sharpest frame of the burst, the one sent to Claude and kept as this visit's photo.",
   "checked": "Checked: you said this answer is right. The local animal check on the Pi trains on it, counting it extra.",
   "pi only": "Pi only: the local animal check on the Pi judged this frame empty, so Claude wasn't asked. Check it, then confirm it or correct it.",
-  "shadow": "Shadow: the local species classifier on the Pi made this guess only to be scored. Claude's answer (or yours) is the label.",
+  "shadow": "Shadow: a local model on the Pi made this guess only to be scored. Claude's answer (or yours) is the label.",
+  "gate": "Gate: the Pi's answer counts. A frame it judges empty skips Claude and waits on False triggers for your check.",
+  "off": "Off: this local step doesn't run.",
   "too old": "Too old: newer lessons fill the prompt, so this one isn't sent any more. Switching newer ones off brings it back.",
 } -%}
 <{{ tag }} class="badge {{ cls }}"{% if tips[text] %} data-tip="{{ tips[text] }}"{% endif %}>{{ text }}</{{ tag }}>

@@ -21,7 +21,7 @@ os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 import cv2  # noqa: E402  (must come after the capture options are set)
 import numpy as np  # noqa: E402
 
-from . import alert, autocal, classifier, config, db, detector, identify, images, presence, retention, scenery, species_info, stay, zones  # noqa: E402
+from . import alert, autocal, classifier, config, db, identify, images, presence, retention, species_info, stay, zones  # noqa: E402
 
 log = logging.getLogger("birdbrain.watch")
 
@@ -311,7 +311,7 @@ def capture_burst() -> list[bytes]:
 
 
 def calls_today(ground: bool = False) -> int:
-    """Visits today that Claude was asked about (visits the local detector settled cost nothing), counted
+    """Visits today that Claude was asked about (visits the Pi settled cost nothing), counted
     separately for the ground zone so passers-by can't use up the birdbath's budget."""
     with db.session() as conn:
         return conn.execute(
@@ -334,12 +334,11 @@ def next_cooldown(visitor: str | None, false_streak: int) -> tuple[int, int]:
     return config.false_trigger_wait(streak), streak
 
 
-_mode_cache: tuple[float, str, str] = (0.0, "", "")  # (read at, .env default, mode)
 
 
 def after_false(now: float, streak: int, cooldown: int, can_probe: bool) -> tuple[float, float]:
     """(cooldown_until, backoff_until) after a false trigger, the streak-th in a row. During the backoff,
-    triggers are probes every COOLDOWN_NONE (with a local detector). From PROBE_AFTER in a row the backoff
+    triggers are probes every COOLDOWN_NONE (with the local animal check). From PROBE_AFTER in a row the backoff
     runs FULL_CHECK_EVERY, so steady rain or blowing leaves cost one Claude call per half hour, not one
     every COOLDOWN_NONE_MAX (about 240 a night on 2026-10-26)."""
     if not can_probe:
@@ -348,32 +347,13 @@ def after_false(now: float, streak: int, cooldown: int, can_probe: bool) -> tupl
     return now + config.COOLDOWN_NONE, now + backoff
 
 
-def probe_passes(det: dict | None) -> bool:
-    """A probe goes on to Claude when the detector sees an animal or the scenery check finds something new
-    (it scores squirrels, which COCO has no class for)."""
-    if det is None:
-        return False
-    return bool(det["animal"]) or ("scenery" in det and det["scenery"] is not None and not det["scenery"]["empty"])
+def probe_passes(check: dict | None) -> bool:
+    """A rain-backoff probe goes on to Claude unless the local animal check calls it empty. With the check
+    off, or before it has enough labelled frames to train, every probe goes to Claude."""
+    return not (check and check.get("empty"))
 
 
-def detector_mode() -> str:
-    """The detector mode from Settings (else .env), re-read at most every 15 s since motion checks it per frame."""
-    global _mode_cache
-    read_at, default, mode = _mode_cache
-    if time.monotonic() - read_at > 15 or default != config.DETECTOR:
-        with db.session() as conn:
-            mode = db.detector_mode(conn)
-        _mode_cache = (time.monotonic(), config.DETECTOR, mode)
-    return mode
-
-
-def should_skip_claude(det: dict | None, night: bool) -> bool:
-    """Gate mode only: skip Claude when the local detector saw nothing. Never at night, when raccoons and
-    possums (which the detector doesn't know) come by."""
-    return detector_mode() == "gate" and det is not None and not det["animal"] and not night
-
-
-PROBE_EMPTY = "probe-empty"  # a backoff probe the local detector found nothing in: not stored, no Claude call
+PROBE_EMPTY = "probe-empty"  # a backoff probe the local animal check found empty in: not stored, no Claude call
 
 
 def streak_hit(motion: float) -> bool:
@@ -394,12 +374,13 @@ def presence_mode() -> str:
     return mode
 
 
-def detector_ready() -> bool:
-    return detector_mode() != "off" and config.DETECTOR_MODEL.exists()
+def probe_ready() -> bool:
+    """Probes need the local animal check: without it a rain run just waits out its backoff."""
+    return presence_mode() != "off"
 
 
 def motion_action(now: float, cooldown_until: float, backoff_until: float, can_probe: bool) -> str:
-    """What motion should do right now: "wait", "probe" (during rain backoff: local detector first, Claude
+    """What motion should do right now: "wait", "probe" (during rain backoff: local animal check first, Claude
     only if it sees an animal) or "full" (normal capture and identify)."""
     if now < cooldown_until:
         return "wait"
@@ -410,7 +391,7 @@ def motion_action(now: float, cooldown_until: float, backoff_until: float, can_p
 
 def handle_event(motion: float | None = None, probe: bool = False, trigger: str = "rim") -> str | None:
     """Capture, identify and store one visit. Returns the visitor type, None if nothing was captured, or
-    PROBE_EMPTY for a backoff probe where the local detector saw nothing (discarded: rain shouldn't fill
+    PROBE_EMPTY for a backoff probe where the local animal check found nothing (discarded: rain shouldn't fill
     the disk or the bill)."""
     captured_at = datetime.now().replace(microsecond=0)
     frames = capture_burst()
@@ -421,36 +402,25 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     ranked = best_frames(frames, crop)
     best = ranked[0]
     night = is_night(best)
-    det = None
-    try:
-        det = detector.run(best, crop)
-        if det is not None:
-            with db.session() as conn:
-                det["scenery"] = scenery.check(conn, det, trigger == "ground", night)
-    except Exception:
-        log.exception("local detector failed; asking Claude anyway")
-    if probe and not probe_passes(det):
-        log.info("probe (%s trigger): detector saw nothing; discarded", trigger)
-        with db.session() as conn:
-            db.bump(conn, "probe_empty")
-        return PROBE_EMPTY
     # The local animal check: BioCLIP 2's embedding of the crop box, scored by a model trained on this yard's
-    # labelled frames. In gate mode an empty verdict skips Claude (day and night; the owner reviews them).
+    # labelled frames. It is the only gate: in gate mode an empty verdict skips Claude (day and night; the
+    # owner reviews them), and a rain-backoff probe it calls empty is discarded in any mode but off.
     emb = check = None
     pmode = presence_mode()
     if pmode != "off":
-        emb = classifier.box_embedding(best, crop)
         try:
+            emb = classifier.box_embedding(best, crop)
             with db.session() as conn:
                 check = presence.check(conn, emb)
         except Exception:
             log.exception("local animal check failed; asking Claude")
+    if probe and not probe_passes(check):
+        log.info("probe (%s trigger): animal check found nothing; discarded", trigger)
+        with db.session() as conn:
+            db.bump(conn, "probe_empty")
+        return PROBE_EMPTY
     if pmode == "gate" and check and check.get("empty"):
-        result = identify.settled_by_presence(check, det)
-    elif should_skip_claude(det, night):
-        result = identify.settled_locally(det)
-        if check:
-            result.raw["presence"] = check
+        result = identify.settled_by_presence(check, None)
     else:
         with db.session() as conn:
             lessons = db.recent_lessons(conn)
@@ -458,8 +428,6 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             confirmed = db.confirmed_species(conn)
         result = identify.identify(best, captured_at, crop, lessons, extra_frames=ranked[1:], site=site,
                                    confirmed=confirmed)
-        if det is not None:
-            result.raw["detector"] = det
         if check:
             result.raw["presence"] = check
     # Shadow only: the local species classifier records its guess for the Stats scorecard; Claude's label stands.
@@ -529,7 +497,7 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         alert.send(topic, alert_reason, f"Visit #{visit_id} at the birdbath", best, click)
     for _, label in seen:
         species_info.prefetch(label)  # no-op once the card is cached
-    det_note = "" if det is None else f", detector: {det['best']['label'] if det['best'] else 'nothing'} {det['seconds']}s"
+    det_note = "" if not check or check.get("score") is None else f", animal check {check['score']:.2f}"
     log.info("visit %d: %s %s (%s, %s%s%s)", visit_id, s.visitor, s.species or "", s.confidence,
              result.model, ", escalated" if result.escalated else "", det_note)
     return s.visitor
@@ -542,7 +510,7 @@ class Watcher:
         self.recalibrator = autocal.Recalibrator()
         self.busy = threading.Event()
         self.cooldown_until = 0.0  # no captures at all before this
-        self.backoff_until = 0.0   # during rain backoff, captures are probes (local detector first)
+        self.backoff_until = 0.0   # during rain backoff, captures are probes (local animal check first)
         self.false_streak = 0
         # The ground zone backs off on its own, so wind in the leaves never blinds the birdbath.
         self.ground_until = 0.0
@@ -574,7 +542,7 @@ class Watcher:
                         if self.ground_streak > 1:
                             log.info("%d empty ground triggers in a row; ground backs off", self.ground_streak)
                         self.ground_until, self.ground_backoff_until = after_false(
-                            now, self.ground_streak, cooldown, detector_ready())
+                            now, self.ground_streak, cooldown, probe_ready())
                     else:
                         self.ground_until, self.ground_backoff_until = now + cooldown, 0.0
             elif visitor == PROBE_EMPTY:
@@ -584,9 +552,9 @@ class Watcher:
                 if self.false_streak:
                     if self.false_streak > 1:
                         log.info("%d false triggers in a row; backing off", self.false_streak)
-                    # With a detector, keep probing every COOLDOWN_NONE during the backoff instead of going blind.
+                    # With the animal check, keep probing every COOLDOWN_NONE during the backoff instead of going blind.
                     self.cooldown_until, self.backoff_until = after_false(
-                        now, self.false_streak, cooldown, detector_ready())
+                        now, self.false_streak, cooldown, probe_ready())
                 else:
                     self.backoff_until = 0.0
                     self.cooldown_until = now + cooldown
@@ -668,24 +636,24 @@ class Watcher:
                 if self.follow_stay(now):
                     streak = 0
                     continue
-                action = motion_action(now, self.cooldown_until, self.backoff_until, detector_ready())
+                action = motion_action(now, self.cooldown_until, self.backoff_until, probe_ready())
                 streak = streak + 1 if action != "wait" and motion >= config.MOTION_MIN_AREA else 0
                 if action != "wait" and (streak >= config.TRIGGER_FRAMES or water):
                     streak = 0
                     trigger = "rim" if streak_hit(motion) else "water"
-                    # Water-only triggers always go through the local detector first, so a ripple that slips
-                    # past the blob rule costs half a second of CPU, never a Claude call.
-                    probe = action == "probe" or (trigger == "water" and detector_ready())
+                    # Water-only triggers always go through the local animal check first, so a ripple that slips
+                    # past the blob rule costs a few seconds of Pi CPU, never a Claude call.
+                    probe = action == "probe" or (trigger == "water" and probe_ready())
                     log.info("motion %.3f (%s%s)", motion, trigger, ", probe" if probe else "")
                     self._maybe_trigger(motion, probe=probe, trigger=trigger)
                     if self.detector.water:
                         self.detector.water.reset()
                 elif ground and action != "wait" and (
                         ground_action := motion_action(now, self.ground_until, self.ground_backoff_until,
-                                                       detector_ready())) != "wait":
+                                                       probe_ready())) != "wait":
                     # Claude, under the ground's own limit, except during a run of empty ground triggers: then
-                    # probes, which pass on anything the scenery check finds (the class detector alone threw
-                    # away a real squirrel on 2026-10-26). Empty answers are kept as false triggers.
+                    # probes, which pass unless the animal check calls them empty. Empty answers are kept as
+                    # false triggers.
                     probe = ground_action == "probe"
                     log.info("motion on the ground (%s%s)", "night" if self.detector.night else "day",
                              ", probe" if probe else "")

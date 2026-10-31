@@ -210,7 +210,7 @@ def home(request: Request, conn=Depends(get_conn)):
         total=db.count_visits(conn, **filters),
         any_visits=db.latest_visit(conn) is not None,
         today=db.today_summary(conn),
-        detector_mode=db.detector_mode(conn),
+        presence_mode=presence.mode(conn),
         activity=db.activity(conn),
         species_names=db.species_names(conn),
         next_url=f"/visits/more?{query_string(filters, offset=PAGE_SIZE)}" if len(visits) == PAGE_SIZE else None,
@@ -524,9 +524,6 @@ def stats(request: Request, conn=Depends(get_conn)):
         leaders=db.species_summary(conn, sort="visits", limit=10),
         newest=db.species_summary(conn, sort="newest", limit=5),
         total=db.count_visits(conn),
-        detector_mode=db.detector_mode(conn),
-        detector=db.detector_report(conn),
-        scenery=db.scenery_report(conn),
         classifier=db.classifier_report(conn),
         presence=db.presence_report(conn),
         presence_mode=presence.mode(conn),
@@ -615,8 +612,6 @@ def about(request: Request, conn=Depends(get_conn)):
         recal_stored=zones.stored(conn) is not None,
         has_frame=_live["jpeg"] is not None or live_file().exists(),
         backoff=backoff_steps(),
-        detector_mode=db.detector_mode(conn),
-        detector_installed=config.DETECTOR_MODEL.exists(),
         classifier_mode=config.CLASSIFIER,
         classifier=db.classifier_report(conn),
         presence=db.presence_report(conn),
@@ -766,17 +761,15 @@ def clean_false_triggers(conn=Depends(get_conn)):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, pruned: int | None = None, detector_saved: bool = False,
+def settings_page(request: Request, pruned: int | None = None,
                   alerts_saved: bool = False, alerts_test: str = "", zones_saved: bool = False, presence_saved: bool = False,
                   conn=Depends(get_conn)):
     storage = retention.usage(conn)
     limit = storage["limit_bytes"] / 1e6
-    report = db.detector_report(conn)
     return page(
         request,
         "settings.html",
         pruned=pruned,
-        detector_saved=detector_saved,
         presence_saved=presence_saved,
         presence_mode=presence.mode(conn),
         presence_report=db.presence_report(conn),
@@ -785,11 +778,9 @@ def settings_page(request: Request, pruned: int | None = None, detector_saved: b
         alerts=alert.get_settings(conn),
         storage=storage,
         on_settings=True,
-        detector_mode=db.detector_mode(conn),
-        detector=report,
-        advice=db.gate_advice(report),
-        call_usd=db.avg_haiku_call_usd(conn),
-        detector_installed=config.DETECTOR_MODEL.exists(),
+        activity=db.activity(conn),
+        classifier=db.classifier_report(conn),
+        classifier_on=config.CLASSIFIER != "off",
         current_limit=limit,
         # a limit set in .env that isn't one of the buttons still shows up as one, selected
         limit_choices=sorted({*retention.LIMIT_CHOICES_MB, limit}, key=lambda mb: mb or float("inf")),
@@ -803,15 +794,7 @@ def save_presence(mode: str = Form(...), conn=Depends(get_conn)):
     if mode not in presence.MODES:
         raise HTTPException(400, "Unknown animal check mode")
     db.set_value(conn, "presence_mode", mode)
-    return RedirectResponse("/settings?presence_saved=1#presence", status_code=303)
-
-
-@app.post("/settings/detector")
-def save_detector(mode: str = Form(...), conn=Depends(get_conn)):
-    if mode not in db.DETECTOR_MODES:
-        raise HTTPException(400, "Unknown detector mode")
-    db.set_value(conn, "detector_mode", mode)
-    return RedirectResponse("/settings?detector_saved=1#detector", status_code=303)
+    return RedirectResponse("/settings?presence_saved=1#local", status_code=303)
 
 
 @app.post("/settings/alerts/test")

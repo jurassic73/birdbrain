@@ -240,9 +240,9 @@ def test_settings_page_changes_the_false_trigger_limit_and_photo_size(client, co
 
 def test_settings_sections_collapse_and_show_a_status_when_closed(client, conn):
     html = client.get("/settings").text
-    for section in ("detector", "storage", "alerts"):
+    for section in ("local", "storage", "alerts"):
         assert f'<details class="settings-card" id="{section}" open>' in html
-    assert ">Shadow<" in html and ">Off<" in html
+    assert ">Animal check shadow, species guess shadow<" in html and ">Off<" in html
     notes = client.get("/notes").text
     for section in ("camera", "lessons"):
         assert f'<details class="settings-card" id="{section}" open>' in notes
@@ -275,29 +275,23 @@ def test_visit_page_shows_the_local_detector_step(client, add_visit):
 
 
 def test_home_ranks_today_from_visitors_down_to_claude_calls(client, add_visit, monkeypatch):
-    raw = json.dumps({"calls": {"haiku": {"input_tokens": 2000, "output_tokens": 200}, "detector": {"animal": False}}})
+    raw = json.dumps({"calls": {"haiku": {"input_tokens": 2000, "output_tokens": 200}, "presence": {"empty": True}}})
     add_visit(visitor="none", species=None, raw_json=raw)
     html = client.get("/").text
     rows = ["Visitors today", "False alarms", "Kept on the Pi", "Sent to Claude"]
     assert [html.index(r) for r in rows] == sorted(html.index(r) for r in rows)
-    assert "gate mode would have kept 1 on the Pi" in html and 'href="/stats#detector"' in html
+    assert "gate mode would have kept 1 on the Pi" in html and 'href="/stats#presence"' in html
     # Collapsed until asked for, with a few takeaways inside.
     assert '<details class="tally-box">' in html and "0% of today's 1 motion events were a real animal" in html
-    monkeypatch.setattr(config, "DETECTOR", "gate")
+    monkeypatch.setattr(config, "PRESENCE", "gate")
     assert "gate mode would have kept" not in client.get("/").text
-    monkeypatch.setattr(config, "DETECTOR", "off")
+    monkeypatch.setattr(config, "PRESENCE", "off")
     assert "Kept on the Pi" not in client.get("/").text
 
 
 @pytest.mark.parametrize("value, text", [(0, "$0"), (0.0004, "under $0.001"), (0.031, "$0.031"), (0.42, "$0.42")])
 def test_usd_formatting(value, text):
     assert webapp.usd(value) == text
-
-
-def test_stats_shows_the_detector_scorecard(client, add_visit):
-    add_visit(visitor="none", species=None, raw_json=json.dumps({"calls": {"detector": {"animal": False}}}))
-    html = client.get("/stats").text
-    assert "Local detector" in html and "shadow mode" in html and "would have saved" in html
 
 
 def test_visit_without_a_trail_hides_the_section(client, add_visit):
@@ -452,16 +446,16 @@ def test_latest_frame_404_when_there_has_never_been_one(client, live, frame_file
     assert client.get("/live/latest.jpg").status_code == 404
 
 
-def test_settings_recommends_a_detector_mode_and_switches_it(client, conn, add_visit, monkeypatch):
-    monkeypatch.setattr(config, "DETECTOR", "shadow")
+def test_settings_shows_the_local_checks_as_one_flow(client, conn, monkeypatch):
+    monkeypatch.setattr(config, "PRESENCE", "shadow")
     html = client.get("/settings").text
-    assert 'id="detector"' in html and 'value="shadow" checked' in html
-    assert "Recommended: Shadow." in html and "0 of 20 daytime visitors" in html
-    r = client.post("/settings/detector", data={"mode": "gate"}, follow_redirects=False)
-    assert r.status_code == 303 and db.detector_mode(conn) == "gate"
-    assert 'value="gate" checked' in client.get("/settings?detector_saved=1").text
-    assert "Pi skips empty" in client.get("/settings").text
-    assert client.post("/settings/detector", data={"mode": "maybe"}).status_code == 400
+    assert 'id="local"' in html and 'id="detector"' not in html and 'value="shadow" checked' in html
+    steps = ["Anything there?", "What species?", "Ask Claude"]
+    assert [html.index(s) for s in steps] == sorted(html.index(s) for s in steps)
+    assert "kept on the Pi" in html and "sent to Claude" in html
+    r = client.post("/settings/presence", data={"mode": "gate"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].endswith("#local")
+    assert client.post("/settings/detector", data={"mode": "gate"}).status_code in (404, 405)
 
 
 @pytest.fixture
@@ -475,7 +469,7 @@ def calibrated(monkeypatch):
 def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, conn, calibrated):
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None)
-    db.set_value(conn, "detector_mode", "gate")
+    db.set_value(conn, "presence_mode", "gate")
     html = client.get("/about").text
     assert "How Birdbrain works" in html and 'href="/about"' in html
     assert f'href="{config.REPO_URL}"' in html and "Source code on GitHub" in html

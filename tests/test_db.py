@@ -259,12 +259,12 @@ def test_activity_rows_add_up_for_today(conn, add_visit):
     tokens = {"haiku": {"input_tokens": 2000, "output_tokens": 200}}
 
     def raw(animal):
-        return json.dumps({"calls": {**tokens, "detector": {"animal": animal}}})
+        return json.dumps({"calls": {**tokens, "presence": {"empty": not animal}}})
 
     add_visit(visitor="none", species=None, raw_json=raw(False))                               # Claude said none; gate would keep
     add_visit(species="Bushtit", raw_json=raw(True))                                           # real visitor
-    add_visit(visitor="none", species=None, is_night=1, raw_json=raw(False))                   # night: always sent
-    add_visit(visitor="none", species=None, model="yolox-tiny", raw_json='{"calls": {}}')      # settled on the Pi
+    add_visit(visitor="none", species=None, is_night=1, raw_json=raw(True))                    # the check wasn't sure
+    add_visit(visitor="none", species=None, model="bioclip-presence", raw_json='{"calls": {}}')  # settled on the Pi
     add_visit(visitor="none", species=None, raw_json=raw(False), captured_at=at(3))            # another day
     db.bump(conn, "probe_empty")
     db.bump(conn, "probe_empty")

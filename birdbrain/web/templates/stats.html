@@ -25,42 +25,6 @@
     </ul>
   </section>
 </div>
-{% if detector_mode != 'off' %}
-<section class="detector-report" id="detector">
-  <h2>Local detector <span class="muted">{{ 'gate mode: skips Claude when it sees nothing' if detector_mode == 'gate' else 'shadow mode: watching, Claude still sees everything' }}</span></h2>
-  {% if detector.checked %}
-  <div class="today-stats">
-    <div><span class="big">{{ detector.would_save }}</span> Claude calls it {{ 'saved' if detector_mode == 'gate' else 'would have saved' }}</div>
-    <div><span class="big">{{ detector.caught }}/{{ detector.animals }}</span> animals it also spotted</div>
-    <div><span class="big {{ 'bad' if detector.would_miss }}">{{ detector.would_miss | length }}</span> animals it would have missed</div>
-  </div>
-  <p class="muted">Daytime visits in the last {{ detector.days }} days ({{ detector.checked }} checked), judged against Claude's final answer and your corrections.
-    {% if detector.would_miss %}Missed:
-      {% for m in detector.would_miss[:8] %}<a href="/visit/{{ m.id }}">{{ m.label }}</a>{{ ', ' if not loop.last }}{% endfor %}.
-    {% endif %}
-    {% if detector_mode == 'shadow' %}Switch modes in <a href="/settings#detector">Settings</a>, which also recommends one.{% endif %}
-  </p>
-  {% else %}
-  <p class="muted">No daytime visits checked yet.</p>
-  {% endif %}
-</section>
-{% if scenery.checked %}
-<section class="detector-report" id="scenery">
-  <h2>Scenery check <span class="muted">shadow mode: would it have kept the frame from Claude?</span></h2>
-  <div class="today-stats">
-    <div><span class="big">{{ scenery.would_save }}/{{ scenery.empties }}</span> empty frames it would have kept on the Pi</div>
-    <div><span class="big {{ 'bad' if scenery.would_miss }}">{{ scenery.would_miss | length }}</span> of {{ scenery.animals }} animals it would have missed</div>
-    <div><span class="big">{{ scenery.night_animals }}</span> night visitors checked so far</div>
-  </div>
-  <p class="muted">Day and night, last {{ scenery.days }} days ({{ scenery.checked }} visits). It compares each frame's objects with recent empty frames; anything new goes to Claude.
-    {% if scenery.would_miss %}Missed:
-      {% for m in scenery.would_miss[:8] %}<a href="/visit/{{ m.id }}">{{ m.label }}</a>{{ ', ' if not loop.last }}{% endfor %}.
-    {% endif %}
-    Already used for probes during runs of false triggers.
-  </p>
-</section>
-{% endif %}
-{% endif %}
 {% set p = presence %}
 {% if presence_mode != 'off' or p.frames %}
 <section class="detector-report" id="presence">

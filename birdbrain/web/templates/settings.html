@@ -62,67 +62,58 @@
   </div>
 </details>
 
-<details class="settings-card" id="detector" open>
-  <summary><h2>Local detector</h2><span class="summary-hint">{{ detector_mode | capitalize }}</span></summary>
-  <div class="settings-body">
-  {% if detector_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
-  <p class="muted">A small model on the Pi that looks for animals before Claude does.</p>
-
-  {% set d = detector %}
-  <div class="today-stats detector-stats">
-    <div><span class="big">{{ d.animals }}</span> visitors</div>
-    <div><span class="big">{{ d.caught }}</span> it spotted</div>
-    <div><span class="big {{ 'bad' if d.would_miss }}">{{ d.would_miss | length }}</span> it missed</div>
-    <div><span class="big">{{ d.would_save }}</span> calls it could skip{% if d.would_save %} ({{ (d.would_save * call_usd) | usd }}){% endif %}</div>
-  </div>
-  <p class="muted small">Daytime, last {{ d.days }} days. <a href="/stats#detector">Details</a></p>
-
-  <form class="settings-form" method="post" action="/settings/detector">
-    <div class="choices">
-      {% for key, label, hint in [('off', 'Off', 'Claude checks everything'),
-                                  ('shadow', 'Shadow', 'Pi watches, Claude checks everything'),
-                                  ('gate', 'Gate', 'Pi skips empty daytime frames')] %}
-      <label class="choice">
-        <input type="radio" name="mode" value="{{ key }}" {% if key == detector_mode %}checked{% endif %}>
-        <span>{{ label }} <small>{{ hint }}</small>{% if key == advice[0] %} <em class="rec">Recommended</em>{% endif %}</span>
-      </label>
-      {% endfor %}
-    </div>
-    <p class="advice"><strong>Recommended: {{ advice[0] | capitalize }}.</strong> {{ advice[1] }}{% if advice[0] == 'gate' %} Nights always go to Claude.{% endif %}</p>
-    {% if not detector_installed %}<p class="muted small">Model not installed on this machine; run <code>scripts/get_model.sh</code>.</p>{% endif %}
-    <div class="actions"><button type="submit">Save</button></div>
-  </form>
-  </div>
-</details>
-
-<details class="settings-card" id="presence" open>
-  <summary><h2>Local animal check</h2><span class="summary-hint">{{ presence_mode | capitalize }}</span></summary>
+<details class="settings-card" id="local" open>
+  <summary><h2>Local checks</h2><span class="summary-hint">Animal check {{ presence_mode }}, species guess {{ 'shadow' if classifier_on else 'off' }}</span></summary>
   <div class="settings-body">
   {% if presence_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
-  <p class="muted">Is anything there? A check on the Pi trained on this yard's own frames: your corrections and checks teach it.</p>
-  {% set p = presence_report %}
-  {% if p.frames %}
-  <div class="today-stats detector-stats">
-    <div><span class="big">{{ p.visitors }}</span> visitors</div>
-    <div><span class="big {{ 'bad' if p.missed }}">{{ p.missed | length }}</span> it called empty</div>
-    <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames caught</div>
-  </div>
-  <p class="muted small">Last {{ p.days }} days. <a href="/stats#presence">Details</a></p>
-  {% endif %}
-  <form class="settings-form" method="post" action="/settings/presence">
-    <div class="choices">
-      {% for key, label, hint in [('off', 'Off', 'Claude checks everything'),
-                                  ('shadow', 'Shadow', 'Pi scores, Claude checks everything'),
-                                  ('gate', 'Gate', 'Pi skips frames it judges empty, day and night')] %}
-      <label class="choice">
-        <input type="radio" name="mode" value="{{ key }}" {% if key == presence_mode %}checked{% endif %}>
-        <span>{{ label }} <small>{{ hint }}</small></span>
-      </label>
-      {% endfor %}
+  <p class="muted">The Pi checks every photo first; Claude is asked only when it can't settle it.</p>
+  {% set a = activity %}
+  <ol class="local-flow" aria-label="Today's photos, step by step">
+    <li class="where-pi" data-tip="Motion events today: visitors plus false alarms"><span class="big">{{ a.visitors + a.false_alarms }}</span> photos today</li>
+    <li class="where-pi" data-tip="Judged empty by the animal check and never sent to Claude"><span class="big">{{ a.kept_on_pi }}</span> kept on the Pi</li>
+    <li class="where-claude" data-tip="Cost {{ a.claude_usd | usd }} today"><span class="big">{{ a.sent_to_claude }}</span> sent to Claude</li>
+  </ol>
+
+  <section class="local-step" id="presence">
+    <h3><span class="step-n">1</span> Anything there? {{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') if presence_mode != 'off' }}</h3>
+    <p class="muted small">BioCLIP 2 on the Pi, trained on this yard's own frames: your corrections and checks teach it. Day and night, rainy-day probes too.</p>
+    {% set p = presence_report %}
+    {% if p.frames %}
+    <div class="today-stats detector-stats">
+      <div><span class="big">{{ p.visitors }}</span> visitors</div>
+      <div><span class="big {{ 'bad' if p.missed }}">{{ p.missed | length }}</span> it called empty</div>
+      <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames caught</div>
     </div>
-    <p class="advice">In gate mode, frames it skips are kept as false triggers marked {{ badge("pi only", "pi-only") }}: check them on <a href="/false-triggers">False triggers</a> and correct any with an animal.</p>
-    <div class="actions"><button type="submit">Save</button></div>
-  </form>
+    <p class="muted small">Last {{ p.days }} days. <a href="/stats#presence">Details</a></p>
+    {% endif %}
+    <form class="settings-form" method="post" action="/settings/presence">
+      <div class="choices">
+        {% for key, label, hint in [('off', 'Off', 'Claude checks everything'),
+                                    ('shadow', 'Shadow', 'Pi scores, Claude still checks everything (rainy-day probes it calls empty are dropped)'),
+                                    ('gate', 'Gate', 'Pi skips frames it judges empty, day and night')] %}
+        <label class="choice">
+          <input type="radio" name="mode" value="{{ key }}" {% if key == presence_mode %}checked{% endif %}>
+          <span>{{ label }} <small>{{ hint }}</small></span>
+        </label>
+        {% endfor %}
+      </div>
+      <p class="advice">In gate mode, frames it skips are kept as false triggers marked {{ badge("pi only", "pi-only") }}: check them on <a href="/false-triggers">False triggers</a> and correct any with an animal.</p>
+      <div class="actions"><button type="submit">Save</button></div>
+    </form>
+  </section>
+
+  <section class="local-step" id="classifier">
+    <h3><span class="step-n">2</span> What species? {{ badge('shadow', 'shadow') if classifier_on else badge('off', '') }}</h3>
+    {% set c = classifier %}
+    <p class="muted small">BioCLIP 2 guesses the species on the Pi and records it; Claude's name still stands.
+      {% if c.checked %}First guess right {{ c.top1 }}/{{ c.checked }}, within its top 3 {{ c.top3 }}/{{ c.checked }}. <a href="/stats#classifier">Details</a>{% endif %}
+      {% if not classifier_on %}Switched off with <code>CLASSIFIER=off</code> in <code>.env</code>.{% endif %}</p>
+  </section>
+
+  <section class="local-step" id="claude-step">
+    <h3><span class="step-n claude">3</span> Ask Claude</h3>
+    <p class="muted small">Whatever the Pi doesn't settle goes to Haiku; anything short of high confidence goes to Sonnet with 3 frames; still unsure lands in the <a href="/review">review queue</a>.</p>
+  </section>
   </div>
 </details>
 

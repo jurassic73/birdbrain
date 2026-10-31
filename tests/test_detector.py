@@ -84,19 +84,3 @@ def test_false_trigger_backoff(monkeypatch, visitor, streak, expected):
     monkeypatch.setattr(config, "COOLDOWN_NONE", 20)
     monkeypatch.setattr(config, "COOLDOWN_NONE_MAX", 300)
     assert watch.next_cooldown(visitor, streak) == expected
-
-
-@pytest.mark.parametrize(
-    "mode, animal, night, skip",
-    [
-        ("gate", False, False, True),
-        ("gate", True, False, False),
-        ("gate", False, True, False),   # never skip at night: raccoons and possums
-        ("shadow", False, False, False),
-        ("off", False, False, False),
-    ],
-)
-def test_should_skip_claude(monkeypatch, conn, mode, animal, night, skip):
-    monkeypatch.setattr(config, "DETECTOR", mode)
-    assert watch.should_skip_claude({"animal": animal}, night) is skip
-    assert watch.should_skip_claude(None, night) is False  # detector unavailable: always ask Claude

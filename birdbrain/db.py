@@ -648,9 +648,9 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
     """One day's motion events, broken down so the rows add up:
 
     visitors + false_alarms = all motion events
-    false_alarms = kept_on_pi (discarded probes + visits the detector settled) + false alarms Claude checked
+    false_alarms = kept_on_pi (discarded probes + visits the Pi settled) + false alarms Claude checked
     sent_to_claude = every visit Claude was asked about (visitors and false alarms), with what it cost
-    would_keep = Claude calls the detector would have skipped in gate mode (daytime, nothing seen)
+    would_keep = Claude calls the animal check would have skipped in gate mode (it judged them empty)
     """
     day = day or date.today().isoformat()
     r = conn.execute(
@@ -658,10 +658,10 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
               SUM({REAL}) AS visitors,
               (SELECT COUNT(DISTINCT label) FROM ({_seen(f"{REAL} AND date(captured_at) = :day")})) AS species,
               SUM({FALSE_TRIGGER}) AS stored_false,
-              SUM(model = 'yolox-tiny') AS settled_on_pi,
+              SUM(model IN ('yolox-tiny', 'bioclip-presence')) AS settled_on_pi,
               SUM(model LIKE 'claude%') AS sent,
-              SUM(model LIKE 'claude%' AND is_night = 0
-                  AND json_extract(raw_json, '$.calls.detector.animal') = 0) AS would_keep
+              SUM(model LIKE 'claude%'
+                  AND json_extract(raw_json, '$.calls.presence.empty') = 1) AS would_keep
             FROM visits WHERE date(captured_at) = :day""",
         {"day": day},
     ).fetchone()
@@ -701,7 +701,7 @@ def totals(conn: sqlite3.Connection) -> dict:
               SUM({REAL}) AS visitors,
               (SELECT COUNT(DISTINCT label) FROM ({_seen(REAL)}) WHERE seen_visitor != 'other') AS species,
               SUM({FALSE_TRIGGER}) AS stored_false,
-              SUM(model = 'yolox-tiny') AS settled_on_pi,
+              SUM(model IN ('yolox-tiny', 'bioclip-presence')) AS settled_on_pi,
               SUM(model LIKE 'claude%') AS sent,
               SUM(escalated) AS escalated,
               SUM(needs_review) AS waiting_review,

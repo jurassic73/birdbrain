@@ -53,7 +53,7 @@ def offline_species_info(monkeypatch):
 def fresh_detector_mode(monkeypatch):
     """The watcher caches the detector mode for 15 s; tests must not see one another's."""
     from birdbrain import watch
-    monkeypatch.setattr(watch, "_mode_cache", (0.0, "", ""))
+    monkeypatch.setattr(watch, "_presence_cache", (0.0, "", ""))
 
 
 @pytest.fixture(autouse=True)

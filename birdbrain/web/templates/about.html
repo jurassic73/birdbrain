@@ -48,10 +48,6 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v14M16 5v14"/></svg>
       <strong>Photo burst</strong><small>{{ cfg.BURST_FRAMES }} photos, the sharpest one wins</small>
     </li>
-    <li class="flow-step where-pi">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg>
-      <strong>Local model</strong><small>A quick first look on the Pi</small>
-    </li>
     {% if presence_mode != 'off' %}
     <li class="flow-step where-pi{% if presence_mode == 'shadow' %} shadow{% endif %}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
@@ -187,7 +183,7 @@
         {{ pct(cfg.WATER_MAX_BLOB) }}% of the water's area, staying near the same spot for
         <strong>{{ cfg.WATER_PERSIST_FRAMES }} frames in a row</strong>. Raindrop rings fade faster than that.
         It rests at night, when nothing flies in to land on the water.
-        {% if detector_installed and detector_mode != 'off' %}Even then, the local model checks first, so a drifting leaf never costs a Claude call.{% endif %}</p>
+        {% if presence_mode != 'off' %}Even then, the Pi's <a href="#presence">animal check</a> looks first, so a drifting leaf never costs a Claude call.{% endif %}</p>
     </article>
     {% endif %}
     {% if zones.ground %}
@@ -239,9 +235,9 @@
           <span class="bk-s">{{ s }} s</span></li>
         {% endfor %}
       </ol>
-      {% if detector_installed and detector_mode != 'off' %}
-      <p class="muted small">During a long wait it doesn't go blind: it still takes photos every {{ cfg.COOLDOWN_NONE }} s and lets the local
-        model look. Only if that sees an animal, or the scenery check spots something new, does Claude get asked. Empty checks aren't even saved.
+      {% if presence_mode != 'off' %}
+      <p class="muted small">During a long wait it doesn't go blind: it still takes photos every {{ cfg.COOLDOWN_NONE }} s and lets the Pi's
+        <a href="#presence">animal check</a> look. Only if it doesn't call the photo empty does Claude get asked. Empty checks aren't even saved.
         After {{ cfg.PROBE_AFTER }} false alarms in a row it stays in this mode until a visitor turns up, with one full Claude check every
         {{ (cfg.FULL_CHECK_EVERY / 60) | round | int }} minutes in case the local look missed something.</p>
       {% endif %}
@@ -283,29 +279,25 @@
 
 {# ---------- 5. Local model ---------- #}
 <section class="about-section" id="local">
-  <h2>The small local model</h2>
-  <p>Before anything leaves the house, a tiny object detector (<strong>YOLOX-tiny</strong>, open source) looks at the
-    photo on the Pi in a fraction of a second. It knows common things like birds, cats, dogs and people, but not
-    squirrels, raccoons or possums, so it's a quick hint rather than the final word.</p>
+  <h2>Checking on the Pi first</h2>
+  <p>Before anything leaves the house, the Pi takes the first look with <strong>BioCLIP 2</strong>, an open-source model of living things.
+    It answers two questions in order: is anything there, and what species is it? Claude is asked only when the Pi can't settle it.
+    Each check runs in one of three modes, and a check earns its way from shadow to gate on its scorecard.</p>
   <div class="modes" role="list">
     {% for m, title, text in [
       ('off', 'Off', 'Not used. Claude sees every motion event.'),
-      ('shadow', 'Shadow', 'Runs and records its opinion, but Claude still sees everything. Builds a scorecard to show whether it can be trusted.'),
-      ('gate', 'Gate', 'If it sees nothing in daylight, Claude isn\'t asked. Never at night, when raccoons and possums visit.'),
+      ('shadow', 'Shadow', 'Runs and records its answer, but Claude still decides. Builds a scorecard to show whether it can be trusted.'),
+      ('gate', 'Gate', 'Its answer counts: a photo it calls empty never goes to Claude, and waits on False triggers for your check.'),
     ] %}
-    <div class="mode{{ ' on' if detector_mode == m }}" role="listitem">
-      <strong>{{ title }}</strong>{% if detector_mode == m %}{{ badge('in use', '') }}{% endif %}
+    <div class="mode{{ ' on' if presence_mode == m }}" role="listitem">
+      <strong>{{ title }}</strong>{% if presence_mode == m %}{{ badge('in use', '') }}{% endif %}
       <p>{{ text }}</p>
     </div>
     {% endfor %}
   </div>
-  <p><strong>Scenery check.</strong> The same model also scores how object-like each part of the photo is, whatever it is,
-    so a squirrel counts even without a label. Rocks, the rim and leaf piles score too, but they're in the same place in
-    the recent empty photos, so they're treated as scenery. Anything left over is something new. On the first 452 photos
-    it would have kept 99% of the empty ones on the Pi and missed none of the visitors; for now it only decides
-    rainy-day checks, and its scorecard on <a href="/stats#scenery">Stats</a> shows whether it can do more.</p>
-  <p class="muted small">{% if not detector_installed %}The model file isn't installed here, so it's skipped. {% endif %}It always checks open-water triggers and rainy-day photos first, whatever the mode.
-    The scorecard is on <a href="/stats#detector">Stats</a>; change modes in <a href="/settings#detector">Settings</a>.</p>
+  <p class="muted small">The animal check also screens open-water triggers and rainy-day photos, whatever its mode (unless it's off).
+    Switch modes in <a href="/settings#local">Settings &gt; Local checks</a>. An earlier object detector (YOLOX-tiny) was retired on
+    2026-10-31: it knew no squirrels, raccoons or possums, and the animal check did its job better.</p>
   <h3 id="presence">Anything there? A check trained on this yard{% if presence_mode != 'off' %} {{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') }}{% endif %}</h3>
   <p>Most motion is leaves, ripples and light, and asking Claude about those is where nearly all the cost goes. So the Pi runs the same
     BioCLIP 2 model on the whole crop box and a small check, trained on this yard's own frames, decides whether anything is there.

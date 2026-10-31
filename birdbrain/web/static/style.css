@@ -1255,3 +1255,16 @@ button.se-all { font-weight: 600; }
 .se-handles .se-handle.se-rotate { fill: #ffd34d; cursor: grab; }
 .se-handles .se-stem { stroke: #fff; stroke-width: 1.5px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; pointer-events: none; }
 .scene-frame path.scene-pool { stroke-dasharray: 6 3; }
+
+/* Settings > Local checks: the steps a photo goes through, Pi first, Claude last. */
+.local-flow { list-style: none; padding: 0; margin: .75rem 0 1rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+.local-flow li { flex: 1 1 8rem; position: relative; padding: .5rem .75rem; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--bg); color: var(--muted); font-size: .9rem; }
+.local-flow li .big { display: block; font-size: 1.4rem; font-weight: 600; color: var(--text); }
+.local-flow li.where-pi { border-left: 4px solid var(--accent); }
+.local-flow li.where-claude { border-left: 4px solid #d97757; }
+.local-step { border-top: 1px solid var(--line); padding-top: .75rem; margin-top: .75rem; }
+.local-step h3 { display: flex; align-items: center; gap: .5rem; margin: 0 0 .25rem; font-size: 1.05rem; }
+.step-n { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%;
+  background: var(--accent); color: var(--accent-text); font-size: .85rem; font-weight: 700; flex: none; }
+.step-n.claude { background: #d97757; color: #fff; }

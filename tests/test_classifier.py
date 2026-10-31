@@ -94,7 +94,7 @@ def test_place_species_are_fetched_page_by_page_and_cached(monkeypatch, tmp_path
 def test_watcher_stores_the_guess_without_changing_claudes_label(monkeypatch, conn):
     burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), (40, 120, 200), np.uint8))[1].tobytes()] * 3
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
-    monkeypatch.setattr(watch.detector, "run", lambda *a, **k: None)
+    monkeypatch.setattr(watch, "presence_mode", lambda: "off")
 
     def fake_identify(*args, **kwargs):
         from birdbrain.identify import Result, Sighting

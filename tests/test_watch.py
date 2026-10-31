@@ -143,8 +143,8 @@ def test_bird_in_water_does_not_touch_the_rim_score():
     "now, cooldown, backoff, can_probe, expected",
     [
         (100, 110, 0, True, "wait"),       # inside the hard cooldown
-        (100, 90, 200, True, "probe"),     # rain backoff with a detector: probe
-        (100, 90, 200, False, "wait"),     # rain backoff without a detector: stay quiet, like before
+        (100, 90, 200, True, "probe"),     # rain backoff with the animal check: probe
+        (100, 90, 200, False, "wait"),     # rain backoff without it: stay quiet, like before
         (100, 90, 95, True, "full"),       # backoff over
     ],
 )
@@ -154,7 +154,7 @@ def test_motion_action(now, cooldown, backoff, can_probe, expected):
 
 @pytest.fixture
 def pipeline(monkeypatch, conn):
-    """handle_event with the camera, detector and Claude faked."""
+    """handle_event with the camera, the local animal check and Claude faked."""
     burst = [cv2.imencode(".jpg", frame())[1].tobytes()] * 3
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
     asked = []
@@ -167,8 +167,13 @@ def pipeline(monkeypatch, conn):
 
     monkeypatch.setattr(watch.identify, "identify", fake_identify)
 
+    monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
+    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, box: None)
+
     def set_detector(animal):
-        monkeypatch.setattr(watch.detector, "run", lambda *a, **k: {"animal": animal, "best": None, "seconds": 0.5})
+        """animal=True: the animal check sees something; False: it calls the frame empty."""
+        monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {
+            "model": "bioclip-presence", "score": 0.9 if animal else 0.1, "threshold": 0.4, "empty": not animal})
 
     return conn, asked, set_detector
 
@@ -362,8 +367,8 @@ def test_ground_calls_have_their_own_daily_count(conn, add_visit):
 def test_ground_events_use_the_ground_crop(pipeline, monkeypatch):
     conn, asked, set_detector = pipeline
     crops = []
-    monkeypatch.setattr(watch.detector, "run", lambda jpeg, crop: crops.append(crop) or
-                        {"animal": True, "best": None, "seconds": 0.5})
+    set_detector(True)
+    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, crop: crops.append(crop))
     monkeypatch.setattr(watch.config, "GROUND_CROP", (0.0, 0.5, 1.0, 0.5))
     watch.handle_event(trigger="ground")
     assert watch.json.loads(watch.db.latest_visit(conn)["raw_json"])["trigger"] == "ground"
@@ -410,20 +415,18 @@ def test_long_runs_of_false_triggers_probe_for_half_an_hour():
     long = watch.after_false(1000.0, watch.config.PROBE_AFTER, 300, can_probe=True)
     assert short == (1000.0 + watch.config.COOLDOWN_NONE, 1020.0)
     assert long == (1000.0 + watch.config.COOLDOWN_NONE, 1000.0 + watch.config.FULL_CHECK_EVERY)
-    assert watch.after_false(1000.0, 9, 300, can_probe=False) == (1300.0, 1300.0)  # no detector: just wait
+    assert watch.after_false(1000.0, 9, 300, can_probe=False) == (1300.0, 1300.0)  # no animal check: just wait
 
 
-def test_probe_passes_on_animals_or_anything_new():
-    det = lambda animal, scenery: {"animal": animal, "scenery": scenery}
-    assert watch.probe_passes(det(True, None))
-    assert watch.probe_passes(det(False, {"empty": False, "novel": 0.5}))  # e.g. a squirrel
-    assert not watch.probe_passes(det(False, {"empty": True, "novel": 0.0}))
-    assert not watch.probe_passes(det(False, None)) and not watch.probe_passes(None)
+def test_probe_passes_unless_the_animal_check_calls_it_empty():
+    assert watch.probe_passes({"empty": False, "score": 0.9})
+    assert not watch.probe_passes({"empty": True, "score": 0.1})
+    assert watch.probe_passes(None)  # check off or failed: Claude decides
+    assert watch.probe_passes({"empty": False, "score": None})  # not trained yet
 
 
-def test_probe_with_something_new_goes_to_claude(pipeline, monkeypatch):
+def test_probe_with_an_untrained_check_goes_to_claude(pipeline, monkeypatch):
     conn, asked, set_detector = pipeline
-    set_detector(False)
-    monkeypatch.setattr(watch.scenery, "check", lambda *a, **k: {"novel": 0.5, "empty": False, "background": 30})
+    monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {"model": "bioclip-presence", "score": None, "empty": False})
     assert watch.handle_event(probe=True, trigger="ground") == "bird"
     assert asked == [1]

@@ -61,7 +61,6 @@ def test_it_retrains_when_a_label_changes(conn, yard, add_visit):
 def test_gate_skips_claude_and_keeps_the_frame_for_review(monkeypatch, conn, yard):
     burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), 90, np.uint8))[1].tobytes()] * 3
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
-    monkeypatch.setattr(watch.detector, "run", lambda *a, **k: None)
     monkeypatch.setattr(watch, "presence_mode", lambda: "gate")
     emb = vec(False, yard)
     monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: emb)
@@ -80,7 +79,6 @@ def test_shadow_records_the_score_and_still_asks_claude(monkeypatch, conn, yard)
     from birdbrain.identify import Result, Sighting
     burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), 90, np.uint8))[1].tobytes()] * 3
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
-    monkeypatch.setattr(watch.detector, "run", lambda *a, **k: None)
     monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
     monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: vec(False, yard))
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
@@ -121,7 +119,7 @@ def test_false_triggers_confirm_all_shown_skips_real_visits(client, conn, add_vi
 
 
 def test_settings_switches_the_animal_check(client, conn):
-    assert "Local animal check" in client.get("/settings").text
+    assert "Local checks" in client.get("/settings").text
     client.post("/settings/presence", data={"mode": "gate"})
     assert presence.mode(conn) == "gate"
     assert client.post("/settings/presence", data={"mode": "nope"}).status_code == 400

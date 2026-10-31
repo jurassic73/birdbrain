@@ -212,7 +212,7 @@ def test_watcher_stores_the_other_animals_and_alerts_on_a_new_one(monkeypatch, c
     db.set_value(conn, "ntfy_topic", "t")
     burst = [cv2.imencode(".jpg", frame())[1].tobytes()] * 3
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
-    monkeypatch.setattr(watch.detector, "run", lambda *a, **k: None)
+    monkeypatch.setattr(watch, "presence_mode", lambda: "off")
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
         junco(), HAIKU, False, False, {"also": [{k: v for k, v in BUSHTITS[0].items()}]}))
     sent = []
