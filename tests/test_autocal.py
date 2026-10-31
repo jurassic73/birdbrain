@@ -290,21 +290,18 @@ def test_saving_the_schedule(client, conn):
     assert client.post("/settings/zones", data={"auto": "1", "time1": "noon"}).status_code == 400
 
 
-def test_undo_puts_the_zones_back_and_reset_returns_to_env(client, conn, env_zones):
+def test_undo_puts_the_zones_back(client, conn, env_zones):
     autocal.run([scene()], "scheduled")
     moved = zones.load(conn)
     assert moved != Z
     html = client.get("/settings").text
     cal_id = db.recent_calibrations(conn, 1)[0]["id"]
-    assert f"/settings/zones/undo/{cal_id}" in html and "Use the .env zones" in html
+    assert f"/settings/zones/undo/{cal_id}" in html and "Use the .env zones" not in html
     assert 'data-tip="Moved:' in html
     client.post(f"/settings/zones/undo/{cal_id}")
     assert zones.load(conn) == Z and db.recent_calibrations(conn, 1)[0]["status"] == "undone"
     assert "/settings/zones/undo/" not in client.get("/settings").text   # nothing left to undo
-
-    zones.save(conn, moved)
-    client.post("/settings/zones/reset")
-    assert zones.load(conn) == Z and zones.stored(conn) is None
+    assert client.post("/settings/zones/reset").status_code in (404, 405)
 
 
 def test_calibration_pictures_are_served_by_name_only(client, conn):

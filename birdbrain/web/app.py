@@ -846,7 +846,7 @@ def zones_context(conn) -> dict:
     if undo and zones.Zones.from_dict(json.loads(undo["after_json"])) != current:
         undo = None
     return {"recal": zones.schedule(conn), "recal_runs": runs, "recal_pending": zones.pending(conn), "recal_status": zones.status(conn),
-            "recal_undo": undo["id"] if undo else None, "recal_stored": zones.stored(conn) is not None,
+            "recal_undo": undo["id"] if undo else None,
             "recal_spots": len(current.spots), "recal_ring": bool(current.ring), "zones_now": zone_shapes(current),
             "zones_raw": current.to_dict(), "live_refresh": config.LIVE_REFRESH,
             "zone_objs": [{**o, **scene_shape(o), "color": SCENE_COLORS[i % len(SCENE_COLORS)],
@@ -986,14 +986,6 @@ async def save_manual_zones(request: Request, conn=Depends(get_conn)):
                        summary="You adjusted the zones by hand. Later automatic checks start from these.",
                        before_json=json.dumps(before.to_dict()), after_json=json.dumps(after.to_dict()))
     return {"ok": True}
-
-
-@app.post("/settings/zones/reset")
-def reset_zones(conn=Depends(get_conn)):
-    zones.reset(conn)
-    zones.clear_reference()
-    _record_undo(conn, "Back to the zones in .env (the last hand calibration).")
-    return RedirectResponse("/settings#zones", status_code=303)
 
 
 # --- Scene: Claude outlines the objects birds use, the owner accepts or retries ---

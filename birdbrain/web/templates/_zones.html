@@ -97,9 +97,6 @@
     {% if recal_undo and not recal_pending %}
     <form method="post" action="/settings/zones/undo/{{ recal_undo }}"><button type="submit" class="secondary">Undo last change</button></form>
     {% endif %}
-    {% if recal_stored and not recal_pending %}
-    <form method="post" action="/settings/zones/reset"><button type="submit" class="secondary">Use the .env zones</button></form>
-    {% endif %}
   </div>
   {% if recal_pending %}
   <p class="muted small">The watcher starts within half a minute, then samples quiet frames for about a minute. This updates by itself.</p>
