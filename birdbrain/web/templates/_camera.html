@@ -1,0 +1,116 @@
+{% from "_macros.html" import badge %}
+{% macro field(f, values) %}
+  {% set v = values.get(f.key) %}
+  {% if f.kind == 'choice' %}
+  <div class="cam-row" data-tip="{{ f.tip }}">
+    <span>{{ f.label }}</span>
+    <div class="choices">
+      {% for value, text in f.choices.items() %}
+      <label class="choice"><input type="radio" name="{{ f.key }}" value="{{ value }}" {% if (v if v is not none else '') == value %}checked{% endif %}><span>{{ text }}</span></label>
+      {% endfor %}
+    </div>
+  </div>
+  {% elif f.kind == 'toggle' %}
+  <label class="cam-toggle" data-tip="{{ f.tip }}">
+    <input type="hidden" name="{{ f.key }}" value="0">
+    <input type="checkbox" name="{{ f.key }}" value="1" {% if v %}checked{% endif %}>
+    <span>{{ f.label }}</span>
+  </label>
+  {% elif f.kind == 'time' %}
+  <label class="cam-row" data-tip="{{ f.tip }}">
+    <span>{{ f.label }}</span>
+    <input type="time" name="{{ f.key }}" value="{{ v or '' }}">
+  </label>
+  {% else %}
+  <label class="cam-slider" data-tip="{{ f.tip }}">
+    <span>{{ f.label }}</span>
+    <input type="range" name="{{ f.key }}" min="{{ f.lo }}" max="{{ f.hi }}" value="{{ v if v is not none else f.lo }}"
+           oninput="this.nextElementSibling.value = this.value">
+    <output>{{ v if v is not none else f.lo }}</output>
+  </label>
+  {% endif %}
+{% endmacro %}
+<div id="camera-panel">
+{% if not cam_configured %}
+  <p class="muted">Add the camera's API key to <code>.env</code> as <code>CAM_API_KEY</code> (Thingino web UI, Settings, API key) and redeploy.</p>
+{% elif cam_rebooting %}
+  <p class="notice saved">The camera is restarting. It takes about 5 minutes to come back; the watcher reconnects by itself.</p>
+{% elif cam_down %}
+  <p class="notice">Couldn't reach the camera: {{ cam_down }}.</p>
+  <div class="actions"><button hx-get="/settings/camera" hx-target="#camera-panel" hx-swap="outerHTML">Try again</button></div>
+{% else %}
+  <div class="cam-layout" data-saved="{{ cam_stamp if cam_saved in ('picture', 'daynight', 'undone') else '' }}">
+  <aside class="cam-live">
+    <img id="cam-live-img" src="/live/latest.jpg?t={{ cam_stamp }}" alt="The camera's view right now">
+    <p class="cam-live-note muted small" id="cam-live-note">Live view, refreshes every few seconds.</p>
+    {% set st = cam_status %}
+    <div class="today-stats cam-stats">
+      <div>{% if st.mode %}{{ badge(st.mode ~ ' mode', 'night' if st.mode == 'night' else '') }}{% else %}<span class="muted">mode unknown</span>{% endif %}</div>
+      {% if st.get('light') is not none %}<div data-tip="How bright the sensor sees the scene, 0 to 100. The camera compares this with the day and night levels."><span class="big">{{ st.light }}</span> light</div>{% endif %}
+      {% if st.get('clock_off') is not none %}<div data-tip="Camera clock minus this computer's clock. Visits use the Pi's clock either way."><span class="big {{ 'bad' if st.clock_off | abs > 60 }}">{{ '%+d' % st.clock_off }}s</span> clock</div>{% endif %}
+      {% if st.get('mem_free') is not none %}<div data-tip="Memory the camera has to spare."><span class="big">{{ st.mem_free }}%</span> memory free</div>{% endif %}
+    </div>
+  </aside>
+
+  <div class="cam-main">
+    <div class="cam-tabs" role="tablist">
+      {% for key, label in cam_tabs.items() %}
+      <button type="button" role="tab" class="cam-tab" data-cam-tab="{{ key }}" aria-selected="{{ 'true' if key == cam_tab else 'false' }}">{{ label }}</button>
+      {% endfor %}
+      <button type="button" role="tab" class="cam-tab" data-cam-tab="changes" aria-selected="{{ 'true' if cam_tab == 'changes' else 'false' }}">Changes{% if cam_log %} ({{ cam_log | length }}){% endif %}</button>
+    </div>
+
+    {% if cam_saved == 'picture' %}<p class="notice saved">Saved on the camera. It keeps it after a restart.</p>{% endif %}
+    {% if cam_saved == 'daynight' %}<p class="notice saved">Saved. The camera reloads its day/night rules.</p>{% endif %}
+    {% if cam_saved == 'undone' %}<p class="notice saved">Put back.</p>{% endif %}
+    {% if cam_error %}<p class="notice">{{ cam_error }}</p>{% endif %}
+
+    {% for key, label in cam_tabs.items() if key != 'daynight' %}
+    <form class="settings-form cam-form" data-cam-pane="{{ key }}" {% if key != cam_tab %}hidden{% endif %}
+          hx-post="/settings/camera/picture" hx-target="#camera-panel" hx-swap="outerHTML">
+      <input type="hidden" name="tab" value="{{ key }}">
+      {% if key == 'picture' %}<p class="muted small">Big changes shift what the motion zones see as normal; expect a few false triggers while it settles.</p>{% endif %}
+      {% for f in cam_image_fields if f.tab == key and f.key in cam_picture %}{{ field(f, cam_picture) }}{% endfor %}
+      <div class="actions">
+        <button type="submit">Save</button>
+        <button type="submit" name="defaults" value="1" class="link-btn" data-tip="This tab's settings back to Thingino's defaults.">Defaults</button>
+      </div>
+    </form>
+    {% endfor %}
+
+    <form class="settings-form cam-form" data-cam-pane="daynight" {% if cam_tab != 'daynight' %}hidden{% endif %}
+          hx-post="/settings/camera/daynight" hx-target="#camera-panel" hx-swap="outerHTML">
+      {% set dn = cam_daynight_fields %}
+      {{ field(dn[0], cam_daynight) }}
+      {% for f in dn if f.kind == 'range' %}{{ field(f, cam_daynight) }}{% endfor %}
+      <h3>When it switches</h3>
+      <div class="cam-toggles">{% for f in dn if f.key.startswith('controls.') %}{{ field(f, cam_daynight) }}{% endfor %}</div>
+      <h3>Schedule</h3>
+      {% for f in dn if f.key.startswith('schedule.') %}{{ field(f, cam_daynight) }}{% endfor %}
+      <div class="actions"><button type="submit">Save</button></div>
+    </form>
+
+    <div data-cam-pane="changes" {% if cam_tab != 'changes' %}hidden{% endif %}>
+      {% if cam_log %}
+      <ul class="cam-log">
+        {% for c in cam_log %}
+        <li>
+          <span class="muted small">{{ c.at | replace('T', ' ') }}</span>
+          {% for k, v in c.after.items() %}{{ cam_fields[k].label if k in cam_fields else k | replace('_', ' ') | capitalize }} {{ cam_show(k, c.before[k]) }} &rarr; {{ cam_show(k, v) }}{% if not loop.last %}, {% endif %}{% endfor %}
+          <button class="link-btn" hx-post="/settings/camera/undo/{{ c.id }}" hx-target="#camera-panel" hx-swap="outerHTML">Undo</button>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="muted">No changes yet. Each save is listed here with an Undo.</p>
+      {% endif %}
+      <div class="actions">
+        <button hx-post="/settings/camera/reboot" hx-target="#camera-panel" hx-swap="outerHTML"
+                hx-confirm="Restart the camera? It's offline for about 5 minutes."
+                data-tip="Restarts the camera. Nothing is recorded until it's back (about 5 minutes).">Restart camera</button>
+      </div>
+    </div>
+  </div>
+  </div>
+{% endif %}
+</div>

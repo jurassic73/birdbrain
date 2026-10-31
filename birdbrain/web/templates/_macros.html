@@ -1,0 +1,70 @@
+{# A visit thumbnail with its circles (the owner's saved ones, else Claude's) drawn over it by static/thumb-marks.js. #}
+{% macro thumb(v, cls="thumb", lazy=True, full=False) -%}
+<span class="{{ cls }}">
+  <img src="/images/{{ v.image_path if full else v.thumb_path }}" alt="{{ v.label }}"{% if lazy %} loading="lazy"{% endif %}>
+  {%- set marks = photo_marks(v) %}{% if marks %}<svg class="marks thumb-marks" preserveAspectRatio="xMidYMid slice" aria-hidden="true" data-marks='{{ marks | tojson }}'></svg>{% endif %}
+</span>
+{%- endmacro %}
+
+{% macro sp_name(label, text=None) -%}
+{%- if has_card(label) -%}
+<span class="sp-name" data-species="{{ label }}" role="button" tabindex="0">{{ text or label }}</span>
+{%- else -%}
+{{ text or label }}
+{%- endif -%}
+{%- endmacro %}
+
+{# A status pill. Every pill says what it means in a hover tooltip (static/tips.js); add new pills here. #}
+{% macro badge(text, cls, tag="span") -%}
+{%- set tips = {
+  "high": "High confidence: Claude was sure of this answer.",
+  "medium": "Medium confidence: Claude thought this was likely, but key marks were hidden, blurry or far away.",
+  "low": "Low confidence: Claude was guessing. Low answers about an animal go to the review queue.",
+  "night": "Night: taken in infrared after dark, so the photo is black and white.",
+  "corrected": "Corrected: you changed this label. Claude's original answer is still on the visit page.",
+  "Needs review": "Needs review: Claude was still unsure after a second look. Pick what was there to clear it.",
+  "Early arrival": "Early arrival: seen the month before this species usually shows up here, going by local iNaturalist reports.",
+  "Late departure": "Late departure: seen the month after this species usually leaves, going by local iNaturalist reports.",
+  "Unusual this time of year": "Unusual: this species is seldom reported here in this month, going by local iNaturalist reports.",
+  "Rarely reported here": "Rarely reported here: few local iNaturalist reports of this species in any month.",
+  "in use": "In use: the local model mode picked on the Settings page.",
+  "on": "On: this alert is switched on in Settings.",
+  "off": "Off: this alert is switched off in Settings.",
+  "moved": "Moved: the zones were updated to match what the camera sees now.",
+  "no change": "No change: the rocks and the camera were where the zones expected them.",
+  "skipped": "Skipped: nothing was changed this time (too dark, too busy, or the camera moved too far to fix on its own).",
+  "undone": "Undone: the zones were put back the way they were before.",
+  "in prompt": "In prompt: this line is sent to Claude with every identification right now.",
+  "switched off": "Switched off: you took this lesson out of the prompt. The visit keeps your label.",
+  "day mode": "Day mode: the camera sees in color, infrared off.",
+  "night mode": "Night mode: infrared on, so photos are black and white.",
+  "Confirmed": "Confirmed: 3 or more sure visits (high confidence, or labelled by you). A medium answer for this species skips Sonnet's second look, so there's no need to confirm it.",
+  "Not confirmed yet": "Not confirmed yet: fewer than 3 sure visits (high confidence, or labelled by you). Picking the right label on a medium visit counts toward 3; after that its medium answers skip Sonnet.",
+  "Claude saw": "Claude saw: the sharpest frame of the burst, the one sent to Claude and kept as this visit's photo.",
+  "checked": "Checked: you said this answer is right. The local animal check on the Pi trains on it, counting it extra.",
+  "pi only": "Pi only: the local animal check on the Pi judged this frame empty, so Claude wasn't asked. Check it, then confirm it or correct it.",
+  "shadow": "Shadow: the local species classifier on the Pi made this guess only to be scored. Claude's answer (or yours) is the label.",
+  "too old": "Too old: newer lessons fill the prompt, so this one isn't sent any more. Switching newer ones off brings it back.",
+} -%}
+<{{ tag }} class="badge {{ cls }}"{% if tips[text] %} data-tip="{{ tips[text] }}"{% endif %}>{{ text }}</{{ tag }}>
+{%- endmacro %}
+
+{# Whether a species is confirmed here (db.confirmed_species); needs `confirmed` from the route. #}
+{% macro confirm_badge(label) -%}
+{%- if label in confirmed %}{{ badge("Confirmed", "confirmed") }}{% else %}{{ badge("Not confirmed yet", "unconfirmed") }}{% endif -%}
+{%- endmacro %}
+
+{# The Claude mark, on every button that asks Claude something (and so costs a little). #}
+{% macro claude_mark() %}<svg class="claude-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.6 12.1L7.3 0.1L5.9 0.7L10.4 13.5Z"/><path d="M13.7 13.1L14.8 0.7L13.4 0.5L10.3 12.5Z"/><path d="M13.4 13.9L20.4 3.7L19.2 2.7L10.6 11.7Z"/><path d="M12.5 14.5L23.6 10.1L23.2 8.7L11.5 11.1Z"/><path d="M11.8 14.6L23.4 14.5L23.6 13.1L12.2 11.0Z"/><path d="M11.0 14.3L22.0 20.1L22.8 18.9L13.0 11.3Z"/><path d="M10.5 13.7L16.6 22.5L17.8 21.9L13.5 11.9Z"/><path d="M10.2 12.7L10.8 23.8L12.2 23.8L13.8 12.9Z"/><path d="M10.5 11.8L5.2 21.7L6.4 22.5L13.5 13.8Z"/><path d="M11.1 11.3L2.2 17.9L3.0 19.1L12.9 14.3Z"/><path d="M12.2 11.1L0.4 10.5L0.2 11.9L11.8 14.5Z"/><path d="M13.1 11.4L2.5 4.8L1.7 6.0L10.9 14.2Z"/><path d="M8.8 12.8a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0 -6.4 0Z"/></svg>{% endmacro %}
+
+{# The zones (app.zone_shapes) as an SVG to lay over a camera frame in a .zones-frame. #}
+{% macro zone_svg(zones) -%}
+<svg viewBox="0 0 {{ zones.w }} {{ zones.h }}" preserveAspectRatio="none" aria-label="Zones drawn over the camera view">
+          {% if zones.ground %}<path class="z-ground" d="{{ zones.ground }}" fill-rule="evenodd"/>{% endif %}
+          {% if zones.rim %}<path class="z-rim" d="{{ zones.rim }}" fill-rule="evenodd"/>{% endif %}
+          {% if zones.water %}<path class="z-water" d="{{ zones.water }}" fill-rule="evenodd"/>{% endif %}
+          {% for s in zones.spots %}<path class="z-rim" d="{{ s }}"/>{% endfor %}
+          {% if zones.roi %}<rect class="z-rim" x="{{ zones.roi.x }}" y="{{ zones.roi.y }}" width="{{ zones.roi.w }}" height="{{ zones.roi.h }}"/>{% endif %}
+          {% if zones.crop %}<rect class="z-crop" x="{{ zones.crop.x }}" y="{{ zones.crop.y }}" width="{{ zones.crop.w }}" height="{{ zones.crop.h }}"/>{% endif %}
+        </svg>
+{%- endmacro %}

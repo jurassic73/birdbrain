@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% block title %}Settings | Birdbrain{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Settings</h1></div>
+
+<details class="settings-card" id="detector" open>
+  <summary><h2>Local detector</h2><span class="summary-hint">{{ detector_mode | capitalize }}</span></summary>
+  <div class="settings-body">
+  {% if detector_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
+  <p class="muted">A small model on the Pi that looks for animals before Claude does.</p>
+
+  {% set d = detector %}
+  <div class="today-stats detector-stats">
+    <div><span class="big">{{ d.animals }}</span> visitors</div>
+    <div><span class="big">{{ d.caught }}</span> it spotted</div>
+    <div><span class="big {{ 'bad' if d.would_miss }}">{{ d.would_miss | length }}</span> it missed</div>
+    <div><span class="big">{{ d.would_save }}</span> calls it could skip{% if d.would_save %} ({{ (d.would_save * call_usd) | usd }}){% endif %}</div>
+  </div>
+  <p class="muted small">Daytime, last {{ d.days }} days. <a href="/stats#detector">Details</a></p>
+
+  <form class="settings-form" method="post" action="/settings/detector">
+    <div class="choices">
+      {% for key, label, hint in [('off', 'Off', 'Claude checks everything'),
+                                  ('shadow', 'Shadow', 'Pi watches, Claude checks everything'),
+                                  ('gate', 'Gate', 'Pi skips empty daytime frames')] %}
+      <label class="choice">
+        <input type="radio" name="mode" value="{{ key }}" {% if key == detector_mode %}checked{% endif %}>
+        <span>{{ label }} <small>{{ hint }}</small>{% if key == advice[0] %} <em class="rec">Recommended</em>{% endif %}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <p class="advice"><strong>Recommended: {{ advice[0] | capitalize }}.</strong> {{ advice[1] }}{% if advice[0] == 'gate' %} Nights always go to Claude.{% endif %}</p>
+    {% if not detector_installed %}<p class="muted small">Model not installed on this machine; run <code>scripts/get_model.sh</code>.</p>{% endif %}
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</details>
+
+<details class="settings-card" id="presence" open>
+  <summary><h2>Local animal check</h2><span class="summary-hint">{{ presence_mode | capitalize }}</span></summary>
+  <div class="settings-body">
+  {% if presence_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
+  <p class="muted">Is anything there? A check on the Pi trained on this yard's own frames: your corrections and checks teach it.</p>
+  {% set p = presence_report %}
+  {% if p.frames %}
+  <div class="today-stats detector-stats">
+    <div><span class="big">{{ p.visitors }}</span> visitors</div>
+    <div><span class="big {{ 'bad' if p.missed }}">{{ p.missed | length }}</span> it called empty</div>
+    <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames caught</div>
+  </div>
+  <p class="muted small">Last {{ p.days }} days. <a href="/stats#presence">Details</a></p>
+  {% endif %}
+  <form class="settings-form" method="post" action="/settings/presence">
+    <div class="choices">
+      {% for key, label, hint in [('off', 'Off', 'Claude checks everything'),
+                                  ('shadow', 'Shadow', 'Pi scores, Claude checks everything'),
+                                  ('gate', 'Gate', 'Pi skips frames it judges empty, day and night')] %}
+      <label class="choice">
+        <input type="radio" name="mode" value="{{ key }}" {% if key == presence_mode %}checked{% endif %}>
+        <span>{{ label }} <small>{{ hint }}</small></span>
+      </label>
+      {% endfor %}
+    </div>
+    <p class="advice">In gate mode, frames it skips are kept as false triggers marked {{ badge("pi only", "pi-only") }}: check them on <a href="/false-triggers">False triggers</a> and correct any with an animal.</p>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</details>
+
+<details class="settings-card" id="camera" open data-m-closed>
+  <summary><h2>Camera</h2><span class="summary-hint">Picture, day and night</span></summary>
+  <div class="settings-body">
+  <p class="muted">Changes the camera's own settings; they apply at once and stay after a restart.</p>
+  <div hx-get="/settings/camera" hx-trigger="load" hx-swap="outerHTML"><p class="muted small">Asking the camera…</p></div>
+  </div>
+</details>
+
+<details class="settings-card" id="zones" open data-m-closed>
+  <summary><h2>Zones</h2><span class="summary-hint">{{ ('Checked daily at ' ~ recal.labels | join(' and ')) if recal.auto and recal.times else 'Automatic checks off' }}</span></summary>
+  <div class="settings-body">
+  {% if zones_saved %}<p class="notice saved">Saved.</p>{% endif %}
+  <p class="muted">Rocks get nudged and cameras shift. The watcher looks at the bath for about a minute, moves each
+    rock spot back onto its rocks and, if the camera moved, every zone with it. <a href="/about#zones">See the zones</a></p>
+
+  {% include "_zones.html" %}
+
+  <form class="settings-form" method="post" action="/settings/zones">
+    <fieldset class="field">
+      <legend>Automatic checks</legend>
+      <div class="choices">
+        <label class="choice">
+          <input type="checkbox" name="auto" value="1" {% if recal.auto %}checked{% endif %}>
+          <span>Every day <small>at the times below</small></span>
+        </label>
+      </div>
+      <div class="time-range sun-times">
+        {% for n, ev, word in [(1, 'sunrise', 'after'), (2, 'sunset', 'before')] %}
+        {% set t = recal.times[n - 1] if recal.times | length >= n else '' %}
+        {% set on = t == ev %}
+        {% if n == 2 %}<span>and</span>{% endif %}
+        <div class="sun-slot">
+          <input type="time" name="time{{ n }}" value="{{ recal.sun.get(ev, '') if on else t }}"
+                 aria-label="{{ 'First' if n == 1 else 'Second' }} time" {% if on %}disabled{% endif %}>
+          <label class="sun-toggle{{ ' off' if not recal.located }}"
+                 {% if not recal.located %}data-tip="Set SITE_LAT and SITE_LON in .env to use the local {{ ev }}"{% endif %}>
+            <input type="checkbox" name="sun{{ n }}" value="1" data-sun="{{ recal.sun.get(ev, '') }}"
+                   {% if on %}checked{% endif %} {% if not recal.located %}disabled{% endif %}>
+            Use local {{ ev }} <small class="muted">(1 h {{ word }}{% if recal.sun.get(ev) %}, {{ recal.sun[ev] }} today{% endif %})</small>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      <script>
+        document.querySelectorAll('.sun-slot input[type=checkbox]').forEach(box => box.addEventListener('change', () => {
+          const time = box.closest('.sun-slot').querySelector('input[type=time]');
+          time.disabled = box.checked;
+          if (box.checked && box.dataset.sun) { time.dataset.own = time.value; time.value = box.dataset.sun; }
+          else if (!box.checked && time.dataset.own !== undefined) time.value = time.dataset.own;
+        }));
+      </script>
+      <small class="muted">Daylight only: the rocks don't show in night vision. Avoid times when sun glints off the water. The sun options follow the seasons, keeping each check an hour inside daylight.</small>
+    </fieldset>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</details>
+
+<details class="settings-card" id="storage" open>
+  <summary><h2>Storage</h2><span class="summary-hint">{{ storage.bytes | mb }}{% if storage.limit_bytes %} of {{ storage.limit_bytes | mb }}{% endif %}</span></summary>
+  <div class="settings-body">
+  {% if pruned is not none %}<p class="notice saved">Saved.{% if pruned %} Deleted the {{ pruned }} oldest false trigger{{ 's' if pruned != 1 }}.{% endif %}</p>{% endif %}
+  {% include "_storage.html" %}
+
+  <form class="settings-form" method="post" action="/settings/storage">
+    <fieldset class="field">
+      <legend>False-trigger limit</legend>
+      <div class="choices">
+        {% for mb in limit_choices %}
+        <label class="choice">
+          <input type="radio" name="limit_mb" value="{{ '%g' | format(mb) }}" {% if mb == current_limit %}checked{% endif %}>
+          <span>{{ 'No limit' if not mb else ('%g GB' | format(mb / 1000) if mb >= 1000 else '%g MB' | format(mb)) }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <small class="muted">Oldest are deleted past the limit, right away if you lower it. Corrected ones are kept.</small>
+    </fieldset>
+
+    <fieldset class="field">
+      <legend>False-trigger photo size</legend>
+      <div class="choices">
+        {% for key, label, hint in [('small', 'Small', '640 px, ~75 KB'), ('medium', 'Medium', '960 px, ~200 KB'),
+                                    ('large', 'Large', '1280 px, ~350 KB'), ('full', 'Full', '1920 px, ~500 KB')] %}
+        <label class="choice">
+          <input type="radio" name="photo" value="{{ key }}" {% if key == storage.photo %}checked{% endif %}>
+          <span>{{ label }} <small>{{ hint }}</small></span>
+        </label>
+        {% endfor %}
+      </div>
+      <small class="muted">New photos only. Real visits are always full size.</small>
+    </fieldset>
+
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</details>
+
+<details class="settings-card" id="alerts" open>
+  {% set on = ['new species' if alerts.new_species, 'raccoons and possums' if alerts.mammals, 'out of season' if alerts.unusual] | select | list %}
+  <summary><h2>Notifications</h2><span class="summary-hint">{{ ('On: ' ~ on | join(', ')) if alerts.topic and on else 'Off' }}</span></summary>
+  <div class="settings-body">
+  {% if alerts_saved %}<p class="notice saved">Saved.</p>{% endif %}
+  <p class="muted">Push alerts via <a href="https://ntfy.sh" rel="noopener" target="_blank">ntfy</a>. Install the app on your phone and subscribe to the topic you enter here.</p>
+
+  <form class="settings-form" method="post" action="/settings/alerts">
+    <div class="field">
+      <label for="ntfy_topic">ntfy topic</label>
+      <input id="ntfy_topic" name="ntfy_topic" value="{{ alerts.topic }}"
+             placeholder="e.g. birdbath-abc123" autocomplete="off">
+      <small class="muted">Acts as a password: pick something hard to guess.</small>
+    </div>
+
+    <fieldset class="field">
+      <legend>Alert on</legend>
+      <div class="choices">
+        <label class="choice">
+          <input type="checkbox" name="ntfy_new_species" value="1" {% if alerts.new_species %}checked{% endif %}>
+          <span>New species <small>First time a species visits the yard</small></span>
+        </label>
+        <label class="choice">
+          <input type="checkbox" name="ntfy_mammals" value="1" {% if alerts.mammals %}checked{% endif %}>
+          <span>Raccoons and possums <small>Any visit, day or night</small></span>
+        </label>
+        <label class="choice">
+          <input type="checkbox" name="ntfy_unusual" value="1" {% if alerts.unusual %}checked{% endif %}>
+          <span>Out of season <small>Early arrivals, late departures, unusual months</small></span>
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="field">
+      <label>Quiet hours</label>
+      <div class="time-range">
+        <input type="time" name="ntfy_quiet_start" value="{{ alerts.quiet_start }}">
+        <span>to</span>
+        <input type="time" name="ntfy_quiet_end" value="{{ alerts.quiet_end }}">
+      </div>
+      <small class="muted">No alerts during these hours. Leave blank to always alert. Can span midnight (e.g. 22:00 to 07:00).</small>
+    </div>
+
+    <div class="actions">
+      <button type="submit">Save</button>
+      <button type="submit" class="secondary" id="ntfy-test" formaction="/settings/alerts/test"
+              {% if not alerts.topic %}disabled title="Enter a topic and save first"{% endif %}>Send test</button>
+    </div>
+    {% if alerts_test == 'sent' %}<p class="notice saved">Test sent. Check your phone.</p>{% endif %}
+    {% if alerts_test == 'no_topic' %}<p class="notice">Enter a topic first.</p>{% endif %}
+  </form>
+  </div>
+</details>
+
+<script src="/static/cam-live.js?v={{ asset_version }}"></script>
+<script>
+  document.getElementById("ntfy-test")?.addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    // defer so the click still submits before the button is disabled
+    setTimeout(() => { btn.classList.add("sending"); btn.textContent = "Sending…"; btn.disabled = true; });
+  });
+</script>
+
+<script>
+  // Remember which sections are open; always open the one just saved or linked to.
+  document.querySelectorAll("details.settings-card[id]").forEach((d) => {
+    const key = "settings-open:" + d.id;
+    try { const v = localStorage.getItem(key); if (v !== null) d.open = v === "1"; } catch {}
+    if (location.hash === "#" + d.id || d.querySelector(".notice")) d.open = true;
+    d.addEventListener("toggle", () => { try { localStorage.setItem(key, d.open ? "1" : "0"); } catch {} });
+  });
+  window.addEventListener("hashchange", () => {
+    const d = document.getElementById(location.hash.slice(1));
+    if (d?.matches("details.settings-card")) { d.open = true; d.scrollIntoView(); }
+  });
+</script>
+{% endblock %}

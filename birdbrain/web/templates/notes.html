@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% block title %}Claude's Notes | Birdbrain{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Claude's Notes</h1></div>
+<p class="muted notes-intro">Everything Claude is told about your yard: your notes, the objects it outlined, and the lessons from your corrections.</p>
+
+<div class="notes-grid">
+<div class="notes-col">
+<details class="settings-card" id="camera" open>
+  <summary><h2>Your yard</h2><span class="summary-hint">{{ site.location or 'No location set' }}</span></summary>
+  <div class="settings-body">
+  {% include "_yard_form.html" %}
+  </div>
+</details>
+</div>
+
+<div class="notes-col">
+<details class="settings-card" id="scene" open>
+  <summary><h2>Scene</h2><span class="summary-hint">{{ (scene.objects | length ~ ' object' ~ ('s' if scene.objects | length != 1) ~ ' outlined') if scene else 'Not outlined yet' }}</span></summary>
+  <div class="settings-body">
+  {% include "_scene.html" %}
+  </div>
+</details>
+
+<details class="settings-card" id="lessons" open>
+  <summary><h2>Lessons</h2><span class="summary-hint">{{ in_use }} in use</span></summary>
+  <div class="settings-body">
+  <p class="muted">Each correction or note you save on a visit becomes one line in every prompt, exactly as shown. The newest {{ limit }} that aren't switched off are sent.</p>
+  {% if lessons %}
+  <ul class="lessons">
+    {% for l in lessons %}
+    <li class="lesson{{ ' lesson-out' if not l.in_use }}">
+      <div class="lesson-meta">
+        {% if l.in_use %}{{ badge("in prompt", "high") }}{% elif l.off %}{{ badge("switched off", "low") }}{% else %}{{ badge("too old", "medium") }}{% endif %}
+        <a href="/visit/{{ l.visit_id }}">{{ l.captured_at | nice_time }}</a>
+      </div>
+      <code class="lesson-line">{{ l.line[2:] }}</code>
+      <details class="lesson-edit">
+        <summary hidden>Edit</summary>
+        <form hx-post="/lessons/{{ l.visit_id }}/edit">
+          <p class="muted">Fixed: {{ l.captured_at[:10] }}, {{ l.when }}, Claude said "{{ l.said }}"{% if l.circles %}, {{ l.circles }} circle{{ 's' if l.circles != 1 }} (change them <a href="/visit/{{ l.visit_id }}">on the visit</a>){% endif %}.</p>
+          <label>It was
+            <select name="visitor">
+              {% for v in visitors %}<option value="{{ v }}"{{ ' selected' if v == l.visitor }}>{{ 'no animal' if v == 'none' else v }}</option>{% endfor %}
+            </select>
+          </label>
+          <label>Species <input name="species" value="{{ l.species }}" placeholder="e.g. Dark-eyed Junco"></label>
+          <label class="lesson-note">Note <textarea name="feedback" rows="2">{{ l.feedback }}</textarea></label>
+          <p class="muted">Matching Claude's answer with an empty note removes the lesson.</p>
+          <button type="submit">Save</button>
+        </form>
+      </details>
+      <div class="lesson-actions">
+        <button type="button" class="secondary" onclick="this.closest('li').querySelector('.lesson-edit').toggleAttribute('open')"
+                data-tip="Change what it was and your note. The date, Claude's answer and your circles stay as they are.">Edit</button>
+        {% if l.off %}
+        <button class="secondary" hx-post="/lessons/{{ l.visit_id }}/on" data-tip="Send this lesson to Claude again.">Switch on</button>
+        {% else %}
+        <button class="secondary" hx-post="/lessons/{{ l.visit_id }}/off"
+                data-tip="Stop sending this lesson. The visit keeps your label; saving a correction again switches it back on.">Switch off</button>
+        {% endif %}
+        <button class="danger" hx-post="/visit/{{ l.visit_id }}/clear-correction"
+                hx-confirm="Delete this lesson? The visit goes back to Claude's answer and your note is removed."
+                data-tip="Remove the correction and note from the visit.">Delete</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No lessons yet. Correct a visit or leave a note on it and it shows up here.</p>
+  {% endif %}
+  </div>
+</details>
+
+<details class="settings-card prompt-preview" id="prompt">
+  <summary><h2>The whole prompt</h2><span class="summary-hint">Exactly what Claude reads</span></summary>
+  <div class="settings-body">
+    <p class="muted small">The rules first, then your yard, the outlined objects, and the lessons in prompt.</p>
+    <pre>{{ prompt_preview }}</pre>
+  </div>
+</details>
+
+</div>
+</div>
+
+<script>
+  // Remember which sections are open; always open the one just saved or linked to.
+  document.querySelectorAll("details.settings-card[id]").forEach((d) => {
+    const key = "notes-open:" + d.id;
+    try { const v = localStorage.getItem(key); if (v !== null) d.open = v === "1"; } catch {}
+    if (location.hash === "#" + d.id || d.querySelector(".notice")) d.open = true;
+    d.addEventListener("toggle", () => { try { localStorage.setItem(key, d.open ? "1" : "0"); } catch {} });
+  });
+  window.addEventListener("hashchange", () => {
+    const d = document.getElementById(location.hash.slice(1));
+    if (d?.matches("details.settings-card")) { d.open = true; d.scrollIntoView(); }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% from "_macros.html" import sp_name, badge %}
+<div class="label-block">
+  <h1>{{ 'No animal' if visit.label == 'None' else sp_name(visit.label) }}{% if visit.count and visit.count > 1 and visit.label != 'None' %} <span class="muted">x{{ visit.count }}</span>{% endif %}{% if is_ft is defined %} <a class="m-only title-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>{% endif %}</h1>
+  {% set others = also_of(visit) %}
+  {% if others %}<p class="also-line">With {% for a in others %}{{ sp_name(also_label(a)) }}{% if a.count and a.count > 1 %} <span class="muted">x{{ a.count }}</span>{% endif %}{{ ", " if not loop.last }}{% endfor %}</p>{% endif %}
+  {% if visit.corrected_visitor or visit.corrected_species or visit.corrected_also is not none %}
+  {% set claude_also = also_of({"also": visit.also}) %}
+  <p class="muted">Corrected by you. Claude said: {{ visit.species or ('no animal' if visit.visitor == 'none' else visit.visitor) }}{% for a in claude_also %}{{ " with " if loop.first else ", " }}{{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}.</p>
+  {% endif %}
+  {% if visit.feedback %}
+  <p class="feedback-note">Your note: {{ visit.feedback }}</p>
+  {% endif %}
+  {% set sb = season_badge(visit.label, visit.captured_at) %}
+  {% if sb %}<p class="season-note">{{ badge(sb, "out-of-season") }} <span class="muted">{% if sb == "Rarely reported here" %}Few local reports of this species on iNaturalist.{% else %}{{ visit.captured_at | month_name }} is outside its usual months here.{% endif %}</span></p>{% endif %}
+  {% if visit.needs_review %}
+  {{ badge("Needs review", "conf-low", "p") }}
+  {% endif %}
+</div>

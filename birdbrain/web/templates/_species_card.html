@@ -1,0 +1,82 @@
+<article class="sp-card">
+  <header class="sp-head">
+    <div>
+      <h2>{{ info.common or info.name }}</h2>
+      {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
+    </div>
+    {% if info.status %}<span class="sp-status">{{ info.status }}</span>{% endif %}
+  </header>
+
+  <div class="sp-top">
+    {% if info.photo %}
+    <figure class="sp-photo">
+      <img src="{{ info.photo.url }}" alt="{{ info.common or info.name }}">
+      <figcaption>Photo {{ info.photo.credit }}{% if info.photo.license and info.photo.license not in info.photo.credit %} ({{ info.photo.license }}){% endif %}, via iNaturalist</figcaption>
+    </figure>
+    {% endif %}
+    <div class="sp-text">
+      {% if info.description %}<p>{{ info.description }}</p>{% endif %}
+      {% if info.notes %}
+      <ul class="sp-notes">{% for n in info.notes %}<li>{{ n }}</li>{% endfor %}</ul>
+      <p class="muted small">AI summary based on Wikipedia</p>
+      {% endif %}
+      {% if sp %}
+      <p class="sp-ours">Seen here {{ sp.visits }} time{{ 's' if sp.visits != 1 }}, first on {{ sp.first_seen | nice_date }}.
+        <a href="/species/{{ sp.label | urlencode }}">All visits</a></p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if info.sounds %}
+  <section class="sp-section">
+    <h3>Sounds</h3>
+    <ul class="sp-sounds">
+      {% for s in info.sounds %}
+      <li>
+        <div class="sp-sound-head"><strong>{{ s.label }}</strong>{% if s.length %} <span class="muted">{{ s.length }}</span>{% endif %}</div>
+        <audio controls preload="none" src="{{ s.file }}"></audio>
+        <small class="muted">{{ s.recordist }}, {{ s.license }}{% if s.where %} · {{ s.where }}{% endif %}{% if s.km is not none %} ({{ '{:,}'.format(s.km) }} km away){% endif %} · <a href="{{ s.page }}" target="_blank" rel="noopener">XC{{ s.id }}</a></small>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if info.local_counts %}
+  {% set peak = info.local_counts | max %}
+  <section class="sp-section">
+    <h3>When it's around</h3>
+    <div class="season" role="img"
+         aria-label="Reports per month in {{ info.place_name }}: {% for n in info.local_counts %}{{ months[loop.index0] }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}">
+      {% for n in info.local_counts %}
+      {% set m = loop.index %}
+      <div class="season-col{{ ' expected' if m in info.expected_months }}{{ ' now' if m == this_month }}"
+           title="{{ months[loop.index0] }}: {{ n }} local report{{ 's' if n != 1 }}{% if ours[loop.index0] %}, {{ ours[loop.index0] }} visit{{ 's' if ours[loop.index0] != 1 }} here{% endif %}">
+        <span class="ours">{{ ours[loop.index0] or '' }}</span>
+        <div class="bar-wrap"><div class="bar" style="height: {{ ((100 * n / peak) if peak else 0) | round | int }}%"></div></div>
+        <span class="m">{{ months[loop.index0][0] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="muted small">Bars: iNaturalist reports in {{ info.place_name }} by month. Numbers: visits to this birdbath.</p>
+  </section>
+  {% endif %}
+
+  {% if info.inat_id %}
+  <section class="sp-section">
+    <h3>Where it's found</h3>
+    <div class="sp-map" data-taxon="{{ info.inat_id }}" data-center="{{ info.map_center | tojson if info.map_center else 'null' }}"></div>
+    <p class="muted small">iNaturalist observations. Map data &copy; OpenStreetMap contributors.</p>
+  </section>
+  {% endif %}
+
+  {% if info.links %}
+  <nav class="sp-links" aria-label="Learn more">
+    {% for l in info.links %}<a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.label }}</a>{% endfor %}
+  </nav>
+  {% endif %}
+
+  <p class="sp-credits muted small">
+    {% if info.description %}Description from Wikipedia (CC BY-SA). {% endif %}Photo, range and local reports from iNaturalist.{% if info.sounds %} Recordings streamed from xeno-canto.{% endif %}
+  </p>
+</article>

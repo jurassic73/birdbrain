@@ -1,0 +1,27 @@
+{% from "_macros.html" import sp_name %}
+{# The Today panel's scoreboard: every animal seen in the chosen period, most seen first. #}
+<div class="critters" data-range="{{ score.key }}">
+  <div class="score-head">
+    <span class="muted">Visitors {{ score.words }}{% if score_rows %} · {{ score_rows | length }} kind{{ 's' if score_rows | length != 1 }}{% endif %}</span>
+    <nav class="score-ranges" aria-label="Scoreboard period">
+      {% for key, label, words, _ in score_ranges %}
+      <button type="button" class="score-range{{ ' on' if key == score.key }}" aria-pressed="{{ 'true' if key == score.key else 'false' }}"
+              hx-get="/scoreboard?range={{ key }}" hx-target="closest .critters" hx-swap="outerHTML"
+              data-tip="Who visited {{ words }}">{{ label }}</button>
+      {% endfor %}
+    </nav>
+  </div>
+  {% if score_rows %}
+  <ul>
+    {% for c in score_rows %}
+    {% set st = short_status(c.label) %}
+    <li><span>{{ sp_name(c.label) }}</span>
+      <span class="critter-status"{% if st %} data-tip="{{ st[1] }} in this area"{% endif %}>{{ st[0] if st }}</span>
+      <a class="critter-n" href="/?species={{ c.label | urlencode }}{% if score.date_from %}&amp;date_from={{ score.date_from }}{% endif %}{% if score.date_to %}&amp;date_to={{ score.date_to }}{% endif %}"
+         data-tip="{{ c.n }} sighting{{ 's' if c.n != 1 }} {{ score.words }}, last at {{ c.last_at | short_time }}">{{ c.n }}</a></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">{{ 'None yet today.' if score.key == 'today' else 'None ' ~ score.words ~ '.' }}</p>
+  {% endif %}
+</div>

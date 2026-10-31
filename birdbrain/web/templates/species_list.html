@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Species | Birdbrain{% endblock %}
+{% block content %}
+{# Hovering a species prerenders its page, so the click shows it finished instead of building it out. #}
+<script type="speculationrules">
+  {"prerender": [{"where": {"href_matches": "/species/*"}, "eagerness": "moderate"}]}
+</script>
+<div class="page-head">
+  <h1>Species <span class="muted">{{ species | length }}</span></h1>
+  <nav class="sorts">
+    {% for key, label in [('visits', 'Most visits'), ('newest', 'Newest'), ('name', 'A to Z')] %}
+    <a href="?sort={{ key }}" {% if sort == key %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+</div>
+{% from "_macros.html" import sp_name, confirm_badge with context %}
+{% if species %}
+<div class="grid">
+  {% for s in species %}
+  <a class="card" href="/species/{{ s.label | urlencode }}">
+    <img src="/images/{{ s.thumb_path }}" alt="{{ s.label }}" loading="lazy">
+    <div class="card-body">
+      <div class="card-title">{{ sp_name(s.label) }}</div>
+      <div class="card-meta">
+        <span>{{ s.visits }} visit{{ 's' if s.visits != 1 }}</span>
+        <span>first {{ s.first_seen | nice_date }}</span>
+        {{ confirm_badge(s.label) }}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">No species yet.</p>
+{% endif %}
+{% endblock %}

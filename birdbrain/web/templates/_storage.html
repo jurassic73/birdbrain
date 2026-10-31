@@ -1,0 +1,20 @@
+<section class="storage">
+  <div class="storage-text">
+    <div>
+      False triggers: <strong>{{ storage.bytes | mb }}</strong>{% if storage.limit_bytes %} of {{ storage.limit_bytes | mb }}{% else %}, no limit{% endif %}
+      ({{ storage.count }} photo{{ 's' if storage.count != 1 }}) <span class="info-tip" tabindex="0" aria-label="About false-trigger storage" data-tip="Each false trigger keeps its photo plus its whole burst of frames, so you can check before and after on its page. All of it counts here and is deleted together.">i</span>
+    </div>
+    {% if storage.limit_bytes %}
+    <div class="meter" role="img" aria-label="{{ (100 * storage.bytes / storage.limit_bytes) | round | int }}% of the limit used">
+      <span style="width: {{ [100, 100 * storage.bytes / storage.limit_bytes] | min }}%"></span>
+    </div>
+    {% endif %}
+    {% if storage.lesson_count %}<small class="muted">Plus {{ storage.lesson_count }} you corrected ({{ storage.lesson_bytes | mb }}), always kept as lessons.</small>{% endif %}
+    {% if not on_settings %}<small class="muted"><a href="/settings#storage">Change the limit or photo size</a></small>{% endif %}
+  </div>
+  {% if storage.count %}
+  <form method="post" action="/false-triggers/clean" onsubmit="return confirm('Delete all {{ storage.count }} false-trigger photos? The ones you corrected are kept.')">
+    <button type="submit" class="danger">Delete {{ storage.count }} photo{{ 's' if storage.count != 1 }}</button>
+  </form>
+  {% endif %}
+</section>

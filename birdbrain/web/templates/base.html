@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Birdbrain{% endblock %}</title>
+  <script>
+    // Apply a saved theme before the first paint so the page never flashes the wrong one.
+    try {
+      const t = localStorage.getItem("theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      const p = localStorage.getItem("palette");
+      if (p === "ocean" || p === "sunset" || p === "plum") document.documentElement.dataset.palette = p;
+    } catch (e) {}
+  </script>
+  <meta name="theme-color" id="theme-color" content="#f6f5f0">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/favicon-64.png?v={{ asset_version }}">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
+  <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <script src="/static/tab-alert.js?v={{ asset_version }}" defer></script>
+  <script src="/static/theme.js?v={{ asset_version }}" defer></script>
+  <script src="/static/species-card.js?v={{ asset_version }}" defer></script>
+  <script src="/static/tips.js?v={{ asset_version }}" defer></script>
+  <script src="/static/thumb-marks.js?v={{ asset_version }}" defer></script>
+  <script src="/static/save-feedback.js?v={{ asset_version }}" defer></script>
+  <script src="/static/scene-edit.js?v={{ asset_version }}" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><img src="/static/logo.png?v={{ asset_version }}" alt="" width="34" height="34">Birdbrain</a>
+    <nav>
+      <a href="/" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Latest</a>
+      <a href="/species" {% if request.url.path.startswith('/species') %}aria-current="page"{% endif %}>Species</a>
+      <a href="/stats" {% if request.url.path == '/stats' %}aria-current="page"{% endif %}>Stats</a>
+      {% if request.state.admin %}
+      <a href="/review" {% if request.url.path == '/review' %}aria-current="page"{% endif %}>Review</a>
+      <a href="/false-triggers" {% if request.url.path == '/false-triggers' %}aria-current="page"{% endif %}><span class="long">False triggers</span><span class="short">False</span></a>
+      <a href="/notes" {% if request.url.path == '/notes' %}aria-current="page"{% endif %}>Claude's<span class="long"> Notes</span></a>
+      {% endif %}
+    </nav>
+    <div class="topbar-actions">
+    <a class="icon-btn" href="/about" aria-label="How it works" title="How it works" {% if request.url.path == '/about' %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.5"/><path d="M12 11v6M12 7.5v.01"/>
+      </svg>
+    </a>
+    {% if request.state.admin %}
+    <a class="icon-btn" href="/settings" aria-label="Settings" title="Settings" {% if request.url.path == '/settings' %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
+      </svg>
+    </a>
+    {% endif %}
+    <button type="button" class="icon-btn palette-toggle" id="palette-toggle" aria-label="Change colors" title="Change colors">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M12 2.5a9.5 9.5 0 0 1 0 19z" fill="var(--accent)"/>
+      </svg>
+    </button>
+    <button type="button" class="icon-btn theme-toggle" id="theme-toggle" aria-label="Switch theme" title="Switch theme">
+      <!-- Twemoji 15.1 crescent moon (U+1F319) and sun (U+2600), (c) Twitter and contributors, CC-BY 4.0: https://github.com/jdecked/twemoji -->
+      <svg class="moon" viewBox="0 0 36 36" aria-hidden="true">
+        <path fill="#FFD983" d="M30.312.776C32 19 20 32 .776 30.312c8.199 7.717 21.091 7.588 29.107-.429C37.9 21.867 38.03 8.975 30.312.776z"/>
+        <path fill="#FFCC4D" d="M30.705 15.915c-.453.454-.453 1.189 0 1.644.454.453 1.189.453 1.643 0 .454-.455.455-1.19 0-1.644-.453-.454-1.189-.454-1.643 0zm-16.022 14.38c-.682.681-.682 1.783 0 2.465.68.682 1.784.682 2.464 0 .681-.682.681-1.784 0-2.465-.68-.682-1.784-.682-2.464 0zm13.968-2.147c-1.135 1.135-2.974 1.135-4.108 0-1.135-1.135-1.135-2.975 0-4.107 1.135-1.136 2.974-1.136 4.108 0 1.135 1.133 1.135 2.973 0 4.107z"/>
+      </svg>
+      <svg class="sun" viewBox="0 0 36 36" aria-hidden="true">
+        <path fill="#FFAC33" d="M16 2s0-2 2-2 2 2 2 2v2s0 2-2 2-2-2-2-2V2zm18 14s2 0 2 2-2 2-2 2h-2s-2 0-2-2 2-2 2-2h2zM4 16s2 0 2 2-2 2-2 2H2s-2 0-2-2 2-2 2-2h2zm5.121-8.707s1.414 1.414 0 2.828-2.828 0-2.828 0L4.878 8.708s-1.414-1.414 0-2.829c1.415-1.414 2.829 0 2.829 0l1.414 1.414zm21 21s1.414 1.414 0 2.828-2.828 0-2.828 0l-1.414-1.414s-1.414-1.414 0-2.828 2.828 0 2.828 0l1.414 1.414zm-.413-18.172s-1.414 1.414-2.828 0 0-2.828 0-2.828l1.414-1.414s1.414-1.414 2.828 0 0 2.828 0 2.828l-1.414 1.414zm-21 21s-1.414 1.414-2.828 0 0-2.828 0-2.828l1.414-1.414s1.414-1.414 2.828 0 0 2.828 0 2.828l-1.414 1.414zM16 32s0-2 2-2 2 2 2 2v2s0 2-2 2-2-2-2-2v-2z"/>
+        <circle fill="#FFAC33" cx="18" cy="18" r="10"/>
+      </svg>
+    </button>
+    {% if login_on() %}
+    {% if request.state.admin %}
+    <form method="post" action="/logout" class="login-form"><button type="submit" class="link-btn admin-btn" data-tip="Signed in as admin. Log out to browse read-only.">Log out</button></form>
+    {% else %}
+    <a class="button-link admin-btn" href="/login?next={{ request.url.path | urlencode }}" data-tip="Read-only view. Log in to correct visits and change settings.">Admin</a>
+    {% endif %}
+    {% endif %}
+    </div>
+  </header>
+  <main class="{% block main_class %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+  <script>
+    // Phones start with secondary sections folded (<details data-m-closed>); wider screens keep them open.
+    if (matchMedia("(max-width: 640px)").matches) document.querySelectorAll("details[data-m-closed]").forEach(d => d.open = false);
+  </script>
+</body>
+</html>

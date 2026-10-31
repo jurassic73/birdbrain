@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import confirm_badge with context %}
+{% block title %}{{ sp.label }} | Birdbrain{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ sp.label }}</h1>
+</div>
+<div class="facts">
+  <div><span class="big">{{ sp.visits }}</span> visits</div>
+  <div>First seen <strong>{{ sp.first_seen | nice_date }}</strong></div>
+  <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong></div>
+  <div>{{ confirm_badge(sp.label) }}</div>
+</div>
+{% if info %}
+<div class="sp-inline">{% include "_species_card.html" %}</div>
+{% elif has_card(sp.label) %}
+<div class="sp-inline" hx-get="/species-info/{{ sp.label | urlencode }}" hx-trigger="load" hx-swap="innerHTML">
+  <p class="muted">Loading species info…</p>
+</div>
+{% endif %}
+<div class="charts">
+  <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
+  <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
+</div>
+<div class="grid">
+  {% include "_cards.html" %}
+</div>
+<script src="/static/charts.js?v={{ asset_version }}"></script>
+<script>
+  barChart("daily", {{ daily | map(attribute=0) | list | tojson }}.map(d => d.slice(5)), {{ daily | map(attribute=1) | list | tojson }});
+  barChart("hourly", hourLabels(), {{ hourly | tojson }});
+</script>
+{% endblock %}

@@ -1,0 +1,71 @@
+{# Claude's outline of the owner's description on a frame: accept or try again. The button that asks for it sits in the description form. #}
+{% macro outline(s, label, which) %}
+<figure class="scene-pic">
+  <div class="scene-frame">
+    <img src="/calibration/{{ s.image }}" alt="The camera's view at {{ s.at | nice_time }}">
+    {# scene-edit.js turns these into draggable shapes; data-objs holds each one's geometry #}
+    <svg viewBox="0 0 {{ zone_w }} {{ zone_h }}" aria-label="Outline: click a shape to adjust it" data-which="{{ which }}"
+         data-at="{{ s.at }}" data-objs='{{ s.objects | tojson }}'>
+      {# polygons, then the baths' click areas (their water is a hole), then ellipses on top: a click in the water
+         picks the bath over a ground polygon under it, and a rock in the water still wins #}
+      {% for o in s.shapes %}{% if not o.ellipse %}<path class="scene-{{ o.kind }}" style="color: {{ o.color }}" data-i="{{ loop.index0 }}" d="{{ o.d }}"/>{% endif %}{% endfor %}
+      {% for o in s.shapes %}{% if o.hit %}<path class="scene-hit" data-i="{{ loop.index0 }}" d="{{ o.hit }}"/>{% endif %}{% endfor %}
+      {% for o in s.shapes %}{% if o.ellipse %}<path class="scene-{{ o.kind }}" style="color: {{ o.color }}" data-i="{{ loop.index0 }}" d="{{ o.d }}"/>{% endif %}{% endfor %}
+      {% for o in s.shapes %}{% if o.water %}<path class="scene-water" data-i="{{ loop.index0 }}" d="{{ o.water }}"/>{% endif %}{% endfor %}
+      {% for o in s.shapes %}<text class="scene-{{ o.kind }}" style="color: {{ o.color }}" data-i="{{ loop.index0 }}" x="{{ '%.2f' | format(o.lx) }}" y="{{ '%.2f' | format(o.ly - 1) }}">{{ loop.index }}</text>{% endfor %}
+    </svg>
+  </div>
+  <figcaption class="muted small">{{ label }}, {{ s.at | nice_time }}. Click the photo to open it big and drag shapes into place.</figcaption>
+</figure>
+<div class="scene-side">
+  <ol class="scene-list">
+    {% for o in s.shapes %}
+    <li data-i="{{ loop.index0 }}" data-name="{{ o.name }}" data-color="{{ o.color }}"><span class="scene-swatch" style="color: {{ o.color }}"></span>
+      <div><strong>{{ o.name }}</strong> <small class="muted" data-tip="{{ scene_kinds[o.kind] }}">{{ o.kind | replace('_', ' ') }}</small>
+        {% if o.edited %}<small class="muted" data-tip="You dragged this shape into place. Reset puts back the automatic one.">adjusted by you</small>
+        {% elif o.fitted %}<small class="muted" data-tip="Claude drew it roughly; the Pi then lined it up with the edges in the photo.">fitted to the photo</small>{% endif %}
+        <button type="button" class="link-btn scene-adjust" data-which="{{ which }}" data-i="{{ loop.index0 }}">Adjust</button>
+        <button type="button" class="link-btn scene-eye" data-which="{{ which }}" data-i="{{ loop.index0 }}"
+                data-tip="Hide or show this shape on the photo, to get at the ones under it. Only on this browser; nothing is saved.">Hide</button>
+        {% if o.edited %}<button type="button" class="link-btn" hx-post="/notes/scene/reset/{{ which }}/{{ loop.index0 }}"
+                hx-target="#scene-panel" hx-swap="outerHTML">Reset</button>{% endif %}
+        {% if o.note %}<br><small>{{ o.note }}</small>{% endif %}</div></li>
+    {% endfor %}
+  </ol>
+  {% if s.notes %}<p class="small"><strong>Claude's notes:</strong> {{ s.notes }}</p>{% endif %}
+  {% if s.usd is defined %}<p class="muted small">Outlined by Sonnet for about ${{ '%.3f' | format(s.usd) }}.</p>{% endif %}
+  {{ caller() if caller }}
+</div>
+{% endmacro %}
+
+<div id="scene-panel" class="scene">
+  {% if scene_error %}<p class="notice">{{ scene_error }}</p>{% endif %}
+  {% if scene_saved %}<p class="notice saved">Saved. These are now the objects in your scene.</p>{% endif %}
+
+
+  {% if scene_draft %}
+  <h3>Claude's outline: does this look right?</h3>
+  {% if scene_draft.objects %}
+  <div class="scene-body">
+    {% call outline(scene_draft, 'Draft', 'draft') %}
+    <div class="actions">
+      <form method="post" action="/notes/scene/accept" hx-post="/notes/scene/accept" hx-target="#scene-panel" hx-swap="outerHTML">
+        <button type="submit">Looks right, use it</button></form>
+      <form method="post" action="/notes/scene/discard" hx-post="/notes/scene/discard" hx-target="#scene-panel" hx-swap="outerHTML">
+        <button type="submit" class="secondary">Discard</button></form>
+    </div>
+    <p class="muted small">Not quite? Change the description (name what it missed or got wrong) and outline again.</p>
+    {% endcall %}
+  </div>
+  {% else %}
+  <p class="notice">{{ scene_draft.notes }}</p>
+  {% endif %}
+  {% endif %}
+
+  {% if scene %}
+  <h3>Your scene</h3>
+  <div class="scene-body">{{ outline(scene, 'Accepted', 'scene') }}</div>
+  {% elif not scene_draft %}
+  <p class="muted small">No scene yet. The motion zones in Settings still come from the hand calibration.</p>
+  {% endif %}
+</div>

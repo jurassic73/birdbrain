@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Review | Birdbrain{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Review queue <span class="muted">{{ visits | length }}</span></h1></div>
+<p class="muted">Low-confidence identifications, oldest first. Open one to confirm or correct it.</p>
+{% if visits %}
+<div class="grid">
+  {% include "_cards.html" %}
+</div>
+{% else %}
+<p class="empty">Nothing to review.</p>
+{% endif %}
+{% endblock %}

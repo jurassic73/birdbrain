@@ -1,0 +1,596 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, claude_mark, confirm_badge with context %}
+{% block title %}{{ 'No animal' if visit.label == 'None' else visit.label }} | Birdbrain{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block head %}
+  {% for id in [prev_id, next_id] if id %}<link rel="prefetch" href="/visit/{{ id }}{{ '?ft=1' if is_ft else '' }}">
+  {% endfor %}{% for path in neighbor_images %}<link rel="prefetch" href="/images/{{ path }}" as="image">
+  {% endfor %}
+{% endblock %}
+{% block content %}
+{# The start-to-finish step pills: beside the arrows on wide screens, under the details on phones. #}
+{% macro flow(where) %}
+  {% if decision.steps %}
+  <ol class="decision-flow {{ where }}" aria-label="Start to finish">
+    <li class="flow-pill">Motion{% if decision.trigger %} {{ decision.trigger }}{% endif %}</li>
+    {% for step in decision.steps %}
+    <li class="flow-pill {{ 'local' if step.local else 'ai' }}"><strong>{{ 'Detector' if step.local else step.model }}</strong> {% if not step.refused and step.said == visit.label %}<span class="said-same">{{ step.said }}</span>{% else %}{{ 'declined' if step.refused else step.said }}{% endif %}{% if step.confidence %} <span class="flow-conf">({{ step.confidence }})</span>{% endif %}</li>
+    {% endfor %}
+    {% if visit.needs_review %}<li class="flow-pill review">Your review</li>{% endif %}
+    <li class="flow-pill result">{{ 'No animal' if visit.label == 'None' else visit.label }}{% for a in also_of(visit) %} + {{ also_label(a) }}{% endfor %}</li>
+  </ol>
+  {% endif %}
+{% endmacro %}
+{% set current_visitor = visit.corrected_visitor or visit.visitor %}
+{% set has_correction = visit.corrected_visitor or visit.corrected_species or visit.feedback or visit.marks or visit.corrected_also is not none %}
+{% set claude_also = also_of({"also": visit.also}) %}
+{% set ft_param = '?ft=1' if is_ft else '' %}
+{% set settled = not visit.needs_review and visit.confidence == 'high' and not has_correction %}
+<nav class="visit-nav" aria-label="Visit navigation">
+  {% if prev_id %}<a class="visit-nav-btn" href="/visit/{{ prev_id }}{{ ft_param }}" id="nav-prev" title="Newer (←)">&#8592;</a>{% else %}<span class="visit-nav-btn disabled">&#8592;</span>{% endif %}
+  <a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>
+  {% if next_id %}<a class="visit-nav-btn" href="/visit/{{ next_id }}{{ ft_param }}" id="nav-next" title="Older (→)">&#8594;</a>{% else %}<span class="visit-nav-btn disabled">&#8594;</span>{% endif %}
+  {{ flow("in-nav") }}
+</nav>
+<article class="visit">
+  <div class="visit-photo" id="photo" data-marks="{{ marks | tojson | forceescape }}">
+    <a href="/images/{{ visit.image_path }}" draggable="false"><img class="full" draggable="false" src="/images/{{ visit.image_path }}" width="1920" height="1080" alt="{{ visit.label }}"></a>
+    <svg class="marks" aria-hidden="true"></svg>
+    <p class="photo-hint" id="mark-hint">Click to enlarge, pinch to zoom.{% if request.state.admin %} Edit circles to mark things for your feedback.{% endif %}</p>
+    <p class="muted small mark-legend" id="mark-legend" hidden></p>
+    <div class="photo-tools">
+      <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing: drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
+      <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
+    </div>
+    {# Phones: newer/older in the bottom corners, so a thumb on them never covers the photo. #}
+    {% if prev_id %}<a class="photo-arrow prev" href="/visit/{{ prev_id }}{{ ft_param }}" aria-label="Newer visit">&#8249;</a>{% endif %}
+    {% if next_id %}<a class="photo-arrow next" href="/visit/{{ next_id }}{{ ft_param }}" aria-label="Older visit">&#8250;</a>{% endif %}
+  </div>
+  <dialog class="photo-viewer" id="photo-viewer" aria-label="Full-size photo">
+    <button type="button" class="photo-viewer-close" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+    {% set zoom_param = (ft_param ~ '&zoom=1') if ft_param else '?zoom=1' %}
+    {% if prev_id %}<a class="photo-viewer-arrow prev" id="zoom-prev" href="/visit/{{ prev_id }}{{ zoom_param }}" aria-label="Newer visit" title="Newer (←)">&#8249;</a>{% endif %}
+    {% if next_id %}<a class="photo-viewer-arrow next" id="zoom-next" href="/visit/{{ next_id }}{{ zoom_param }}" aria-label="Older visit" title="Older (→)">&#8250;</a>{% endif %}
+    <div class="photo-viewer-frame">
+      <img src="/images/{{ visit.image_path }}" alt="{{ visit.label }}">
+      <svg class="marks" aria-hidden="true"></svg>
+    </div>
+  </dialog>
+  <div class="visit-info">
+    <div class="visit-head">
+      {% include "_label.html" %}
+      <div class="actions">
+        {% if visit.label not in ('None', 'Other') %}
+        <a class="button-link" href="/species/{{ visit.label | urlencode }}">All {{ visit.label }} visits</a>
+        {% endif %}
+        {% if request.state.admin %}
+        {% if visit.confirmed_at %}
+        {{ badge("checked", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button>
+        {% elif not (visit.corrected_species or visit.corrected_visitor) %}
+        <button hx-post="/visit/{{ visit.id }}/reviewed" data-tip="Says this answer is right: it leaves the review queue, and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi).">Looks right</button>
+        {% endif %}
+        {% if settled %}<button type="button" class="m-only secondary" id="correct-open">Not right? Correct it</button>{% endif %}
+        <button class="danger m-hide" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Delete this visit and its photo?">Delete visit</button>
+        {% endif %}
+      </div>
+    </div>
+    <dl>
+      <dt>Seen</dt><dd>{{ visit.captured_at | nice_time }}{% if visit.is_night %} (night){% endif %}{% if stayed(visit) %}, {{ stayed(visit) }}{% endif %}</dd>
+      <dt>Claude said</dt><dd>{{ visit.species or ('no animal' if visit.visitor == 'none' else visit.visitor) }}{% if visit.confidence %} {{ badge(visit.confidence, "conf-" ~ visit.confidence) }}{% endif %}{% if visit.species and visit.confidence == "medium" %} {{ confirm_badge(visit.species) }}{% endif %}
+        {%- for a in claude_also %}{{ " with " if loop.first else ", " }}{{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% if a.confidence %} {{ badge(a.confidence, "conf-" ~ a.confidence) }}{% endif %}{% endfor %}</dd>
+      {% if visit.notes %}<dt>Claude's notes</dt><dd class="clamp" onclick="this.classList.toggle('clamp')">{{ visit.notes }}</dd>{% endif %}
+      {% if visit.model %}<dt>Identified by</dt><dd>{{ visit.model }}{% if visit.escalated %} (escalated){% endif %}</dd>{% endif %}
+    </dl>
+    {% if burst %}
+    <section class="vburst" aria-label="Burst">
+      <h2 class="vburst-head">Burst <span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
+        <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame to show it in the big photo.">i</span></h2>
+      <div class="vburst-strip">
+        {% for f in burst %}
+        <button type="button" class="vburst-frame{% if f.best %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
+          <img src="/images/{{ f.path }}" alt="" loading="lazy" width="96" height="54">
+          <span class="vburst-at">+{{ '%g' | format(f.at) }} s</span>
+        </button>
+        {% endfor %}
+      </div>
+      {% if burst | selectattr("best") | list %}<p class="muted small vburst-note">{{ badge("Claude saw", "burst-best") }} frame {{ (burst | map(attribute="best") | list).index(true) + 1 }}</p>{% endif %}
+    </section>
+    {% endif %}
+    {{ flow("in-info") }}
+    {% if decision.steps %}
+    <details class="decision">
+      <summary><h2>How it was decided</h2></summary>
+      {% if decision.trigger %}<p class="muted small">Spotted moving {{ decision.trigger }}.</p>{% endif %}
+      <ol>
+        {% for step in decision.steps %}
+        <li{% if step.shadow %} class="step-shadow"{% endif %}>
+          {% if step.shadow %}
+          <div class="step-head">
+            <strong>Local classifier</strong> {{ badge("shadow", "shadow") }}
+            <span class="muted">on the Pi, {{ step.crop }}{% if step.seconds is not none %}, {{ step.seconds }} s{% endif %}</span>
+          </div>
+          <div>{% if step.guesses %}{{ step.guesses | join(", ") }}{% else %}no local species{% endif %}</div>
+          <div class="muted step-notes">Its own guess, not used for the label{% if step.night %}; night photos are black and white, which it wasn't trained on{% endif %}. Scored on the <a href="/stats#classifier">Stats</a> page.</div>
+          {% elif step.presence %}
+          <div class="step-head">
+            <strong>Local animal check</strong>
+            <span class="muted">on the Pi, trained on {{ step.trained_on }} of this yard's frames</span>
+          </div>
+          <div>{{ step.said | capitalize }} <span class="muted">(score {{ '%.3f' | format(step.score) }}, empty below {{ '%.3f' | format(step.threshold) }})</span></div>
+          {% if step.skipped_claude %}
+          <div class="step-why">Judged empty, so Claude wasn't asked. If there is an animal, correct it below: the check learns from it.</div>
+          {% endif %}
+          {% elif step.local %}
+          <div class="step-head">
+            <strong>Local detector</strong>
+            <span class="muted">on the Pi{% if step.seconds is not none %}, {{ step.seconds }} s{% endif %}</span>
+          </div>
+          <div>{{ step.said }}</div>
+          {% if step.scenery %}
+          <div class="muted step-notes">Scenery check: {{ 'nothing new' if step.scenery.empty else 'something new' }} ({{ '%.2f' | format(step.scenery.novel) }} against {{ step.scenery.background }} empty frames)</div>
+          {% endif %}
+          {% if step.skipped_claude %}
+          <div class="step-why">Found no animal in daylight, so Claude wasn't asked.</div>
+          {% endif %}
+          {% else %}
+          <div class="step-head">
+            <strong>{{ step.model }}</strong>
+            <span class="muted">looked at {{ step.frames }} frame{{ 's' if step.frames != 1 }}{% if step.model == 'Haiku' %} (the sharpest of the burst){% endif %}</span>
+          </div>
+          {% if step.refused %}
+          <div>Declined to answer.</div>
+          {% else %}
+          <div>{{ step.said }} {% if step.confidence %}{{ badge(step.confidence, "conf-" ~ step.confidence) }}{% endif %}{% if step.also %} <span class="muted">with {{ step.also | join(", ") }}</span>{% endif %}</div>
+          {% if step.notes %}<div class="muted step-notes">{{ step.notes }}</div>{% endif %}
+          {% endif %}
+          {% if step.model == 'Haiku' and decision.asked_sonnet %}
+          <div class="step-why">Not confident enough, so it asked Sonnet for a second look with more frames.</div>
+          {% elif step.model == 'Haiku' and decision.skipped_sonnet %}
+          <div class="step-why">A species already confirmed here several times, so Sonnet wasn't asked.</div>
+          {% endif %}
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% if visit.needs_review %}<p class="step-why">Still unsure, so it was sent to you for review.</p>{% endif %}
+      {% if decision.lessons %}<p class="muted small">Used {{ decision.lessons }} of your past corrections as lessons.</p>{% endif %}
+    </details>
+    {% endif %}
+    {% if request.state.admin %}
+    <details class="review-fold" open {% if settled %}data-m-closed{% endif %}>
+    <summary class="m-hide-summary">Correct it</summary>
+    <form class="review" hx-post="/visit/{{ visit.id }}/correct">
+      <div class="review-head">
+        <h2>Was this right? <span class="info-tip" tabindex="0" aria-label="About corrections" data-tip="Corrections and notes are shown to Claude on future identifications, so it learns from its mistakes at this birdbath.">i</span></h2>
+        <a class="muted small" href="/notes#lessons">All lessons</a>
+      </div>
+      <div class="review-row">
+        <fieldset class="field">
+          <legend>What was actually here</legend>
+          <div class="choices" role="radiogroup">
+            {% for v in visitors %}
+            <label class="choice">
+              <input type="radio" name="visitor" value="{{ v }}" {% if v == current_visitor %}checked{% endif %}>
+              <span>{{ 'No animal' if v == 'none' else v | capitalize }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </fieldset>
+        <div class="field species" id="species-field">
+          <label for="species">Species <span class="info-tip" tabindex="0" aria-label="About species" data-tip="Every animal seen here so far, then every bird species on the eBird list as you type (official names, so one species never gets two spellings). Picking a type lists that kind; picking a name sets the type. Not sure of the name? Type a clue and press Ask.">i</span></label>
+          <div class="ask-wrap">
+          <div class="combo">
+            <input id="species" name="species" autocomplete="off" role="combobox" aria-expanded="false"
+                   aria-controls="species-list" placeholder="Type to search, or pick a species seen here"
+                   value="{{ visit.corrected_species or '' }}">
+            <button type="button" class="combo-toggle" tabindex="-1" aria-label="Show species">&#9662;</button>
+            <ul id="species-list" class="combo-list" role="listbox" hidden>
+              {% for name, kind in species_kinds %}<li role="option" data-visitor="{{ kind }}">{{ name }}</li>{% endfor %}
+            </ul>
+          </div>
+          <button type="button" class="claude-btn ask-btn" data-tip="Type a clue in the box (a rough name, colors, marks) and Claude Sonnet names it from this photo, in the official spelling. About 1 cent. Nothing is saved until you press Save.">{{ claude_mark() }}Ask</button>
+          </div>
+          <p class="ask-note small" hidden></p>
+        </div>
+      </div>
+      {% macro also_row(name="", count=1) %}
+      <li class="also-row">
+        <div class="combo">
+          <input name="also_species" autocomplete="off" role="combobox" aria-expanded="false" aria-label="Species"
+                 placeholder="Type to search, or pick one" value="{{ name }}">
+          <button type="button" class="combo-toggle" tabindex="-1" aria-label="Show species">&#9662;</button>
+          <ul class="combo-list" role="listbox" hidden>
+            {% for n, kind in species_kinds %}<li role="option" data-visitor="{{ kind }}">{{ n }}</li>{% endfor %}
+          </ul>
+        </div>
+        <button type="button" class="claude-btn ask-btn icon-only" aria-label="Ask Claude" data-tip="Type a clue in the box (a rough name, colors, marks) and Claude Sonnet names it from this photo, in the official spelling. About 1 cent. Nothing is saved until you press Save.">{{ claude_mark() }}</button>
+        <input class="also-count" type="number" name="also_count" min="1" max="99" value="{{ count }}" aria-label="How many">
+        <button type="button" class="link-btn also-remove" aria-label="Remove" title="Remove">&times;</button>
+        <p class="ask-note small" hidden></p>
+      </li>
+      {% endmacro %}
+      <div class="field also-field" id="also-field">
+        <div class="also-head">
+          <span class="field-title">Also in the photo</span>
+          <span class="info-tip" tabindex="0" aria-label="About other animals" data-tip="Other kinds of animal in the same photo, with how many. They count as sightings of their own species everywhere on the site. Squirrel, Raccoon, Possum or Other name a mammal or anything else; any other name is a bird.">i</span>
+        </div>
+        <ul class="also-rows" id="also-rows">
+          {% for a in also_of(visit) %}{{ also_row(also_label(a), a.count or 1) }}{% endfor %}
+        </ul>
+        <button type="button" class="link-btn also-add" id="also-add">+ Add another species</button>
+        <template id="also-template">{{ also_row() }}</template>
+      </div>
+      <div class="field">
+        <div class="feedback-head">
+          <label for="feedback">Note for future identifications <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake.">i</span></label>
+        </div>
+        <input type="hidden" name="marks" id="marks">
+        <div class="feedback-row">
+          <textarea id="feedback" name="feedback" rows="4"
+                    placeholder="Goes into Claude's Notes for future identifications (nothing is sent now). What did Claude get wrong, and how can it tell next time? e.g. No bird: those are the rocks poking out after I refilled the bath.">{{ visit.feedback or '' }}</textarea>
+          <div class="feedback-actions">
+            <button type="submit">Save</button>
+            {% if has_correction %}
+            <button type="button" class="secondary" hx-post="/visit/{{ visit.id }}/clear-correction">Undo</button>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </form>
+    </details>
+    {# Phones: Delete sits at the bottom, away from the buttons tapped most. #}
+    <div class="m-only m-delete"><button class="danger" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Delete this visit and its photo?">Delete visit</button></div>
+    {% endif %}
+  </div>
+</article>
+
+<script>
+  if (document.querySelector("form.review")) {  // visitors (read-only) have no correction form
+  (() => {
+    const radios = document.querySelectorAll('input[name="visitor"]');
+    const field = document.getElementById("species-field"), also = document.getElementById("also-field");
+    const sync = () => {
+      const picked = document.querySelector('input[name="visitor"]:checked');
+      field.hidden = !picked || ["none", "other"].includes(picked.value);
+      // "No animal" means nothing else was there either (the server clears the list too).
+      also.hidden = picked?.value === "none";
+    };
+    // Picking a type lists the names already seen of that kind, so "Squirrel" leads to "Eastern Gray Squirrel".
+    const input = document.getElementById("species");
+    radios.forEach(r => r.addEventListener("change", () => {
+      sync();
+      if (field.hidden) return;
+      const known = [...document.querySelectorAll("#species-list li")].find(li => li.textContent === input.value);
+      if (input.value && known && known.dataset.visitor !== r.value) input.value = "";
+      input.dispatchEvent(new CustomEvent("combo:kind", {detail: r.value}));
+    }));
+    sync();
+  })();
+  // Species picker: our own list instead of a datalist, so it matches the field (pages can't style a datalist).
+  const combo = box => {
+    const input = box.querySelector("input"), list = box.querySelector(".combo-list");
+    const toggle = box.querySelector(".combo-toggle");
+    const items = () => [...list.children];
+    let active = -1;
+    const shown = () => items().filter(li => !li.hidden);
+    const mark = i => {
+      const vis = shown();
+      active = vis.length ? (i + vis.length) % vis.length : -1;
+      items().forEach(li => li.classList.remove("active"));
+      if (active >= 0) { vis[active].classList.add("active"); vis[active].scrollIntoView({block: "nearest"}); }
+    };
+    let kind = null;  // set by the type radios (main species field only)
+    const open = all => {
+      const q = all ? "" : input.value.trim().toLowerCase();
+      list.querySelectorAll(".ebird").forEach(li => li.remove());
+      items().forEach(li => { li.hidden = !li.textContent.toLowerCase().includes(q) || (kind && li.dataset.visitor !== kind); });
+      list.hidden = !shown().length;
+      input.setAttribute("aria-expanded", String(!list.hidden));
+      active = -1; items().forEach(li => li.classList.remove("active"));
+      if (!all && (!kind || kind === "bird")) more(q);
+    };
+    // Below the yard's own names: every eBird species that matches, so a new bird gets its official name.
+    let timer, asked = "";
+    const more = q => {
+      clearTimeout(timer);
+      if (q.replace(/[^a-z]/g, "").length < 2) return;
+      timer = setTimeout(async () => {
+        asked = q;
+        const names = await fetch(`/species-search?q=${encodeURIComponent(q)}`).then(r => r.json()).catch(() => []);
+        if (asked !== input.value.trim().toLowerCase() || document.activeElement !== input) return;
+        const have = new Set(items().map(li => li.textContent.toLowerCase()));
+        names.filter(n => !have.has(n.toLowerCase())).forEach(n => {
+          const li = document.createElement("li");
+          li.setAttribute("role", "option"); li.className = "ebird"; li.dataset.visitor = "bird"; li.textContent = n;
+          list.append(li);
+        });
+        list.hidden = !shown().length;
+        input.setAttribute("aria-expanded", String(!list.hidden));
+      }, 150);
+    };
+    const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); };
+    const pick = li => {
+      input.value = li.textContent; close(); input.focus();
+      // A name sets its type (main field only; the also rows carry their own).
+      const radio = input.id === "species" && document.querySelector(`input[name="visitor"][value="${li.dataset.visitor}"]`);
+      if (radio && !radio.checked) { radio.checked = true; kind = li.dataset.visitor; }
+    };
+    input.addEventListener("combo:kind", e => {
+      kind = e.detail;
+      if (input.value) return;
+      open(true); input.focus();
+      if (!shown().length) close();
+    });
+    input.addEventListener("input", () => open(false));
+    input.addEventListener("keydown", e => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (list.hidden) open(true);
+        mark(active + (e.key === "ArrowDown" ? 1 : -1));
+      } else if (e.key === "Enter" && !list.hidden && active >= 0) {
+        e.preventDefault(); pick(shown()[active]);
+      } else if (e.key === "Escape" && !list.hidden) {
+        e.stopPropagation(); close();
+      }
+    });
+    toggle.addEventListener("click", () => list.hidden ? (open(true), input.focus()) : close());
+    list.addEventListener("mousedown", e => e.preventDefault());
+    list.addEventListener("click", e => { const li = e.target.closest("li"); if (li) pick(li); });
+    input.addEventListener("blur", close);
+  };
+  document.querySelectorAll(".review .combo").forEach(combo);
+  // Ask: Claude names the animal from the clue typed in the box beside it. Fills the box; nothing is saved.
+  document.querySelector(".review").addEventListener("click", async e => {
+    const btn = e.target.closest(".ask-btn");
+    if (!btn) return;
+    const host = btn.closest(".also-row") || btn.closest(".field");
+    const input = host.querySelector(".combo input"), note = host.querySelector(".ask-note");
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+    const show = (html, err) => { note.innerHTML = html; note.classList.toggle("error", !!err); note.hidden = false; };
+    if (!input.value.trim()) { show("Type a clue first, e.g. <i>red head, finch</i>.", true); input.focus(); return; }
+    btn.classList.add("sending"); btn.disabled = true;
+    const r = await fetch("/visit/{{ visit.id }}/ask-species", {method: "POST", body: new URLSearchParams({hint: input.value})})
+      .then(r => r.json()).catch(() => ({error: "Couldn't reach the site."}));
+    btn.classList.remove("sending"); btn.disabled = false;
+    if (r.error) { show(esc(r.error), true); return; }
+    // Never overwrite the owner's pick: Claude's answer is offered with a Use button.
+    const cost = `<span class="muted">${(r.usd * 100).toFixed(1)}&cent;</span>`;
+    if (r.name.toLowerCase() === input.value.trim().toLowerCase()) {
+      input.value = r.name;
+      show(`Claude agrees: <b>${esc(r.name)}</b> (${esc(r.confidence)}). ${esc(r.reason)} ${cost}`);
+      return;
+    }
+    show(`Claude says <b>${esc(r.name)}</b> (${esc(r.confidence)}). ${esc(r.reason)} ${cost}
+      <button type="button" class="link-btn ask-use">Use ${esc(r.name)}</button>`);
+    note.querySelector(".ask-use").addEventListener("click", () => {
+      input.value = r.name;
+      if (input.id === "species") {
+        const radio = document.querySelector(`input[name="visitor"][value="${r.visitor}"]`);
+        if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event("change")); input.value = r.name; }
+      }
+      show(`Using <b>${esc(r.name)}</b>. Press Save to keep it.`);
+    });
+  });
+  // "Also in the photo": a row per other kind of animal; + adds an empty one, × removes one.
+  (() => {
+    const rows = document.getElementById("also-rows"), tpl = document.getElementById("also-template");
+    document.getElementById("also-add").addEventListener("click", () => {
+      const row = tpl.content.firstElementChild.cloneNode(true);
+      rows.append(row); combo(row.querySelector(".combo"));
+      row.querySelector("input").focus();
+    });
+    rows.addEventListener("click", e => { if (e.target.closest(".also-remove")) e.target.closest(".also-row").remove(); });
+  })();
+  // Phones: "Not right? Correct it" by the title opens the folded correction form and brings it into view.
+  document.getElementById("correct-open")?.addEventListener("click", e => {
+    const fold = document.querySelector(".review-fold");
+    fold.open = true; e.currentTarget.remove();
+    fold.scrollIntoView({behavior: "smooth", block: "start"});
+  });
+  }
+  // Numbered circles on the photo, stored as fractions of the image (x, y of the size; r of the width).
+  (() => {
+    const photo = document.getElementById("photo");
+    const img = photo.querySelector("img"), svg = photo.querySelector("svg");
+    const field = document.getElementById("marks") || {};
+    const clear = document.getElementById("mark-clear"), hint = document.getElementById("mark-hint");
+    const legend = document.getElementById("mark-legend"), claudeSaw = {{ (visit.species or visit.visitor) | lower | tojson }};
+    const edit = document.getElementById("mark-edit");
+    let marks = JSON.parse(photo.dataset.marks || "[]"), press = null, drag = null, editing = false;
+    // Fingers on the photo: a second one means a pinch, which zooms and never draws.
+    const fingers = new Set();
+    const NS = "http://www.w3.org/2000/svg";
+    const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+    const draw = () => {
+      const w = img.naturalWidth || 1920, h = img.naturalHeight || 1080;
+      svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+      svg.replaceChildren();
+      marks.forEach((m, i) => {
+        const g = el("g", {"data-i": i, class: m.claude ? "mark claude" : "mark"});
+        const cx = m.x * w, cy = m.y * h, r = m.r * w, s = w / 60;
+        g.append(el("circle", {cx, cy, r, class: "body"}), el("circle", {cx, cy, r, class: "ring-shadow"}), el("circle", {cx, cy, r, class: "ring"}));
+        // The × beside the number removes the circle. On touch screens it's sized in screen pixels
+        // (a 28 px button inside a 44 px tap area), since a fraction of the photo is a speck on a phone.
+        const px = w / (img.clientWidth || w), touch = matchMedia("(pointer: coarse)").matches;
+        const dr = touch ? Math.max(s * 0.85, 14 * px) : s * 0.85;
+        // Number and × sit off the circle's top-right, the number's edge a third of its width clear of
+        // the ring so it never covers the animal; near an edge they swing to the first corner that
+        // stays on the photo (the ring itself is clipped at the photo's edge).
+        const fits = (x, y, rad) => x - rad >= 0 && x + rad <= w && y - rad >= 0 && y + rad <= h;
+        const out = (r + s + 2 * s / 3) * 0.71;
+        const place = ([sx, sy]) => {
+          const lx = cx + sx * out, ly = cy + sy * out;
+          return {lx, ly, dx: lx + sx * (s + dr * 1.4)};
+        };
+        const corners = [[1, -1], [-1, -1], [1, 1], [-1, 1]].map(place);
+        let {lx, ly, dx} = corners.find(c => fits(c.lx, c.ly, s) && fits(c.dx, c.ly, dr)) || corners[0];
+        const keep = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+        const shift = keep(dx, dr, w - dr) - dx, lift = keep(ly, Math.max(s, dr), h - Math.max(s, dr)) - ly;
+        lx = keep(lx + shift, s, w - s); dx += shift; ly += lift;
+        g.append(el("circle", {cx: lx, cy: ly, r: s, class: "num-bg"}));
+        const t = el("text", {x: lx, y: ly, "font-size": s * 1.3, class: "num"}); t.textContent = i + 1;
+        g.append(t);
+        const del = el("g", {class: "del"});
+        if (touch) del.append(el("circle", {cx: dx, cy: ly, r: 22 * px, class: "del-hit"}));
+        del.append(el("circle", {cx: dx, cy: ly, r: dr, class: "del-bg"}));
+        const x = el("text", {x: dx, y: ly, "font-size": dr * 1.55, class: "del-x"}); x.textContent = "×";
+        del.append(x);
+        g.append(del);
+        svg.append(g);
+      });
+      field.value = JSON.stringify(marks);
+      clear.hidden = !editing || !marks.length;
+      hint.hidden = editing || marks.length > 0;
+      const ci = marks.flatMap((m, i) => m.claude ? [i] : []);
+      legend.hidden = !ci.length;
+      legend.textContent = ci.length === 1
+        ? `Dashed circle ${ci[0] + 1}: where Claude saw the ${marks[ci[0]].label || claudeSaw}. Remove it if that's wrong.`
+        : `Where Claude saw them: ${ci.map(i => `${i + 1} ${marks[i].label || claudeSaw}`).join(", ")}. Remove any that's wrong.`;
+    };
+    const at = e => {
+      const b = img.getBoundingClientRect();
+      return {x: Math.min(Math.max((e.clientX - b.left) / b.width, 0), 1), y: Math.min(Math.max((e.clientY - b.top) / b.height, 0), 1), ratio: b.height / b.width};
+    };
+    clear.addEventListener("click", () => { marks = []; draw(); });
+    edit.addEventListener("click", () => {
+      editing = !editing;
+      photo.classList.toggle("editing", editing);
+      edit.setAttribute("aria-pressed", editing);
+      edit.textContent = editing ? "Done editing" : "Edit circles";
+      draw();
+    });
+    // Undo whatever the current drag did: a new circle goes away, a moved one goes back.
+    const abandon = () => {
+      if (drag && drag.from) Object.assign(drag.mark, drag.from);
+      else if (drag) marks.splice(marks.indexOf(drag.mark), 1);
+      if (drag) draw();
+      press = drag = null;
+    };
+    // Stop the browser's own link/image drag so a drag draws a circle.
+    photo.addEventListener("dragstart", e => e.preventDefault());
+    // A click opens the full-size viewer; a drag of a few pixels draws a numbered circle instead.
+    photo.addEventListener("pointerdown", e => {
+      fingers.add(e.pointerId);
+      if (fingers.size > 1) { abandon(); return; }
+      if (!editing || e.button !== 0 || e.target.closest("button")) return;
+      const body = e.target.closest(".body") && e.target.closest(".mark");
+      press = {x: e.clientX, y: e.clientY, p: at(e), id: e.pointerId, move: body ? marks[+body.dataset.i] : null};
+    });
+    photo.addEventListener("pointermove", e => {
+      if (!press || fingers.size > 1) return;
+      if (!drag) {
+        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8) return;
+        if (press.move) drag = {start: press.p, mark: press.move, from: {x: press.move.x, y: press.move.y}};
+        else if (marks.length >= 9) return;
+        else { drag = {start: press.p, mark: {x: press.p.x, y: press.p.y, r: 0.04}}; marks.push(drag.mark); }
+        photo.setPointerCapture(e.pointerId);
+      }
+      const p = at(e), dx = p.x - drag.start.x, dy = (p.y - drag.start.y) * p.ratio;
+      const clamp = v => Math.round(Math.min(Math.max(v, 0), 1) * 1e4) / 1e4;
+      // Moving carries the centre along; drawing sets the radius.
+      if (drag.from) { drag.mark.x = clamp(drag.from.x + dx); drag.mark.y = clamp(drag.from.y + p.y - drag.start.y); }
+      else drag.mark.r = Math.max(0.02, Math.round(Math.hypot(dx, dy) * 1e4) / 1e4);
+      draw();
+    });
+    const release = () => {
+      // The click that follows a drag shouldn't open the viewer or remove a circle.
+      if (drag) { photo.dataset.dragged = "1"; setTimeout(() => delete photo.dataset.dragged, 0); }
+      press = drag = null;
+    };
+    photo.addEventListener("pointerup", e => { fingers.delete(e.pointerId); release(); });
+    // The browser cancels the pointers when it takes over a pinch; drop the half-drawn circle.
+    photo.addEventListener("pointercancel", e => { fingers.delete(e.pointerId); abandon(); });
+    // Clicking a circle doesn't open the viewer; clicking its × removes it.
+    svg.addEventListener("click", e => {
+      const hit = e.target.closest(".mark");
+      if (!hit || !editing) return;
+      e.preventDefault(); e.stopPropagation();
+      if (photo.dataset.dragged || !e.target.closest(".del")) return;
+      marks.splice(+hit.dataset.i, 1); draw();
+    });
+    img.complete ? draw() : img.addEventListener("load", draw);
+    new ResizeObserver(() => { if (marks.length) draw(); }).observe(img);
+  })();
+  (() => {
+    // Burst filmstrip: a frame shows in the big photo (and the full-size viewer); circles belong to Claude's frame only.
+    const photo = document.getElementById("photo"), frames = document.querySelectorAll(".vburst-frame");
+    if (!frames.length) return;
+    const full = photo.querySelector(".full"), link = photo.querySelector("a");
+    const viewerImg = document.querySelector("#photo-viewer .photo-viewer-frame img");
+    frames.forEach(b => b.addEventListener("click", () => {
+      frames.forEach(o => o.classList.toggle("on", o === b));
+      full.src = viewerImg.src = link.href = b.dataset.src;
+      photo.classList.toggle("other-frame", b.dataset.best !== "1");
+    }));
+  })();
+  (() => {
+    // Full-size viewer: Esc, the close button or any click closes it.
+    const photo = document.getElementById("photo"), viewer = document.getElementById("photo-viewer");
+    const open = () => {
+      // Show the same circles over the full-size photo.
+      viewer.querySelector(".marks").replaceWith(photo.querySelector(".marks").cloneNode(true));
+      viewer.showModal();
+      // Phones: true full screen, turned to match the 16:9 photo where the browser allows it (not iPhone Safari).
+      if (matchMedia("(max-width: 640px), (max-height: 500px)").matches && viewer.requestFullscreen) {
+        viewer.requestFullscreen().then(() => screen.orientation?.lock?.("landscape")).catch(() => {});
+      }
+    };
+    viewer.addEventListener("close", () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); });
+    photo.querySelector("a").addEventListener("click", e => {
+      e.preventDefault();
+      if (!photo.dataset.dragged && !photo.classList.contains("editing")) open();
+    });
+    // The arrows (and arrow keys, and swipes) go to the next visit, which opens straight into this view (?zoom=1).
+    viewer.addEventListener("click", e => { if (!e.target.closest(".photo-viewer-arrow")) viewer.close(); });
+    const go = id => { const a = document.getElementById(id); if (a) location.href = a.href; };
+    viewer.addEventListener("keydown", e => {
+      if (e.key === "ArrowLeft") go("zoom-prev");
+      if (e.key === "ArrowRight") go("zoom-next");
+    });
+    let x0 = null;
+    // A pinch (two fingers) or a swipe while zoomed in pans and zooms the photo; it never changes visit.
+    const zoomed = () => (window.visualViewport?.scale || 1) > 1.01;
+    viewer.addEventListener("touchstart", e => {
+      x0 = e.touches.length === 1 && !zoomed() ? e.changedTouches[0].clientX : null;
+    }, { passive: true });
+    viewer.addEventListener("touchend", e => {
+      if (x0 === null || e.touches.length || zoomed()) { x0 = null; return; }
+      const dx = e.changedTouches[0].clientX - x0;
+      x0 = null;
+      if (Math.abs(dx) >= 40) go(dx < 0 ? "zoom-next" : "zoom-prev");
+    });
+    const url = new URL(location.href);
+    if (url.searchParams.has("zoom")) {
+      url.searchParams.delete("zoom");
+      history.replaceState(null, "", url);
+      const img = photo.querySelector("img");
+      img.complete ? open() : img.addEventListener("load", open, { once: true });
+    }
+  })();
+  document.addEventListener("keydown", e => {
+    if (document.getElementById("photo-viewer").open) return;
+    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
+    if (e.key === "ArrowLeft") document.getElementById("nav-prev")?.click();
+    if (e.key === "ArrowRight") document.getElementById("nav-next")?.click();
+  });
+  // On the newest visit, a visitor that arrives (tab-alert.js checks every 20 s) turns on the Newer arrows:
+  // the bar's, the phone ones on the photo and the full-screen viewer's, each pulsing briefly.
+  document.addEventListener("birdbrain:visits", async e => {
+    if (document.getElementById("nav-prev") || !e.detail.{{ 'any' if is_ft else 'real' }}) return;
+    try {
+      const r = await fetch(location.pathname + location.search, { cache: "no-store" });
+      if (!r.ok) return;
+      const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+      const navPrev = doc.getElementById("nav-prev");
+      if (!navPrev || document.getElementById("nav-prev")) return;
+      const arrows = [navPrev, doc.querySelector(".photo-arrow.prev"), doc.getElementById("zoom-prev")];
+      document.querySelector(".visit-nav > .visit-nav-btn").replaceWith(navPrev);
+      if (arrows[1]) document.getElementById("photo").append(arrows[1]);
+      if (arrows[2]) document.querySelector(".photo-viewer-close").after(arrows[2]);
+      arrows.forEach(a => a?.classList.add("arrived"));
+      const prefetch = doc.querySelector(`link[rel="prefetch"][href="${navPrev.getAttribute("href")}"]`);
+      if (prefetch) document.head.append(prefetch);
+    } catch (err) { /* atmos unreachable; the next check tries again */ }
+  });
+</script>
+{% endblock %}

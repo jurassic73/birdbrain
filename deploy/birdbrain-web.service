@@ -1,0 +1,15 @@
+[Unit]
+Description=Birdbrain gallery site
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=/opt/birdbrain
+Environment=BIRDBRAIN_DATA=/var/lib/birdbrain
+ExecStart=/opt/birdbrain/venv/bin/uvicorn birdbrain.web.app:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
