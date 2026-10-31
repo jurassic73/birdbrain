@@ -426,19 +426,42 @@ def test_zone_shapes_for_the_editor_round_trip_and_save(client, conn, env_zones)
     back = zones.edited(z, zones.from_objects(objs))
     icy = lambda r: r[6] if len(r) > 6 else r[1]  # noqa: E731
     assert back.ring[:6] == z.ring[:6] and icy(back.ring) == icy(z.ring) and back.spots == z.spots and back.crop == pytest.approx(z.crop)
+    assert roles[1] == "water"  # the rim and the water are separate shapes
     # the editor moved the water down, drew a spot as points and a crooked crop box
-    ring = next(o for o in objs if o["role"] == "ring")
-    ring["inner"][1] += 0.02
+    water = next(o for o in objs if o["role"] == "water")
+    water["ellipse"][1] += 0.02
     objs = [o for o in objs if o["role"] != "spot"] + [
         {"role": "spot", "points": [[0.4, 0.4], [0.5, 0.4], [0.45, 0.5]]}]
     crop = next(o for o in objs if o["role"] == "crop")
     crop["points"] = [[0.1, 0.2], [0.7, 0.25], [0.65, 0.8], [0.12, 0.75]]
     assert client.post("/settings/zones/manual", json={"objects": objs}).status_code == 200
     saved = zones.load(conn)
-    assert len(saved.ring) == 7 and saved.ring[6] == pytest.approx(ring["inner"][1], abs=1e-4)
+    assert len(saved.ring) == 7 and saved.ring[6] == pytest.approx(water["ellipse"][1], abs=1e-4)
     assert saved.spots == ((0.45, 0.45, 0.05, 0.05),)
     assert saved.crop == pytest.approx((0.1, 0.2, 0.6, 0.6))
     assert client.post("/settings/zones/manual", json={"objects": [{"role": "moon"}]}).status_code == 400
+
+
+def test_turned_and_off_center_shapes_save_and_mask(client, conn, env_zones):
+    objs = zones.objects(zones.load(conn))
+    rim, water, spot = objs[0], objs[1], objs[2]
+    rim["ellipse"][4] = 20
+    water["ellipse"][0] += 0.01
+    water["ellipse"][4] = -95  # past -90 wraps to the same ellipse turned 85
+    spot["ellipse"][4] = 30
+    assert client.post("/settings/zones/manual", json={"objects": objs}).status_code == 200
+    z = zones.load(conn)
+    outer, inner = config.ring_ellipses(z.ring)
+    assert outer[4] == 20 and inner[4] == 85 and inner[0] == pytest.approx(0.51)
+    assert z.spots[0][4] == 30
+    shifted = z.shifted(0.01, 0)
+    assert config.ring_ellipses(shifted.ring)[1][0] == pytest.approx(0.52) and shifted.spots[0][4] == 30
+    # a turned rim masks a turned band: the old axis-aligned mask differs
+    turned = watch.motion_mask((360, 640), z.ring, ())
+    flat = watch.motion_mask((360, 640), config.make_ring(outer[:4], inner[:4]), ())
+    assert (turned != flat).sum() > 1000
+    # back to level, a ring is saved in its short form again
+    assert config.make_ring((0.5, 0.5, 0.2, 0.2, 0), (0.5, 0.48, 0.1, 0.1, 0)) == (0.5, 0.5, 0.2, 0.2, 0.1, 0.1, 0.48)
 
 
 def test_a_hand_set_spot_keeps_its_size_and_stays_while_the_rocks_are_inside_it():

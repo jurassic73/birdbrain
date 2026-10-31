@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import re
 import time
 from contextlib import asynccontextmanager
@@ -537,10 +538,13 @@ def stats(request: Request, conn=Depends(get_conn)):
 ZONE_W, ZONE_H = 160, 90
 
 
-def ellipse_path(cx: float, cy: float, rx: float, ry: float) -> str:
-    """SVG path for an ellipse given as frame fractions, so several can be combined into one even-odd shape."""
+def ellipse_path(cx: float, cy: float, rx: float, ry: float, angle: float = 0.0) -> str:
+    """SVG path for an ellipse given as frame fractions (angle: degrees clockwise), so several can be combined into
+    one even-odd shape."""
     x, y, a, b = cx * ZONE_W, cy * ZONE_H, rx * ZONE_W, ry * ZONE_H
-    return f"M{x - a:.2f},{y:.2f} a{a:.2f},{b:.2f} 0 1,0 {2 * a:.2f},0 a{a:.2f},{b:.2f} 0 1,0 {-2 * a:.2f},0 Z"
+    ux, uy = a * math.cos(math.radians(angle)), a * math.sin(math.radians(angle))
+    return (f"M{x - ux:.2f},{y - uy:.2f} a{a:.2f},{b:.2f} {angle:g} 1,0 {2 * ux:.2f},{2 * uy:.2f} "
+            f"a{a:.2f},{b:.2f} {angle:g} 1,0 {-2 * ux:.2f},{-2 * uy:.2f} Z")
 
 
 def box_rect(box) -> dict | None:
@@ -557,10 +561,9 @@ def zone_shapes(z: zones.Zones | None = None) -> dict:
               "water": None, "spots": [], "ground": None}
     outer = None
     if z.ring:
-        cx, cy, orx, ory, irx, iry = z.ring[:6]
-        icy = z.ring[6] if len(z.ring) > 6 else cy
-        inner = ellipse_path(cx, icy, irx, iry)
-        outer = ellipse_path(cx, cy, orx, ory)
+        rim, pool = config.ring_ellipses(z.ring)
+        inner = ellipse_path(*pool)
+        outer = ellipse_path(*rim)
         shapes["spots"] = [ellipse_path(*s) for s in z.spots]  # spots only apply with a ring
         shapes["rim"] = outer + " " + inner
         shapes["water"] = " ".join([inner, *shapes["spots"]])
@@ -1015,10 +1018,10 @@ def reset_zones(conn=Depends(get_conn)):
 def scene_shape(obj: dict) -> dict:
     """One scene object as an SVG path in the ZONE_W x ZONE_H box, with where to put its label."""
     if "ellipse" in obj:
-        cx, cy, rx, ry = obj["ellipse"]
-        d = ellipse_path(cx, cy, rx, ry) + (" " + ellipse_path(*obj["inner"]) if "inner" in obj else "")  # a ring
+        cx, cy, rx, ry = obj["ellipse"][:4]
+        d = ellipse_path(*obj["ellipse"]) + (" " + ellipse_path(*obj["inner"]) if "inner" in obj else "")  # a ring
         # the ring's water is a hole, so clicks there need their own (invisible) target
-        hit = ellipse_path(cx, cy, rx, ry) if "inner" in obj else None
+        hit = ellipse_path(*obj["ellipse"]) if "inner" in obj else None
         return {"d": d, "hit": hit, "lx": cx * ZONE_W, "ly": max(cy - ry, 0.04) * ZONE_H}
     pts = obj["points"]
     poly = lambda ps: "M" + " L".join(f"{x * ZONE_W:.2f},{y * ZONE_H:.2f}" for x, y in ps) + " Z"  # noqa: E731

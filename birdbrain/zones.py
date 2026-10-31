@@ -19,8 +19,8 @@ KEY = "zones"
 
 @dataclass(frozen=True)
 class Zones:
-    ring: tuple | None = None         # cx,cy,outer_rx,outer_ry,inner_rx,inner_ry[,inner_cy]
-    spots: tuple = ()                 # rocks in the water: (cx,cy,rx,ry), ...
+    ring: tuple | None = None         # rim and water ellipses, see config.RING_FORM
+    spots: tuple = ()                 # rocks in the water: (cx,cy,rx,ry[,angle]), ...
     roi: tuple | None = None          # x,y,w,h; only used without a ring
     crop: tuple | None = None         # what Claude sees for birdbath visits
     ground: tuple = ()                # ground polygon corners: (x,y), ...
@@ -48,9 +48,8 @@ class Zones:
 
         ring = None
         if self.ring:
-            ring = (round(self.ring[0] + dx, 4), round(self.ring[1] + dy, 4), *self.ring[2:6])
-            if len(self.ring) > 6:
-                ring += (round(self.ring[6] + dy, 4),)
+            outer, inner = config.ring_ellipses(self.ring)
+            ring = config.make_ring(box(outer), box(inner))
         return Zones(
             ring=ring,
             spots=tuple((round(s[0] + dx, 4), round(s[1] + dy, 4), *s[2:]) for s in self.spots),
@@ -118,17 +117,23 @@ def edited(current: Zones, d: dict) -> Zones:
     """current with the shapes the owner dragged (ring, spots, crop, ground), clamped to the frame.
     A ground crop that was just the polygon's box follows the polygon."""
     f = lambda v, lo=0.0, hi=1.0: round(min(max(float(v), lo), hi), 4)  # noqa: E731
+
+    def ellipse(e, lo, hi):  # center on the frame, radii in range, angle as -90..90 degrees
+        cx, cy, rx, ry, angle = config.ellipse5(e)
+        angle = (float(angle) + 90) % 180 - 90
+        return (f(cx), f(cy), f(rx, lo, hi), f(ry, lo, hi), round(angle, 1))
     ring = current.ring
     if d.get("ring") and current.ring:
         r = d["ring"]
-        if len(r) not in (6, 7):
+        if not 6 <= len(r) <= 10:
             raise ValueError("ring")
-        ring = tuple([f(r[0]), f(r[1])] + [f(v, 0.005, 0.5) for v in r[2:6]] + ([f(r[6])] if len(r) > 6 else []))
+        outer, inner = config.ring_ellipses(r)
+        ring = config.make_ring(ellipse(outer, 0.005, 0.5), ellipse(inner, 0.005, 0.5))
     spots = current.spots
     if "spots" in d:
-        if any(len(s) != 4 for s in d["spots"]):
+        if any(len(s) not in (4, 5) for s in d["spots"]):
             raise ValueError("spots")
-        spots = tuple((f(s[0]), f(s[1]), f(s[2], 0.003, 0.3), f(s[3], 0.003, 0.3)) for s in d["spots"])
+        spots = tuple(e if e[4] else e[:4] for e in (ellipse(s, 0.003, 0.3) for s in d["spots"]))
     ground, ground_crop = current.ground, current.ground_crop
     if d.get("ground") and current.ground:
         if len(d["ground"]) < 3:
@@ -141,17 +146,17 @@ def edited(current: Zones, d: dict) -> Zones:
 
 
 def objects(z: Zones) -> list[dict]:
-    """The zones as shapes for the editor (the same form as scene objects): the bath ring with its water, each rock
-    spot, the ground polygon and the crop box as 4 corners. `role` says which zone each one is."""
+    """The zones as shapes for the editor (the same form as scene objects): the bath's rim and its water as two
+    ellipses, each rock spot, the ground polygon and the crop box as 4 corners. Ellipses carry their angle in
+    degrees as a fifth number. `role` says which zone each one is."""
     out = []
     if z.ring:
-        cx, cy, orx, ory, irx, iry = z.ring[:6]
-        icy = z.ring[6] if len(z.ring) > 6 else cy
-        out.append({"role": "ring", "name": "Bath rim and water", "kind": "birdbath",
-                    "ellipse": [cx, cy, orx, ory], "inner": [cx, icy, irx, iry]})
+        outer, inner = config.ring_ellipses(z.ring)
+        out.append({"role": "ring", "name": "Bath rim", "kind": "birdbath", "ellipse": list(outer)})
+        out.append({"role": "water", "name": "Open water", "kind": "pool", "ellipse": list(inner)})
         for i, s in enumerate(z.spots):
             name = "Rock spot" + (f" {i + 1}" if len(z.spots) > 1 else "")
-            out.append({"role": "spot", "name": name, "kind": "landing_spot", "ellipse": list(s)})
+            out.append({"role": "spot", "name": name, "kind": "landing_spot", "ellipse": list(config.ellipse5(s))})
     if z.ground:
         out.append({"role": "ground", "name": "Ground", "kind": "ground", "points": [list(p) for p in z.ground]})
     if z.crop:
@@ -162,8 +167,8 @@ def objects(z: Zones) -> list[dict]:
 
 
 def from_objects(objs: list[dict]) -> dict:
-    """The editor's shapes back into the form `edited` takes. A ring's water keeps the rim's center across;
-    a crop box is the box around its corners; a spot drawn as points becomes the ellipse around them."""
+    """The editor's shapes back into the form `edited` takes. The rim and the water make the ring (a rim with an
+    `inner` is the older single-shape form); a crop box is the box around its corners; a spot drawn as points becomes the ellipse around them."""
     def box(pts):
         xs, ys = [p[0] for p in pts], [p[1] for p in pts]
         return min(xs), min(ys), max(xs), max(ys)
@@ -175,12 +180,14 @@ def from_objects(objs: list[dict]) -> dict:
         return [(x1 + x2) / 2, (y1 + y2) / 2, (x2 - x1) / 2, (y2 - y1) / 2]
 
     d: dict = {"spots": []}
+    outer = inner = None
     for o in objs:
         role = o.get("role")
         if role == "ring":
-            cx, cy, orx, ory = o["ellipse"]
-            _, icy, irx, iry = o.get("inner") or [cx, cy, orx * 0.8, ory * 0.8]
-            d["ring"] = [cx, cy, orx, ory, irx, iry, icy]
+            outer = ellipse(o)
+            inner = o.get("inner") or inner
+        elif role == "water":
+            inner = ellipse(o)
         elif role == "spot":
             d["spots"].append(ellipse(o))
         elif role == "ground":
@@ -192,6 +199,9 @@ def from_objects(objs: list[dict]) -> dict:
             d["crop"] = [x1, y1, x2 - x1, y2 - y1]
         else:
             raise ValueError("role")
+    if outer:
+        cx, cy, orx, ory, angle = config.ellipse5(outer)
+        d["ring"] = list(config.make_ring(outer, inner or (cx, cy, orx * 0.8, ory * 0.8, angle)))
     return d
 
 

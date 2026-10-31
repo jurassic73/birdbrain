@@ -25,18 +25,58 @@ def parse_box(raw: str, name: str = "box") -> tuple[float, float, float, float] 
     return _numbers(name, raw, (4,), "x,y,w,h") if raw else None
 
 
-def parse_ring(raw: str, name: str = "ring") -> tuple[float, ...] | None:
-    """An elliptical ring as fractions of the frame: "cx,cy,outer_rx,outer_ry,inner_rx,inner_ry[,inner_cy]".
+RING_FORM = "cx,cy,outer_rx,outer_ry,inner_rx,inner_ry[,inner_cy[,inner_cx[,angle[,inner_angle]]]]"
 
-    Seen from above at an angle the water's ellipse sits higher than the rim's, hence the optional inner_cy.
+
+def parse_ring(raw: str, name: str = "ring") -> tuple[float, ...] | None:
+    """An elliptical ring as fractions of the frame: the rim's ellipse and the water's inside it.
+
+    Seen from above at an angle the water's ellipse sits higher than the rim's, hence the optional inner_cy; inner_cx
+    lets it sit off to one side, and the angles (degrees, clockwise on the picture) turn either ellipse.
     """
     raw = raw.strip()
-    return _numbers(name, raw, (6, 7), "cx,cy,outer_rx,outer_ry,inner_rx,inner_ry[,inner_cy]") if raw else None
+    return _numbers(name, raw, (6, 7, 8, 9, 10), RING_FORM) if raw else None
+
+
+def ring_ellipses(ring) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """The rim's and the water's ellipses of a ring, each (cx, cy, rx, ry, angle in degrees)."""
+    cx, cy, orx, ory, irx, iry = ring[:6]
+    icy = ring[6] if len(ring) > 6 else cy
+    icx = ring[7] if len(ring) > 7 else cx
+    angle = ring[8] if len(ring) > 8 else 0.0
+    iangle = ring[9] if len(ring) > 9 else angle
+    return (cx, cy, orx, ory, angle), (icx, icy, irx, iry, iangle)
+
+
+def make_ring(outer, inner) -> tuple[float, ...]:
+    """A ring from its two ellipses (cx, cy, rx, ry[, angle]), in the shortest form that holds them."""
+    cx, cy, orx, ory, angle = ellipse5(outer)
+    icx, icy, irx, iry, iangle = ellipse5(inner)
+    ring = [cx, cy, orx, ory, irx, iry, icy, icx, angle, iangle]
+    for default in (angle, 0, cx):  # drop trailing values that equal what they default to
+        if ring[-1] != default:
+            break
+        ring.pop()
+    return tuple(ring)
+
+
+def ellipse5(e) -> tuple[float, ...]:
+    """A spot or ellipse as (cx, cy, rx, ry, angle): ones saved before rotation have no angle."""
+    return (*e[:4], e[4] if len(e) > 4 else 0.0)
 
 
 def parse_spots(raw: str, name: str = "spots") -> tuple[tuple[float, ...], ...]:
-    """Extra watched ellipses: "cx,cy,rx,ry;cx,cy,rx,ry"."""
-    return tuple(_numbers(name, s.strip(), (4,), "cx,cy,rx,ry") for s in raw.split(";") if s.strip())
+    """Extra watched ellipses: "cx,cy,rx,ry[,angle];cx,cy,rx,ry"."""
+    return tuple(_numbers(name, s.strip(), (4, 5), "cx,cy,rx,ry[,angle]") for s in raw.split(";") if s.strip())
+
+
+def draw_ellipse(mask, e, value, thickness: int = -1, scale=(1.0, 1.0)) -> None:
+    """cv2.ellipse for a frame-fraction ellipse (cx, cy, rx, ry[, angle]) on an image of any size."""
+    import cv2  # only the watcher and calibration need OpenCV, not the web process
+    H, W = mask.shape[:2]
+    cx, cy, rx, ry, angle = ellipse5(e)
+    cv2.ellipse(mask, (int(cx * W), int(cy * H)), (int(rx * W * scale[0]), int(ry * H * scale[1])), angle, 0, 360,
+                value, thickness)
 
 
 def parse_polygon(raw: str, name: str = "polygon") -> tuple[tuple[float, float], ...]:

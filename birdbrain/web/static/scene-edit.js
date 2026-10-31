@@ -8,7 +8,8 @@
 // Changes stay on the page until Save; closing (Done, Escape, a click outside the photo) asks to save them.
 // Shapes are frame fractions, drawn in the SVG's viewBox (W x H), the same as the server's scene_shape.
 // Settings > Zones uses it too: its svg has data-save (post every shape there at once as {objects}), data-panel and
-// data-panel-url (what to reload after), and data-fixed (shapes keep their form: no Ellipse / Points switch).
+// data-panel-url (what to reload after), data-fixed (shapes keep their form: no Ellipse / Points switch) and
+// data-rotate (ellipses get a turn handle above them; the angle, degrees clockwise, is the ellipse's fifth number).
 (() => {
   const NS = "http://www.w3.org/2000/svg";
   const KEYS = ["ellipse", "inner", "points", "pieces"];
@@ -20,11 +21,25 @@
   const objs = (svg) => JSON.parse(svg.dataset.objs || "[]");
   const geometry = (o) => Object.fromEntries(KEYS.filter((k) => o[k]).map((k) => [k, o[k]]));
 
-  function ellipsePath(svg, [cx, cy, rx, ry]) {
+  function ellipsePath(svg, [cx, cy, rx, ry, deg = 0]) {
     const { width: W, height: H } = box(svg);
     const x = cx * W, y = cy * H, a = rx * W, b = ry * H;
-    return `M${x - a},${y} a${a},${b} 0 1,0 ${2 * a},0 a${a},${b} 0 1,0 ${-2 * a},0 Z`;
+    const ux = a * Math.cos((deg * Math.PI) / 180), uy = a * Math.sin((deg * Math.PI) / 180);
+    return `M${x - ux},${y - uy} a${a},${b} ${deg} 1,0 ${2 * ux},${2 * uy} a${a},${b} ${deg} 1,0 ${-2 * ux},${-2 * uy} Z`;
   }
+  // A point on a (turned) ellipse's own axes, lx along its width and ly along its height in pixels, as fractions.
+  function onAxes(svg, [cx, cy, , , deg = 0], lx, ly) {
+    const { width: W, height: H } = box(svg);
+    const t = (deg * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t);
+    return [cx + (lx * c - ly * s) / W, cy + (lx * s + ly * c) / H];
+  }
+  // A point (fractions) in an ellipse's own axes, in pixels from its center.
+  function toAxes(svg, [cx, cy, , , deg = 0], [x, y]) {
+    const { width: W, height: H } = box(svg);
+    const t = (deg * Math.PI) / 180, dx = (x - cx) * W, dy = (y - cy) * H;
+    return [dx * Math.cos(t) + dy * Math.sin(t), -dx * Math.sin(t) + dy * Math.cos(t)];
+  }
+  const ROTATE_GAP = 26; // the turn handle sits this many on-screen pixels above the ellipse
   function polyPath(svg, pts) {
     const { width: W, height: H } = box(svg);
     return "M" + pts.map(([x, y]) => `${x * W},${y * H}`).join(" L") + " Z";
@@ -34,7 +49,10 @@
     return [o.points, ...(o.pieces || [])].map((p) => polyPath(svg, p)).join(" ");
   }
   function labelAt(o) {
-    if (o.ellipse) return [o.ellipse[0], Math.max(o.ellipse[1] - o.ellipse[3], 0.04)];
+    if (o.ellipse) {
+      const t = ((o.ellipse[4] || 0) * Math.PI) / 180;  // the top of the turned ellipse
+      return [o.ellipse[0], Math.max(o.ellipse[1] - Math.hypot(o.ellipse[3] * Math.cos(t), o.ellipse[2] * 16 / 9 * Math.sin(t)), 0.04)];
+    }
     const top = o.points.reduce((a, b) => (b[1] < a[1] ? b : a));
     return [top[0], Math.max(top[1], 0.04)];
   }
@@ -46,13 +64,16 @@
     return [Math.min(Math.max(p.x / W, 0), 1), Math.min(Math.max(p.y / H, 0), 1)];
   }
 
-  // Handles: [kind, x, y] in fractions. Kinds: move, o-x / o-y (outer radius), i-x / i-y (water), p-k-j (corner j of
-  // outline k: 0 is points, 1.. are pieces), m-k-j (the add-a-corner dot between corners j and j+1).
-  function handles(o) {
+  // Handles: [kind, x, y] in fractions. Kinds: move, o-x / o-y (outer radius), o-r (turn), i-x / i-y (water),
+  // p-k-j (corner j of outline k: 0 is points, 1.. are pieces), m-k-j (the add-a-corner dot between corners j and j+1).
+  function handles(svg, o, px = 1) {
     const out = [];
     if (o.ellipse) {
-      const [cx, cy, rx, ry] = o.ellipse;
-      out.push(["move", cx, cy], ["o-x", cx - rx, cy], ["o-x", cx + rx, cy], ["o-y", cx, cy - ry], ["o-y", cx, cy + ry]);
+      const e = o.ellipse, { width: W, height: H } = box(svg), a = e[2] * W, b = e[3] * H;
+      out.push(["move", e[0], e[1]], ["o-x", ...onAxes(svg, e, -a, 0)], ["o-x", ...onAxes(svg, e, a, 0)],
+        ["o-y", ...onAxes(svg, e, 0, -b)], ["o-y", ...onAxes(svg, e, 0, b)]);
+      if (svg.dataset.rotate) out.push(["o-r", ...onAxes(svg, e, 0, -b - ROTATE_GAP / px)]);
+      const [cx, cy] = e;
       if (o.inner) {
         const [ix, iy, irx, iry] = o.inner;
         out.push(["i-x", ix - irx, iy], ["i-x", ix + irx, iy], ["i-y", ix, iy - iry], ["i-y", ix, iy + iry]);
@@ -91,7 +112,17 @@
     g.replaceChildren();
     // handles stay the same size on screen: bigger for fingers
     const px = svg.getScreenCTM().a || 1, r = (matchMedia("(pointer: coarse)").matches ? 13 : 8) / px;
-    for (const [kind, x, y] of handles(obj)) {
+    const all = handles(svg, obj, px), turn = all.find(([k]) => k === "o-r");
+    if (turn) {  // a stem from the top of the ellipse to the turn handle
+      const top = all.find(([k]) => k === "o-y");
+      const [tx, ty] = onAxes(svg, obj.ellipse, 0, -obj.ellipse[3] * H);
+      const stem = document.createElementNS(NS, "line");
+      stem.setAttribute("class", "se-stem");
+      stem.setAttribute("x1", tx * W); stem.setAttribute("y1", ty * H);
+      stem.setAttribute("x2", turn[1] * W); stem.setAttribute("y2", turn[2] * H);
+      if (top) g.appendChild(stem);
+    }
+    for (const [kind, x, y] of all) {
       const h = document.createElementNS(NS, kind === "move" ? "g" : "circle");
       h.dataset.kind = kind;
       if (kind === "move") {
@@ -102,12 +133,14 @@
         g.prepend(h);  // under the side handles, so they stay grabbable on a small shape
         continue;
       }
-      const cls = kind.startsWith("i-") ? "se-handle se-inner" : kind.startsWith("m-") ? "se-handle se-mid" : "se-handle";
+      const cls = kind.startsWith("i-") ? "se-handle se-inner" : kind.startsWith("m-") ? "se-handle se-mid"
+        : kind === "o-r" ? "se-handle se-rotate" : "se-handle";
       h.setAttribute("class", cls + (kind === sel.corner ? " se-active" : ""));
       h.setAttribute("cx", x * W); h.setAttribute("cy", y * H);
       h.setAttribute("r", r * (kind.startsWith("m-") ? 0.5 : kind.startsWith("p-") ? 0.7 : kind.startsWith("i-") ? 0.8 : 1));
       if (kind.startsWith("p-")) h.innerHTML = "<title>Double-click (or press Delete) to remove this corner</title>";
       if (kind.startsWith("m-")) h.innerHTML = "<title>Drag or click to add a corner here</title>";
+      if (kind === "o-r") h.innerHTML = "<title>Drag to turn (snaps to level; hold Shift for 15° steps)</title>";
       g.appendChild(h);
     }
   }
@@ -372,21 +405,30 @@
     reloadPanel(svg);
   }
 
-  function drag(kind, start, startObj, [x, y]) {
+  function drag(kind, start, startObj, [x, y], ev) {
     const o = sel.obj, dx = x - start[0], dy = y - start[1];
     const shift = (e) => [e[0] + dx, e[1] + dy, e[2], e[3]];
     const min = 0.005;
     if (kind === "move") {
       if (startObj.ellipse) {
-        o.ellipse = shift(startObj.ellipse);
+        o.ellipse = [...shift(startObj.ellipse), ...startObj.ellipse.slice(4)];
         if (startObj.inner) o.inner = shift(startObj.inner);
       } else {
         const mv = (pts) => pts.map(([px, py]) => [px + dx, py + dy]);
         o.points = mv(startObj.points);
         if (startObj.pieces) o.pieces = startObj.pieces.map(mv);
       }
-    } else if (kind === "o-x") o.ellipse[2] = Math.max(Math.abs(x - o.ellipse[0]), min);
-    else if (kind === "o-y") o.ellipse[3] = Math.max(Math.abs(y - o.ellipse[1]), min);
+    } else if (kind === "o-x" || kind === "o-y") {  // along the ellipse's own (maybe turned) axis
+      const [lx, ly] = toAxes(sel.svg, o.ellipse, [x, y]), { width: W, height: H } = box(sel.svg);
+      if (kind === "o-x") o.ellipse[2] = Math.max(Math.abs(lx) / W, min);
+      else o.ellipse[3] = Math.max(Math.abs(ly) / H, min);
+    } else if (kind === "o-r") {
+      const { width: W, height: H } = box(sel.svg);
+      let deg = (Math.atan2((y - o.ellipse[1]) * H, (x - o.ellipse[0]) * W) * 180) / Math.PI + 90;
+      deg = ((deg + 90) % 180 + 180) % 180 - 90;  // an ellipse turned 180° is the same: keep -90..90
+      deg = ev?.shiftKey ? Math.round(deg / 15) * 15 : Math.abs(deg) < 3 ? 0 : Math.round(deg * 10) / 10;
+      o.ellipse[4] = deg;
+    }
     else if (kind === "i-x") o.inner[2] = Math.max(Math.abs(x - o.inner[0]), min);
     else if (kind === "i-y") o.inner[3] = Math.max(Math.abs(y - o.inner[1]), min);
     else if (kind.startsWith("p-")) {
@@ -402,10 +444,10 @@
     if ((to === "ellipse") === !!obj.ellipse) return;
     let geom;
     if (to === "points") {
-      const [cx, cy, rx, ry] = obj.ellipse;
+      const e = obj.ellipse, { width: W, height: H } = box(svg);
       geom = { points: Array.from({ length: CORNERS }, (_, k) => {
         const a = (2 * Math.PI * k) / CORNERS;
-        return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)];
+        return onAxes(svg, e, e[2] * W * Math.cos(a), e[3] * H * Math.sin(a));
       }) };
     } else {
       const pts = [obj.points, ...(obj.pieces || [])].flat();
@@ -452,7 +494,7 @@
     if (kind.startsWith("p-")) { sel.corner = kind; draw(); }  // the corner Delete would remove
     const svg = sel.svg, start = frac(svg, e), startObj = structuredClone(sel.obj);
     target.setPointerCapture?.(e.pointerId);
-    const move = (ev) => drag(kind, start, startObj, frac(svg, ev));
+    const move = (ev) => drag(kind, start, startObj, frac(svg, ev), ev);
     const up = () => {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);

@@ -61,12 +61,8 @@ def median_frame(frames: list[np.ndarray]) -> np.ndarray:
 
 
 def water_area(shape: tuple[int, int], ring) -> np.ndarray:
-    H, W = shape
-    cx, cy, _, _, irx, iry = ring[:6]
-    icy = ring[6] if len(ring) > 6 else cy
-    mask = np.zeros((H, W), np.uint8)
-    axes = (int(irx * W * WATER_MARGIN[0]), int(iry * H * WATER_MARGIN[1]))
-    cv2.ellipse(mask, (int(cx * W), int(icy * H)), axes, 0, 0, 360, 255, -1)
+    mask = np.zeros(shape, np.uint8)
+    config.draw_ellipse(mask, config.ring_ellipses(ring)[1], 255, scale=WATER_MARGIN)
     return mask
 
 
@@ -119,6 +115,7 @@ def track_spots(spots, clusters: list[dict], shape: tuple[int, int], anchor=None
     for n, spot in enumerate(spots, 1):
         name = "The rock spot" if len(spots) == 1 else f"Rock spot {n}"
         sx, sy, srx, sry = (spot[0] * W, spot[1] * H, spot[2] * W, spot[3] * H)
+        turn = math.radians(spot[4]) if len(spot) > 4 else 0.0
         reach = SPOT_SEARCH * max(srx, sry)
         near = [i for i, c in enumerate(clusters) if i not in used and math.hypot(c["cx"] - sx, c["cy"] - sy) <= reach]
         if not near:
@@ -131,11 +128,13 @@ def track_spots(spots, clusters: list[dict], shape: tuple[int, int], anchor=None
         if anchor is not None:
             hrx, hry = anchor[n - 1][2] * W, anchor[n - 1][3] * H
             dx, dy = c["cx"] - sx, c["cy"] - sy
-            if (dx / srx) ** 2 + (dy / sry) ** 2 <= 1 and abs(hrx - srx) < 2 and abs(hry - sry) < 2:
+            u, v = dx * math.cos(turn) + dy * math.sin(turn), -dx * math.sin(turn) + dy * math.cos(turn)
+            if (u / srx) ** 2 + (v / sry) ** 2 <= 1 and abs(hrx - srx) < 2 and abs(hry - sry) < 2:
                 new.append(tuple(spot))
                 notes.append(f"{name}: still on the rocks, where you put it.")
                 continue
-            new.append((round(c["cx"] / W, 4), round(c["cy"] / H, 4), round(hrx / W, 4), round(hry / H, 4)))
+            new.append((round(c["cx"] / W, 4), round(c["cy"] / H, 4), round(hrx / W, 4), round(hry / H, 4),
+                        *spot[4:5]))
             notes.append(f"{name}: the rocks moved {math.hypot(dx, dy):.0f} px {direction(dx, dy)}; "
                          "followed them, keeping the size you set.")
             continue
@@ -148,7 +147,7 @@ def track_spots(spots, clusters: list[dict], shape: tuple[int, int], anchor=None
             new.append(tuple(spot))
             notes.append(f"{name}: still on the rocks.")
             continue
-        new.append((round(c["cx"] / W, 4), round(c["cy"] / H, 4), round(rx / W, 4), round(ry / H, 4)))
+        new.append((round(c["cx"] / W, 4), round(c["cy"] / H, 4), round(rx / W, 4), round(ry / H, 4), *spot[4:5]))
         notes.append(f"{name}: moved {moved:.0f} px {direction(dx, dy)} onto the rocks." if moved >= MOVE_MIN_PX
                      else f"{name}: resized to fit the rocks.")
     if ignored := len(clusters) - len(used):
@@ -184,12 +183,9 @@ def ring_fit(gray: np.ndarray, ring) -> float:
     """Mean edge strength along the bath's outer and inner ellipses: higher when they sit on the real bath."""
     if not ring:
         return 0.0
-    H, W = gray.shape
-    cx, cy, orx, ory, irx, iry = ring[:6]
-    icy = ring[6] if len(ring) > 6 else cy
-    mask = np.zeros((H, W), np.uint8)
-    for x, y, rx, ry in ((cx, cy, orx, ory), (cx, icy, irx, iry)):
-        cv2.ellipse(mask, (int(x * W), int(y * H)), (int(rx * W), int(ry * H)), 0, 0, 360, 255, 2)
+    mask = np.zeros(gray.shape, np.uint8)
+    for e in config.ring_ellipses(ring):
+        config.draw_ellipse(mask, e, 255, 2)
     return float(edge_image(gray)[mask > 0].mean())
 
 
@@ -236,15 +232,15 @@ def recalibrate(median: np.ndarray, zones: Zones, reference: np.ndarray | None, 
 def _draw(img: np.ndarray, z: Zones, color: tuple[int, int, int], thick: int) -> None:
     H, W = img.shape[:2]
 
-    def ellipse(cx, cy, rx, ry):
-        cv2.ellipse(img, (int(cx * W), int(cy * H)), (int(rx * W), int(ry * H)), 0, 0, 360, color, thick, cv2.LINE_AA)
+    def ellipse(e):
+        cx, cy, rx, ry, angle = config.ellipse5(e)
+        cv2.ellipse(img, (int(cx * W), int(cy * H)), (int(rx * W), int(ry * H)), angle, 0, 360, color, thick,
+                    cv2.LINE_AA)
 
-    if z.ring:
-        cx, cy, orx, ory, irx, iry = z.ring[:6]
-        ellipse(cx, cy, orx, ory)
-        ellipse(cx, z.ring[6] if len(z.ring) > 6 else cy, irx, iry)
+    for e in (config.ring_ellipses(z.ring) if z.ring else ()):
+        ellipse(e)
     for s in z.spots:
-        ellipse(*s)
+        ellipse(s)
     if z.ground:
         pts = np.array([(int(x * W), int(y * H)) for x, y in z.ground], np.int32)
         cv2.polylines(img, [pts], True, color, thick, cv2.LINE_AA)

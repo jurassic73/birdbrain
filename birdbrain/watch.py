@@ -44,26 +44,22 @@ def roi(frame: np.ndarray, box) -> np.ndarray:
 
 def motion_mask(shape: tuple[int, int], ring, spots=()) -> np.ndarray:
     """255 on the rim (inside the outer ellipse, outside the water) plus any extra spots, e.g. rocks in the water."""
-    H, W = shape
-    cx, cy, orx, ory, irx, iry = ring[:6]
-    icy = ring[6] if len(ring) > 6 else cy
-    mask = np.zeros((H, W), np.uint8)
-    cv2.ellipse(mask, (int(cx * W), int(cy * H)), (int(orx * W), int(ory * H)), 0, 0, 360, 255, -1)
-    cv2.ellipse(mask, (int(cx * W), int(icy * H)), (int(irx * W), int(iry * H)), 0, 0, 360, 0, -1)
-    for sx, sy, srx, sry in spots:
-        cv2.ellipse(mask, (int(sx * W), int(sy * H)), (int(srx * W), int(sry * H)), 0, 0, 360, 255, -1)
+    outer, inner = config.ring_ellipses(ring)
+    mask = np.zeros(shape, np.uint8)
+    config.draw_ellipse(mask, outer, 255)
+    config.draw_ellipse(mask, inner, 0)
+    for s in spots:
+        config.draw_ellipse(mask, s, 255)
     return mask
 
 
 def water_mask(shape: tuple[int, int], ring, spots=()) -> np.ndarray:
     """255 on the open water: the ring's inner ellipse, minus the rock spots (those belong to the rim zone)."""
-    H, W = shape
-    cx, cy, _, _, irx, iry = ring[:6]
-    icy = ring[6] if len(ring) > 6 else cy
-    mask = np.zeros((H, W), np.uint8)
-    cv2.ellipse(mask, (int(cx * W), int(icy * H)), (int(irx * W), int(iry * H)), 0, 0, 360, 255, -1)
-    for sx, sy, srx, sry in spots:
-        cv2.ellipse(mask, (int(sx * W), int(sy * H)), (int(srx * W), int(sry * H)), 0, 0, 360, 0, -1)
+    _, inner = config.ring_ellipses(ring)
+    mask = np.zeros(shape, np.uint8)
+    config.draw_ellipse(mask, inner, 255)
+    for s in spots:
+        config.draw_ellipse(mask, s, 0)
     return mask
 
 
@@ -125,8 +121,7 @@ def ground_mask(shape: tuple[int, int], polygon, ring=None) -> np.ndarray:
     mask = np.zeros((H, W), np.uint8)
     cv2.fillPoly(mask, [np.array([(int(x * W), int(y * H)) for x, y in polygon], np.int32)], 255)
     if ring:
-        cx, cy, orx, ory = ring[:4]
-        cv2.ellipse(mask, (int(cx * W), int(cy * H)), (int(orx * W), int(ory * H)), 0, 0, 360, 0, -1)
+        config.draw_ellipse(mask, config.ring_ellipses(ring)[0], 0)
     return mask
 
 
