@@ -4,6 +4,64 @@
 {% block content %}
 <div class="page-head"><h1>Settings</h1></div>
 
+<details class="settings-card" id="zones" open data-m-closed>
+  <summary><h2>Zones</h2><span class="summary-hint">{{ ('Checked daily at ' ~ recal.labels | join(' and ')) if recal.auto and recal.times else 'Automatic checks off' }}</span></summary>
+  <div class="settings-body">
+  {% if zones_saved %}<p class="notice saved">Saved.</p>{% endif %}
+  <p class="muted">Rocks get nudged and cameras shift. The watcher looks at the bath for about a minute, moves each
+    rock spot back onto its rocks and, if the camera moved, every zone with it. <a href="/about#zones">Zone details</a></p>
+
+  {% include "_zones.html" %}
+
+  <form class="settings-form" method="post" action="/settings/zones">
+    <fieldset class="field">
+      <legend>Automatic checks</legend>
+      <div class="choices">
+        <label class="choice">
+          <input type="checkbox" name="auto" value="1" {% if recal.auto %}checked{% endif %}>
+          <span>Every day <small>at the times below</small></span>
+        </label>
+      </div>
+      <div class="time-range sun-times">
+        {% for n, ev, word in [(1, 'sunrise', 'after'), (2, 'sunset', 'before')] %}
+        {% set t = recal.times[n - 1] if recal.times | length >= n else '' %}
+        {% set on = t == ev %}
+        {% if n == 2 %}<span>and</span>{% endif %}
+        <div class="sun-slot">
+          <input type="time" name="time{{ n }}" value="{{ recal.sun.get(ev, '') if on else t }}"
+                 aria-label="{{ 'First' if n == 1 else 'Second' }} time" {% if on %}disabled{% endif %}>
+          <label class="sun-toggle{{ ' off' if not recal.located }}"
+                 {% if not recal.located %}data-tip="Set SITE_LAT and SITE_LON in .env to use the local {{ ev }}"{% endif %}>
+            <input type="checkbox" name="sun{{ n }}" value="1" data-sun="{{ recal.sun.get(ev, '') }}"
+                   {% if on %}checked{% endif %} {% if not recal.located %}disabled{% endif %}>
+            Use local {{ ev }} <small class="muted">(1 h {{ word }}{% if recal.sun.get(ev) %}, {{ recal.sun[ev] }} today{% endif %})</small>
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+      <script>
+        document.querySelectorAll('.sun-slot input[type=checkbox]').forEach(box => box.addEventListener('change', () => {
+          const time = box.closest('.sun-slot').querySelector('input[type=time]');
+          time.disabled = box.checked;
+          if (box.checked && box.dataset.sun) { time.dataset.own = time.value; time.value = box.dataset.sun; }
+          else if (!box.checked && time.dataset.own !== undefined) time.value = time.dataset.own;
+        }));
+      </script>
+      <small class="muted">Daylight only: the rocks don't show in night vision. Avoid times when sun glints off the water. The sun options follow the seasons, keeping each check an hour inside daylight.</small>
+    </fieldset>
+    <div class="actions"><button type="submit">Save</button></div>
+  </form>
+  </div>
+</details>
+
+<details class="settings-card" id="camera" open data-m-closed>
+  <summary><h2>Camera</h2><span class="summary-hint">Picture, day and night</span></summary>
+  <div class="settings-body">
+  <p class="muted">Changes the camera's own settings; they apply at once and stay after a restart.</p>
+  <div hx-get="/settings/camera" hx-trigger="load" hx-swap="outerHTML"><p class="muted small">Asking the camera…</p></div>
+  </div>
+</details>
+
 <details class="settings-card" id="detector" open>
   <summary><h2>Local detector</h2><span class="summary-hint">{{ detector_mode | capitalize }}</span></summary>
   <div class="settings-body">
@@ -63,64 +121,6 @@
       {% endfor %}
     </div>
     <p class="advice">In gate mode, frames it skips are kept as false triggers marked {{ badge("pi only", "pi-only") }}: check them on <a href="/false-triggers">False triggers</a> and correct any with an animal.</p>
-    <div class="actions"><button type="submit">Save</button></div>
-  </form>
-  </div>
-</details>
-
-<details class="settings-card" id="camera" open data-m-closed>
-  <summary><h2>Camera</h2><span class="summary-hint">Picture, day and night</span></summary>
-  <div class="settings-body">
-  <p class="muted">Changes the camera's own settings; they apply at once and stay after a restart.</p>
-  <div hx-get="/settings/camera" hx-trigger="load" hx-swap="outerHTML"><p class="muted small">Asking the camera…</p></div>
-  </div>
-</details>
-
-<details class="settings-card" id="zones" open data-m-closed>
-  <summary><h2>Zones</h2><span class="summary-hint">{{ ('Checked daily at ' ~ recal.labels | join(' and ')) if recal.auto and recal.times else 'Automatic checks off' }}</span></summary>
-  <div class="settings-body">
-  {% if zones_saved %}<p class="notice saved">Saved.</p>{% endif %}
-  <p class="muted">Rocks get nudged and cameras shift. The watcher looks at the bath for about a minute, moves each
-    rock spot back onto its rocks and, if the camera moved, every zone with it. <a href="/about#zones">Zone details</a></p>
-
-  {% include "_zones.html" %}
-
-  <form class="settings-form" method="post" action="/settings/zones">
-    <fieldset class="field">
-      <legend>Automatic checks</legend>
-      <div class="choices">
-        <label class="choice">
-          <input type="checkbox" name="auto" value="1" {% if recal.auto %}checked{% endif %}>
-          <span>Every day <small>at the times below</small></span>
-        </label>
-      </div>
-      <div class="time-range sun-times">
-        {% for n, ev, word in [(1, 'sunrise', 'after'), (2, 'sunset', 'before')] %}
-        {% set t = recal.times[n - 1] if recal.times | length >= n else '' %}
-        {% set on = t == ev %}
-        {% if n == 2 %}<span>and</span>{% endif %}
-        <div class="sun-slot">
-          <input type="time" name="time{{ n }}" value="{{ recal.sun.get(ev, '') if on else t }}"
-                 aria-label="{{ 'First' if n == 1 else 'Second' }} time" {% if on %}disabled{% endif %}>
-          <label class="sun-toggle{{ ' off' if not recal.located }}"
-                 {% if not recal.located %}data-tip="Set SITE_LAT and SITE_LON in .env to use the local {{ ev }}"{% endif %}>
-            <input type="checkbox" name="sun{{ n }}" value="1" data-sun="{{ recal.sun.get(ev, '') }}"
-                   {% if on %}checked{% endif %} {% if not recal.located %}disabled{% endif %}>
-            Use local {{ ev }} <small class="muted">(1 h {{ word }}{% if recal.sun.get(ev) %}, {{ recal.sun[ev] }} today{% endif %})</small>
-          </label>
-        </div>
-        {% endfor %}
-      </div>
-      <script>
-        document.querySelectorAll('.sun-slot input[type=checkbox]').forEach(box => box.addEventListener('change', () => {
-          const time = box.closest('.sun-slot').querySelector('input[type=time]');
-          time.disabled = box.checked;
-          if (box.checked && box.dataset.sun) { time.dataset.own = time.value; time.value = box.dataset.sun; }
-          else if (!box.checked && time.dataset.own !== undefined) time.value = time.dataset.own;
-        }));
-      </script>
-      <small class="muted">Daylight only: the rocks don't show in night vision. Avoid times when sun glints off the water. The sun options follow the seasons, keeping each check an hour inside daylight.</small>
-    </fieldset>
     <div class="actions"><button type="submit">Save</button></div>
   </form>
   </div>
