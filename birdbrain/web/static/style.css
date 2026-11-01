@@ -819,7 +819,7 @@ button.danger.sending, button.danger.htmx-request {
 .sp-dialog { width: min(780px, calc(100vw - 24px)); }  /* the look: .popup */
 .sp-close { position: sticky; top: 0; float: right; margin: -8px -8px 0 8px; }  /* the look: .popup-close */
 .sp-card { display: flex; flex-direction: column; gap: 16px; }
-.sp-card h2 { font-size: 1.35rem; margin: 0; }
+.sp-card h1, .sp-card h2 { font-size: 1.35rem; margin: 0; }
 .sp-card h3 { font-size: 1rem; margin: 0 0 8px; }
 .sp-card p { margin: 0; }
 .sp-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
