@@ -214,6 +214,15 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   gap: 2px 10px; padding: 6px 12px; border-radius: 10px; background: rgba(0, 0, 0, .6); font-size: .85rem;
 }
 .hero-kicker, .hero-time { color: #ccc; }
+.hero-kicker-top { display: none; }
+/* Desktop: the label moves to the top-left corner of the photo, same chip as the caption, kept small. */
+@media (min-width: 641px) {
+  .hero-kicker { display: none; }
+  .hero-kicker-top {
+    display: block; position: absolute; top: 10px; left: 10px; max-width: calc(100% - 20px); padding: 6px 12px;
+    border-radius: 10px; background: rgba(0, 0, 0, .6); color: #ccc; font-size: .85rem; pointer-events: none;
+  }
+}
 .hero-name { font-weight: 600; font-size: 1.05rem; }
 .hero-latest:hover .hero-name { text-decoration: underline; }
 .hero-latest.card-new { animation: card-new 6s ease-out; }
