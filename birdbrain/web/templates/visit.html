@@ -25,13 +25,17 @@
 {% set has_correction = visit.corrected_visitor or visit.corrected_species or visit.feedback or visit.marks or visit.corrected_also is not none %}
 {% set claude_also = also_of({"also": visit.also}) %}
 {% set embed = request.query_params.get('embed') == '1' %}
-{# In the False triggers pop-up every link keeps embed=1, so the arrows stay inside it. #}
-{% set ft_param = ('?ft=1' if is_ft else '') ~ (('&' if is_ft else '?') ~ 'embed=1' if embed else '') %}
+{# In the False triggers pop-up every link keeps embed=1 (and todo=1, unconfirmed only), so the arrows stay inside it. #}
+{% set ft_args = (['ft=1'] if is_ft else []) + (['todo=1'] if todo else []) + (['embed=1'] if embed else []) %}
+{% set ft_param = ('?' ~ ft_args | join('&')) if ft_args else '' %}
 {% set settled = not visit.needs_review and visit.confidence == 'high' and not has_correction %}
+{% if embed %}
+<p class="embed-keys muted">Keys: <kbd>&#8592;</kbd> newer <kbd>&#8594;</kbd> older{% if request.state.admin %} · <kbd>C</kbd> confirmed no animal, next photo{% endif %} · <kbd>Esc</kbd> close</p>
+{% endif %}
 <nav class="visit-nav" aria-label="Visit navigation">
+  {% if embed %}<a class="visit-nav-back embed-close-btn" href="/false-triggers" id="embed-close" title="Close (Esc)">&times; Close</a>{% endif %}
   {% if prev_id %}<a class="visit-nav-btn" href="/visit/{{ prev_id }}{{ ft_param }}" id="nav-prev" title="Newer (←)">&#8592;</a>{% else %}<span class="visit-nav-btn disabled">&#8592;</span>{% endif %}
-  {% if embed %}<a class="visit-nav-back" href="/false-triggers" id="embed-close" title="Close (Esc)">&times; Close</a>
-  {% else %}<a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>{% endif %}
+  {% if not embed %}<a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>{% endif %}
   {% if next_id %}<a class="visit-nav-btn" href="/visit/{{ next_id }}{{ ft_param }}" id="nav-next" title="Older (→)">&#8594;</a>{% else %}<span class="visit-nav-btn disabled">&#8594;</span>{% endif %}
   {{ flow("in-nav") }}
 </nav>
@@ -73,9 +77,9 @@
         {% if request.state.admin %}{% set ms = mirror_status(visit.image_path) %}{% if ms == "person" %}{{ badge("private", "private") }}{% elif ms == "unchecked" %}{{ badge("not public yet", "private") }}{% endif %}{% endif %}
         {% if request.state.admin %}
         {% if visit.confirmed_at %}
-        {{ badge("confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button>
+        <span class="confirmed-pair">{{ badge("Confirmed No Animal" if visit.label == 'None' else "confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button></span>
         {% elif not (visit.corrected_species or visit.corrected_visitor) %}
-        <button hx-post="/visit/{{ visit.id }}/reviewed" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi).">Confirm: this is correct</button>
+        <button hx-post="/visit/{{ visit.id }}/reviewed" id="confirm-btn" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi).">Confirm: this is correct</button>
         {% endif %}
         {% if settled %}<button type="button" class="m-only secondary" id="correct-open">Not right? Correct it</button>{% endif %}
         <button class="danger m-hide" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Its photo is deleted too. This can't be undone." data-confirm-title="Delete this visit?" data-confirm-ok="Delete">Delete visit</button>
@@ -618,6 +622,28 @@
     document.addEventListener("keydown", e => {
       if (e.key === "Escape" && !document.querySelector("dialog[open]")) close();
     });
+    {% if request.state.admin %}
+    // C: confirmed no animal, then on to the next photo (older; newer at the end of the list).
+    // Nothing left to check in the list it came from: the pop-up closes and the grid catches up.
+    let busy = false;
+    document.addEventListener("keydown", async e => {
+      if (busy || e.key.toLowerCase() !== "c" || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      if (document.querySelector("dialog[open]") || e.target.closest("input, textarea, select, [contenteditable]")) return;
+      const btn = document.getElementById("confirm-btn");
+      if (!btn && !document.querySelector(".confirmed-pair")) return;  // corrected to an animal: nothing to confirm
+      e.preventDefault();
+      busy = true;
+      if (btn) {
+        btn.classList.add("sending");
+        const r = await fetch(btn.getAttribute("hx-post"), { method: "POST" }).catch(() => null);
+        if (!r || !r.ok) { btn.classList.remove("sending"); busy = false; return; }
+      }
+      const next = document.getElementById("nav-next") || document.getElementById("nav-prev");
+      if (next) location.href = next.href;
+      else if ({{ 'true' if todo else 'false' }}) close();
+      else location.reload();
+    });
+    {% endif %}
   })();
 </script>
 {% endif %}

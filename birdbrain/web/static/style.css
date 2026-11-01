@@ -419,6 +419,8 @@ dialog.popup[open] { animation: popup-in .14s ease-out; }
 .badge.unconfirmed { color: var(--muted); white-space: nowrap; }
 .badge.shadow { color: var(--muted); white-space: nowrap; }
 .badge.checked { color: var(--accent); white-space: nowrap; }
+/* The confirmed pill and its Undo, centered on one line beside the visit's buttons. */
+.confirmed-pair { display: inline-flex; align-items: center; gap: 6px; align-self: center; }
 .badge.pi-only { color: var(--medium); white-space: nowrap; }
 .ft-confirm { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
 /* With Show confirmed on, the confirmed photos stay in the grid but step back. */
@@ -1328,5 +1330,12 @@ button.se-all { font-weight: 600; }
 @media (max-width: 640px) {
   .ft-visit { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
 }
-/* The visit page inside it: no site header, a little less padding. */
+/* The visit page inside it: no site header, a little less padding, the keyboard keys on one line at the top. */
 body.embed main { padding-top: 10px; }
+.embed-keys { margin: 0 0 8px; font-size: .8rem; }
+kbd {
+  display: inline-block; min-width: 1.5em; padding: 0 5px; margin: 0 2px; text-align: center;
+  font: inherit; font-size: .9em; line-height: 1.45; color: var(--text);
+  background: var(--surface); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+}
+.embed-close-btn { white-space: nowrap; }

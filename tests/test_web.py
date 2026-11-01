@@ -139,6 +139,20 @@ def test_visit_page_arrows_step_through_false_triggers(client, add_visit):
     assert f'href="/visit/{ft_old}?ft=1" id="nav-next"' in html and 'id="nav-prev"' not in html
 
 
+def test_false_trigger_popup_skips_confirmed_photos_and_lists_its_keys(client, add_visit, conn):
+    old = add_visit(captured_at="2026-10-24T09:00:00", visitor="none", species=None)
+    mid = add_visit(captured_at="2026-10-24T10:00:00", visitor="none", species=None)
+    new = add_visit(captured_at="2026-10-24T11:00:00", visitor="none", species=None)
+    db.confirm_visits(conn, [mid])
+    html = client.get(f"/visit/{new}?ft=1&todo=1&embed=1").text
+    assert f'href="/visit/{old}?ft=1&amp;todo=1&amp;embed=1" id="nav-next"' in html
+    assert "<kbd>C</kbd> confirmed no animal" in html
+    assert html.index('id="embed-close"') < html.index('visit-nav-btn')  # Close sits left of the arrows
+    assert f'href="/visit/{mid}?ft=1" id="nav-next"' in client.get(f"/visit/{new}?ft=1").text  # without todo: all
+    assert "Confirmed No Animal" in client.get(f"/visit/{mid}").text
+    assert "<kbd>" not in client.get(f"/visit/{mid}").text
+
+
 def test_false_trigger_page_shows_its_burst_in_order_and_delete_removes_it(client, stored_visit):
     vid = stored_visit(visitor="none", species=None, raw_json=json.dumps({"burst": {"count": 3, "best": 1, "fps": 4}}))
     with db.session() as conn:
@@ -684,7 +698,7 @@ def test_false_trigger_cards_refresh_after_the_pop_up(client, add_visit, conn):
     db.confirm_visits(conn, [keep])
     r = client.get(f"/false-triggers/cards?ids={keep},{real},abc")
     assert f'data-id="{keep}"' in r.text and f'data-id="{real}"' not in r.text
-    assert "confirmed by human" in r.text
+    assert "Confirmed No Animal" in r.text
     assert r.headers["X-Unchecked"] == "0"
 
 

@@ -345,9 +345,15 @@ def is_false_trigger(conn: sqlite3.Connection, visit_id: int) -> bool:
     return conn.execute(f"SELECT {FALSE_TRIGGER} FROM visits WHERE id = ?", (visit_id,)).fetchone()[0] == 1
 
 
-def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool = False) -> tuple[int | None, int | None]:
-    """Return (prev_id, next_id) for a visit within the same set (real or false triggers), ordered newest-first."""
+def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool = False,
+                  unchecked: bool = False) -> tuple[int | None, int | None]:
+    """Return (prev_id, next_id) for a visit within the same set (real or false triggers), ordered newest-first.
+
+    unchecked: only false triggers nobody has confirmed or corrected yet (the False triggers list as shown).
+    """
     where = f"{FALSE_TRIGGER} AND {HAS_PHOTO}" if false_triggers else REAL
+    if false_triggers and unchecked:
+        where += f" AND {UNCHECKED}"
     row = conn.execute("SELECT captured_at FROM visits WHERE id = ?", (visit_id,)).fetchone()
     if not row:
         return None, None

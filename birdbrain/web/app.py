@@ -344,12 +344,14 @@ def more_visits(request: Request, offset: int = 0, conn=Depends(get_conn)):
 
 
 @app.get("/visit/{visit_id}", response_class=HTMLResponse)
-def visit_detail(request: Request, visit_id: int, ft: bool = False, conn=Depends(get_conn)):
+def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool = False, conn=Depends(get_conn)):
     visit = db.get_visit(conn, visit_id)
     if not visit:
         raise HTTPException(404)
     is_ft = ft or db.is_false_trigger(conn, visit_id)
-    prev_id, next_id = db.get_neighbors(conn, visit_id, false_triggers=is_ft)
+    # todo: opened from the False triggers list of unconfirmed photos, so the arrows (and C) skip confirmed ones.
+    todo = todo and is_ft
+    prev_id, next_id = db.get_neighbors(conn, visit_id, false_triggers=is_ft, unchecked=todo)
     # The arrow targets' photos, prefetched so stepping through visits paints without a blank frame.
     neighbor_images = [v["image_path"] for v in (db.get_visit(conn, i) for i in (prev_id, next_id) if i) if v]
     return page(
@@ -364,6 +366,7 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, conn=Depends
         next_id=next_id,
         neighbor_images=neighbor_images,
         is_ft=is_ft,
+        todo=todo,
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
     )

@@ -72,7 +72,9 @@
     const card = e.target.closest("a.card");
     if (!card || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;  // new tab still works
     e.preventDefault();
-    frame.src = card.href + (card.href.includes("?") ? "&" : "?") + "embed=1";
+    // todo=1: the pop-up's arrows (and C) walk the same list as the grid, so confirmed photos are skipped.
+    const todo = "showAll" in grid.dataset ? "" : "todo=1&";
+    frame.src = card.href + (card.href.includes("?") ? "&" : "?") + todo + "embed=1";
     dlg.showModal();
     document.body.style.overflow = "hidden";
   });
