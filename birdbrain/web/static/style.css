@@ -1343,6 +1343,9 @@ button.se-all { font-weight: 600; }
 /* The visit page inside it: no site header, a little less padding, the keyboard keys on one line at the top. */
 body.embed main { padding-top: 10px; }
 .embed-keys { margin: 0 0 8px; font-size: .8rem; }
+/* The start-to-finish pills get their own row under Close and the arrows. */
+body.embed .visit-nav { flex-wrap: wrap; row-gap: 10px; }
+body.embed .decision-flow.in-nav { flex-basis: 100%; margin-left: 0; }
 kbd {
   display: inline-block; min-width: 1.5em; padding: 0 5px; margin: 0 2px; text-align: center;
   font: inherit; font-size: .9em; line-height: 1.45; color: var(--text);
