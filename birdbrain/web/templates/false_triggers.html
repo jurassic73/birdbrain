@@ -3,9 +3,8 @@
 {% block title %}False triggers | Birdbrain{% endblock %}
 {% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
-<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span>{% if storage.photos_deleted %} <small class="muted" data-tip="Older false triggers whose photos were deleted to save space. Their records stay, and so does what the Pi's animal check learned from them.">+{{ storage.photos_deleted }} without photos</small>{% endif %}</h1>
-  <p class="page-sub">Your review: was there really no animal in these photos?</p></div>
-<p class="muted">Birdbrain saw motion and took these photos, but found no animal in them. Now it's your turn to look. If a photo has an animal, open it and pick what it was. The animal check learns from that, and the photo is kept. If none have animals, press Confirm. The animal check learns from those too, and confirmed photos can then be deleted to save space.</p>
+<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span>{% if storage.photos_deleted %} <small class="muted" data-tip="Older false triggers whose photos were deleted to save space. Their records stay, and so does what the Pi's animal check learned from them.">+{{ storage.photos_deleted }} without photos</small>{% endif %}</h1></div>
+<p class="muted">Birdbrain saw motion and took these photos, but found no animal in them. Now it's your turn to look. If a photo has an animal, open it and pick what it was. The animal check model on the Pi learns from that, and the photo is kept. If none have animals, press Confirm. The animal check learns from those too, and confirmed photos can then be deleted to save space.</p>
 {% if confirmed is not none %}<p class="notice saved">Confirmed {{ confirmed }} as empty. The Pi's animal check trains on them.</p>{% endif %}
 {% if request.state.admin and unchecked %}
 <form class="ft-confirm" method="post" action="/false-triggers/confirm" id="ft-confirm">
