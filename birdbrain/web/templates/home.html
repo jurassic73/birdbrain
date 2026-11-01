@@ -58,52 +58,15 @@
 </section>
 
 <section class="visits">
-  <div class="visits-head">
-    {% set a = activity %}
-    {# Today's visitors head the list; the rest of today's numbers open from it. #}
-    <details class="tally-box">
-    <summary class="tally tally-head" data-tip="Birds and animals identified today{% if a.species %}, {{ a.species }} species{% endif %}. Click for the rest of today's numbers.">
+  {% set a = activity %}
+  <div class="visits-bar">
+    <div class="tally-box tally-head" data-tip="Birds and animals identified today{% if a.species %}, {{ a.species }} species{% endif %}. The rest of today's numbers (false alarms, Pi checks, Claude calls) are on the Stats page.">
       <span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }} today</span>
-      <svg class="chev" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </summary>
-    <ol class="tally" aria-label="Today's other numbers">
-      <li data-tip="Motion with no animal: rain, wind, ripples">
-        <span class="tally-n">{{ a.false_alarms }}</span> {% if request.state.admin %}<a class="tally-label" href="/false-triggers">False alarms</a>{% else %}<span class="tally-label">False alarms</span>{% endif %}
-      </li>
-      {% if presence_mode != 'off' %}
-      <li data-tip="False alarms the Pi's animal check screened out for free">
-        <span class="tally-n">{{ a.kept_on_pi }}</span> <a class="tally-label" href="/stats#presence">Kept on the Pi</a>
-      </li>
-      {% endif %}
-      <li data-tip="Cost {{ a.claude_usd | usd }} today{% if presence_mode == 'shadow' and a.would_keep %}; gate mode would have kept {{ a.would_keep }} on the Pi{% endif %}">
-        <span class="tally-n">{{ a.sent_to_claude }}</span> <span class="tally-label">Sent to Claude</span>
-        <span class="tally-why">{{ a.claude_usd | usd }}</span>
-      </li>
-    </ol>
-    {% set motion = a.visitors + a.false_alarms %}
-    {% if motion %}
-    <ul class="tally-facts">
-      <li>{{ (100 * a.visitors / motion) | round | int }}% of today's {{ motion }} motion events were a real animal; the rest were rain, wind, leaves or ripples.</li>
-      {% if a.visitors %}<li>Each visitor cost about {{ (a.claude_usd / a.visitors) | usd }} in Claude calls.</li>{% endif %}
-      {% if a.kept_on_pi %}<li>The Pi's animal check settled {{ a.kept_on_pi }} false alarm{{ 's' if a.kept_on_pi != 1 }} on the Pi without asking Claude.</li>{% endif %}
-      {% if presence_mode == 'shadow' and a.would_keep %}<li>Gate mode would have kept {{ a.would_keep }} more on the Pi, saving about {{ a.would_keep_usd | usd }}.</li>{% endif %}
-    </ul>
-    {% endif %}
-    </details>
-    {% if filtered %}<h2 class="visits-count">{{ total }} matching</h2>{% endif %}
+    </div>
     {% if any_visits %}
-    <nav class="chips" aria-label="Quick filters">
-      {% for name, href, is_active in chips %}
-      <a href="{{ href }}" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
-      {% endfor %}
-    </nav>
-    {% endif %}
-  </div>
-
-  {% if any_visits %}
-  <details class="more-filters" {% if more_filters_open %}open{% endif %}>
-    <summary>More filters</summary>
-    <form class="filters" method="get" action="/">
+    <details class="more-filters" {% if more_filters_open %}open{% endif %}>
+      <summary>More filters</summary>
+      <form class="filters" method="get" action="/">
       <select name="species" aria-label="Species">
         <option value="">All species</option>
         {% for name in species_names %}
@@ -124,9 +87,20 @@
       <label>To <input type="date" name="date_to" value="{{ filters.date_to or '' }}"></label>
       <button type="submit">Apply</button>
       {% if filtered %}<a class="clear" href="/">Clear</a>{% endif %}
-    </form>
-  </details>
-  {% endif %}
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  <div class="visits-head">
+    {% if filtered %}<h2 class="visits-count">{{ total }} matching</h2>{% endif %}
+    {% if any_visits %}
+    <nav class="chips" aria-label="Quick filters">
+      {% for name, href, is_active in chips %}
+      <a href="{{ href }}" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+  </div>
 
   {% if visits %}
   <div class="grid">
@@ -269,7 +243,7 @@
         if (!r.ok) return;
         const doc = new DOMParser().parseFromString(await r.text(), "text/html");
         const tally = document.querySelector(".tally-box"), freshTally = doc.querySelector(".tally-box");
-        if (tally && freshTally) { freshTally.open = tally.open; tally.replaceWith(freshTally); }
+        if (tally && freshTally) tally.replaceWith(freshTally);
         // The first visitor ever moves the live view out of the big slot: redraw the page once.
         if (!document.querySelector(".hero-latest") !== !doc.querySelector(".hero-latest")) { location.reload(); return; }
         const range = document.querySelector(".critters")?.dataset.range;

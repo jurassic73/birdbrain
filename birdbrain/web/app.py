@@ -677,6 +677,7 @@ def stats(request: Request, conn=Depends(get_conn)):
         leaders=db.species_summary(conn, sort="visits", limit=10),
         newest=db.species_summary(conn, sort="newest", limit=5),
         total=db.count_visits(conn),
+        activity=db.activity(conn),
         classifier=db.classifier_report(conn),
         presence=db.presence_report(conn),
         presence_mode=presence.mode(conn),

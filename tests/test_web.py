@@ -297,19 +297,24 @@ def test_visit_page_shows_the_local_detector_step(client, add_visit):
     assert "bird (62%)" in html and "Bushtit" in html and "Claude wasn't asked" not in html
 
 
-def test_home_ranks_today_from_visitors_down_to_claude_calls(client, add_visit, monkeypatch):
+def test_home_shows_visitor_count_as_text_and_stats_has_the_rest(client, add_visit, monkeypatch):
     raw = json.dumps({"calls": {"haiku": {"input_tokens": 2000, "output_tokens": 200}, "presence": {"empty": True}}})
+    add_visit(species="Bushtit")
     add_visit(visitor="none", species=None, raw_json=raw)
     html = client.get("/").text
-    rows = ["Visitors today", "False alarms", "Kept on the Pi", "Sent to Claude"]
-    assert [html.index(r) for r in rows] == sorted(html.index(r) for r in rows)
-    assert "gate mode would have kept 1 on the Pi" in html and 'href="/stats#presence"' in html
-    # Collapsed until asked for, with a few takeaways inside.
-    assert '<details class="tally-box">' in html and "0% of today's 1 motion events were a real animal" in html
+    assert 'class="tally-box tally-head"' in html and '<details class="tally-box' not in html
+    assert "Sent to Claude" not in html and "Kept on the Pi" not in html
+    assert html.index("Visitors today") < html.index("More filters")
+    stats = client.get("/stats").text
+    rows = ["Visitor", "False alarms", "Kept on the Pi", "Sent to Claude"]
+    start = stats.index("Today's motion")
+    assert [stats.index(r, start) for r in rows] == sorted(stats.index(r, start) for r in rows)
+    assert "gate mode would have kept 1 on the Pi" in stats
+    assert "50% of today's 2 motion events were a real animal" in stats
     monkeypatch.setattr(config, "PRESENCE", "gate")
-    assert "gate mode would have kept" not in client.get("/").text
+    assert "gate mode would have kept" not in client.get("/stats").text
     monkeypatch.setattr(config, "PRESENCE", "off")
-    assert "Kept on the Pi" not in client.get("/").text
+    assert "Kept on the Pi" not in client.get("/stats").text
 
 
 @pytest.mark.parametrize("value, text", [(0, "$0"), (0.0004, "under $0.001"), (0.031, "$0.031"), (0.42, "$0.42")])
