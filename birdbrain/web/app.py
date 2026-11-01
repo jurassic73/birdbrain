@@ -863,6 +863,15 @@ def false_triggers(request: Request, cleared: int | None = None, confirmed: int 
     )
 
 
+@app.get("/false-triggers/cards", response_class=HTMLResponse)
+def false_trigger_cards(request: Request, ids: str = "", conn=Depends(get_conn)):
+    """Fresh cards for visits opened in the pop-up: ones that stopped being false triggers are left out."""
+    wanted = [int(i) for i in ids.split(",") if i.strip().isdigit()][:200]
+    resp = page(request, "_cards.html", visits=db.false_trigger_cards(conn, wanted), ft_cards=True)
+    resp.headers["X-Unchecked"] = str(db.count_unchecked_false_triggers(conn))
+    return resp
+
+
 @app.get("/false-triggers/more", response_class=HTMLResponse)
 def more_false_triggers(request: Request, offset: int = 0, conn=Depends(get_conn)):
     visits = db.list_visits(conn, false_triggers=True, has_photo=True, limit=FT_PAGE, offset=offset)

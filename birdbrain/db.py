@@ -446,6 +446,15 @@ def count_unchecked_false_triggers(conn: sqlite3.Connection) -> int:
                             AND corrected_visitor IS NULL AND corrected_species IS NULL""").fetchone()[0]
 
 
+def false_trigger_cards(conn: sqlite3.Connection, ids: list[int]) -> list[sqlite3.Row]:
+    """These visits, newest first, if they're still false triggers with a photo."""
+    if not ids:
+        return []
+    return conn.execute(
+        f"""SELECT *, {LABEL} AS label FROM visits WHERE id IN ({','.join('?' * len(ids))})
+            AND {FALSE_TRIGGER} AND {HAS_PHOTO} ORDER BY captured_at DESC, id DESC""", ids).fetchall()
+
+
 def confirm_visits(conn: sqlite3.Connection, ids: list[int], on: bool = True) -> None:
     """The owner says the stored answer is right (or takes that back): those frames count extra when the
     local animal check retrains."""

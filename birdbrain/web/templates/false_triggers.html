@@ -3,14 +3,15 @@
 {% block title %}False triggers | Birdbrain{% endblock %}
 {% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
-<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span>{% if storage.photos_deleted %} <small class="muted" data-tip="Older false triggers whose photos were deleted to save space. Their records stay, and so does what the Pi's animal check learned from them.">+{{ storage.photos_deleted }} without photos</small>{% endif %}</h1></div>
-<p class="muted">Motion set off the camera, but no animal was found: the local animal check on the Pi called it empty ({{ badge("pi only", "pi-only") }}), or it wasn't sure and Claude saw nothing. If a photo below has an animal, open it and correct the label. If none do, press Confirm: the Pi's animal check learns what an empty bath looks like from these. Lots from one spot? Adjust the <a href="/settings#zones" data-tip="The zones are where the camera watches for motion: the rim, the rocks, the open water and the ground. Nothing changes them automatically because of false triggers. Move or shrink one by hand if it keeps firing on leaves or ripples.">zones</a>.</p>
+<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span>{% if storage.photos_deleted %} <small class="muted" data-tip="Older false triggers whose photos were deleted to save space. Their records stay, and so does what the Pi's animal check learned from them.">+{{ storage.photos_deleted }} without photos</small>{% endif %}</h1>
+  <p class="page-sub">Your review: was there really no animal in these photos?</p></div>
+<p class="muted">Birdbrain saw motion and took these photos, but found no animal in them. Now it's your turn to look. If a photo has an animal, open it and pick what it was. The animal check learns from that, and the photo is kept. If none have animals, press Confirm. The animal check learns from those too, and confirmed photos can then be deleted to save space.</p>
 {% if confirmed is not none %}<p class="notice saved">Confirmed {{ confirmed }} as empty. The Pi's animal check trains on them.</p>{% endif %}
 {% if request.state.admin and unchecked %}
 <form class="ft-confirm" method="post" action="/false-triggers/confirm" id="ft-confirm">
   <input type="hidden" name="ids">
   <button type="submit" data-tip="Marks every photo loaded below as checked: no animal (more load as you scroll). The Pi's animal check counts checked photos 3 times when it learns. Correct any photo with an animal first.">Confirm</button>
-  <span class="muted small">{{ unchecked }} not checked yet</span>
+  <span class="muted small" id="ft-unchecked">{{ unchecked }} not checked yet</span>
 </form>
 <script>
   document.getElementById("ft-confirm").addEventListener("submit", e => {
@@ -25,7 +26,7 @@
   <summary>Storage and triggers by hour</summary>
   {% include "_storage.html" %}
   <div class="charts single">
-    <figure><figcaption>False triggers by hour of day</figcaption><canvas id="hourly"></canvas></figure>
+    <figure><figcaption>False triggers by hour of day <span class="muted">· lots from one spot? Adjust the <a href="/settings#zones" data-tip="The zones are where the camera watches for motion: the rim, the rocks, the open water and the ground. Nothing changes them automatically because of false triggers. Move or shrink one by hand if it keeps firing on leaves or ripples.">zones</a></span></figcaption><canvas id="hourly"></canvas></figure>
   </div>
 </details>
 {% if visits %}
@@ -36,218 +37,56 @@
 <p class="empty">No false triggers recorded.</p>
 {% endif %}
 
-<!-- Lightbox -->
-<div id="ft-lightbox" role="dialog" aria-modal="true" aria-label="Image viewer" hidden>
-  <button class="ft-lb-close" id="ft-lb-close" aria-label="Close">&times;</button>
-  <button class="ft-lb-arrow ft-lb-prev" id="ft-lb-prev" aria-label="Previous image">&#8249;</button>
-  <div class="ft-lb-stage">
-    <img id="ft-lb-img" src="" alt="">
-  </div>
-  <button class="ft-lb-arrow ft-lb-next" id="ft-lb-next" aria-label="Next image">&#8250;</button>
-  <div class="ft-lb-caption">
-    <span id="ft-lb-label"></span>
-    <span id="ft-lb-time" class="ft-lb-time-text"></span>
-    <a id="ft-lb-link" href="#" class="ft-lb-visit-link">Open visit &rarr;</a>
-    <span id="ft-lb-counter" class="ft-lb-counter-text"></span>
-  </div>
-</div>
-
-<style>
-#ft-lightbox {
-  position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,.88);
-  display: flex; align-items: center; justify-content: center;
-  gap: 0;
-  /* A long press scrubs through the photos, so no save-image callout or text selection on phones. */
-  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
-}
-#ft-lightbox[hidden] { display: none; }
-#ft-lb-img { -webkit-user-drag: none; }
-.ft-lb-stage {
-  cursor: zoom-out;
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  min-width: 0; padding: 72px 0 48px;
-}
-#ft-lb-img {
-  max-width: 100%; max-height: calc(100vh - 120px);
-  object-fit: contain; border-radius: 4px; cursor: default;
-  display: block;
-}
-.ft-lb-arrow {
-  flex-shrink: 0; width: 52px; height: 52px; padding: 0;
-  background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2);
-  border-radius: 50%; color: #fff; font-size: 2rem; line-height: 1;
-  cursor: pointer; transition: background .15s;
-  display: flex; align-items: center; justify-content: center;
-  margin: 0 10px;
-  touch-action: none; /* a held finger stays a hold, never a scroll or zoom */
-}
-.ft-lb-arrow:hover { background: rgba(255,255,255,.25); }
-.ft-lb-arrow:disabled { opacity: .25; cursor: default; }
-.ft-lb-caption {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
-  max-width: calc(100% - 120px);
-  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
-  padding: 8px 16px; background: rgba(0,0,0,.6); border-radius: 999px;
-  color: #ddd; font-size: .9rem;
-}
-.ft-lb-visit-link { color: var(--accent); text-decoration: none; }
-.ft-lb-visit-link:hover { text-decoration: underline; }
-.ft-lb-time-text { color: #aaa; }
-.ft-lb-counter-text { color: #888; }
-@media (max-width: 600px) {
-  .ft-lb-arrow { width: 40px; height: 40px; font-size: 1.5rem; margin: 0 4px; }
-}
-</style>
-
+<!-- A visit opens in a pop-up over this page, so reviewing never loses your place in the grid. -->
+<dialog class="ft-visit" id="ft-visit" aria-label="Visit">
+  <iframe title="Visit" src="about:blank"></iframe>
+</dialog>
 <script>
-(function () {
-  const grid = document.getElementById('ft-grid');
+(() => {
+  const grid = document.getElementById("ft-grid"), dlg = document.getElementById("ft-visit");
   if (!grid) return;
-
-  const lb      = document.getElementById('ft-lightbox');
-  const img     = document.getElementById('ft-lb-img');
-  const label   = document.getElementById('ft-lb-label');
-  const timeEl  = document.getElementById('ft-lb-time');
-  const link    = document.getElementById('ft-lb-link');
-  const counter = document.getElementById('ft-lb-counter');
-  const btnPrev = document.getElementById('ft-lb-prev');
-  const btnNext = document.getElementById('ft-lb-next');
-  const btnClose= document.getElementById('ft-lb-close');
-
-  let cards = [];
-  let idx   = 0;
-  let loading = false;
-  let holding = false;  // an arrow is held down: show thumbnails so scrubbing keeps up
-  // Only one page of cards is on screen; count against every false trigger.
-  const total = parseInt(grid.dataset.total, 10) || 0;
-
-  function collectCards() {
-    return Array.from(grid.querySelectorAll('a.card'));
-  }
-
-  function thumbToFull(src) {
-    // "/images/2024/01/01/123456_abc_t.jpg" -> "/images/2024/01/01/123456_abc.jpg"
-    return src.replace(/_t\.jpg(\?.*)?$/, '.jpg');
-  }
-
-  function open(i) {
-    cards = collectCards();
-    if (!cards.length) return;
-    idx = Math.max(0, Math.min(i, cards.length - 1));
-    show();
-    lb.removeAttribute('hidden');
-    document.body.style.overflow = 'hidden';
-    btnClose.focus();
-  }
-
-  function close() {
-    stopHold();
-    lb.setAttribute('hidden', '');
-    document.body.style.overflow = '';
-  }
-
-  function show() {
-    const card = cards[idx];
-    const thumbSrc = card.querySelector('img').src;
-    img.src = holding ? thumbSrc : thumbToFull(thumbSrc);
-    img.alt = card.querySelector('.card-title') ? card.querySelector('.card-title').textContent.trim() : '';
-    label.textContent = img.alt;
-    const timeMeta = card.querySelector('.card-meta span');
-    timeEl.textContent = timeMeta ? timeMeta.textContent.trim() : '';
-    link.href = card.href;
-    counter.textContent = `${idx + 1} / ${Math.max(total, cards.length).toLocaleString()}`;
-    btnPrev.disabled = idx === 0;
-    btnNext.disabled = idx === cards.length - 1 && !grid.querySelector('.load-more');
-  }
-
-  function prev() { if (idx > 0) { idx--; show(); } }
-
-  // Past the last loaded card, fetch the next page with the grid's own Load more button.
-  function next() {
-    if (idx < cards.length - 1) { idx++; show(); return; }
-    const more = grid.querySelector('.load-more');
-    if (!more || loading) return;
-    loading = true;
-    grid.addEventListener('htmx:afterSettle', function () {
-      loading = false;
-      cards = collectCards();
-      if (idx < cards.length - 1) idx++;
-      show();
-    }, { once: true });
-    htmx.trigger(more, 'click');
-  }
-
-  grid.addEventListener('click', function (e) {
-    const card = e.target.closest('a.card');
-    if (!card) return;
+  const frame = dlg.querySelector("iframe");
+  const seen = new Set();  // visits opened this time, refreshed in the grid on close
+  grid.addEventListener("click", e => {
+    const card = e.target.closest("a.card");
+    if (!card || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;  // new tab still works
     e.preventDefault();
-    cards = collectCards();
-    const i = cards.indexOf(card);
-    open(i >= 0 ? i : 0);
+    frame.src = card.href + (card.href.includes("?") ? "&" : "?") + "embed=1";
+    dlg.showModal();
+    document.body.style.overflow = "hidden";
   });
-
-  // Pressing an arrow steps once; holding it repeats like a held arrow key, speeding up after a while.
-  let holdTimer = null;
-  function stopHold() {
-    clearTimeout(holdTimer);
-    holdTimer = null;
-    if (!holding) return;
-    holding = false;
-    if (cards.length) show();  // swap the thumbnail for the full photo
-  }
-  function startHold(step, e) {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
-    stopHold();
-    step();
-    const started = Date.now();
-    holdTimer = setTimeout(function tick() {
-      if (!holding) { holding = true; show(); }
-      step();
-      holdTimer = setTimeout(tick, Date.now() - started > 2000 ? 50 : 110);
-    }, 400);
-  }
-  [[btnPrev, prev], [btnNext, next]].forEach(function ([btn, step]) {
-    btn.addEventListener('pointerdown', function (e) { startHold(step, e); });
-    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (t) { btn.addEventListener(t, stopHold); });
-    // Pointer presses are handled above; this keeps Enter and Space working.
-    btn.addEventListener('click', function (e) { if (!e.detail) step(); });
+  frame.addEventListener("load", () => {
+    let path;
+    try { path = frame.contentWindow.location.pathname; } catch (err) { return; }
+    const m = path.match(/^\/visit\/(\d+)/);
+    if (m) { seen.add(m[1]); frame.contentWindow.focus(); }
+    else if (path !== "blank" && dlg.open) dlg.close();  // the visit was deleted (it sends you home)
   });
-  lb.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-  window.addEventListener('blur', stopHold);
-  btnClose.addEventListener('click', close);
-
-  // Clicking anywhere off the image (the dark backdrop) closes the viewer.
-  const stage = lb.querySelector('.ft-lb-stage');
-  lb.addEventListener('click', function (e) {
-    if (e.target === lb || e.target === stage) close();
+  window.addEventListener("message", e => {
+    if (e.origin === location.origin && e.data === "birdbrain:close" && dlg.open) dlg.close();
   });
-
-  document.addEventListener('keydown', function (e) {
-    if (lb.hasAttribute('hidden')) return;
-    if (e.key === 'ArrowLeft')  prev();
-    if (e.key === 'ArrowRight') next();
-    if (e.key === 'Escape')     { close(); }
+  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });  // the dimmed edge
+  dlg.addEventListener("close", async () => {
+    document.body.style.overflow = "";
+    frame.src = "about:blank";
+    const ids = [...seen];
+    seen.clear();
+    if (!ids.length) return;
+    // Swap in fresh cards: a checked pill, a new label, or gone if it turned out to be a real visit.
+    const r = await fetch("/false-triggers/cards?ids=" + ids.join(","), { cache: "no-store" });
+    if (!r.ok) return;
+    const tpl = document.createElement("template");
+    tpl.innerHTML = await r.text();
+    const fresh = new Map([...tpl.content.querySelectorAll("a.card")].map(c => [c.dataset.id, c]));
+    for (const id of ids) {
+      const old = grid.querySelector(`a.card[data-id="${id}"]`);
+      if (old) fresh.has(id) ? old.replaceWith(fresh.get(id)) : old.remove();
+    }
+    const left = r.headers.get("X-Unchecked"), count = document.getElementById("ft-unchecked");
+    if (count && left !== null) count.textContent = `${left} not checked yet`;
   });
-
-  // Touch swipe support
-  let touchStartX = null;
-  lb.addEventListener('touchstart', function (e) {
-    // A finger on an arrow is a press or hold, not a swipe.
-    touchStartX = e.target.closest('.ft-lb-arrow') ? null : e.changedTouches[0].clientX;
-  }, { passive: true });
-  lb.addEventListener('touchend', function (e) {
-    if (touchStartX === null) return;
-    const dx = e.changedTouches[0].clientX - touchStartX;
-    if (Math.abs(dx) < 40) return;
-    if (dx < 0) next();
-    if (dx > 0) prev();
-  }, { passive: true });
 })();
 </script>
-
 <script src="/static/charts.js?v={{ asset_version }}"></script>
 <script>barChart("hourly", hourLabels(), {{ hourly | tojson }});</script>
 {% endblock %}

@@ -665,3 +665,29 @@ def test_ask_claude_names_the_species_from_a_clue(client, conn, stored_visit, mo
     assert "clue" in client.post(f"/visit/{vid}/ask-species", data={"hint": " "}).json()["error"]
     html = client.get(f"/visit/{vid}").text
     assert "ask-btn" in html and "claude-mark" in html
+
+
+def test_false_trigger_opens_in_a_pop_up_that_keeps_its_arrows_inside(client, add_visit):
+    older = add_visit(visitor="none", species=None, captured_at="2026-10-31T08:00:00")
+    vid = add_visit(visitor="none", species=None, captured_at="2026-10-31T09:00:00")
+    html = client.get(f"/visit/{vid}?ft=1&embed=1").text
+    assert '<header class="topbar">' not in html and "/static/tab-alert.js" not in html and 'class="embed"' in html
+    assert f'href="/visit/{older}?ft=1&amp;embed=1"' in html and 'id="embed-close"' in html
+    normal = client.get(f"/visit/{vid}?ft=1").text
+    assert '<header class="topbar">' in normal and "embed=1" not in normal and 'id="embed-close"' not in normal
+
+
+def test_false_trigger_cards_refresh_after_the_pop_up(client, add_visit, conn):
+    keep = add_visit(visitor="none", species=None)
+    real = add_visit(visitor="none", species=None, corrected_visitor="bird", corrected_species="Bushtit")
+    db.confirm_visits(conn, [keep])
+    r = client.get(f"/false-triggers/cards?ids={keep},{real},abc")
+    assert f'data-id="{keep}"' in r.text and f'data-id="{real}"' not in r.text
+    assert "Checked by you" in r.text or "checked" in r.text
+    assert r.headers["X-Unchecked"] == "0"
+
+
+def test_visit_page_says_notes_are_for_claude_only(client, add_visit):
+    html = client.get(f"/visit/{add_visit()}").text
+    assert "Note for Claude" in html and "Notes are not used by the Pi's local animal check" in html
+    assert "The answer you pick trains the Pi's local animal check" in html

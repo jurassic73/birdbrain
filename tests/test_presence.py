@@ -111,7 +111,7 @@ def test_false_triggers_confirm_all_shown_skips_real_visits(client, conn, add_vi
     real = add_visit()
     page = client.get("/false-triggers").text
     assert "3 not checked yet" in page and ">Confirm</button>" in page
-    assert "no animal was found: the local animal check on the Pi called it empty" in page
+    assert "found no animal in them. Now it's your turn to look." in page and 'id="ft-visit"' in page
     r = client.post("/false-triggers/confirm", data={"ids": ",".join(map(str, [*empty[:2], real]))},
                     follow_redirects=False)
     assert r.headers["location"] == "/false-triggers?confirmed=2"

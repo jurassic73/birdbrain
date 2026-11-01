@@ -381,6 +381,8 @@ button.danger { background: transparent; color: var(--low); border-color: var(--
 }
 
 .page-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+/* A one-line reminder of what the page is for, right after the title (under it on phones). */
+.page-sub { flex: 1 1 260px; margin: 0; color: var(--muted); font-size: 1.05rem; }
 .sorts { display: flex; gap: 4px; }
 
 main.wide { max-width: 1600px; }
@@ -1273,3 +1275,16 @@ button.se-all { font-weight: 600; }
 .step-n { display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%;
   background: var(--accent); color: var(--accent-text); font-size: .85rem; font-weight: 700; flex: none; }
 .step-n.claude { background: #d97757; color: #fff; }
+
+/* False triggers: a visit opens in a pop-up (an iframe of the visit page with ?embed=1) over the grid. */
+.ft-visit {
+  width: 95vw; height: 95vh; height: 95dvh; max-width: none; max-height: none; padding: 0;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); overflow: hidden;
+}
+.ft-visit::backdrop { background: rgba(0, 0, 0, .6); }
+.ft-visit iframe { display: block; width: 100%; height: 100%; border: 0; }
+@media (max-width: 640px) {
+  .ft-visit { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
+}
+/* The visit page inside it: no site header, a little less padding. */
+body.embed main { padding-top: 10px; }

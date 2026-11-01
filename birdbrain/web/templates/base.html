@@ -1,4 +1,5 @@
 <!doctype html>
+{% set embed = request.query_params.get('embed') == '1' %}
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -19,7 +20,7 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js"></script>
-  <script src="/static/tab-alert.js?v={{ asset_version }}" defer></script>
+  {% if not embed %}<script src="/static/tab-alert.js?v={{ asset_version }}" defer></script>{% endif %}
   <script src="/static/theme.js?v={{ asset_version }}" defer></script>
   <script src="/static/species-card.js?v={{ asset_version }}" defer></script>
   <script src="/static/tips.js?v={{ asset_version }}" defer></script>
@@ -28,7 +29,8 @@
   <script src="/static/scene-edit.js?v={{ asset_version }}" defer></script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body{% if embed %} class="embed"{% endif %}>
+  {% if not embed %}
   <header class="topbar">
     <a class="brand" href="/"><img src="/static/logo.png?v={{ asset_version }}" alt="" width="34" height="34">Birdbrain</a>
     <nav>
@@ -81,6 +83,7 @@
     {% endif %}
     </div>
   </header>
+  {% endif %}
   <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>

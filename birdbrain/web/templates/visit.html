@@ -24,11 +24,14 @@
 {% set current_visitor = visit.corrected_visitor or visit.visitor %}
 {% set has_correction = visit.corrected_visitor or visit.corrected_species or visit.feedback or visit.marks or visit.corrected_also is not none %}
 {% set claude_also = also_of({"also": visit.also}) %}
-{% set ft_param = '?ft=1' if is_ft else '' %}
+{% set embed = request.query_params.get('embed') == '1' %}
+{# In the False triggers pop-up every link keeps embed=1, so the arrows stay inside it. #}
+{% set ft_param = ('?ft=1' if is_ft else '') ~ (('&' if is_ft else '?') ~ 'embed=1' if embed else '') %}
 {% set settled = not visit.needs_review and visit.confidence == 'high' and not has_correction %}
 <nav class="visit-nav" aria-label="Visit navigation">
   {% if prev_id %}<a class="visit-nav-btn" href="/visit/{{ prev_id }}{{ ft_param }}" id="nav-prev" title="Newer (←)">&#8592;</a>{% else %}<span class="visit-nav-btn disabled">&#8592;</span>{% endif %}
-  <a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>
+  {% if embed %}<a class="visit-nav-back" href="/false-triggers" id="embed-close" title="Close (Esc)">&times; Close</a>
+  {% else %}<a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>{% endif %}
   {% if next_id %}<a class="visit-nav-btn" href="/visit/{{ next_id }}{{ ft_param }}" id="nav-next" title="Older (→)">&#8594;</a>{% else %}<span class="visit-nav-btn disabled">&#8594;</span>{% endif %}
   {{ flow("in-nav") }}
 </nav>
@@ -172,7 +175,7 @@
     <summary class="m-hide-summary">Correct it</summary>
     <form class="review" hx-post="/visit/{{ visit.id }}/correct">
       <div class="review-head">
-        <h2>Was this right? <span class="info-tip" tabindex="0" aria-label="About corrections" data-tip="Corrections and notes are shown to Claude on future identifications, so it learns from its mistakes at this birdbath.">i</span></h2>
+        <h2>Was this right? <span class="info-tip" tabindex="0" aria-label="About corrections" data-tip="The answer you pick trains the Pi's local animal check (it counts 3 times). Your answer and your note are also shown to Claude on future identifications, so it learns from its mistakes at this birdbath.">i</span></h2>
         <a class="muted small" href="/notes#lessons">All lessons</a>
       </div>
       <div class="review-row">
@@ -233,12 +236,12 @@
       </div>
       <div class="field">
         <div class="feedback-head">
-          <label for="feedback">Note for future identifications <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake.">i</span></label>
+          <label for="feedback">Note for Claude <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake. The Pi's local animal check never reads notes: it learns from the answer you pick above.">i</span></label>
         </div>
         <input type="hidden" name="marks" id="marks">
         <div class="feedback-row">
           <textarea id="feedback" name="feedback" rows="4"
-                    placeholder="Goes into Claude's Notes for future identifications (nothing is sent now). What did Claude get wrong, and how can it tell next time? e.g. No bird: those are the rocks poking out after I refilled the bath.">{{ visit.feedback or '' }}</textarea>
+                    placeholder="For Claude only, read on future identifications (nothing is sent now). Notes are not used by the Pi's local animal check; it learns from the answer you pick above. What did Claude get wrong, and how can it tell next time? e.g. No bird: those are the rocks poking out after I refilled the bath.">{{ visit.feedback or '' }}</textarea>
           <div class="feedback-actions">
             <button type="submit">Save</button>
             {% if has_correction %}
@@ -606,4 +609,16 @@
     } catch (err) { /* atmos unreachable; the next check tries again */ }
   });
 </script>
+{% if embed %}
+<script>
+  // Inside the False triggers pop-up: Close and Esc tell the page to close it (Esc on the big photo just closes that).
+  (() => {
+    const close = () => parent.postMessage("birdbrain:close", location.origin);
+    document.querySelectorAll("#embed-close, .embed-close").forEach(a => a.addEventListener("click", e => { e.preventDefault(); close(); }));
+    document.addEventListener("keydown", e => {
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) close();
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}
