@@ -123,9 +123,15 @@
       L.tileLayer(`https://api.inaturalist.org/v1/grid/{z}/{x}/{y}.png?taxon_id=${el.dataset.taxon}&color=%23e0592a`,
         { maxZoom: 12, opacity: 0.8 }).addTo(map);
       if (home) L.circleMarker(home, { radius: 6, color: "#1f2a24", weight: 2, fillColor: "#ffffff", fillOpacity: 1 }).addTo(map);
+      el._map = map;
       setTimeout(() => map.invalidateSize(), 60);
     }
   }
+  // A map inside a closed fold has no size; fix it when the fold opens.
+  document.addEventListener("toggle", (e) => {
+    if (!e.target.classList?.contains("sp-more") || !e.target.open) return;
+    for (const el of e.target.querySelectorAll(".sp-map")) el._map?.invalidateSize();
+  }, true);
   document.addEventListener("htmx:afterSwap", (e) => initMaps(e.target));
   initMaps(document);  // cards rendered with the page
 })();

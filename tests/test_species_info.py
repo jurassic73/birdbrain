@@ -115,6 +115,35 @@ def test_card_route_mini(client, fake_build):
     assert "Click for more" in html and "<h2>" not in html
 
 
+def test_card_fold_only_when_asked(client, add_visit, fake_build):
+    add_visit(species="Bushtit")
+    assert "<details" not in client.get("/species-info/Bushtit").text
+    assert "<h2>" in client.get("/species-info/Bushtit").text
+    folded = client.get("/species-info/Bushtit?fold=1").text
+    assert '<details class="sp-more">' in folded and "More about this species" in folded
+    assert folded.index("sp-more") > folded.index("sp-top") and folded.index('class="sp-map"') > folded.index("sp-more")
+    assert "Click for more" in client.get("/species-info/Bushtit?mini=1&fold=1").text
+
+
+def test_species_page_folds_and_names_once(client, add_visit, fake_build):
+    add_visit(species="Bushtit")
+    client.get("/species-info/Bushtit")  # builds and caches the card
+    html = client.get("/species/Bushtit").text
+    assert '<details class="sp-more">' in html and html.count("<h1") == 1 and "<h2>" not in html
+    assert "?fold=1" not in html  # rendered inline, no htmx load
+
+
+def test_species_page_loading_card_has_no_title_and_asks_for_fold(client, add_visit):
+    add_visit(species="Bushtit")
+    html = client.get("/species/Bushtit").text  # no cached card yet: loads over htmx
+    assert "<h1>" not in html and "/species-info/Bushtit?fold=1" in html
+
+
+def test_species_page_without_card_keeps_title(client, add_visit):
+    add_visit(species="Other")
+    assert client.get("/species/Other").text.count("<h1>Other</h1>") == 1
+
+
 def test_card_route_unknown(client, monkeypatch):
     monkeypatch.setattr(species_info, "build", lambda name: {"name": name, "links": []})
     assert "No info found" in client.get("/species-info/Nothing").text

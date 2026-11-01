@@ -663,7 +663,7 @@ def species_photo(name: str, visit_id: int = Form(...), conn=Depends(get_conn)):
 
 
 @app.get("/species-info/{name}", response_class=HTMLResponse)
-def species_card(request: Request, name: str, mini: bool = False, conn=Depends(get_conn)):
+def species_card(request: Request, name: str, mini: bool = False, fold: bool = False, conn=Depends(get_conn)):
     """The species info card (or its hover preview), built from outside sources on first use."""
     # Visitors only see cards already built, so they can't make the site fetch or call Claude.
     info = species_info.get(conn, name, fetch=request.state.admin)
@@ -678,6 +678,7 @@ def species_card(request: Request, name: str, mini: bool = False, conn=Depends(g
         months=species_info.MONTHS,
         this_month=clock.today().month,
         confirmed=db.confirmed_species(conn),
+        fold=fold,  # the species page folds the long part; the pop-up stays open
     )
 
 

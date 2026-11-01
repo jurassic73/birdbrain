@@ -3,9 +3,11 @@
 {% block title %}{{ sp.label }} | Birdbrain{% endblock %}
 {% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
+{% if not (info or has_card(sp.label)) %}
 <div class="page-head">
   <h1>{{ sp.label }}</h1>
 </div>
+{% endif %}
 {% if not has_card(sp.label) %}
 <div class="facts">
   <div><span class="big">{{ sp.visits }}</span> visits</div>
@@ -15,9 +17,9 @@
 </div>
 {% endif %}
 {% if info %}
-<div class="sp-inline">{% include "_species_card.html" %}</div>
+<div class="sp-inline">{% set fold = true %}{% include "_species_card.html" %}</div>
 {% elif has_card(sp.label) %}
-<div class="sp-inline" hx-get="/species-info/{{ sp.label | urlencode }}" hx-trigger="load" hx-swap="innerHTML">
+<div class="sp-inline" hx-get="/species-info/{{ sp.label | urlencode }}?fold=1" hx-trigger="load" hx-swap="innerHTML">
   <p class="muted">Loading species info…</p>
 </div>
 {% endif %}

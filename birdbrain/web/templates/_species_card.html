@@ -2,7 +2,7 @@
 <article class="sp-card">
   <header class="sp-head">
     <div>
-      <h2>{{ info.common or info.name }}</h2>
+      <{{ "h1" if fold else "h2" }}>{{ info.common or info.name }}</{{ "h1" if fold else "h2" }}>
       {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
     </div>
   </header>
@@ -35,6 +35,12 @@
       {% endif %}
     </div>
   </div>
+
+  {% if fold %}
+  <details class="sp-more">
+    <summary>More about this species</summary>
+    <div class="sp-more-body">
+  {% endif %}
 
   {% if info.sounds %}
   <section class="sp-section">
@@ -88,4 +94,8 @@
   <p class="sp-credits muted small">
     {% if info.description %}Description from Wikipedia (CC BY-SA). {% endif %}Photo, range and local reports from iNaturalist.{% if info.sounds %} Recordings streamed from xeno-canto.{% endif %}
   </p>
+  {% if fold %}
+    </div>
+  </details>
+  {% endif %}
 </article>
