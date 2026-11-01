@@ -38,7 +38,7 @@ def test_home_lists_visits_with_chips_and_last_motion(client, add_visit):
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None)
     html = client.get("/").text
-    assert "Bushtit" in html and "Latest visitors" in html and "Mammals" in html
+    assert "Bushtit" in html and "tally-box" in html and "Mammals" in html
     assert "Last motion" in html
 
 
@@ -69,7 +69,7 @@ def test_scoreboard_periods(client, add_visit):
 def test_home_filter_chip_is_marked_active(client, add_visit):
     add_visit(visitor="raccoon", species=None)
     html = client.get("/?kind=mammal").text
-    assert 'aria-current="page">Mammals<' in html and "Matching visitors" in html
+    assert 'aria-current="page">Mammals<' in html and "matching</h2>" in html
 
 
 def test_load_more_pages_in_24s(client, add_visit):
