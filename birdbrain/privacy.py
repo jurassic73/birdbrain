@@ -76,7 +76,9 @@ def load_cache() -> dict[str, float]:
 
 
 def save_cache(cache: dict[str, float]) -> None:
-    tmp = cache_path().with_suffix(".tmp")
+    """Merge with what's on disk, so two runs at once (cron and a backfill) never drop each other's scores."""
+    cache = {**load_cache(), **cache}
+    tmp = cache_path().with_suffix(f".{os.getpid()}.tmp")
     tmp.write_text(json.dumps(cache, separators=(",", ":")))
     tmp.replace(cache_path())
 
