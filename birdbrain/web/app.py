@@ -646,7 +646,20 @@ def species_page(request: Request, name: str, conn=Depends(get_conn)):
         months=species_info.MONTHS,
         this_month=clock.today().month,
         confirmed=db.confirmed_species(conn),
+        fav_label=name,
+        fav_pick=row["photo_id"] if row["photo_picked"] else None,
     )
+
+
+@app.post("/species/{name}/photo")
+def species_photo(name: str, visit_id: int = Form(...), conn=Depends(get_conn)):
+    """The star on a species page's cards: use this visit's photo for the species, or (the current pick again)
+    go back to the automatic pick. Answers with the visit now picked, or null."""
+    if not db.shows_species(conn, visit_id, name):
+        raise HTTPException(404)
+    picked = None if db.species_photos(conn).get(name) == visit_id else visit_id
+    db.set_species_photo(conn, name, picked)
+    return {"visit_id": picked}
 
 
 @app.get("/species-info/{name}", response_class=HTMLResponse)

@@ -591,8 +591,43 @@ def delete_visit(conn: sqlite3.Connection, visit_id: int) -> sqlite3.Row | None:
     row = get_visit(conn, visit_id)
     if row:
         conn.execute("DELETE FROM visits WHERE id = ?", (visit_id,))
+        photos = species_photos(conn)
+        if visit_id in photos.values():  # a later visit could get the same id
+            _save_species_photos(conn, {k: v for k, v in photos.items() if v != visit_id})
         conn.commit()
     return row
+
+
+SPECIES_PHOTO = "species_photo"  # settings key: JSON {label: visit id}, the owner's pick of each species' photo
+
+
+def species_photos(conn: sqlite3.Connection) -> dict[str, int]:
+    """The visits the owner picked as species photos, by label."""
+    try:
+        return {str(k): int(v) for k, v in json.loads(get_value(conn, SPECIES_PHOTO) or "{}").items()}
+    except (ValueError, TypeError, AttributeError):
+        return {}
+
+
+def _save_species_photos(conn: sqlite3.Connection, photos: dict[str, int]) -> None:
+    set_value(conn, SPECIES_PHOTO, json.dumps(photos, sort_keys=True))
+
+
+def shows_species(conn: sqlite3.Connection, visit_id: int, label: str) -> bool:
+    """Whether a real visit has this species in it, as the main animal or one of the others."""
+    return conn.execute(f"SELECT 1 FROM ({_seen(REAL + ' AND id = ?')}) WHERE label = ? LIMIT 1",
+                        (visit_id, visit_id, label)).fetchone() is not None
+
+
+def set_species_photo(conn: sqlite3.Connection, label: str, visit_id: int | None) -> None:
+    """Use a visit's photo for its species (None: back to the automatic pick). If the visit is later deleted or
+    relabelled, species_summary falls back to the automatic pick on its own."""
+    photos = species_photos(conn)
+    if visit_id is None:
+        photos.pop(label, None)
+    else:
+        photos[label] = int(visit_id)
+    _save_species_photos(conn, photos)
 
 
 SPECIES_SORTS = {
@@ -608,29 +643,36 @@ def species_summary(
 ) -> list[sqlite3.Row]:
     """One row per species with visit counts, first/last seen and a representative photo.
 
-    The photo prefers visits where it's the main animal, then owner-corrected ones, then high-confidence ones,
-    then the newest; a window function picks it in one pass instead of a per-species subquery. Visits where it
-    was one of the other animals in the photo count too.
+    The photo is the one the owner picked (species_photos) while that visit still shows the species; otherwise
+    it prefers visits where it's the main animal, then owner-corrected ones, then high-confidence ones, then the
+    newest. A window function picks it in one pass instead of a per-species subquery. Visits where it was one of
+    the other animals in the photo count too. photo_id is the visit the photo comes from, picked whether the
+    owner chose it.
     """
     order = SPECIES_SORTS.get(sort, SPECIES_SORTS["visits"])
     where, args = _where()
-    args = [*args, *args]
+    args = [*args, *args, json.dumps(species_photos(conn))]
     if name:
         args.append(name)
     sql = f"""
         WITH v AS ({_seen(where)}
         ), ranked AS (
-            SELECT label, seen_visitor, id, captured_at, thumb_path,
+            SELECT label, seen_visitor, id, captured_at, thumb_path, picked,
                    ROW_NUMBER() OVER (
                        PARTITION BY label
-                       ORDER BY extra, (corrected_species IS NOT NULL OR corrected_visitor IS NOT NULL) DESC,
+                       ORDER BY picked DESC, extra,
+                                (corrected_species IS NOT NULL OR corrected_visitor IS NOT NULL) DESC,
                                 (confidence = 'high') DESC, captured_at DESC
                    ) AS rank
-            FROM v {"WHERE label = ?" if name else ""}
+            FROM (SELECT v.*, COALESCE(fav.value = v.id, 0) AS picked
+                  FROM v LEFT JOIN json_each(?) fav ON fav.key = v.label)
+            {"WHERE label = ?" if name else ""}
         )
         SELECT label, MAX(seen_visitor) AS visitor, COUNT(DISTINCT id) AS visits,
                MIN(captured_at) AS first_seen, MAX(captured_at) AS last_seen,
-               MAX(CASE WHEN rank = 1 THEN thumb_path END) AS thumb_path
+               MAX(CASE WHEN rank = 1 THEN thumb_path END) AS thumb_path,
+               MAX(CASE WHEN rank = 1 THEN id END) AS photo_id,
+               MAX(CASE WHEN rank = 1 THEN picked END) AS photo_picked
         FROM ranked GROUP BY label ORDER BY {order}
     """
     if limit:
