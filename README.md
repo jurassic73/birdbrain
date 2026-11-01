@@ -36,6 +36,49 @@ A backyard birdbath camera that spots visitors and identifies them with Claude, 
 | Anthropic API key | Pay-as-you-go. A typical backyard costs a few dollars a month (see below). |
 | Software | Python 3.11+, [uv](https://docs.astral.sh/uv/), ffmpeg. |
 
+<details>
+<summary>Set it up with Claude Code</summary>
+
+Install [Claude Code](https://claude.com/claude-code), clone this repo, run `claude` inside it, and paste the prompt below. Claude walks you through setup one checkpoint at a time and checks each before moving on.
+
+```text
+Help me set up Birdbrain, a backyard birdbath camera, from this repo. Read README.md, .env.example
+and scripts/deploy.sh first, and use only the settings, scripts and commands they describe.
+
+Work through these checkpoints in order. Ask me ONE question at a time, wait for my answer, and
+verify each checkpoint before moving on. If a check fails, help me fix it before continuing.
+
+1. Camera: which model is it, and is Thingino (or another firmware with RTSP) already flashed?
+   If not, point me at the flashing notes in the README's "What you need" table and wait.
+2. Camera access: ask for its hostname or IP, RTSP port and user. Ask me to type the RTSP
+   password into .env myself, or write it there without ever printing it back. Create .env from
+   .env.example, set CAM_HOST, RTSP_PORT, RTSP_USER, RTSP_PASS and the stream paths, then verify
+   with scripts/snap.sh main and scripts/snap.sh sub and show me the frames.
+3. Where it runs: a Raspberry Pi (which model, how much RAM, free disk) or a Mac/PC to try it
+   out first. Check Python 3.11+, uv and ffmpeg are installed, then run uv sync. For a Pi, ask
+   for the SSH user and address, confirm key-based ssh works, and set DEPLOY_HOST and DEPLOY_USER.
+4. Claude API: walk me through the README's "Set up the Anthropic API key safely" section
+   (prepaid credits, auto-reload off, a key just for Birdbrain). I paste it into .env as
+   ANTHROPIC_API_KEY; never echo it.
+5. Try it locally: start the website and the watcher (README "Try it locally") and confirm the
+   site loads.
+6. Aim and calibrate: follow the README's "Aim and calibrate". Help me place the camera, run
+   birdbrain.calibrate on a fresh frame, look at the preview, and copy the values that fit
+   (MOTION_RING, MOTION_SPOTS, CROP_ROI, optionally GROUND_ZONE) into .env.
+7. Deploy (Pi only): run scripts/deploy.sh, then check that birdbrain-web and birdbrain-watch are
+   active and read the watcher's journalctl output for errors. Make .env edits on this machine
+   and redeploy, never by editing the copy on the Pi.
+8. Optional extras, offering each and skipping any I decline: ntfy phone alerts, XC_API_KEY
+   (xeno-canto sounds), INAT_PLACE_ID for my county (the .env.example comment shows how to look
+   it up), SITE_LAT and SITE_LON, SITE_URL, and ADMIN_PASSWORD for read-only mode.
+9. Finally, point me to Claude's Notes on the site to describe what the camera sees, and tell me
+   what to check after the first rain or first visitor.
+
+Never commit .env or anything with my address, passwords or keys.
+```
+
+</details>
+
 ## Set up the Anthropic API key safely
 
 1. Create an account at [console.anthropic.com](https://console.anthropic.com) and add **prepaid credits**. About **$20** is plenty to start.
