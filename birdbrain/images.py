@@ -30,11 +30,11 @@ def stamp_text(when: datetime) -> str:
 def stamp(img: Image.Image, when: datetime) -> Image.Image:
     """Draw the capture time in the lower-left corner: a dark glass pill with a small green dot.
 
-    Sized to the photo (a 64 px pill on a 1080 px frame), so smaller false-trigger photos get a smaller one.
+    Sized to the photo (a 64 px pill with 34 px text on a 1080 px frame), so smaller false-trigger photos get a smaller one.
     Only stored photos get it; Claude and the Pi's checks see the clean frame.
     """
     s = img.height / 1080
-    font = _stamp_font(max(10, round(38 * s)))
+    font = _stamp_font(max(10, round(34 * s)))
     text = stamp_text(when)
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(overlay)
@@ -45,7 +45,9 @@ def stamp(img: Image.Image, when: datetime) -> Image.Image:
                         outline=(255, 255, 255, 60), width=max(1, round(2 * s)))
     dot = 7 * s
     d.ellipse((x + 33 * s - dot, y + h / 2 - dot, x + 33 * s + dot, y + h / 2 + dot), fill=(126, 200, 140, 255))
-    d.text((x + 56 * s, y + h / 2), text, font=font, fill=(245, 245, 240, 255), anchor="lm")
+    # centre the cap height (not the font's ascender/descender line, nor a "p" tail) on the pill's middle
+    top, bottom = d.textbbox((0, 0), "H", font=font, anchor="ls")[1::2]
+    d.text((x + 56 * s, y + h / 2 - (top + bottom) / 2), text, font=font, fill=(245, 245, 240, 255), anchor="ls")
     return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
 

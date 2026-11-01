@@ -1,6 +1,7 @@
 import io
 from datetime import datetime
 
+import numpy as np
 from PIL import Image
 
 from birdbrain import images
@@ -71,6 +72,18 @@ def test_stamp_reads_like_a_label():
     assert images.stamp_text(datetime(2026, 11, 1, 9, 33, 50)) == "Sun Nov 1  \u00b7  9:33 AM"
     assert images.stamp_text(datetime(2026, 10, 27, 19, 5)) == "Tue Oct 27  \u00b7  7:05 PM"
     assert images.stamp_text(datetime(2026, 10, 27, 0, 5)) == "Tue Oct 27  \u00b7  12:05 AM"
+
+
+def test_stamp_text_is_vertically_centred_in_the_pill():
+    for size in ((1920, 1080), (960, 540)):
+        s = size[1] / 1080
+        out = images.stamp(Image.new("RGB", size, (0, 0, 0)), datetime(2026, 11, 1, 14, 40))
+        px = np.asarray(out).astype(int)
+        x0 = int(36 * s + 56 * s)
+        rows = np.where((px[:, x0 : x0 + int(500 * s)].sum(2) > 500).any(1))[0]  # bright text pixels only
+        y0 = size[1] - 36 * s - 64 * s
+        top_gap, bottom_gap = rows.min() - y0, y0 + 64 * s - (rows.max() + 1)
+        assert abs(top_gap - bottom_gap) <= 1.5
 
 
 def test_stamp_can_be_turned_off(tmp_path, monkeypatch):
