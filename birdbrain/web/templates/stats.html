@@ -3,6 +3,31 @@
 {% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Stats <span class="muted">{{ total }} visits</span></h1></div>
+{% set a = activity %}
+<section class="today-motion" id="today-motion">
+  <h2>Today's motion</h2>
+  <ol class="tally" aria-label="Today's numbers">
+    <li data-tip="Birds and animals identified today"><span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }}</span></li>
+    <li data-tip="Motion with no animal: rain, wind, ripples">
+      <span class="tally-n">{{ a.false_alarms }}</span> {% if request.state.admin %}<a class="tally-label" href="/false-triggers">False alarms</a>{% else %}<span class="tally-label">False alarms</span>{% endif %}
+    </li>
+    {% if presence_mode != 'off' %}
+    <li data-tip="False alarms the Pi's animal check screened out for free"><span class="tally-n">{{ a.kept_on_pi }}</span> <a class="tally-label" href="#presence">Kept on the Pi</a></li>
+    {% endif %}
+    <li data-tip="Cost {{ a.claude_usd | usd }} today{% if presence_mode == 'shadow' and a.would_keep %}; gate mode would have kept {{ a.would_keep }} on the Pi{% endif %}">
+      <span class="tally-n">{{ a.sent_to_claude }}</span> <span class="tally-label">Sent to Claude</span> <span class="tally-why">{{ a.claude_usd | usd }}</span>
+    </li>
+  </ol>
+  {% set motion = a.visitors + a.false_alarms %}
+  {% if motion %}
+  <ul class="tally-facts">
+    <li>{{ (100 * a.visitors / motion) | round | int }}% of today's {{ motion }} motion events were a real animal; the rest were rain, wind, leaves or ripples.</li>
+    {% if a.visitors %}<li>Each visitor cost about {{ (a.claude_usd / a.visitors) | usd }} in Claude calls.</li>{% endif %}
+    {% if a.kept_on_pi %}<li>The Pi's animal check settled {{ a.kept_on_pi }} false alarm{{ 's' if a.kept_on_pi != 1 }} on the Pi without asking Claude.</li>{% endif %}
+    {% if presence_mode == 'shadow' and a.would_keep %}<li>Gate mode would have kept {{ a.would_keep }} more on the Pi, saving about {{ a.would_keep_usd | usd }}.</li>{% endif %}
+  </ul>
+  {% endif %}
+</section>
 <div class="charts">
   <figure><figcaption>Visits per day, last 30 days</figcaption><canvas id="daily"></canvas></figure>
   <figure><figcaption>Visits by hour of day</figcaption><canvas id="hourly"></canvas></figure>

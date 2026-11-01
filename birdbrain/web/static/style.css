@@ -285,18 +285,15 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 .critter-n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); text-decoration: none; }
 .critter-n:hover, .critter-n:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .today-foot { margin-top: auto; font-size: .85rem; }
-/* Today's numbers: the button heading the visit list (details in each item's tooltip). */
-.tally-box { margin: 0 0 12px; }
-.tally-box summary {
-  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; user-select: none;
-}
-.tally-box summary.tally-head { padding: 6px 14px; }  /* the Visitors tile: always shown, opens the rest */
-.tally-box summary .chev { color: var(--muted); }
-.tally-box summary::-webkit-details-marker { display: none; }
-.tally-box summary:hover { border-color: var(--accent); }
-.tally-box .chev { transition: transform .15s; }
-.tally-box[open] .chev { transform: rotate(90deg); }
-.tally-box[open] summary { margin-bottom: 6px; }
+/* Today's visitor count: plain text on the row with More filters; the other numbers live on Stats. */
+.tally-box { margin: 0; }
+.tally-box.tally-head { font-size: 1rem; white-space: nowrap; }
+.visits-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; margin-bottom: 8px; }
+.visits-bar .more-filters { margin: 0; }
+.visits-bar .more-filters[open] { flex-basis: 100%; }
+.visits-bar .more-filters summary { margin-left: auto; }
+.today-motion { margin: 0 0 18px; }
+.today-motion h2 { margin: 0 0 8px; font-size: 1.1rem; }
 .tally-facts { margin: 8px 0 0; padding: 0 0 0 18px; color: var(--muted); font-size: .85rem; }
 .tally-facts li { margin: 2px 0; }
 .tally {
@@ -323,8 +320,6 @@ a.tally-label:hover { color: var(--accent); }
 .visits-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
 .visits-head h2 { margin: 0; }
 /* Today's visitors head the list; opened, today's numbers take the whole row and the chips wrap below. */
-.visits-head .tally-box { margin: 0; }
-.visits-head .tally-box[open] { flex-basis: 100%; }
 .visits-head .visits-count { font-size: 1rem; font-weight: normal; color: var(--muted); margin-right: auto; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips a {
@@ -1089,8 +1084,7 @@ details.review-fold > summary { display: none; }
   .hero { gap: 12px; margin-bottom: 16px; }
   .today { padding: 10px 12px; gap: 8px; }
   .visits-head { flex-wrap: nowrap; }
-  .visits-head:has(.tally-box[open]) { flex-wrap: wrap; }
-  .visits-head h2, .visits-head .tally-head { white-space: nowrap; }
+  .visits-head h2 { white-space: nowrap; }
   .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .chips a { white-space: nowrap; }
 
