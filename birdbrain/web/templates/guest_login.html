@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Birdbrain | Friends &amp; family</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="/static/favicon-64.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    body { min-height: 100vh; display: grid; place-items: center; margin: 0; }
+    .login-box { max-width: 22rem; width: calc(100% - 2rem); }
+    .login-box img { display: block; margin: 0 auto .5rem; }
+    .login-box h1 { text-align: center; }
+  </style>
+</head>
+<body>
+<form class="login-box" method="post" action="/guest-login">
+  <img src="/static/logo.png" alt="" width="72" height="72">
+  <h1>Friends &amp; family login</h1>
+  <p class="muted">Birdbrain is shared with friends and family. Enter the password you were given.</p>
+  <input type="hidden" name="next" value="{{ next }}">
+  <input type="hidden" name="key" id="key">
+  <label for="password">Password</label>
+  <input type="password" id="password" name="password" autocomplete="current-password" required autofocus {% if wait %}disabled{% endif %}>
+  {% if error %}<p class="login-error">{{ error }}</p>{% endif %}
+  <button type="submit" {% if wait %}disabled{% endif %}>Enter</button>
+</form>
+<script>
+  // Share links carry their key after '#', which browsers never send to the server; post it like a password.
+  (() => {
+    const m = location.hash.match(/^#k=([A-Za-z0-9_-]+)$/);
+    if (!m) return;
+    history.replaceState(null, "", location.pathname + location.search);  // don't leave it in the address bar
+    if (document.getElementById("password").disabled) return;  // locked out for now: the page says so
+    document.getElementById("key").value = m[1];
+    document.getElementById("password").required = false;
+    document.querySelector(".login-box").submit();
+  })();
+</script>
+</body>
+</html>

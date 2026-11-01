@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth
+from . import auth, viewer
 from .. import alert, camera, clock, config, db, identify, images, names, presence, refine, retention, scene, species_info, zones
 
 HERE = Path(__file__).parent
@@ -39,13 +39,18 @@ templates = Jinja2Templates(directory=HERE / "templates")
 @app.middleware("http")
 async def read_only(request: Request, call_next):
     """Visitors can browse; changes, Claude calls and the admin pages need the admin login."""
+    if viewer.enabled() and not viewer.is_open(request.url.path) and not viewer.signed_in(request):
+        # Friends & family gate: nothing past this point for anyone without the guest cookie.
+        if request.method in ("GET", "HEAD"):
+            return RedirectResponse("/guest-login?" + urlencode({"next": request.url.path}), status_code=303)
+        return Response("Sign in first.", status_code=401)
     admin = request.state.admin = auth.is_admin(request)
     if clock.stale():
         with db.session() as conn:
             clock.set_zone(db.get_value(conn, clock.KEY))
     path = request.url.path
     if auth.public():
-        if request.method not in ("GET", "HEAD"):
+        if request.method not in ("GET", "HEAD") and path != "/guest-login":
             return Response("This is a read-only copy.", status_code=403)
         if auth.admin_only(path) or path == "/login":
             return Response("Not found", status_code=404)
@@ -162,6 +167,58 @@ def page(request: Request, name: str, status_code: int = 200, **ctx) -> HTMLResp
 def safe_next(target: str) -> str:
     """Only same-site paths, so the login can't be used to bounce people elsewhere."""
     return target if target.startswith("/") and not target.startswith("//") else "/"
+
+
+def _guest_reply(request: Request, ok: bool, next: str, error: str = "", wait: int = 0, status: int = 200):
+    """JSON for the pop-up on the somegeek.com tiles page, the plain sign-in page otherwise."""
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"ok": ok, "error": error, "wait": wait}, status_code=status)
+    if ok:
+        return RedirectResponse(safe_next(next), status_code=303)
+    return templates.TemplateResponse(request, "guest_login.html", {"next": safe_next(next), "error": error,
+                                                                    "wait": wait}, status_code=status)
+
+
+def _wait_text(seconds: int) -> str:
+    minutes = max(1, round(seconds / 60))
+    return f"Too many tries. Wait {minutes} minute{'s' if minutes != 1 else ''} and try again."
+
+
+@app.get("/guest-login", response_class=HTMLResponse)
+def guest_login_page(request: Request, next: str = "/"):
+    if not viewer.enabled() or viewer.signed_in(request):
+        return RedirectResponse(safe_next(next), status_code=303)
+    wait = viewer.locked(viewer.client_ip(request))
+    return _guest_reply(request, False, next, _wait_text(wait) if wait else "", wait)
+
+
+@app.post("/guest-login")
+def guest_login(request: Request, password: str = Form(""), key: str = Form(""), next: str = Form("/")):
+    if not viewer.enabled():
+        return _guest_reply(request, True, next)
+    ip = viewer.client_ip(request)
+    if wait := viewer.locked(ip):
+        return _guest_reply(request, False, next, _wait_text(wait), wait, 429)
+    if not (viewer.check_invite(key) if key else viewer.check_password(password)):
+        viewer.failed(ip)
+        wait = viewer.locked(ip)
+        return _guest_reply(request, False, next, _wait_text(wait) if wait else
+                            ("That link isn't valid anymore. Ask for a new one." if key else "That password isn't right."),
+                            wait,
+                            429 if wait else 401)
+    viewer.succeeded(ip)
+    resp = _guest_reply(request, True, next)
+    # Path covers the whole site whether it's served at / or under a prefix such as /birdbrain.
+    resp.set_cookie(viewer.COOKIE, viewer.make_cookie(), max_age=viewer.MAX_AGE, httponly=True, samesite="lax",
+                    path=(BASE or "") + "/",
+                    secure=https(request))
+    return resp
+
+
+def https(request: Request) -> bool:
+    """Whether the visitor's connection is HTTPS, also behind Cloudflare's tunnel and nginx, which talk plain HTTP."""
+    return (request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+            or '"https"' in request.headers.get("cf-visitor", ""))
 
 
 @app.get("/login", response_class=HTMLResponse)
