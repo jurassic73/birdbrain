@@ -2,10 +2,10 @@
 
 The password lives only as a scrypt hash in VIEWER_PASSWORD_FILE (default /etc/birdbrain/viewer.pw, readable
 by the service, never in the repo or the synced data). No file = no gate, so the Pi's own site is unchanged.
-Set or change it on the server with:  sudo /opt/birdbrain/venv/bin/python -m birdbrain.web.viewer
+Set or change it on the server with:  cd /opt/birdbrain && sudo venv/bin/python -m birdbrain.web.viewer
 Changing it signs everyone out.
 
-Share links: `... -m birdbrain.web.viewer link` makes a long random key and prints a link like
+Share links: `cd /opt/birdbrain && sudo venv/bin/python -m birdbrain.web.viewer link` makes a long random key and prints a link like
 https://somegeek.com/birdbrain/guest-login#k=KEY. The key sits after the '#', so browsers never send it to any
 server or log; the sign-in page reads it and posts it like a password. Only its SHA-256 is stored, in
 VIEWER_INVITE_FILE (default /etc/birdbrain/viewer.invite). Making a new link retires the old one and signs
