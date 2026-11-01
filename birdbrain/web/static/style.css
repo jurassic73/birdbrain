@@ -1067,6 +1067,12 @@ details.review-fold > summary { display: none; }
   /* No arrows row: "All visits" sits beside the name, newer/older sit on the photo's bottom corners. */
   .visit-nav { display: none; }
   .title-back { font-size: .85rem; font-weight: normal; margin-left: 10px; vertical-align: middle; color: var(--accent); text-decoration: none; }
+  /* One-line title: the name shrinks and ends in an ellipsis, the back pill stays pinned at the right. */
+  .label-block h1 { display: flex; align-items: baseline; gap: 8px; font-size: 1.15rem; margin-bottom: 2px; }
+  .label-block h1 .title-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .label-block h1 .title-count { flex: none; }
+  .label-block h1 .title-back { flex: none; margin: 0 0 0 auto; white-space: nowrap; }
+  .visit-head .label-block { flex: 1 1 100%; }
   .photo-arrow { display: flex; }
   .mark-legend { font-size: .75rem; padding: 3px 8px; }
   /* Steps move under "Identified by" and wrap: smaller pills, and a step that agrees with the result shows only its confidence. */
@@ -1084,7 +1090,7 @@ details.review-fold > summary { display: none; }
   .m-delete button { font-size: .8rem; padding: 5px 10px; }
   .visit { display: flex; flex-direction: column; gap: 10px; }
   .visit-info { display: contents; }
-  .visit-head { order: -1; }
+  .visit-head { order: -1; align-self: stretch; min-width: 0; }
   .visit dl { margin: 0; }
   .photo-hint { display: none; }
   .visit dd.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
