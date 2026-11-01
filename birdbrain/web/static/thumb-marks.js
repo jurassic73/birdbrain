@@ -12,7 +12,7 @@
       if (m.claude) g.setAttribute("class", "claude");
       for (const cls of ["ring-shadow", "ring"]) {
         const c = document.createElementNS(NS, "circle");
-        c.setAttribute("cx", m.x * w); c.setAttribute("cy", m.y * h); c.setAttribute("r", m.r * w); c.setAttribute("class", cls);
+        c.setAttribute("cx", m.x * w); c.setAttribute("cy", m.y * h); c.setAttribute("r", markRadius(m.r) * w); c.setAttribute("class", cls);
         g.append(c);
       }
       return g;
