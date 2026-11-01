@@ -219,7 +219,7 @@ def test_false_triggers_page_shows_storage_and_cleans_up(client, stored_visit, c
     html = client.get("/false-triggers").text
     assert "False-trigger photos:" in html and "of 500 MB" in html
     assert "1 photo you corrected or wrote a note on" in html
-    assert "storage-delete" not in html  # nothing confirmed yet, so no Delete
+    assert 'class="storage-delete"' not in html  # nothing confirmed yet, so no Delete
     db.confirm_visits(conn, [vid])
     html = client.get("/false-triggers").text
     assert ">Delete</button>" in html and "1 photo you confirmed empty" in html

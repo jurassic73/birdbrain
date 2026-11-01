@@ -113,6 +113,7 @@ def test_false_triggers_confirm_all_shown_skips_real_visits(client, conn, add_vi
     page = client.get("/false-triggers").text
     assert "(3 not yet confirmed)" in page and "Confirm all shown false triggers have no animals</button>" in page
     assert "not contain an animal" in page  # the pop-up before it confirms
+    assert 'href="#ft-storage"' in page and 'id="ft-storage"' in page  # the intro links to the Delete button
     assert "found no animal in them. Now it's your turn to look." in page and 'id="ft-visit"' in page
     r = client.post("/false-triggers/confirm", data={"ids": ",".join(map(str, [*empty[:2], real]))},
                     follow_redirects=False)

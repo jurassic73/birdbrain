@@ -377,6 +377,9 @@ button.danger { background: transparent; color: var(--low); border-color: var(--
 .ft-grid .card:not([data-unchecked]):hover { opacity: .85; }
 .ft-grid .card.leaving { opacity: 0; transform: scale(.96); transition: opacity .3s, transform .3s; }
 .ft-count { font-size: .55em; font-weight: 400; }
+/* Brief highlight on whatever a link jumped to (the Delete button from the False triggers intro). */
+.flash { animation: flash 1.6s ease-out; border-radius: 8px; }
+@keyframes flash { 0%, 30% { box-shadow: 0 0 0 3px var(--accent); } 100% { box-shadow: 0 0 0 3px transparent; } }
 .conf-low { color: var(--low); }
 .night { color: var(--night); }
 .corrected { color: var(--accent); }
