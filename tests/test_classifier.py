@@ -249,3 +249,80 @@ def test_probs_are_a_softmax_over_the_species_embeddings(monkeypatch, tmp_path):
     assert clf.labels[2] == ("Sciurus carolinensis", "Eastern Gray Squirrel", True)
     r = classifier.rank(p, clf.labels, {"Junco hyemalis": "Dark-eyed Junco", "Haemorhous mexicanus": "House Finch"})
     assert r["top"][0]["name"] == "House Finch" and r["background"] == 0
+
+
+class FakeTextClassifier:
+    """Embeddings as one-hot vectors over LABELS, so the species scores are known exactly."""
+    labels = LABELS
+    text = np.eye(len(LABELS), dtype=np.float32)
+
+
+def one_hot(i, k=1.0):
+    v = np.zeros(len(LABELS), np.float32)
+    v[i] = k
+    return v
+
+
+def test_gate_names_only_sure_daytime_guesses_of_settled_species():
+    clf = FakeTextClassifier()
+    sure = classifier.from_embedding(one_hot(0), False, local=LOCAL, clf=clf)
+    assert sure["top"][0]["name"] == "Dark-eyed Junco" and sure["top"][0]["score"] > 0.99 and sure["crop"] == "box"
+    settled = {"Dark-eyed Junco": "bird"}
+    assert classifier.gate_pick(sure, settled, night=False) == ("Dark-eyed Junco", "bird")
+    assert classifier.gate_pick(sure, settled, night=True) is None            # never at night (IR unseen)
+    assert classifier.gate_pick(sure, {}, night=False) is None                # not settled in the yard yet
+    unsure = classifier.from_embedding(one_hot(0, 0.01), False, local=LOCAL, clf=clf)
+    assert classifier.gate_pick(unsure, settled, night=False) is None         # spread over every species
+    foreign = dict(sure, local_share=0.2)
+    assert classifier.gate_pick(foreign, settled, night=False) is None        # mostly a species from elsewhere
+
+
+def test_settled_species_ignores_visits_the_gate_named_itself(conn, add_visit):
+    for _ in range(3):
+        add_visit(species="Dark-eyed Junco")
+        add_visit(visitor="squirrel", species="Eastern Gray Squirrel")
+        add_visit(species="House Finch", model="bioclip-2")
+    add_visit(species="Bushtit", confidence="medium")
+    assert db.settled_species(conn) == {"Dark-eyed Junco": "bird", "Eastern Gray Squirrel": "squirrel"}
+
+
+def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit):
+    for _ in range(3):
+        add_visit(species="Dark-eyed Junco")
+    burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), (40, 120, 200), np.uint8))[1].tobytes()] * 3
+    monkeypatch.setattr(watch, "capture_burst", lambda: burst)
+    monkeypatch.setattr(watch, "presence_mode", lambda: "gate")
+    monkeypatch.setattr(config, "CLASSIFIER", "gate")
+    emb = {"v": one_hot(0)}
+    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, box: emb["v"])
+    monkeypatch.setattr(watch.presence, "check", lambda conn, e: {"model": "bioclip-presence", "score": 0.9,
+                                                                  "threshold": 0.4, "empty": False})
+    monkeypatch.setattr(watch.presence, "store", lambda conn, vid, e: None)
+    monkeypatch.setattr(classifier, "load", lambda: FakeTextClassifier())
+    monkeypatch.setattr(classifier, "local_species", lambda: LOCAL)
+    asked = []
+
+    def fake_identify(*args, **kwargs):
+        from birdbrain.identify import Result, Sighting
+        asked.append(1)
+        return Result(Sighting(visitor="bird", species="Bushtit", count=2, confidence="high", notes=""),
+                      "claude-haiku-5-5", False, False, {})
+
+    monkeypatch.setattr(watch.identify, "identify", fake_identify)
+    monkeypatch.setattr(classifier, "run", lambda *a: None)
+    assert watch.handle_event() == "bird"
+    row = conn.execute("SELECT species, model, confidence, raw_json FROM visits ORDER BY id DESC").fetchone()
+    calls = json.loads(row["raw_json"])["calls"]
+    assert not asked and row["species"] == "Dark-eyed Junco" and row["model"] == "bioclip-2"
+    assert calls["skipped_claude"] and calls["settled_by"] == "classifier" and calls["presence"]["score"] == 0.9
+
+    emb["v"] = one_hot(0, 0.01)  # unsure: Claude names it
+    assert watch.handle_event() == "bird" and asked
+    assert conn.execute("SELECT species FROM visits ORDER BY id DESC").fetchone()[0] == "Bushtit"
+
+
+def test_visit_page_says_the_pi_named_it(client, add_visit):
+    vid = add_visit(model="bioclip-2", raw_json=json.dumps({"calls": {
+        "classifier": guess("Dark-eyed Junco"), "skipped_claude": True, "settled_by": "classifier"}}))
+    html = client.get(f"/visit/{vid}").text
+    assert "Claude wasn't asked" in html and 'data-tip="Pi named:' in html

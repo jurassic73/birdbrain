@@ -46,7 +46,7 @@
 {% endif %}
 {% if classifier_on or classifier.checked %}
 <section class="detector-report" id="classifier">
-  <h2>Local species classifier <span class="muted">shadow mode: guesses the species on the Pi, Claude still names every visitor</span></h2>
+  <h2>Local species classifier <span class="muted">{% if classifier_mode == 'gate' %}gate mode: names sure daytime regulars on the Pi, Claude names the rest{% else %}shadow mode: guesses the species on the Pi, Claude still names every visitor{% endif %}</span></h2>
   {% if classifier.checked %}
   <div class="today-stats">
     <div><span class="big">{{ (100 * classifier.top1 / classifier.checked) | round | int }}%</span> first guess right ({{ classifier.top1 }}/{{ classifier.checked }})</div>

@@ -189,9 +189,10 @@ DETECTOR_MIN_SCORE = float(_env("DETECTOR_MIN_SCORE", "0.15"))  # low on purpose
 
 # Local species classifier (birdbrain/classifier.py): "shadow" records its guess with each visit for the Stats
 # scorecard (Claude still decides every label), "off" skips it. The model downloads into DATA_DIR on first use.
-CLASSIFIER = _env("CLASSIFIER", "shadow").strip().lower()
-if CLASSIFIER not in ("off", "shadow"):
-    raise ValueError(f"CLASSIFIER must be off or shadow, not {CLASSIFIER!r}")
+# gate: a confident daytime guess of a species already settled in this yard names the visit without Claude.
+CLASSIFIER = _env("CLASSIFIER", "gate").strip().lower()
+if CLASSIFIER not in ("off", "shadow", "gate"):
+    raise ValueError(f"CLASSIFIER must be off, shadow or gate, not {CLASSIFIER!r}")
 PRESENCE = _env("PRESENCE", "shadow").strip().lower()  # local animal check: off, shadow or gate (Settings wins)
 if PRESENCE not in ("off", "shadow", "gate"):
     raise ValueError(f"PRESENCE must be off, shadow or gate, not {PRESENCE!r}")

@@ -335,6 +335,51 @@ def classify(img: np.ndarray, circle: dict | None, box, night: bool, local=None,
             "seconds": round(seconds, 3)}
 
 
+# Gate mode. Checked 2026-10-31 on 66 real visits re-scored from the crop box (what the gate sees, since Claude's
+# circle doesn't exist yet): these limits named 30 with no mistakes. The one confident miss (a junco called a
+# California Scrub-Jay at 0.98) is stopped by requiring a species already settled in the yard.
+GATE_MIN_SCORE = 0.93
+GATE_MIN_LOCAL = 0.5  # share of its belief on local species; low means it saw something it doesn't know
+
+
+def from_embedding(emb: np.ndarray, night: bool, local=None, clf=None) -> dict | None:
+    """The stored verdict from an embedding already made of the crop box (presence's), so gate mode costs
+    nothing extra. None when off."""
+    clf = clf or load()
+    if clf is None:
+        return None
+    z = LOGIT_SCALE * (clf.text @ np.asarray(emb, np.float32))
+    e = np.exp(z - z.max())
+    local = local_species() if local is None else local
+    return {"model": MODEL_NAME, "crop": "box", "night": bool(night), **rank(e / e.sum(), clf.labels, local),
+            "seconds": 0.0}
+
+
+def gate_pick(guess: dict | None, settled: dict[str, str], night: bool) -> tuple[str, str] | None:
+    """(species, visitor) when the guess is trusted to name the visit without Claude: daytime only (it hasn't
+    seen infrared), a strong first guess mostly on local species, and a species with enough settled visits
+    here (`settled`: label -> visitor type, from db.settled_species)."""
+    if night or not guess or not guess.get("top"):
+        return None
+    top = guess["top"][0]
+    if top["score"] < GATE_MIN_SCORE or (guess.get("local_share") or 0) < GATE_MIN_LOCAL:
+        return None
+    visitor = settled.get(top["name"])
+    return (top["name"], visitor) if visitor and visitor not in ("none", "other") else None
+
+
+def gate_check(emb, night: bool, settled: dict[str, str]) -> tuple[dict | None, tuple[str, str] | None]:
+    """Fail-soft gate step for the watcher: (the guess, the pick or None)."""
+    if config.CLASSIFIER != "gate" or emb is None or night:
+        return None, None
+    try:
+        guess = from_embedding(emb, night)
+    except Exception:
+        log.exception("local classifier gate failed; asking Claude")
+        return None, None
+    return guess, gate_pick(guess, settled, night)
+
+
 def box_embedding(jpeg: bytes, box) -> np.ndarray | None:
     """Fail-soft embedding of the crop box (for birdbrain.presence); None when off or anything fails."""
     if config.CLASSIFIER == "off":

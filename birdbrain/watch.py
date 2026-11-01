@@ -433,7 +433,15 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         with db.session() as conn:
             db.bump(conn, "probe_empty")
         return PROBE_EMPTY
-    if pmode == "gate" and check and check.get("empty"):
+    empty = bool(check and check.get("empty"))
+    guess = pick = None
+    if not empty:  # the species gate: a sure daytime name of a species already settled here skips Claude
+        with db.session() as conn:
+            settled = db.settled_species(conn)
+        guess, pick = classifier.gate_check(emb, night, settled)
+    if pick:
+        result = identify.settled_by_classifier(guess, pick, check)
+    elif pmode == "gate" and empty:
         result = identify.settled_by_presence(check, None)
     else:
         with db.session() as conn:
@@ -444,8 +452,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
                                    confirmed=confirmed)
         if check:
             result.raw["presence"] = check
-    # Shadow only: the local species classifier records its guess for the Stats scorecard; Claude's label stands.
-    if result.sighting.visitor != "none" and (guess := classifier.run(best, result.raw.get("circle"), crop, night)):
+    # When Claude answered, the classifier records its guess from Claude's circle for the Stats scorecard.
+    if not pick and result.sighting.visitor != "none" and (guess := classifier.run(best, result.raw.get("circle"), crop, night)):
         result.raw["classifier"] = guess
     s = result.sighting
     false_trigger = s.visitor == "none"

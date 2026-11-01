@@ -658,7 +658,7 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
               SUM({REAL}) AS visitors,
               (SELECT COUNT(DISTINCT label) FROM ({_seen(f"{REAL} AND date(captured_at) = :day")})) AS species,
               SUM({FALSE_TRIGGER}) AS stored_false,
-              SUM(model IN ('yolox-tiny', 'bioclip-presence')) AS settled_on_pi,
+              SUM(model IN ('yolox-tiny', 'bioclip-presence', 'bioclip-2')) AS settled_on_pi,
               SUM(model LIKE 'claude%') AS sent,
               SUM(model LIKE 'claude%'
                   AND json_extract(raw_json, '$.calls.presence.empty') = 1) AS would_keep
@@ -701,7 +701,7 @@ def totals(conn: sqlite3.Connection) -> dict:
               SUM({REAL}) AS visitors,
               (SELECT COUNT(DISTINCT label) FROM ({_seen(REAL)}) WHERE seen_visitor != 'other') AS species,
               SUM({FALSE_TRIGGER}) AS stored_false,
-              SUM(model IN ('yolox-tiny', 'bioclip-presence')) AS settled_on_pi,
+              SUM(model IN ('yolox-tiny', 'bioclip-presence', 'bioclip-2')) AS settled_on_pi,
               SUM(model LIKE 'claude%') AS sent,
               SUM(escalated) AS escalated,
               SUM(needs_review) AS waiting_review,
@@ -816,6 +816,9 @@ def set_raw_json(conn: sqlite3.Connection, visit_id: int, raw: dict) -> None:
 CONFIRMED_MIN = 3  # visits before a species counts as confirmed here
 
 
+CLASSIFIER_MODEL = "bioclip-2"  # visits named by the local classifier in gate mode (classifier.MODEL_NAME)
+
+
 def confirmed_species(conn: sqlite3.Connection, minimum: int = CONFIRMED_MIN) -> set[str]:
     """Species with at least `minimum` visits that are settled: answered with high confidence and not
     corrected to something else, or labelled by the owner. Haiku naming one of these at medium confidence
@@ -828,6 +831,20 @@ def confirmed_species(conn: sqlite3.Connection, minimum: int = CONFIRMED_MIN) ->
         (minimum,),
     ).fetchall()
     return {r["label"] for r in rows}
+
+
+def settled_species(conn: sqlite3.Connection, minimum: int = CONFIRMED_MIN) -> dict[str, str]:
+    """confirmed_species with each one's visitor type (label -> bird/squirrel/...), for the classifier gate.
+    Visits the gate named itself only count once the owner has checked them, so it can't confirm itself."""
+    rows = conn.execute(
+        f"""SELECT {LABEL} AS label, {VISITOR} AS visitor, COUNT(*) AS n FROM visits
+            WHERE {REAL} AND {LABEL} IS NOT NULL
+              AND (model != '{CLASSIFIER_MODEL}' OR confirmed_at IS NOT NULL OR corrected_species IS NOT NULL)
+              AND (corrected_species IS NOT NULL OR (confidence = 'high' AND corrected_visitor IS NULL))
+            GROUP BY label, visitor HAVING n >= ?""",
+        (minimum,),
+    ).fetchall()
+    return {r["label"]: r["visitor"] for r in rows}
 
 
 def scenery_report(conn: sqlite3.Connection, days: int = 14) -> dict:
@@ -870,6 +887,9 @@ def classifier_report(conn: sqlite3.Connection, days: int | None = None) -> dict
                    json_extract(raw_json, '$.calls.classifier') AS guess
             FROM visits
             WHERE {VISITOR} != 'none' AND json_extract(raw_json, '$.calls.classifier.top') IS NOT NULL {where}
+              -- a visit it named itself only scores it once the owner has checked or corrected it
+              AND (model != '{CLASSIFIER_MODEL}' OR confirmed_at IS NOT NULL
+                   OR corrected_species IS NOT NULL OR corrected_visitor IS NOT NULL)
             ORDER BY id DESC""",
         args,
     ).fetchall()

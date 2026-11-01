@@ -455,6 +455,7 @@ def decision_steps(raw_json: str | None) -> dict:
         steps.append({
             "model": "Local classifier",
             "shadow": True,
+            "gated": calls.get("settled_by") == "classifier",
             "guesses": [f"{g['name']} ({g['score']:.0%})" for g in guess["top"]],
             "seconds": guess.get("seconds"),
             "crop": CLASSIFIER_CROPS.get(guess.get("crop"), ""),
@@ -622,6 +623,7 @@ def stats(request: Request, conn=Depends(get_conn)):
         presence=db.presence_report(conn),
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",
+        classifier_mode=config.CLASSIFIER,
     )
 
 
@@ -876,6 +878,7 @@ def settings_page(request: Request, pruned: int | None = None,
         activity=db.activity(conn),
         classifier=db.classifier_report(conn),
         classifier_on=config.CLASSIFIER != "off",
+        classifier_mode=config.CLASSIFIER,
         current_limit=limit,
         # a limit set in .env that isn't one of the buttons still shows up as one, selected
         limit_choices=sorted({*retention.LIMIT_CHOICES_MB, limit}, key=lambda mb: mb or float("inf")),

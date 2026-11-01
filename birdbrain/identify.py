@@ -244,6 +244,19 @@ def settled_by_presence(check: dict, det: dict | None) -> Result:
     return Result(s, check["model"], escalated=False, needs_review=False, raw=raw)
 
 
+def settled_by_classifier(guess: dict, pick: tuple[str, str], check: dict | None) -> Result:
+    """Gate mode of the local species classifier: a confident daytime guess of a species already settled here
+    names the visit, and Claude isn't asked. It can't count or see a second kind of animal."""
+    species, visitor = pick
+    score = guess["top"][0]["score"]
+    notes = (f"Named on the Pi by the local classifier ({score:.0%} sure); Claude was not asked, "
+             "so the count and any other animals weren't checked.")
+    s = Sighting(visitor=visitor, species=species, count=1, confidence="high", notes=notes)
+    raw = {"classifier": guess, "skipped_claude": True, "settled_by": "classifier",
+           **({"presence": check} if check else {})}
+    return Result(s, guess["model"], escalated=False, needs_review=False, raw=raw)
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("usage: python -m birdbrain.identify photo.jpg [more.jpg ...]")

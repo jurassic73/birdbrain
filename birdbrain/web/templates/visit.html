@@ -107,11 +107,15 @@
         <li{% if step.shadow %} class="step-shadow"{% endif %}>
           {% if step.shadow %}
           <div class="step-head">
-            <strong>Local classifier</strong> {{ badge("shadow", "shadow") }}
+            <strong>Local classifier</strong> {{ badge("pi named", "pi-only") if step.gated else badge("shadow", "shadow") }}
             <span class="muted">on the Pi, {{ step.crop }}{% if step.seconds is not none %}, {{ step.seconds }} s{% endif %}</span>
           </div>
           <div>{% if step.guesses %}{{ step.guesses | join(", ") }}{% else %}no local species{% endif %}</div>
+          {% if step.gated %}
+          <div class="step-why">Sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
+          {% else %}
           <div class="muted step-notes">Its own guess, not used for the label{% if step.night %}; night photos are black and white, which it wasn't trained on{% endif %}. Scored on the <a href="/stats#classifier">Stats</a> page.</div>
+          {% endif %}
           {% elif step.presence %}
           <div class="step-head">
             <strong>Local animal check</strong>

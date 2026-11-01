@@ -77,7 +77,7 @@
     {% if classifier_mode != 'off' %}
     <li class="flow-step where-pi shadow">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c3-1 5-4 9-4 3 0 5 2 7 2l-3 3c-2 0-3 3-7 3-3 0-5-2-6-4z"/><circle cx="15" cy="11.5" r=".6"/><path d="M8 18l-1 3M11 18l1 3"/></svg>
-      <strong><a href="#classifier">Species guess</a></strong><small>BioCLIP 2 on the Pi matches the animal to every local bird and mammal; only scored for now</small>
+      <strong><a href="#classifier">Species guess</a></strong><small>BioCLIP 2 on the Pi matches the animal to every local bird and mammal{% if classifier_mode == 'gate' %}; by day, a sure guess of a regular names the visit without Claude{% else %}; only scored for now{% endif %}</small>
     </li>
     {% endif %}
     <li class="flow-step where-you">
@@ -338,7 +338,7 @@
     {% for m, title, text in [
       ('off', 'Off', 'Not used. Claude sees every motion event.'),
       ('shadow', 'Shadow', 'Runs and records its answer, but Claude still decides. Builds a scorecard to show whether it can be trusted.'),
-      ('gate', 'Gate', 'Its answer counts: a photo it calls empty never goes to Claude, and waits on False triggers for your check.'),
+      ('gate', 'Gate', 'Its answer counts: a photo it calls empty never goes to Claude, and waits on False triggers for your check. The species guess has a gate mode too: a sure daytime name of a regular skips Claude.'),
     ] %}
     <div class="mode{{ ' on' if presence_mode == m }}" role="listitem">
       <strong>{{ title }}</strong>{% if presence_mode == m %}{{ badge('in use', '') }}{% endif %}
@@ -360,8 +360,8 @@
     {% elif presence_mode == 'shadow' %}It's in shadow mode: it scores every frame, but Claude still sees everything.{% else %}It's switched off here.{% endif %}
     On the first 683 frames, tested on frames it hadn't trained on, it would have kept all 55 visitors and caught 616 of 628 empty frames.
     Night visitors (raccoons, possums) haven't come by yet, so it hasn't learned them. Scorecard on <a href="/stats#presence">Stats</a>.</p>
-  <h3 id="classifier">A species guess of its own{% if classifier_mode != 'off' %} {{ badge('shadow', 'shadow') }}{% endif %}</h3>
-  <p>{% if classifier_mode == 'off' %}Switched off here (CLASSIFIER=off). When on, a{% else %}After Claude answers, a{% endif %} second model on the Pi
+  <h3 id="classifier">A species guess of its own{% if classifier_mode == 'gate' %} {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %} {{ badge('shadow', 'shadow') }}{% endif %}</h3>
+  <p>{% if classifier_mode == 'off' %}Switched off here (CLASSIFIER=off). When on, a{% else %}A{% endif %} second model on the Pi
     (<strong>BioCLIP 2</strong> from the Imageomics Institute, open source, trained on millions of photos of living things including iNaturalist's;
     about 300 MB) guesses the species from a square around the bird Claude circled (or from the crop box). It knows every bird species in the
     eBird list, so its answers are limited to the birds {% if cfg.INAT_PLACE_ID %}reported to iNaturalist in this area{% else %}reported in the area, once an iNaturalist place is set{% endif %}.
@@ -370,7 +370,13 @@
     worked out once on a laptop so the Pi never has to. The guess is the species whose fingerprint is closest. The model is stored
     with 8-bit weights so it fits in the Pi's memory.
     It takes about 6 seconds on the Pi and costs nothing. It hasn't been tried on infrared night photos yet.
-    For now it's in shadow mode: its top 3 guesses are shown under "How it was decided" on each visit and never change a label.
+    {% if classifier_mode == 'gate' %}It's in gate mode: by day, right after the animal check, it guesses from the crop box (reusing the same
+    fingerprint, so it costs no extra time). When its first guess is at least 93% sure, mostly on local species, and names a species
+    already settled here (3 or more visits Claude was sure of or you labelled), that name is the answer and Claude isn't asked. Those visits
+    are marked {{ badge("pi named", "pi-only") }}; it can't count or spot a second animal, so check them now and then. Anything less sure,
+    and every night photo, goes to Claude as before, and then it guesses again from the bird Claude circled for the scorecard.
+    Tried on the first 66 real visits, these rules named 30 with no mistakes.
+    {% else %}For now it's in shadow mode: its top 3 guesses are shown under "How it was decided" on each visit and never change a label.{% endif %}
     {% if classifier.checked %}So far its first guess matched the final label on {{ classifier.top1 }} of {{ classifier.checked }} birds
     ({{ classifier.top3 }} within its top 3).{% endif %}
     The scorecard on <a href="/stats#classifier">Stats</a> shows, species by species, when it could take over from Claude.</p>

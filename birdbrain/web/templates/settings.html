@@ -63,7 +63,7 @@
 </details>
 
 <details class="settings-card" id="local" open>
-  <summary><h2>Local checks</h2><span class="summary-hint">Animal check {{ presence_mode }}, species guess {{ 'shadow' if classifier_on else 'off' }}</span></summary>
+  <summary><h2>Local checks</h2><span class="summary-hint">Animal check {{ presence_mode }}, species guess {{ classifier_mode if classifier_on else 'off' }}</span></summary>
   <div class="settings-body">
   {% if presence_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
   <p class="muted">The Pi checks every photo first; Claude is asked only when it can't settle it.</p>
@@ -103,7 +103,7 @@
   </section>
 
   <section class="local-step" id="classifier">
-    <h3><span class="step-n">2</span> What species? {{ badge('shadow', 'shadow') if classifier_on else badge('off', '') }}</h3>
+    <h3><span class="step-n">2</span> What species? {% if not classifier_on %}{{ badge('off', '') }}{% elif classifier_mode == 'gate' %}{{ badge('pi named', 'pi-only') }}{% else %}{{ badge('shadow', 'shadow') }}{% endif %}</h3>
     {% set c = classifier %}
     <p class="muted small">BioCLIP 2 guesses the species on the Pi and records it; Claude's name still stands.
       {% if c.checked %}First guess right {{ c.top1 }}/{{ c.checked }}, within its top 3 {{ c.top3 }}/{{ c.checked }}. <a href="/stats#classifier">Details</a>{% endif %}

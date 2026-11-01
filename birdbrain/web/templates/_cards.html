@@ -19,6 +19,7 @@
       {% if v.corrected_species or v.corrected_visitor or v.corrected_also is not none %}{{ badge("corrected", "corrected") }}
       {% elif v.confirmed_at %}{{ badge("checked", "checked") }}
       {% elif v.model == "bioclip-presence" %}{{ badge("pi only", "pi-only") }}
+      {% elif v.model == "bioclip-2" %}{{ badge("pi named", "pi-only") }}
       {% elif v.confidence %}{{ badge(v.confidence, "conf-" ~ v.confidence) }}{% endif %}
       {% if v.is_night %}{{ badge("night", "night") }}{% endif %}
       {% if not ft_cards %}{% set sb = season_badge(v.label, v.captured_at) %}{% if sb %}{{ badge(sb, "out-of-season") }}{% endif %}{% endif %}
