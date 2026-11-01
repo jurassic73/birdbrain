@@ -1,19 +1,18 @@
-// Adjust Claude's scene outline by hand. Click anywhere on the photo to open it big over the page; click a shape (or
-// Adjust in the list) to pick it. Ellipses get a handle on each side (drag to resize); a birdbath ring also gets handles
+// Settings > Zones: adjust the zones by hand. Click anywhere on the photo to open it big over the page; click a shape
+// (or Adjust in the list) to pick it. Ellipses get a handle on each side (drag to resize); a birdbath ring also gets handles
 // for the water inside; polygons get a handle on every corner. Drag the middle icon, or the picked shape itself, to
-// move it. The Shape switch turns it into points or an ellipse; the chips hide or show shapes. On points, the faded
+// move it. The chips hide or show shapes. On points, the faded
 // dot midway along each edge adds a corner there (drag or click it); double-click a corner, or click it and press
 // Delete, to remove it (3 corners at least).
 // Undo / Redo (or Cmd/Ctrl+Z, Shift+Cmd+Z, Ctrl+Y) step back and forward through the changes made since the last Save.
 // Changes stay on the page until Save; closing (Done, Escape, a click outside the photo) asks to save them.
 // Shapes are frame fractions, drawn in the SVG's viewBox (W x H), the same as the server's scene_shape.
-// Settings > Zones uses it too: its svg has data-save (post every shape there at once as {objects}), data-panel and
-// data-panel-url (what to reload after), data-fixed (shapes keep their form: no Ellipse / Points switch) and
-// data-rotate (ellipses get a turn handle above them; the angle, degrees clockwise, is the ellipse's fifth number).
+// The svg carries data-save (post every shape there at once as {objects}), data-panel and data-panel-url (what to
+// reload after) and data-rotate (ellipses get a turn handle above them; the angle, degrees clockwise, is the
+// ellipse's fifth number).
 (() => {
   const NS = "http://www.w3.org/2000/svg";
   const KEYS = ["ellipse", "inner", "points", "pieces"];
-  const CORNERS = 8; // an ellipse switched to points; matches scene.CORNERS
   let lastDown = { kind: null, t: 0 }; // the last handle pressed, for a double press that removes a corner
   let sel = null; // the open big view: { svg, which, i, obj, pending: Set of changed shape indexes }
 
@@ -200,12 +199,7 @@
       c.innerHTML = `<span style="background:${li.dataset.color}"></span>${Number(li.dataset.i) + 1} ${li.dataset.name}`;
       chips.append(c);
     });
-    const tools = document.createElement("div");
-    tools.className = "se-tools";
-    tools.innerHTML = '<span>Shape:</span><button type="button" class="se-tool" data-to="ellipse">Ellipse</button>'
-      + '<button type="button" class="se-tool" data-to="points">Points</button>';
-    if (svg.dataset.fixed) tools.style.display = "none";
-    bar.append(chips, tools);
+    bar.append(chips);
     const end = document.createElement("div");
     end.className = "se-end";
     end.innerHTML = '<span class="se-status"></span>'
@@ -218,7 +212,6 @@
     frame.classList.add("se-big");
     document.documentElement.classList.add("se-open");
     setAllHidden(svg, false);  // the big view always opens with every shape showing
-    updateTools();
   }
 
   function open(svg) {
@@ -240,7 +233,6 @@
     sel.i = null;
     sel.obj = null;
     sel.corner = null;
-    updateTools();
   }
 
   function select(svg, i) {
@@ -253,7 +245,6 @@
     sel.obj = structuredClone(o);
     sel.corner = null;
     document.querySelectorAll(".se-chip").forEach((c) => c.classList.toggle("current", Number(c.dataset.i) === i));
-    updateTools();
     svg.querySelector(`path[data-i="${i}"]:not(.scene-hit):not(.scene-water)`)?.classList.add("se-selected");
     svg.closest(".scene-body")?.querySelector(`.scene-list li[data-i="${i}"]`)?.classList.add("se-selected");
     draw();
@@ -295,16 +286,6 @@
   }
 
   // The Ellipse / Points switch is always there, dimmed until a shape is picked; the picked shape's form is marked.
-  function updateTools() {
-    const tools = document.querySelector(".se-tools");
-    if (!tools) return;
-    tools.classList.toggle("se-dim", !sel?.obj);
-    tools.querySelectorAll(".se-tool").forEach((b) => {
-      b.disabled = !sel?.obj;
-      b.title = sel?.obj ? "" : "Click a shape first";
-      b.classList.toggle("current", !!sel?.obj && (b.dataset.to === "ellipse") === !!sel.obj.ellipse);
-    });
-  }
   function updateStatus() {
     const n = sel?.pending.size || 0;
     const status = document.querySelector(".se-status"), save = document.querySelector(".se-save");
@@ -339,7 +320,6 @@
       sel.corner = null;
       draw();
     }
-    updateTools();
     updateStatus();
   }
 
@@ -357,43 +337,25 @@
   }
 
   async function saveAll() {
-    const { svg, which, pending } = sel;
-    const all = objs(svg);
-    if (svg.dataset.save) {  // all at once (Settings > Zones)
-      const r = await fetch(svg.dataset.save, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ objects: all }),
-      });
-      if (!r.ok) {
-        const status = document.querySelector(".se-status");
-        if (status) status.textContent = `Couldn't save (${r.status}). Try again.`;
-        return false;
-      }
-      pending.clear();
-      sel.saved = true;
-      resetHistory();
-      return true;
+    const { svg, pending } = sel;
+    const r = await fetch(svg.dataset.save, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ objects: objs(svg) }),
+    });
+    if (!r.ok) {
+      const status = document.querySelector(".se-status");
+      if (status) status.textContent = `Couldn't save (${r.status}). Try again.`;
+      return false;
     }
-    for (const i of [...pending]) {
-      const r = await fetch(`/notes/scene/shape/${which}/${i}`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(geometry(all[i])),
-      });
-      if (!r.ok) {
-        const status = document.querySelector(".se-status");
-        if (status) status.textContent = `Couldn't save shape ${i + 1} (${r.status}). Try again.`;
-        return false;
-      }
-      pending.delete(i);
-      sel.saved = true;
-    }
+    pending.clear();
+    sel.saved = true;
     resetHistory();  // what's saved is the new starting point
     return true;
   }
 
   // Reload the panel from the server: shows saved marks, or drops discarded changes.
   function reloadPanel(svg) {
-    const panel = document.getElementById(svg?.dataset.panel || "scene-panel");
-    const url = svg?.dataset.panelUrl || "/notes/scene/panel";
-    if (panel && window.htmx) htmx.ajax("GET", url, { target: panel, swap: "outerHTML" });
+    const panel = svg && document.getElementById(svg.dataset.panel);
+    if (panel && window.htmx) htmx.ajax("GET", svg.dataset.panelUrl, { target: panel, swap: "outerHTML" });
   }
 
   async function finish(save) {
@@ -436,33 +398,6 @@
       (k === 0 ? o.points : o.pieces[k - 1])[j] = [x, y];
     }
     draw();
-  }
-
-  // Switch the picked shape between an ellipse and points (same math as scene.convert_shape).
-  function convert(to) {
-    const { svg, i, obj } = sel;
-    if ((to === "ellipse") === !!obj.ellipse) return;
-    let geom;
-    if (to === "points") {
-      const e = obj.ellipse, { width: W, height: H } = box(svg);
-      geom = { points: Array.from({ length: CORNERS }, (_, k) => {
-        const a = (2 * Math.PI * k) / CORNERS;
-        return onAxes(svg, e, e[2] * W * Math.cos(a), e[3] * H * Math.sin(a));
-      }) };
-    } else {
-      const pts = [obj.points, ...(obj.pieces || [])].flat();
-      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-      const x1 = Math.min(...xs), x2 = Math.max(...xs), y1 = Math.min(...ys), y2 = Math.max(...ys);
-      geom = { ellipse: [(x1 + x2) / 2, (y1 + y2) / 2, Math.max((x2 - x1) / 2, 0.005), Math.max((y2 - y1) / 2, 0.005)] };
-    }
-    for (const k of KEYS) delete obj[k];
-    Object.assign(obj, geom);
-    // a ring's click target and water line go with the ellipse
-    // (emptied, not removed, so Undo can bring the ring back)
-    svg.querySelectorAll(`path.scene-hit[data-i="${i}"], path.scene-water[data-i="${i}"]`).forEach((p) => p.setAttribute("d", ""));
-    draw();
-    updateTools();
-    stage();
   }
 
   // The polygon (points, or one of the pieces) a corner kind refers to.
@@ -538,8 +473,6 @@
     if (e.target.closest?.(".se-done")) return requestClose();
     if (e.target.closest?.(".se-undo")) return sel && stepTo(sel.pos - 1);
     if (e.target.closest?.(".se-redo")) return sel && stepTo(sel.pos + 1);
-    const tool = e.target.closest?.(".se-tool");
-    if (tool && sel?.obj) return convert(tool.dataset.to);
     const all = e.target.closest?.(".se-all");
     if (all && sel) {
       if (all.dataset.show === "0") clearPick();  // hiding everything lets go of the picked shape
@@ -584,6 +517,6 @@
   document.addEventListener("DOMContentLoaded", applyAll);
   document.addEventListener("htmx:afterSettle", applyAll);
   applyAll();
-  // the panel was swapped (outline, accept, reset): the old selection is gone
-  document.addEventListener("htmx:beforeSwap", (e) => { if (["scene-panel", "zones-status"].includes(e.detail.target?.id)) closeView(); });
+  // the panel was swapped (saved, recalibrated): the old selection is gone
+  document.addEventListener("htmx:beforeSwap", (e) => { if (e.detail.target?.id === "zones-status") closeView(); });
 })();

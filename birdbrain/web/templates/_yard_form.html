@@ -8,7 +8,7 @@
   {% elif refined %}<p class="notice">Claude's suggestion is in the boxes below, not saved yet. Check it, then Save.
     {{ refined.changes }} <span class="muted small">(Haiku, {{ refined.before }} to {{ refined.after }} words, about ${{ '%.4f' | format(refined.usd) }})</span></p>{% endif %}
   {% if refine_error %}<p class="notice">{{ refine_error }}</p>{% endif %}
-  <p class="muted">Sent to Claude with every photo. The camera-sees box is also what Claude outlines.</p>
+  <p class="muted">Sent to Claude with every photo.</p>
 
   <div class="field">
     <label for="location">Location</label>
@@ -42,7 +42,7 @@ Squirrels on the rim and the ground.">{{ f.target_notes }}</textarea>
               placeholder="e.g.
 The rock can look like a bird's back in night vision.
 Ripples and reflections right after a refill.">{{ f.ignore_notes }}</textarea>
-    <small class="muted">Things that move or look like animals but aren't. Distractions in the outline below are sent too.</small>
+    <small class="muted">Things that move or look like animals but aren't.</small>
   </div>
 
   <div class="actions">
@@ -52,13 +52,6 @@ Ripples and reflections right after a refill.">{{ f.ignore_notes }}</textarea>
             data-tip="Haiku rewrites the boxes into short lines, keeps every fact, and moves each one to its box. Nothing is saved until you click Save. Costs a fraction of a cent.">
       {{ claude_mark() }}
       Refine with Claude</button>
-    <button type="button" class="claude-btn" hx-post="/notes/scene/outline" hx-target="#scene-panel" hx-swap="outerHTML"
-            {% if scene_draft and scene_draft.objects | selectattr('edited') | list %}hx-confirm="You adjusted shapes in the draft. Outlining again replaces it. Go ahead?"{% endif %}
-            hx-disabled-elt="this" hx-indicator="#outline-busy"
-            data-tip="Saves the boxes, grabs a fresh frame, and Sonnet outlines each thing you named for you to check. Works best in daylight; night vision hides dark things like rocks. About 2 cents.">
-      {{ claude_mark() }}
-      {{ 'Save and outline again' if scene_draft or scene else 'Save and outline' }}</button>
     <span id="refine-busy" class="muted small htmx-indicator">Claude is tidying your notes…</span>
-    <span id="outline-busy" class="muted small htmx-indicator">Grabbing a frame and asking Claude, about 20 seconds…</span>
   </div>
 </form>

@@ -114,11 +114,9 @@ def prepare(jpeg: bytes, crop: tuple[float, float, float, float] | None = None) 
 
 
 def system_prompt(lessons: list[str] | None = None, site: dict | None = None) -> str:
-    """SYSTEM plus Claude's Notes (location, the owner's description, the accepted scene objects, what to ignore)
+    """SYSTEM plus Claude's Notes (location, the owner's description, what to look for, what to ignore)
     and recent corrections."""
     site = site or {}
-    objects = site.get("objects") or []
-    line = lambda o: f"- {o['name']}" + (f": {o['note']}" if o.get("note") else "")  # noqa: E731
     parts = [SYSTEM]
     if site.get("location"):
         parts.append(f"The camera is in {site['location']}. Use that region's birds and mammals for the date given.")
@@ -126,14 +124,8 @@ def system_prompt(lessons: list[str] | None = None, site: dict | None = None) ->
         parts.append("What this camera sees, in the owner's words:\n" + site["scene_notes"])
     if site.get("target_notes"):
         parts.append("What to look for here, in the owner's words:\n" + site["target_notes"])
-    if seen := [o for o in objects if o.get("kind") != "distraction"]:
-        parts.append("Objects in view, outlined on a recent frame and checked by the owner:\n"
-                     + "\n".join(line(o) for o in seen))
-    ignore = [line(o) for o in objects if o.get("kind") == "distraction"]
     if site.get("ignore_notes"):
-        ignore.append(site["ignore_notes"])
-    if ignore:
-        parts.append("Things here that move or look like animals but are not:\n" + "\n".join(ignore))
+        parts.append("Things here that move or look like animals but are not:\n" + site["ignore_notes"])
     if lessons:
         parts.append(
             "Corrections the owner made to your recent answers at this camera, newest first. "

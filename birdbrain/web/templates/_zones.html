@@ -5,7 +5,7 @@
   {% if not recal_ring or not recal_spots %}
   <p class="notice">Rock tracking needs a birdbath ring and rock spots from a hand calibration (see the README). Camera moves are still caught.</p>
   {% endif %}
-  {# The same shape editor as Claude's Notes > Scene (scene-edit.js): click the photo, pick a shape, drag it.
+  {# The one place the zones are edited (scene-edit.js; Claude's Notes only shows them): click the photo, pick a shape, drag it.
      Save posts every shape to /settings/zones/manual. Read-only while a recalibration runs (this part reloads). #}
   <div class="scene-body zones-body">
   <figure class="scene-pic zones-now" id="zones-now">
@@ -13,7 +13,7 @@
       {# The saved frame paints at once; a fresh one is decoded off-screen and swapped in (like the home page). #}
       <img id="zones-now-img" src="/live/latest.jpg" alt="The camera right now, with the zones drawn over it" onerror="this.hidden = true" onload="this.hidden = false">
       <svg viewBox="0 0 {{ zone_w }} {{ zone_h }}" aria-label="The zones: click a shape to adjust it"
-           {% if not recal_pending %}data-which="zones" data-at="zones" data-fixed="1" data-rotate="1" data-save="/settings/zones/manual"
+           {% if not recal_pending %}data-which="zones" data-at="zones" data-rotate="1" data-save="/settings/zones/manual"
            data-panel="zones-status" data-panel-url="/settings/zones"{% endif %} data-objs='{{ zone_objs | tojson }}'>
         {% for o in zone_objs %}{% if not o.ellipse %}<path class="scene-{{ o.kind }}" style="color: {{ o.color }}" data-i="{{ loop.index0 }}" d="{{ o.d }}"/>{% endif %}{% endfor %}
         {% for o in zone_objs %}{% if o.hit %}<path class="scene-hit" data-i="{{ loop.index0 }}" d="{{ o.hit }}"/>{% endif %}{% endfor %}

@@ -468,3 +468,12 @@ def test_a_hand_set_spot_keeps_its_size_and_stays_while_the_rocks_are_inside_it(
     out = autocal.recalibrate(scene(rocks=(0.56, 0.5)), hand, gray(scene()), anchor=hand)
     (cx, cy, rx, ry), = out.zones.spots
     assert abs(cx - 0.56) < 0.03 and (rx, ry) == (0.06, 0.07)   # followed the rocks, kept the hand size
+
+
+def test_claudes_notes_shows_the_settings_zones_read_only(client, conn, env_zones):
+    # one source of truth: the Notes page draws the zones from Settings and links there, with no editor of its own
+    page = client.get("/notes").text
+    names = [o["name"] for o in zones.objects(zones.load(conn))]
+    assert all(n in page for n in names) and 'href="/settings#zones"' in page
+    assert "data-save" not in page and "/notes/scene" not in page and "Save and outline" not in page
+    assert client.post("/notes/scene/outline").status_code in (404, 405)

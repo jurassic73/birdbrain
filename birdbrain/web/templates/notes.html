@@ -3,7 +3,7 @@
 {% block title %}Claude's Notes | Birdbrain{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Claude's Notes</h1></div>
-<p class="muted notes-intro">Everything Claude is told about your yard: your notes, the objects it outlined, and the lessons from your corrections.</p>
+<p class="muted notes-intro">Everything Claude is told about your yard: your notes and the lessons from your corrections.</p>
 
 <div class="notes-grid">
 <div class="notes-col">
@@ -17,9 +17,35 @@
 
 <div class="notes-col">
 <details class="settings-card" id="scene" open>
-  <summary><h2>Scene</h2><span class="summary-hint">{{ (scene.objects | length ~ ' object' ~ ('s' if scene.objects | length != 1) ~ ' outlined') if scene else 'Not outlined yet' }}</span></summary>
+  <summary><h2>Zones</h2><span class="summary-hint">Set on Settings</span></summary>
   <div class="settings-body">
-  {% include "_scene.html" %}
+  {# Read-only: the zones live in one place, Settings > Zones. The photo and the button both go there. #}
+  <p class="muted">Where the camera watches, and the part of the photo Claude is sent. Change them on
+    <a href="/settings#zones">Settings &gt; Zones</a>.</p>
+  <div class="scene-body zones-body">
+    <figure class="scene-pic">
+      <a class="scene-frame" href="/settings#zones" data-tip="Open Settings &gt; Zones to change these">
+        <img src="/live/latest.jpg" alt="The camera's view with the zones drawn over it" onerror="this.hidden = true" onload="this.hidden = false">
+        <svg viewBox="0 0 {{ zone_w }} {{ zone_h }}" aria-hidden="true">
+          {% for o in zone_objs %}{% if not o.ellipse %}<path class="scene-{{ o.kind }}" style="color: {{ o.color }}" d="{{ o.d }}"/>{% endif %}{% endfor %}
+          {% for o in zone_objs %}{% if o.ellipse %}<path class="scene-{{ o.kind }}" style="color: {{ o.color }}" d="{{ o.d }}"/>{% endif %}{% endfor %}
+          {% for o in zone_objs %}<text class="scene-{{ o.kind }}" style="color: {{ o.color }}" x="{{ '%.2f' | format(o.lx) }}" y="{{ '%.2f' | format(o.ly - 1) }}">{{ loop.index }}</text>{% endfor %}
+        </svg>
+      </a>
+    </figure>
+    <div>
+      {% if zone_objs %}
+      <ol class="scene-list">
+        {% for o in zone_objs %}
+        <li><span class="scene-swatch" style="color: {{ o.color }}"></span><div><strong>{{ o.name }}</strong></div></li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <p class="muted small">No zones yet.</p>
+      {% endif %}
+      <div class="actions"><a class="button-link solid" href="/settings#zones">Edit zones</a></div>
+    </div>
+  </div>
   </div>
 </details>
 
@@ -76,7 +102,7 @@
 <details class="settings-card prompt-preview" id="prompt">
   <summary><h2>The whole prompt</h2><span class="summary-hint">Exactly what Claude reads</span></summary>
   <div class="settings-body">
-    <p class="muted small">The rules first, then your yard, the outlined objects, and the lessons in prompt.</p>
+    <p class="muted small">The rules first, then your yard, and the lessons in prompt.</p>
     <pre>{{ prompt_preview }}</pre>
   </div>
 </details>

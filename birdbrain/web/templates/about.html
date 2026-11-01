@@ -176,9 +176,8 @@
   <div class="about-note">
     <h3>Describing the scene</h3>
     <p>On <a href="/notes#camera">Claude's Notes</a> you describe the yard in plain words: what the camera sees, what to
-      look for and what to ignore. Claude can tidy the text, and outline each thing on a photo
-      <span data-tip="Sonnet draws rough shapes (a cent or two); the Pi snaps them onto the edges in the photo with OpenCV. Drag any shape to fix it, or Reset it.">(then the Pi snaps the shapes into place)</span>.
-      All of it goes into every identification.</p>
+      look for and what to ignore. Claude can tidy the text. All of it goes into every identification.
+      The zones themselves are set in one place, <a href="/settings#zones">Settings</a>; Claude's Notes shows them.</p>
   </div>
 </section>
 
@@ -373,7 +372,6 @@
       <ol class="layers">
         <li>Instructions: the animal types, how to name species, how sure to be, that night photos are infrared</li>
         <li class="{{ '' if site.location or site.scene_notes else 'unset' }}">Your yard from <a href="/notes#camera">Claude's Notes</a>: what the camera sees, what to look for, what to ignore{% if site.location %}, in {{ site.location }}{% elif not site.scene_notes %} (not filled in yet){% endif %}</li>
-        <li class="{{ '' if site.objects else 'unset' }}">The objects Claude outlined in your scene: {{ site.objects | length if site.objects else 'none accepted yet' }}</li>
         <li class="{{ '' if lessons else 'unset' }}">Lessons from your corrections: {{ lessons or 'none yet' }}{{ ' in use' if lessons }}</li>
         <li>The photo (or photos) and the date and time, so it knows what's in season</li>
       </ol>

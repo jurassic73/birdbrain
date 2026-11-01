@@ -25,7 +25,7 @@ def test_visitors_browse_but_change_nothing(client, add_visit, conn, locked):
     assert page.status_code == 200 and "Dark-eyed Junco" in page.text
     assert "/correct" not in page.text and "Delete visit" not in page.text and 'href="/settings"' not in page.text
     assert 'href="/login' in page.text
-    for path in (f"/visit/{vid}/correct", f"/visit/{vid}/delete", "/notes/refine", "/settings/alerts", "/notes/scene/outline"):
+    for path in (f"/visit/{vid}/correct", f"/visit/{vid}/delete", "/notes/refine", "/settings/alerts", "/settings/zones/manual"):
         assert client.post(path).status_code == 403
     assert db.get_visit(conn, vid) is not None
     for path in ("/settings", "/notes", "/review", "/false-triggers", "/settings/camera", "/lessons"):

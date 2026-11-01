@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth, viewer
-from .. import alert, camera, clock, config, db, identify, images, names, presence, privacy, refine, retention, scene, species_info, zones
+from .. import alert, camera, clock, config, db, identify, images, names, presence, privacy, refine, retention, species_info, zones
 
 HERE = Path(__file__).parent
 PAGE_SIZE = 24
@@ -749,7 +749,7 @@ def notes(request: Request, saved: bool = False, conn=Depends(get_conn)):
         limit=db.LESSON_LIMIT,
         visitors=db.VISITORS,
         prompt_preview=identify_prompt_preview(site, db.recent_lessons(conn)),
-        **scene_context(conn),
+        **zone_drawing(zones.load(conn)),
     )
 
 
@@ -776,16 +776,14 @@ async def refine_notes(
 ):
     """Haiku's tidier version of the boxes, put back in the form unsaved for the owner to check."""
     form = {"location": location, "scene_notes": scene_notes, "target_notes": target_notes, "ignore_notes": ignore_notes}
-    with db.session() as conn:
-        ctx = scene_context(conn)
     if not (scene_notes or target_notes or ignore_notes).strip():
-        return page(request, "_yard_form.html", form=form, refine_error="Write something first.", **ctx)
+        return page(request, "_yard_form.html", form=form, refine_error="Write something first.")
     try:
         result, usage = await asyncio.to_thread(refine.ask, location, scene_notes, target_notes, ignore_notes)
     except Exception as e:  # the API being down shouldn't break the page
-        return page(request, "_yard_form.html", form=form, refine_error=f"Claude couldn't be reached ({type(e).__name__}).", **ctx)
+        return page(request, "_yard_form.html", form=form, refine_error=f"Claude couldn't be reached ({type(e).__name__}).")
     if result is None:
-        return page(request, "_yard_form.html", form=form, refine_error="Claude didn't give a suggestion this time. Try again.", **ctx)
+        return page(request, "_yard_form.html", form=form, refine_error="Claude didn't give a suggestion this time. Try again.")
     words = lambda *t: sum(len(x.split()) for x in t)  # noqa: E731
     new = {**form, "scene_notes": result.scene_notes.strip(), "target_notes": result.target_notes.strip(),
            "ignore_notes": result.ignore_notes.strip()}
@@ -795,7 +793,7 @@ async def refine_notes(
     if refined["after"] >= refined["before"]:  # a longer "refinement" costs tokens on every photo: keep the owner's
         refined["kept"] = True
         new = form
-    return page(request, "_yard_form.html", form=new, refined=refined, **ctx)
+    return page(request, "_yard_form.html", form=new, refined=refined)
 
 
 @app.get("/lessons")
@@ -947,9 +945,14 @@ def zones_context(conn) -> dict:
             "recal_undo": undo["id"] if undo else None,
             "recal_spots": len(current.spots), "recal_ring": bool(current.ring), "zones_now": zone_shapes(current),
             "zones_raw": current.to_dict(), "live_refresh": config.LIVE_REFRESH,
-            "zone_objs": [{**o, **scene_shape(o), "color": SCENE_COLORS[i % len(SCENE_COLORS)],
+            **zone_drawing(current)}
+
+
+def zone_drawing(z: zones.Zones) -> dict:
+    """The zones as colored, numbered shapes over the live photo: editable on Settings, shown on Claude's Notes."""
+    return {"zone_objs": [{**o, **scene_shape(o), "color": SCENE_COLORS[i % len(SCENE_COLORS)],
                            "water": ellipse_path(*o["inner"]) if "inner" in o else None}
-                          for i, o in enumerate(zones.objects(current))],
+                          for i, o in enumerate(zones.objects(z))],
             "zone_w": ZONE_W, "zone_h": ZONE_H}
 
 
@@ -1086,10 +1089,10 @@ async def save_manual_zones(request: Request, conn=Depends(get_conn)):
     return {"ok": True}
 
 
-# --- Scene: Claude outlines the objects birds use, the owner accepts or retries ---
+# --- Shapes drawn over photos (the zones on Settings and Claude's Notes) ---
 
 def scene_shape(obj: dict) -> dict:
-    """One scene object as an SVG path in the ZONE_W x ZONE_H box, with where to put its label."""
+    """One shape (a zone from zones.objects) as an SVG path in the ZONE_W x ZONE_H box, with where to put its label."""
     if "ellipse" in obj:
         cx, cy, rx, ry = obj["ellipse"][:4]
         d = ellipse_path(*obj["ellipse"]) + (" " + ellipse_path(*obj["inner"]) if "inner" in obj else "")  # a ring
@@ -1109,118 +1112,10 @@ SCENE_COLORS = ["#4fb3ff", "#7be08a", "#ff6b6b", "#e5d36b", "#c99bff", "#ffb347"
 WATER_COLOR = "#9ff3ff"  # the water line inside a bath ring, dashed
 
 
-def scene_context(conn) -> dict:
-    def shapes(objects):
-        return [{**o, **scene_shape(o), "color": SCENE_COLORS[i % len(SCENE_COLORS)],
-                 "water": ellipse_path(*o["inner"]) if "inner" in o else None} for i, o in enumerate(objects)]
-    draw = lambda s: s and {**s, "shapes": shapes(s["objects"])}  # noqa: E731
-    return {"scene_draft": draw(scene.draft(conn)),
-            "scene": draw(scene.accepted(conn)), "scene_kinds": scene.KINDS, "zone_w": ZONE_W, "zone_h": ZONE_H}
-
-
-def scene_reply(request: Request, conn, **extra):
-    """The Scene panel for htmx, or back to Claude's Notes for a plain form post."""
-    if request.headers.get("HX-Request"):
-        return page(request, "_scene.html", **scene_context(conn), **extra)
-    return RedirectResponse("/notes#scene", status_code=303)
-
-
-async def grab_main_frame() -> bytes:
-    """One full-size frame from the main stream, for Claude to outline."""
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp",
-        "-i", config.rtsp_url(config.RTSP_MAIN), "-frames:v", "1", "-f", "image2", "-c:v", "mjpeg", "-q:v", "2",
-        "pipe:1", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-    )
-    try:
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15)
-        return out
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        return b""
-
-
-@app.post("/notes/scene/outline")
-async def outline_scene(request: Request, location: str = Form(""), scene_notes: str = Form(""),
-                        target_notes: str = Form(""), ignore_notes: str = Form("")):
-    """Save the description (the button sits in its form), then outline what it names on a fresh frame."""
-    jpeg = await grab_main_frame()
-    if not jpeg:
-        load_saved_frame()  # camera busy or down: the last live frame is better than nothing
-        jpeg = _live["jpeg"] or b""
-    with db.session() as conn:
-        db.save_settings(conn, location=location, scene_notes=scene_notes, target_notes=target_notes,
-                         ignore_notes=ignore_notes)
-        if not jpeg:
-            return scene_reply(request, conn, scene_error="Couldn't get a frame from the camera. Is it on?")
-        try:
-            await asyncio.to_thread(scene.outline, conn, jpeg, scene_notes, location)
-        except Exception as e:  # the API being down shouldn't break the page
-            return scene_reply(request, conn, scene_error=f"Claude couldn't be reached ({type(e).__name__}).")
-        return scene_reply(request, conn)
-
-
-@app.get("/notes/scene/panel", response_class=HTMLResponse)
-def scene_panel(request: Request, conn=Depends(get_conn)):
-    return page(request, "_scene.html", **scene_context(conn))
-
-
-@app.post("/notes/scene/shape/{which}/{index}")
-async def scene_set_shape(which: str, index: int, request: Request, conn=Depends(get_conn)):
-    """The owner dragged a shape's handles: save its new geometry (JSON: ellipse, inner, points, pieces)."""
-    if which not in scene.WHICH:
-        raise HTTPException(404)
-    try:
-        obj = scene.set_shape(conn, which, index, await request.json())
-    except LookupError:
-        raise HTTPException(404) from None
-    except (ValueError, TypeError) as e:
-        raise HTTPException(400, str(e)) from None
-    return {k: obj[k] for k in scene.SHAPE_KEYS if k in obj}
-
-
-@app.post("/notes/scene/convert/{which}/{index}/{to}")
-def scene_convert_shape(which: str, index: int, to: str, conn=Depends(get_conn)):
-    """Switch a shape between an ellipse and points; returns its new geometry."""
-    if which not in scene.WHICH:
-        raise HTTPException(404)
-    try:
-        obj = scene.convert_shape(conn, which, index, to)
-    except LookupError:
-        raise HTTPException(404) from None
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from None
-    return {k: obj[k] for k in scene.SHAPE_KEYS if k in obj}
-
-
-@app.post("/notes/scene/reset/{which}/{index}")
-def scene_reset_shape(which: str, index: int, request: Request, conn=Depends(get_conn)):
-    if which not in scene.WHICH:
-        raise HTTPException(404)
-    try:
-        scene.reset_shape(conn, which, index)
-    except LookupError:
-        raise HTTPException(404) from None
-    return scene_reply(request, conn)
-
-
-@app.post("/notes/scene/accept")
-def accept_scene(request: Request, conn=Depends(get_conn)):
-    scene.accept(conn)
-    return scene_reply(request, conn, scene_saved=True)
-
-
-@app.post("/notes/scene/discard")
-def discard_scene(request: Request, conn=Depends(get_conn)):
-    scene.discard(conn)
-    return scene_reply(request, conn)
-
-
 @app.get("/calibration/{name}")
 def calibration_picture(name: str):
     path = config.DATA_DIR / "calibration" / name
-    if not (re.fullmatch(r"cal_\d{8}_\d{6}\.jpg", name) or scene.picture_name(name)) or not path.exists():
+    if not re.fullmatch(r"cal_\d{8}_\d{6}\.jpg", name) or not path.exists():
         raise HTTPException(404)
     return FileResponse(path, media_type="image/jpeg")
 

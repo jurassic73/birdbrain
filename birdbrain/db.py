@@ -148,14 +148,9 @@ def get_settings(conn: sqlite3.Connection) -> dict[str, str]:
 
 
 def prompt_site(conn: sqlite3.Connection) -> dict:
-    """The Settings plus the accepted scene's objects: everything identify.system_prompt says about this camera."""
-    site: dict = get_settings(conn)
-    try:
-        scene = json.loads(get_value(conn, "scene") or "null") or {}
-    except ValueError:
-        scene = {}
-    site["objects"] = scene.get("objects", [])
-    return site
+    """Claude's Notes (location and the three Your yard boxes): everything identify.system_prompt says about this
+    camera. The zones are set on Settings and aren't described to Claude; it sees the crop they give."""
+    return get_settings(conn)
 
 
 def save_settings(conn: sqlite3.Connection, **values: str) -> None:

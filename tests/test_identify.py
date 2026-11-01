@@ -156,17 +156,14 @@ def test_sonnet_refusal_keeps_the_haiku_answer(fake_ask):
     assert (r.sighting.species, r.model, r.needs_review) == ("Dark-eyed Junco", HAIKU, True)
 
 
-def test_system_prompt_lists_scene_objects_and_puts_distractions_with_the_ignore_notes():
-    site = {"scene_notes": "A 17.5 inch bath.", "target_notes": "Chickadees to ravens.", "ignore_notes": "A power cord.",
-            "objects": [{"name": "bath rim", "kind": "perch", "note": "birds perch here"},
-                        {"name": "rock", "kind": "distraction", "note": "looks like a bird's back at night"}]}
+def test_system_prompt_gives_the_owners_three_boxes_in_order():
+    site = {"scene_notes": "A 17.5 inch bath.", "target_notes": "Chickadees to ravens.", "ignore_notes": "A power cord."}
     prompt = identify.system_prompt(None, site)
-    assert "- bath rim: birds perch here" in prompt
     assert "What to look for here, in the owner's words:\nChickadees to ravens." in prompt
-    ignore = prompt[prompt.index("Things here that move"):]
-    assert "- rock: looks like a bird's back at night" in ignore and "A power cord." in ignore
-    order = [prompt.index(s) for s in ("17.5 inch", "Chickadees", "bath rim", "Things here that move")]
+    assert "Things here that move or look like animals but are not:\nA power cord." in prompt
+    order = [prompt.index(s) for s in ("17.5 inch", "Chickadees", "A power cord")]
     assert order == sorted(order)
+    assert "Objects in view" not in prompt
 
 
 def test_medium_answer_naming_a_confirmed_species_skips_sonnet(fake_ask):

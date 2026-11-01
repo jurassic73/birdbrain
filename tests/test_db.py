@@ -361,12 +361,12 @@ def test_switched_off_lessons_leave_the_prompt_and_the_next_newest_moves_up(conn
     assert "new note" in db.recent_lessons(conn)[0]
 
 
-def test_prompt_site_adds_the_accepted_scenes_objects(conn):
-    assert db.prompt_site(conn)["objects"] == []
+def test_prompt_site_is_claudes_notes_only(conn):
+    # an old Claude outline left in the settings table is no longer described to Claude: zones live on Settings
     db.set_value(conn, "scene", json.dumps({"objects": [{"name": "rock", "kind": "distraction", "note": ""}]}))
-    assert db.prompt_site(conn)["objects"][0]["name"] == "rock"
-    db.set_value(conn, "scene", "not json")
-    assert db.prompt_site(conn)["objects"] == []
+    db.save_settings(conn, ignore_notes="A drain tube.")
+    site = db.prompt_site(conn)
+    assert "objects" not in site and site["ignore_notes"] == "A drain tube."
 
 
 def test_species_kinds_name_each_label_with_its_visitor_type(conn, add_visit):

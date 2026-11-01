@@ -459,6 +459,7 @@ main.wide { max-width: 1600px; }
   display: inline-block; padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px;
   color: var(--accent); text-decoration: none;
 }
+.button-link.solid { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }  /* a link that acts as a button */
 .visit dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 12px 0; }
 .visit dt { color: var(--muted); }
 .visit dd { margin: 0; }
@@ -1075,13 +1076,10 @@ button.save-flash { animation: save-flash 1s ease-out; }
 }
 
 /* Scene: Claude's outline of the objects birds use */
-.scene { display: flex; flex-direction: column; gap: 14px; }
-.scene h3 { margin: 6px 0 0; font-size: 1rem; }
-.scene .notice { margin: 0; }
 .scene-body { display: grid; gap: 14px; }
 @media (min-width: 800px) { .scene-body { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; gap: 22px; } }
 .scene-pic { margin: 0; }
-.scene-frame { position: relative; }
+.scene-frame { position: relative; display: block; }
 .scene-frame img { display: block; width: 100%; height: auto; border-radius: var(--radius); }
 .scene-frame svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .scene-frame path { fill: currentColor; fill-opacity: .14; fill-rule: evenodd; stroke: currentColor; stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
@@ -1089,8 +1087,6 @@ button.save-flash { animation: save-flash 1s ease-out; }
   fill: currentColor; font-size: 5px; font-weight: 700; text-anchor: middle;
   paint-order: stroke; stroke: #000; stroke-width: .8px; stroke-opacity: .7;
 }
-.scene-side { display: flex; flex-direction: column; gap: 10px; }
-.scene-side p { margin: 0; }
 .scene-list { margin: 0; padding-left: 1.6em; display: grid; gap: 8px; font-size: .92rem; }
 .scene-list li > * { vertical-align: top; }
 .scene-list li div { display: inline; }
@@ -1163,12 +1159,6 @@ button.se-chip.current { border-color: #fff; background: rgba(255, 255, 255, .25
 .scene-list li.se-off > :not(div), .scene-list li.se-off strong { opacity: .45; }
 .scene-frame:has(svg[data-which]) { cursor: zoom-in; }
 .scene-frame.se-big { cursor: default; }
-.se-tools { display: flex; align-items: center; gap: 6px; color: #fff; font-size: .85rem; }
-.se-tools.se-dim { opacity: .4; }
-button.se-tool:disabled { cursor: not-allowed; }
-button.se-tool { padding: 3px 12px; font-size: .85rem; min-height: 0; background: rgba(255, 255, 255, .12); color: #fff;
-  border: 1px solid rgba(255, 255, 255, .3); border-radius: 999px; }
-button.se-tool.current { background: #fff; color: #111; border-color: #fff; }
 .se-handles .se-move circle.se-grab { fill: transparent; stroke: none; }  /* the move icon's big grab area */
 .scene-frame path.se-selected { cursor: move; }
 .se-ask { position: fixed; z-index: 45; left: 50%; top: 40%; transform: translate(-50%, -50%); width: min(92vw, 380px);
