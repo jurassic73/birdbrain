@@ -38,6 +38,13 @@
   {{ flow("in-nav") }}
 </nav>
 <article class="visit">
+  <div class="visit-media">
+  <div class="photo-tools" id="photo-tools">
+    {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi's animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
+    {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards).">Hide circles</button>{% endif %}
+    <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing: drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
+    <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
+  </div>
   <div class="visit-photo" id="photo" data-marks="{{ marks | tojson | forceescape }}">
     {% if visit.photo_deleted_at %}
     <div class="photo-gone" data-tip="Deleted on {{ visit.photo_deleted_at[:10] }} to save space. The record stays, and so does what the Pi's animal check learned from it.">Photo deleted to save space</div>
@@ -54,14 +61,10 @@
     <svg class="marks" aria-hidden="true"></svg>
     <p class="photo-hint" id="mark-hint"{% if visit.photo_deleted_at %} hidden{% endif %}>Click to enlarge, pinch to zoom.{% if request.state.admin %} Edit circles to mark things for your feedback.{% endif %}</p>
     <p class="muted small mark-legend" id="mark-legend" hidden></p>
-    <div class="photo-tools">
-      {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi's animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
-      <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing: drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
-      <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
-    </div>
     {# Phones: newer/older in the bottom corners, so a thumb on them never covers the photo. #}
     {% if prev_id %}<a class="photo-arrow prev" href="/visit/{{ prev_id }}{{ ft_param }}" aria-label="Newer visit">&#8249;</a>{% endif %}
     {% if next_id %}<a class="photo-arrow next" href="/visit/{{ next_id }}{{ ft_param }}" aria-label="Older visit">&#8250;</a>{% endif %}
+  </div>
   </div>
   <dialog class="viewer photo-viewer" id="photo-viewer" aria-label="Full-size photo">
     <button type="button" class="viewer-close photo-viewer-close" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
@@ -465,12 +468,13 @@
         svg.append(g);
       });
       field.value = JSON.stringify(marks);
+      document.getElementById("circles-toggle").hidden = editing || !marks.length;
       clear.hidden = !editing || !marks.length;
       hint.hidden = editing || marks.length > 0;
       const ci = marks.flatMap((m, i) => m.claude ? [i] : []);
       legend.hidden = !ci.length;
       legend.textContent = ci.length === 1
-        ? `Dashed circle ${ci[0] + 1}: where Claude saw the ${marks[ci[0]].label || claudeSaw}. Remove it if that's wrong.`
+        ? `Circle ${ci[0] + 1}: where Claude saw the ${marks[ci[0]].label || claudeSaw}. Remove it if that's wrong.`
         : `Where Claude saw them: ${ci.map(i => `${i + 1} ${marks[i].label || claudeSaw}`).join(", ")}. Remove any that's wrong.`;
     };
     const at = e => {
@@ -480,6 +484,7 @@
     clear.addEventListener("click", () => { marks = []; draw(); });
     edit.addEventListener("click", () => {
       editing = !editing;
+      if (editing && !bbOverlays.on("circles")) bbOverlays.set("circles", true);  // can't edit what you can't see
       photo.classList.toggle("editing", editing);
       edit.setAttribute("aria-pressed", editing);
       edit.textContent = editing ? "Done editing" : "Edit circles";
@@ -538,21 +543,26 @@
     new ResizeObserver(() => { if (marks.length) draw(); }).observe(img);
   })();
   (() => {
-    // The crop box and the zone that fired: shown unless this browser hid them (one switch for every visit).
-    const photo = document.getElementById("photo"), toggle = document.getElementById("zones-toggle");
-    if (!toggle) return;
-    const set = on => {
-      photo.classList.toggle("zones-off", !on);
-      toggle.setAttribute("aria-pressed", on);
-      toggle.textContent = on ? "Hide zones" : "Show zones";
+    // The crop box and the zone that fired, and the circles: each shown unless this browser hid them
+    // (one switch for every visit, shared with the header's eye; static/overlays.js).
+    const label = {zones: ["Hide zones", "Show zones"], circles: ["Hide circles", "Show circles"]};
+    const sync = () => {
+      for (const kind of ["zones", "circles"]) {
+        const btn = document.getElementById(`${kind}-toggle`);
+        if (!btn) continue;
+        const on = bbOverlays.on(kind);
+        btn.setAttribute("aria-pressed", on);
+        btn.textContent = label[kind][on ? 0 : 1];
+      }
     };
-    set(localStorage.getItem("bb-visit-zones") !== "off");
-    toggle.addEventListener("click", e => {
-      e.stopPropagation();
-      const on = photo.classList.contains("zones-off");
-      localStorage.setItem("bb-visit-zones", on ? "on" : "off");
-      set(on);
-    });
+    for (const kind of ["zones", "circles"]) {
+      document.getElementById(`${kind}-toggle`)?.addEventListener("click", e => {
+        e.stopPropagation();
+        bbOverlays.set(kind, !bbOverlays.on(kind));
+      });
+    }
+    document.addEventListener("birdbrain:overlays", sync);
+    sync();
   })();
   (() => {
     // Burst filmstrip: a frame shows in the big photo (and the full-size viewer); circles belong to Claude's frame only.
@@ -575,9 +585,7 @@
       viewer.querySelector(".marks").replaceWith(photo.querySelector(".marks").cloneNode(true));
       const zonesSvg = photo.querySelector(".zones-overlay");
       if (zonesSvg) {
-        const copy = zonesSvg.cloneNode(true);
-        copy.classList.toggle("off", photo.classList.contains("zones-off"));
-        viewer.querySelector(".zones-overlay").replaceWith(copy);
+        viewer.querySelector(".zones-overlay").replaceWith(zonesSvg.cloneNode(true));
       }
       viewer.showModal();
       // Phones: true full screen, turned to match the 16:9 photo where the browser allows it (not iPhone Safari).
