@@ -147,7 +147,7 @@ def test_false_trigger_popup_skips_confirmed_photos_and_lists_its_keys(client, a
     html = client.get(f"/visit/{new}?ft=1&todo=1&embed=1").text
     assert f'href="/visit/{old}?ft=1&amp;todo=1&amp;embed=1" id="nav-next"' in html
     assert "<kbd>C</kbd> confirmed no animal" in html
-    assert html.index('id="embed-close"') < html.index('visit-nav-btn')  # Close sits left of the arrows
+    assert html.index('id="embed-close"') > html.index('embed-keys')  # Close sits at the far right, after the keys
     assert f'href="/visit/{mid}?ft=1" id="nav-next"' in client.get(f"/visit/{new}?ft=1").text  # without todo: all
     assert "Confirmed No Animal" in client.get(f"/visit/{mid}").text
     assert "<kbd>" not in client.get(f"/visit/{mid}").text
