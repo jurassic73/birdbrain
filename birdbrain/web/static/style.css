@@ -810,7 +810,15 @@ button.danger.sending, button.danger.htmx-request {
 .sp-card p { margin: 0; }
 .sp-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
 .sci { font-style: italic; color: var(--muted); }
-.sp-status { padding: 4px 12px; border-radius: 999px; background: var(--accent); color: var(--accent-text); font-weight: 600; font-size: .85rem; }
+.sp-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; color: var(--muted); margin-top: -6px; }
+.sp-facts .fact { white-space: nowrap; line-height: 1.2; }
+.sp-facts .fact strong, .sp-facts .big { color: var(--text); }
+.sp-facts .big { font-size: 1.3rem; font-weight: 700; }
+.sp-facts .badge { margin: 0; }
+.sp-facts .badge.sp-status { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.sp-facts .sp-jump { padding: 5px 14px; font-size: .9rem; text-decoration: none; margin-left: -8px; }
+html { scroll-behavior: smooth; }
+#visits { scroll-margin-top: 70px; }
 .sp-top { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: start; }
 .sp-photo { margin: 0; }
 .sp-photo img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 8px; display: block; }

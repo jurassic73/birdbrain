@@ -38,6 +38,12 @@
     }
   }
 
+  // Jump to visits inside the pop-up: when the page is already that species page, close the pop-up so the scroll shows.
+  dialog.addEventListener("click", (e) => {
+    const a = e.target.closest("a.sp-jump");
+    if (a && new URL(a.href).pathname === location.pathname) dialog.close();
+  });
+
   // Capture phase, so a name inside a visit card opens the species card instead of following the card's link.
   document.addEventListener("click", (e) => {
     const el = e.target.closest("[data-species]");

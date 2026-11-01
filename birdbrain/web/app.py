@@ -677,6 +677,7 @@ def species_card(request: Request, name: str, mini: bool = False, conn=Depends(g
         ours=db.month_counts(conn, name),
         months=species_info.MONTHS,
         this_month=clock.today().month,
+        confirmed=db.confirmed_species(conn),
     )
 
 

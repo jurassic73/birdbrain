@@ -1,11 +1,24 @@
+{% from "_macros.html" import badge, confirm_badge with context %}
 <article class="sp-card">
   <header class="sp-head">
     <div>
       <h2>{{ info.common or info.name }}</h2>
       {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
     </div>
-    {% if info.status %}<span class="sp-status">{{ info.status }}</span>{% endif %}
   </header>
+
+  {% if sp or info.status %}
+  <div class="sp-facts">
+    {% if info.status %}{{ badge(info.status, "sp-status") }}{% endif %}
+    {% if sp %}
+    <span class="fact"><span class="big">{{ sp.visits }}</span> visit{{ 's' if sp.visits != 1 }}</span>
+    <a class="button-link solid sp-jump" href="/species/{{ sp.label | urlencode }}#visits">Jump to visits</a>
+    <span class="fact">First seen <strong>{{ sp.first_seen | nice_date }}</strong></span>
+    <span class="fact">Last seen <strong>{{ sp.last_seen | nice_time }}</strong></span>
+    {{ confirm_badge(sp.label) }}
+    {% endif %}
+  </div>
+  {% endif %}
 
   <div class="sp-top">
     {% if info.photo %}
@@ -19,10 +32,6 @@
       {% if info.notes %}
       <ul class="sp-notes">{% for n in info.notes %}<li>{{ n }}</li>{% endfor %}</ul>
       <p class="muted small">AI summary based on Wikipedia</p>
-      {% endif %}
-      {% if sp %}
-      <p class="sp-ours">Seen here {{ sp.visits }} time{{ 's' if sp.visits != 1 }}, first on {{ sp.first_seen | nice_date }}.
-        <a href="/species/{{ sp.label | urlencode }}">All visits</a></p>
       {% endif %}
     </div>
   </div>
