@@ -1,4 +1,5 @@
 import io
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -70,14 +71,47 @@ def burst_paths(image_rel: str, images_dir: Path | None = None) -> list[str]:
 
 def frame_bytes(image_rel: str, thumb_rel: str, images_dir: Path | None = None) -> int:
     """Disk space used by one visit's photo, thumbnail and any burst frames (missing files count as 0)."""
+    return frames_bytes([(image_rel, thumb_rel)], images_dir)[0]
+
+
+def frames_bytes(visits: list[tuple[str, str]], images_dir: Path | None = None) -> list[int]:
+    """frame_bytes for many (image, thumbnail) pairs at once, in the same order.
+
+    Lists each day folder once instead of globbing it per visit: with hundreds of false triggers a day,
+    the per-visit glob took ~1 s on the Pi and grew with the square of the day's count.
+    """
     images_dir = images_dir or config.IMAGES_DIR
-    total = 0
-    for rel in (image_rel, thumb_rel, *burst_paths(image_rel, images_dir)):
-        try:
-            total += (images_dir / rel).stat().st_size
-        except FileNotFoundError:
-            pass
-    return total
+    folders: dict[Path, tuple[dict[str, int], dict[str, int]]] = {}
+
+    def folder(rel: str) -> tuple[dict[str, int], dict[str, int]]:
+        parent = Path(rel).parent
+        if parent not in folders:
+            sizes: dict[str, int] = {}
+            bursts: dict[str, int] = {}  # photo stem -> its burst frames' bytes
+            try:
+                with os.scandir(images_dir / parent) as entries:
+                    for e in entries:
+                        try:
+                            size = e.stat().st_size
+                        except FileNotFoundError:
+                            continue
+                        sizes[e.name] = size
+                        stem, _, n = e.name.removesuffix(".jpg").rpartition("_b")
+                        if e.name.endswith(".jpg") and stem and n.isdigit():
+                            bursts[stem] = bursts.get(stem, 0) + size
+            except (FileNotFoundError, NotADirectoryError):
+                pass
+            folders[parent] = (sizes, bursts)
+        return folders[parent]
+
+    out = []
+    for image_rel, thumb_rel in visits:
+        total = 0
+        for rel in (image_rel, thumb_rel):
+            total += folder(rel)[0].get(Path(rel).name, 0)
+        total += folder(image_rel)[1].get(Path(image_rel).name.removesuffix(".jpg"), 0)
+        out.append(total)
+    return out
 
 
 def delete_frame(image_rel: str, thumb_rel: str, images_dir: Path | None = None) -> None:

@@ -48,12 +48,12 @@ def usage(conn: sqlite3.Connection) -> dict:
     """Space used by false triggers, split into deletable ones and ones kept as lessons."""
     deletable = _rows(conn, lessons=False)
     kept = _rows(conn, lessons=True)
-    size = lambda rows: sum(images.frame_bytes(r["image_path"], r["thumb_path"]) for r in rows)
+    sizes = images.frames_bytes([(r["image_path"], r["thumb_path"]) for r in deletable + kept])  # one pass over the folders
     return {
         "count": len(deletable),
-        "bytes": size(deletable),
+        "bytes": sum(sizes[:len(deletable)]),
         "lesson_count": len(kept),
-        "lesson_bytes": size(kept),
+        "lesson_bytes": sum(sizes[len(deletable):]),
         "limit_bytes": int(limit_mb(conn) * 1_000_000),
         "photo": photo_size(conn),
     }
@@ -74,7 +74,7 @@ def prune(conn: sqlite3.Connection, limit_bytes: int | None = None) -> int:
     if limit <= 0:
         return 0  # 0 means no limit
     rows = _rows(conn, lessons=False)
-    sizes = [images.frame_bytes(r["image_path"], r["thumb_path"]) for r in rows]
+    sizes = images.frames_bytes([(r["image_path"], r["thumb_path"]) for r in rows])
     total, cut = sum(sizes), 0
     while total > limit and cut < len(rows):
         total -= sizes[cut]

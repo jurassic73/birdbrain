@@ -4,6 +4,7 @@ import math
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -982,7 +983,11 @@ def camera_context(conn, saved: str = "", error: str = "", tab: str = "") -> dic
     if not ctx["cam_configured"]:
         return ctx
     try:
-        ctx.update(cam_picture=camera.picture(), cam_daynight=camera.daynight(), cam_status=camera.status())
+        # Asked side by side: one after another took ~0.8 s on the Pi, the slowest alone ~0.45 s.
+        with ThreadPoolExecutor(3) as pool:
+            reads = {k: pool.submit(f) for k, f in
+                     (("cam_picture", camera.picture), ("cam_daynight", camera.daynight), ("cam_status", camera.status))}
+        ctx.update({k: f.result() for k, f in reads.items()})
     except camera.CameraError as e:
         ctx.update(cam_down=str(e))
     return ctx

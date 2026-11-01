@@ -46,3 +46,12 @@ def test_burst_is_saved_in_order_counted_and_deleted_with_its_visit(tmp_path):
     assert images.frame_bytes(image_rel, thumb_rel, tmp_path) > alone
     images.delete_frame(image_rel, thumb_rel, tmp_path)
     assert images.burst_paths(image_rel, tmp_path) == []
+
+
+def test_frames_bytes_counts_each_visit_in_a_shared_folder_once(tmp_path):
+    when = datetime(2026, 10, 30, 12, 0, 0)
+    a = images.store_frame(jpeg(), when, tmp_path)
+    b = images.store_frame(jpeg(), when, tmp_path)
+    burst = images.store_burst([jpeg()] * 3, a[0], tmp_path, max_edge=640)
+    size = lambda *rels: sum((tmp_path / r).stat().st_size for r in rels)
+    assert images.frames_bytes([a, b, ("gone/x.jpg", "gone/x_t.jpg")], tmp_path) == [size(*a, *burst), size(*b), 0]
