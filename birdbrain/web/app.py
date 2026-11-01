@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth
-from .. import alert, camera, config, db, identify, images, names, presence, refine, retention, scene, species_info, zones
+from .. import alert, camera, clock, config, db, identify, images, names, presence, refine, retention, scene, species_info, zones
 
 HERE = Path(__file__).parent
 PAGE_SIZE = 24
@@ -40,6 +40,9 @@ templates = Jinja2Templates(directory=HERE / "templates")
 async def read_only(request: Request, call_next):
     """Visitors can browse; changes, Claude calls and the admin pages need the admin login."""
     admin = request.state.admin = auth.is_admin(request)
+    if clock.stale():
+        with db.session() as conn:
+            clock.set_zone(db.get_value(conn, clock.KEY))
     path = request.url.path
     if auth.public():
         if request.method not in ("GET", "HEAD"):
@@ -92,7 +95,7 @@ def nice_date(value: str) -> str:
 def short_time(value: str) -> str:
     """'9:58 AM' for today, 'Oct 24, 9:58 AM' otherwise."""
     dt = datetime.fromisoformat(value)
-    return dt.strftime("%-I:%M %p") if dt.date() == date.today() else dt.strftime("%b %-d, %-I:%M %p")
+    return dt.strftime("%-I:%M %p") if dt.date() == clock.today() else dt.strftime("%b %-d, %-I:%M %p")
 
 
 def stayed(captured_at: str, ended_at: str | None) -> str:
@@ -190,7 +193,7 @@ def logout():
 
 
 def quick_filters() -> list[tuple[str, dict]]:
-    today = date.today()
+    today = clock.today()
     return [
         ("All", {}),
         ("Birds", {"kind": "bird"}),
@@ -215,7 +218,7 @@ SCORE_RANGES = [
 def score_range(key: str | None) -> dict:
     """One scoreboard period with its date bounds; an unknown key is today."""
     key, button, words, back = next((r for r in SCORE_RANGES if r[0] == key), SCORE_RANGES[0])
-    today = date.today()
+    today = clock.today()
     start = None if back is None else (today - timedelta(days=back)).isoformat()
     end = (today - timedelta(days=1)).isoformat() if key == "yesterday" else None
     return {"key": key, "words": words, "date_from": start, "date_to": end or (start and today.isoformat())}
@@ -247,7 +250,7 @@ def home(request: Request, conn=Depends(get_conn)):
         activity=db.activity(conn),
         species_names=db.species_names(conn),
         next_url=f"/visits/more?{query_string(filters, offset=PAGE_SIZE)}" if len(visits) == PAGE_SIZE else None,
-        split_day=None if active else date.today().isoformat(),
+        split_day=None if active else clock.today().isoformat(),
         live_refresh=config.LIVE_REFRESH,
         live_stale=LIVE_STALE,
         # The Today and This week chips show the same period on the scoreboard.
@@ -268,7 +271,7 @@ def more_visits(request: Request, offset: int = 0, conn=Depends(get_conn)):
     # Unfiltered, the cards are split into Today and Earlier; the card just before this page says which side it was on.
     split_day = prev_day = None
     if not any(filters.values()) and offset > 0:
-        split_day = date.today().isoformat()
+        split_day = clock.today().isoformat()
         prev = db.list_visits(conn, limit=1, offset=offset - 1)
         prev_day = prev[0]["captured_at"][:10] if prev else None
     return page(
@@ -524,7 +527,7 @@ def species_page(request: Request, name: str, conn=Depends(get_conn)):
         info=species_info.get(conn, name, fetch=False),
         ours=db.month_counts(conn, name),
         months=species_info.MONTHS,
-        this_month=date.today().month,
+        this_month=clock.today().month,
         confirmed=db.confirmed_species(conn),
     )
 
@@ -543,7 +546,7 @@ def species_card(request: Request, name: str, mini: bool = False, conn=Depends(g
         sp=db.species_row(conn, name),
         ours=db.month_counts(conn, name),
         months=species_info.MONTHS,
-        this_month=date.today().month,
+        this_month=clock.today().month,
     )
 
 

@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import config
+from . import clock, config
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS visits (
@@ -371,7 +371,7 @@ def newest_id(conn: sqlite3.Connection) -> int:
 
 
 def today_summary(conn: sqlite3.Connection) -> dict:
-    today = date.today().isoformat()
+    today = clock.today().isoformat()
     today_where = f"{REAL} AND date(captured_at) = ?"
     real_today = conn.execute(
         f"SELECT COUNT(DISTINCT id) AS n, COUNT(DISTINCT label) AS species FROM ({_seen(today_where)})",
@@ -624,7 +624,7 @@ def bump(conn: sqlite3.Connection, name: str, day: str | None = None) -> None:
     """Count events that leave no visit row behind (e.g. discarded rain probes)."""
     conn.execute(
         "INSERT INTO counters (day, name, n) VALUES (?, ?, 1) ON CONFLICT(day, name) DO UPDATE SET n = n + 1",
-        (day or date.today().isoformat(), name),
+        (day or clock.today().isoformat(), name),
     )
     conn.commit()
 
@@ -652,7 +652,7 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
     sent_to_claude = every visit Claude was asked about (visitors and false alarms), with what it cost
     would_keep = Claude calls the animal check would have skipped in gate mode (it judged them empty)
     """
-    day = day or date.today().isoformat()
+    day = day or clock.today().isoformat()
     r = conn.execute(
         f"""SELECT
               SUM({REAL}) AS visitors,
@@ -732,7 +732,7 @@ def detector_report(conn: sqlite3.Connection, days: int = 14) -> dict:
 
     Only daytime visits where Claude was asked count; gate mode always asks Claude at night.
     """
-    since = (date.today() - timedelta(days=days - 1)).isoformat()
+    since = (clock.today() - timedelta(days=days - 1)).isoformat()
     rows = conn.execute(
         f"""SELECT id, {LABEL} AS label, {VISITOR} AS final_visitor,
                    json_extract(raw_json, '$.calls.detector.animal') AS det_animal
@@ -794,7 +794,7 @@ def confirmed_species(conn: sqlite3.Connection, minimum: int = CONFIRMED_MIN) ->
 def scenery_report(conn: sqlite3.Connection, days: int = 14) -> dict:
     """How the scenery check (birdbrain.scenery) would have done if it decided which frames Claude sees,
     day and night, judged against the final answer (owner corrections win)."""
-    since = (date.today() - timedelta(days=days - 1)).isoformat()
+    since = (clock.today() - timedelta(days=days - 1)).isoformat()
     rows = conn.execute(
         f"""SELECT id, is_night, {LABEL} AS label, {REAL} AS real,
                    json_extract(raw_json, '$.calls.detector.scenery.empty') AS empty
@@ -825,7 +825,7 @@ def classifier_report(conn: sqlite3.Connection, days: int | None = None) -> dict
     "Common Raccoon", "Possum": "Virginia Opossum"). All time unless `days` is given."""
     where, args = "", ()
     if days:
-        where, args = "AND date(captured_at) >= ?", ((date.today() - timedelta(days=days - 1)).isoformat(),)
+        where, args = "AND date(captured_at) >= ?", ((clock.today() - timedelta(days=days - 1)).isoformat(),)
     rows = conn.execute(
         f"""SELECT id, is_night, {LABEL} AS label,
                    json_extract(raw_json, '$.calls.classifier') AS guess
@@ -878,7 +878,7 @@ def presence_report(conn: sqlite3.Connection, days: int = 14) -> dict:
     """The local animal check (birdbrain.presence) over the last `days`: frames it judged live (not backfilled),
     against the final answer. skipped = Claude wasn't asked (gate mode); missed = it said empty but the owner
     (or, in shadow mode, Claude) found an animal; would_skip = empty frames it would have kept from Claude."""
-    since = (date.today() - timedelta(days=days - 1)).isoformat()
+    since = (clock.today() - timedelta(days=days - 1)).isoformat()
     rows = conn.execute(
         f"""SELECT id, {LABEL} AS label, {REAL} AS real, is_night, confirmed_at IS NOT NULL AS confirmed,
                    (corrected_visitor IS NOT NULL OR corrected_species IS NOT NULL) AS corrected,
@@ -925,7 +925,7 @@ def gate_advice(report: dict) -> tuple[str, str]:
 
 
 def daily_counts(conn: sqlite3.Connection, days: int = 30, species: str | None = None) -> list[tuple[str, int]]:
-    start = date.today() - timedelta(days=days - 1)
+    start = clock.today() - timedelta(days=days - 1)
     where, args = _where(species=species, date_from=start.isoformat())
     rows = conn.execute(f"SELECT date(captured_at) AS d, COUNT(*) AS n FROM visits WHERE {where} GROUP BY d", args)
     counts = {r["d"]: r["n"] for r in rows}

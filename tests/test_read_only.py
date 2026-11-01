@@ -101,3 +101,23 @@ def test_base_path_prefixes_links_redirects_and_fetch(client, add_visit, monkeyp
     assert "window.BB_BASE=\"/birdbrain\"" in page
     r = client.post("/logout", follow_redirects=False)
     assert r.headers["location"] == "/birdbrain/"
+
+
+def test_mirror_today_follows_site_timezone(client, add_visit, conn, monkeypatch):
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    from birdbrain import clock
+    # A zone whose date differs from this machine's for most of the day, so "today" visibly moves.
+    zone = "Pacific/Kiritimati" if datetime.now(ZoneInfo("Pacific/Kiritimati")).date() != datetime.now().date() else "Etc/GMT+12"
+    there = datetime.now(ZoneInfo(zone)).replace(tzinfo=None)
+    try:
+        db.set_value(conn, clock.KEY, zone)
+        clock.set_zone(None); clock._zone["checked"] = 0.0  # make the next request read the setting
+        client.get("/")
+        assert clock.today() == there.date()
+        db.set_value(conn, clock.KEY, "")
+        clock._zone["checked"] = 0.0
+        client.get("/")
+        assert clock.today() == datetime.now().date()
+    finally:
+        clock.set_zone(None); clock._zone["checked"] = 0.0

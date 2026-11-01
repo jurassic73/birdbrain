@@ -14,11 +14,15 @@ STAGE="$(mktemp -d)"; trap 'rm -rf "$STAGE"' EXIT
 export RSYNC_RSH="ssh -i $PUBLIC_KEY -o IdentitiesOnly=yes -o BatchMode=yes"
 
 # A consistent copy of the database even while the watcher is writing, minus the private alert settings.
-python3 - "$DATA/birdbrain.db" "$STAGE/birdbrain.db" <<'PY'
+# The Pi's time zone travels with the data, so the mirror's "today" matches the birdbath's (birdbrain/clock.py).
+TZNAME="$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || true)"
+python3 - "$DATA/birdbrain.db" "$STAGE/birdbrain.db" "$TZNAME" <<'PY'
 import sqlite3, sys
 src, dst = sqlite3.connect(sys.argv[1]), sqlite3.connect(sys.argv[2])
 src.backup(dst)
 dst.execute("DELETE FROM settings WHERE key LIKE 'ntfy_%'")
+if sys.argv[3]:
+    dst.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('site_timezone', ?)", (sys.argv[3],))
 dst.commit()
 dst.execute("PRAGMA journal_mode=DELETE")
 dst.execute("VACUUM")
