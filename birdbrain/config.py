@@ -147,6 +147,7 @@ STAY_MIN_BLOB = float(_env("STAY_MIN_BLOB", "0.0015"))  # fraction of the frame:
 STAY_LIGHT = float(_env("STAY_LIGHT", "0.4"))   # more of the watched area changed than this: the light changed
 STAY_REARM = int(_env("STAY_REARM", "10"))      # seconds after a stay ends before the next trigger
 
+SUB_FPS = int(_env("SUB_FPS", "15"))  # the substream's frame rate; the watcher checks every frame
 TRIGGER_FRAMES = 3  # consecutive substream frames of rim motion needed to count as a visit
 BURST_FRAMES = 6    # main-stream frames captured per visit, at BURST_FPS; the sharpest goes to Claude
 BURST_FPS = 4
