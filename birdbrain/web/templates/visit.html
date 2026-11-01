@@ -63,6 +63,7 @@
         {% if visit.label not in ('None', 'Other') %}
         <a class="button-link" href="/species/{{ visit.label | urlencode }}">All {{ visit.label }} visits</a>
         {% endif %}
+        {% if request.state.admin %}{% set ms = mirror_status(visit.image_path) %}{% if ms == "person" %}{{ badge("private", "private") }}{% elif ms == "unchecked" %}{{ badge("not public yet", "private") }}{% endif %}{% endif %}
         {% if request.state.admin %}
         {% if visit.confirmed_at %}
         {{ badge("checked", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button>

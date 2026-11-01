@@ -31,9 +31,18 @@ PY
 # A fresh live frame from the local site (it grabs one from the camera); keep the last one if that fails.
 curl -sf --max-time 15 -o "$STAGE/live.jpg" http://127.0.0.1:8000/live.jpg || cp "$DATA/live.jpg" "$STAGE/" 2>/dev/null || true
 
+# No photo of a person goes public (birdbrain/privacy.py; the Pi's own site is untouched). Fails closed:
+# a live frame with a person, or one that can't be checked, isn't sent (the mirror keeps its last clean one);
+# if the visit filter fails, nothing is pushed this round.
+PY="${PUBLIC_PYTHON:-venv/bin/python}"
+export BIRDBRAIN_DATA="$DATA"
+if [ -f "$STAGE/live.jpg" ] && ! "$PY" -m birdbrain.privacy check "$STAGE/live.jpg"; then rm -f "$STAGE/live.jpg"; fi
+"$PY" -m birdbrain.privacy filter "$STAGE/birdbrain.db" "$STAGE/private.txt"
+
 # Photos first, so the database never names a photo the mirror lacks. rsync writes each file under a
 # temporary name and renames it when done, so the mirror never reads half a database or frame.
+# --delete-excluded also takes a photo off the mirror once it's found to show a person.
 OPTS=(-rtpz --chmod=Dg+rwxs,Fg+rw,Fo+r)  # -p: apply these modes; the app needs group write on the db
-rsync "${OPTS[@]}" --delete "$DATA/images/" "$PUBLIC_DEST/images/"
+rsync "${OPTS[@]}" --delete --delete-excluded --exclude-from="$STAGE/private.txt" "$DATA/images/" "$PUBLIC_DEST/images/"
 rsync "${OPTS[@]}" "$STAGE/birdbrain.db" "$PUBLIC_DEST/birdbrain.db"
 [ ! -f "$STAGE/live.jpg" ] || rsync "${OPTS[@]}" "$STAGE/live.jpg" "$PUBLIC_DEST/live.jpg"

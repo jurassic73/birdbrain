@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth, viewer
-from .. import alert, camera, clock, config, db, identify, images, names, presence, refine, retention, scene, species_info, zones
+from .. import alert, camera, clock, config, db, identify, images, names, presence, privacy, refine, retention, scene, species_info, zones
 
 HERE = Path(__file__).parent
 PAGE_SIZE = 24
@@ -128,6 +128,7 @@ def mb(value: int) -> str:
 templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, short_time=short_time, usd=usd, mb=mb,
                              month_name=lambda v: datetime.fromisoformat(v).strftime("%B"))
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
+templates.env.globals["mirror_status"] = privacy.visit_status
 templates.env.globals["has_card"] = species_info.has_card
 templates.env.globals["season_badge"] = species_info.visit_badge
 templates.env.globals["short_status"] = species_info.short_status
