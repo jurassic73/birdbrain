@@ -13,7 +13,7 @@
     {% if not on_settings %}<small class="muted"><a href="/settings#storage">Change the limit or photo size</a></small>{% endif %}
   </div>
   {% if storage.confirmed_count %}
-  <form class="storage-delete" method="post" action="/false-triggers/clean" onsubmit="return confirm('Delete {{ storage.confirmed_count }} photo{{ 's' if storage.confirmed_count != 1 }} you confirmed empty? The Pi keeps what it learned from them.')">
+  <form class="storage-delete" method="post" action="/false-triggers/clean" data-confirm-title="Delete {{ storage.confirmed_count }} confirmed photo{{ 's' if storage.confirmed_count != 1 }}?" data-confirm-ok="Delete" data-confirm="{{ 'You confirmed it empty, so it has done its job. The Pi keeps what it learned from it.' if storage.confirmed_count == 1 else 'You confirmed them empty, so they have done their job. The Pi keeps what it learned from them.' }}">
     <button type="submit" class="danger">Delete</button>
     <small class="muted">{{ storage.confirmed_count }} photo{{ 's' if storage.confirmed_count != 1 }} you confirmed empty ({{ storage.confirmed_bytes | mb }}). Not needed any more: the Pi keeps what it learned from them.</small>
   </form>

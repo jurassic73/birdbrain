@@ -12,8 +12,8 @@
   };
 
   const dialog = document.createElement("dialog");
-  dialog.className = "sp-dialog";
-  dialog.innerHTML = '<button type="button" class="sp-close" aria-label="Close">&times;</button><div class="sp-body"></div>';
+  dialog.className = "popup sp-dialog";
+  dialog.innerHTML = '<button type="button" class="popup-close sp-close" aria-label="Close">&times;</button><div class="sp-body"></div>';
   const body = dialog.querySelector(".sp-body");
   dialog.querySelector(".sp-close").addEventListener("click", () => dialog.close());
   dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });  // backdrop

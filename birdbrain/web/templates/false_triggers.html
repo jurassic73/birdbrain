@@ -15,11 +15,15 @@
 <script>
   document.getElementById("ft-confirm").addEventListener("submit", e => {
     const ids = [...document.querySelectorAll("#ft-grid .card[data-unchecked]")].map(c => c.dataset.id);
-    const n = ids.length, s = n === 1 ? "" : "s";
-    if (!n || !confirm(`You are confirming that ${n === 1 ? "this photo does" : `all ${n} photos shown here do`} not contain an animal.\n\nThe Pi's animal check will train on ${n === 1 ? "it" : "them"} accordingly, as empty photo${s}. If any has an animal, press Cancel and correct ${n === 1 ? "it" : "that one"} first.`)) {
-      e.preventDefault(); return;
-    }
+    const n = ids.length, s = n === 1 ? "" : "s", one = n === 1;
+    if (!n) { e.preventDefault(); return; }
     e.target.ids.value = ids.join(",");
+    birdbrain.confirmSubmit(e, {
+      title: one ? "Confirm this photo is empty?" : `Confirm all ${n} photos are empty?`,
+      message: `You are confirming that ${one ? "this photo does" : `all ${n} photos shown here do`} not contain an animal.\n\n`
+        + `The Pi's animal check will train on ${one ? "it" : "them"} as empty photo${s}. If any has an animal, press Cancel and correct ${one ? "it" : "that one"} first.`,
+      ok: one ? "Confirm empty" : `Confirm ${n} empty`,
+    });
   });
 </script>
 {% endif %}
@@ -55,7 +59,7 @@
 </script>
 
 <!-- A visit opens in a pop-up over this page, so reviewing never loses your place in the grid. -->
-<dialog class="ft-visit" id="ft-visit" aria-label="Visit">
+<dialog class="popup ft-visit" id="ft-visit" aria-label="Visit">
   <iframe title="Visit" src="about:blank"></iframe>
 </dialog>
 <script>

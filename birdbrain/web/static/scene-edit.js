@@ -275,12 +275,13 @@
     }
     const n = sel.pending.size;
     const ask = document.createElement("div");
-    ask.className = "se-ask";
+    ask.className = "popup popup-ask se-ask";
     ask.setAttribute("role", "dialog");
-    ask.innerHTML = `<p>You changed ${n} shape${n === 1 ? "" : "s"}. Save before closing?</p>`
-      + '<div class="actions"><button type="button" class="se-ask-save">Save</button>'
+    ask.setAttribute("aria-modal", "true");
+    ask.innerHTML = `<h2 class="popup-title">Save before closing?</h2><div class="popup-msg"><p>You changed ${n} shape${n === 1 ? "" : "s"}.</p></div>`
+      + '<div class="popup-actions"><button type="button" class="popup-cancel se-ask-keep">Keep editing</button>'
       + '<button type="button" class="danger se-ask-discard">Discard</button>'
-      + '<button type="button" class="link-btn se-ask-keep">Keep editing</button></div>';
+      + '<button type="button" class="se-ask-save">Save</button></div>';
     document.body.append(ask);  // on top of the big photo (the backdrop sits under it)
     ask.querySelector(".se-ask-save").focus();
   }
@@ -440,7 +441,7 @@
   }
 
   document.addEventListener("pointerdown", (e) => {
-    if (e.target.closest?.(".se-ask")) return;
+    if (e.target.closest?.(".se-ask, .popup")) return;
     const handle = e.target.closest?.(".se-handles [data-kind]");
     if (handle && sel?.obj) {
       // two presses on the same corner: remove it (the handles are redrawn on each press, so the browser's own

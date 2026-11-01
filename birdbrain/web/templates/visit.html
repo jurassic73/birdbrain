@@ -53,8 +53,8 @@
     {% if prev_id %}<a class="photo-arrow prev" href="/visit/{{ prev_id }}{{ ft_param }}" aria-label="Newer visit">&#8249;</a>{% endif %}
     {% if next_id %}<a class="photo-arrow next" href="/visit/{{ next_id }}{{ ft_param }}" aria-label="Older visit">&#8250;</a>{% endif %}
   </div>
-  <dialog class="photo-viewer" id="photo-viewer" aria-label="Full-size photo">
-    <button type="button" class="photo-viewer-close" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+  <dialog class="viewer photo-viewer" id="photo-viewer" aria-label="Full-size photo">
+    <button type="button" class="viewer-close photo-viewer-close" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
     {% set zoom_param = (ft_param ~ '&zoom=1') if ft_param else '?zoom=1' %}
     {% if prev_id %}<a class="photo-viewer-arrow prev" id="zoom-prev" href="/visit/{{ prev_id }}{{ zoom_param }}" aria-label="Newer visit" title="Newer (←)">&#8249;</a>{% endif %}
     {% if next_id %}<a class="photo-viewer-arrow next" id="zoom-next" href="/visit/{{ next_id }}{{ zoom_param }}" aria-label="Older visit" title="Older (→)">&#8250;</a>{% endif %}
@@ -78,7 +78,7 @@
         <button hx-post="/visit/{{ visit.id }}/reviewed" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi).">Confirm: this is correct</button>
         {% endif %}
         {% if settled %}<button type="button" class="m-only secondary" id="correct-open">Not right? Correct it</button>{% endif %}
-        <button class="danger m-hide" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Delete this visit and its photo?">Delete visit</button>
+        <button class="danger m-hide" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Its photo is deleted too. This can't be undone." data-confirm-title="Delete this visit?" data-confirm-ok="Delete">Delete visit</button>
         {% endif %}
       </div>
     </div>
@@ -253,7 +253,7 @@
     </form>
     </details>
     {# Phones: Delete sits at the bottom, away from the buttons tapped most. #}
-    <div class="m-only m-delete"><button class="danger" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Delete this visit and its photo?">Delete visit</button></div>
+    <div class="m-only m-delete"><button class="danger" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Its photo is deleted too. This can't be undone." data-confirm-title="Delete this visit?" data-confirm-ok="Delete">Delete visit</button></div>
     {% endif %}
   </div>
 </article>

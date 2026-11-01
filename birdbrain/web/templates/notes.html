@@ -87,7 +87,7 @@
                 data-tip="Stop sending this lesson. The visit keeps your label; saving a correction again switches it back on.">Switch off</button>
         {% endif %}
         <button class="danger" hx-post="/visit/{{ l.visit_id }}/clear-correction"
-                hx-confirm="Delete this lesson? The visit goes back to Claude's answer and your note is removed."
+                hx-confirm="The visit goes back to Claude's answer and your note is removed." data-confirm-title="Delete this lesson?" data-confirm-ok="Delete"
                 data-tip="Remove the correction and note from the visit.">Delete</button>
       </div>
     </li>

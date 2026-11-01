@@ -106,7 +106,7 @@
       {% endif %}
       <div class="actions">
         <button hx-post="/settings/camera/reboot" hx-target="#camera-panel" hx-swap="outerHTML"
-                hx-confirm="Restart the camera? It's offline for about 5 minutes."
+                hx-confirm="It's offline for about 5 minutes, and nothing is recorded until it's back." data-confirm-title="Restart the camera?" data-confirm-ok="Restart"
                 data-tip="Restarts the camera. Nothing is recorded until it's back (about 5 minutes).">Restart camera</button>
       </div>
     </div>

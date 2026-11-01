@@ -3,6 +3,7 @@ import json
 import re
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -691,3 +692,16 @@ def test_visit_page_says_notes_are_for_claude_only(client, add_visit):
     html = client.get(f"/visit/{add_visit()}").text
     assert "Note for Claude" in html and "Notes are not used by the Pi's local animal check" in html
     assert "The answer you pick trains the Pi's local animal check" in html
+
+
+def test_popups_use_the_site_dialog_not_the_browsers(client):
+    # confirm()/alert()/prompt() can't be styled; questions go through static/dialog.js (birdbrain.ask,
+    # hx-confirm, form[data-confirm]) and look like the rest of the site (the Pop-ups section of style.css).
+    web = Path(webapp.__file__).parent
+    native = re.compile(r"(?<![\w.])(?:window\.)?(?:confirm|alert|prompt)\(")
+    for f in [*web.glob("templates/*.html"), *web.glob("static/*.js")]:
+        assert not native.search(f.read_text()), f.name
+    html = client.get("/").text
+    assert html.index("/static/dialog.js") < html.index("/static/save-feedback.js")
+    css = (web / "static/style.css").read_text()
+    assert ".popup {" in css and ".viewer {" in css and ".popup-actions" in css
