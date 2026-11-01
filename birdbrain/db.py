@@ -108,6 +108,8 @@ VISITOR = "COALESCE(corrected_visitor, visitor)"
 # Older rows corrected before corrected_visitor existed only set corrected_species.
 REAL = f"({VISITOR} != 'none' OR (corrected_visitor IS NULL AND corrected_species IS NOT NULL))"
 FALSE_TRIGGER = f"NOT {REAL}"
+# Nobody has confirmed or corrected this one yet (the False triggers page lists only these by default).
+UNCHECKED = "(confirmed_at IS NULL AND corrected_visitor IS NULL AND corrected_species IS NULL)"
 # The other kinds of animal in a visit's photo besides the main one, as JSON [{visitor, species, count, ...}]:
 # the owner's list when they corrected it ([] means "nothing else"), else Claude's.
 ALSO = "COALESCE(corrected_also, also)"
@@ -223,11 +225,14 @@ def _where(
     review: bool = False,
     false_triggers: bool = False,
     has_photo: bool = False,
+    unchecked: bool = False,
 ) -> tuple[str, list]:
     where = [FALSE_TRIGGER if false_triggers else REAL]
     args: list = []
     if has_photo:
         where.append(HAS_PHOTO)
+    if unchecked:
+        where.append(UNCHECKED)
     if review:
         where.append("needs_review = 1")
     if species:
@@ -442,8 +447,7 @@ def correct_visit(
 
 def count_unchecked_false_triggers(conn: sqlite3.Connection) -> int:
     """False triggers the owner hasn't confirmed or corrected yet (only ones whose photo is still there to look at)."""
-    return conn.execute(f"""SELECT COUNT(*) FROM visits WHERE NOT {REAL} AND {HAS_PHOTO} AND confirmed_at IS NULL
-                            AND corrected_visitor IS NULL AND corrected_species IS NULL""").fetchone()[0]
+    return count_visits(conn, false_triggers=True, has_photo=True, unchecked=True)
 
 
 def false_trigger_cards(conn: sqlite3.Connection, ids: list[int]) -> list[sqlite3.Row]:
@@ -553,7 +557,7 @@ def set_lesson_off(conn: sqlite3.Connection, visit_id: int, off: bool) -> None:
 
 
 def mark_reviewed(conn: sqlite3.Connection, visit_id: int) -> None:
-    """Looks right: off the review queue, and confirmed (the local animal check trains on it, counting extra)."""
+    """Confirm: this is correct. Off the review queue, and confirmed (the local animal check trains on it, counting extra)."""
     conn.execute("UPDATE visits SET needs_review = 0, confirmed_at = COALESCE(confirmed_at, ?) WHERE id = ?",
                  (datetime.now().isoformat(timespec="seconds"), visit_id))
     conn.commit()

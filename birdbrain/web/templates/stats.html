@@ -34,7 +34,7 @@
     <div><span class="big">{{ p.visitors }}</span> visitors</div>
     <div><span class="big {{ 'bad' if p.missed }}">{{ p.missed | length }}</span> it called empty</div>
     <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames {{ 'kept from Claude' if presence_mode == 'gate' else 'it would keep from Claude' }}</div>
-    {% if p.skipped %}<div><span class="big">{{ p.unchecked }}</span> skipped frames not checked yet</div>{% endif %}
+    {% if p.skipped %}<div><span class="big">{{ p.unchecked }}</span> skipped frames not confirmed yet</div>{% endif %}
   </div>
   <p class="muted">Last {{ p.days }} days, against Claude's answers and your corrections.
     {% if p.missed %}Missed: {% for m in p.missed %}<a href="/visit/{{ m.id }}">{{ m.label }}</a>{{ ' (night)' if m.night }}{{ ', ' if not loop.last }}{% endfor %}. Correcting them teaches it.{% endif %}

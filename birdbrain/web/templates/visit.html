@@ -73,9 +73,9 @@
         {% if request.state.admin %}{% set ms = mirror_status(visit.image_path) %}{% if ms == "person" %}{{ badge("private", "private") }}{% elif ms == "unchecked" %}{{ badge("not public yet", "private") }}{% endif %}{% endif %}
         {% if request.state.admin %}
         {% if visit.confirmed_at %}
-        {{ badge("checked", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button>
+        {{ badge("confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button>
         {% elif not (visit.corrected_species or visit.corrected_visitor) %}
-        <button hx-post="/visit/{{ visit.id }}/reviewed" data-tip="Says this answer is right: it leaves the review queue, and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi).">Looks right</button>
+        <button hx-post="/visit/{{ visit.id }}/reviewed" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi).">Confirm: this is correct</button>
         {% endif %}
         {% if settled %}<button type="button" class="m-only secondary" id="correct-open">Not right? Correct it</button>{% endif %}
         <button class="danger m-hide" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Delete this visit and its photo?">Delete visit</button>

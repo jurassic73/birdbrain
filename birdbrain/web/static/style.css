@@ -372,6 +372,11 @@ button.danger { background: transparent; color: var(--low); border-color: var(--
 .badge.checked { color: var(--accent); white-space: nowrap; }
 .badge.pi-only { color: var(--medium); white-space: nowrap; }
 .ft-confirm { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
+/* With Show confirmed on, the confirmed photos stay in the grid but step back. */
+.ft-grid .card:not([data-unchecked]) { opacity: .45; transition: opacity .15s; }
+.ft-grid .card:not([data-unchecked]):hover { opacity: .85; }
+.ft-grid .card.leaving { opacity: 0; transform: scale(.96); transition: opacity .3s, transform .3s; }
+.ft-count { font-size: .55em; font-weight: 400; }
 .conf-low { color: var(--low); }
 .night { color: var(--night); }
 .corrected { color: var(--accent); }

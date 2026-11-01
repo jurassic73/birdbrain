@@ -17,7 +17,7 @@
     <div class="card-meta">
       <span>{{ v.captured_at | nice_time }}{% if stayed(v) %}, {{ stayed(v) }}{% endif %}</span>
       {% if v.corrected_species or v.corrected_visitor or v.corrected_also is not none %}{{ badge("corrected", "corrected") }}
-      {% elif v.confirmed_at %}{{ badge("checked", "checked") }}
+      {% elif v.confirmed_at %}{{ badge("confirmed by human", "checked") }}
       {% elif v.model == "bioclip-presence" %}{{ badge("pi only", "pi-only") }}
       {% elif v.model == "bioclip-2" %}{{ badge("pi named", "pi-only") }}
       {% elif v.confidence %}{{ badge(v.confidence, "conf-" ~ v.confidence) }}{% endif %}

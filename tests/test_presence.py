@@ -98,10 +98,11 @@ def client(conn):
 
 def test_looks_right_confirms_and_undo_takes_it_back(client, conn, add_visit):
     vid = add_visit()
-    assert "Looks right" in client.get(f"/visit/{vid}").text
+    assert "Confirm: this is correct" in client.get(f"/visit/{vid}").text
     client.post(f"/visit/{vid}/reviewed")
     assert db.get_visit(conn, vid)["confirmed_at"]
-    assert "Checked:" in client.get(f"/visit/{vid}").text
+    page = client.get(f"/visit/{vid}").text
+    assert "confirmed by human" in page and "Confirm: this is correct</button>" not in page
     client.post(f"/visit/{vid}/unconfirm")
     assert db.get_visit(conn, vid)["confirmed_at"] is None
 
@@ -110,13 +111,27 @@ def test_false_triggers_confirm_all_shown_skips_real_visits(client, conn, add_vi
     empty = [add_visit(visitor="none", species=None) for _ in range(3)]
     real = add_visit()
     page = client.get("/false-triggers").text
-    assert "3 not checked yet" in page and ">Confirm</button>" in page
+    assert "(3 not yet confirmed)" in page and "Confirm all shown false triggers have no animals</button>" in page
+    assert "not contain an animal" in page  # the pop-up before it confirms
     assert "found no animal in them. Now it's your turn to look." in page and 'id="ft-visit"' in page
     r = client.post("/false-triggers/confirm", data={"ids": ",".join(map(str, [*empty[:2], real]))},
                     follow_redirects=False)
     assert r.headers["location"] == "/false-triggers?confirmed=2"
     assert [bool(db.get_visit(conn, i)["confirmed_at"]) for i in [*empty, real]] == [True, True, False, False]
     assert db.count_unchecked_false_triggers(conn) == 1
+
+
+def test_false_triggers_list_only_unconfirmed_unless_show_all(client, conn, add_visit):
+    done, todo = add_visit(visitor="none", species=None), add_visit(visitor="none", species=None)
+    db.confirm_visits(conn, [done])
+    page = client.get("/false-triggers").text
+    assert f'data-id="{todo}"' in page and f'data-id="{done}"' not in page
+    assert "(1 not yet confirmed)" in page and "Show confirmed (1)" in page
+    page = client.get("/false-triggers?show=all").text
+    assert f'data-id="{todo}"' in page and f'data-id="{done}"' in page and "Hide confirmed" in page
+    assert "data-show-all" in page and "have no animals</button>" not in page  # bulk confirm only on the to-check list
+    db.confirm_visits(conn, [todo])
+    assert "Nothing left to check" in client.get("/false-triggers").text
 
 
 def test_settings_switches_the_animal_check(client, conn):

@@ -847,12 +847,17 @@ def lesson_switch(visit_id: int, state: str, conn=Depends(get_conn)):
 
 
 @app.get("/false-triggers", response_class=HTMLResponse)
-def false_triggers(request: Request, cleared: int | None = None, confirmed: int | None = None, conn=Depends(get_conn)):
+def false_triggers(request: Request, cleared: int | None = None, confirmed: int | None = None, show: str = "",
+                   conn=Depends(get_conn)):
+    """Only the photos nobody has confirmed or corrected yet, unless ?show=all (then the confirmed ones show dimmed)."""
+    show_all = show == "all"
+    visits = db.list_visits(conn, false_triggers=True, has_photo=True, unchecked=not show_all, limit=FT_PAGE)
     return page(
         request,
         "false_triggers.html",
-        visits=(visits := db.list_visits(conn, false_triggers=True, has_photo=True, limit=FT_PAGE)),
-        next_url=f"/false-triggers/more?offset={FT_PAGE}" if len(visits) == FT_PAGE else None,
+        visits=visits,
+        show_all=show_all,
+        next_url=_ft_more(FT_PAGE, show_all) if len(visits) == FT_PAGE else None,
         hourly=db.hourly_counts(conn, false_triggers=True),
         total=db.count_visits(conn, false_triggers=True, has_photo=True),
         storage=retention.usage(conn),
@@ -872,10 +877,16 @@ def false_trigger_cards(request: Request, ids: str = "", conn=Depends(get_conn))
     return resp
 
 
+def _ft_more(offset: int, show_all: bool) -> str:
+    return f"/false-triggers/more?offset={offset}" + ("&show=all" if show_all else "")
+
+
 @app.get("/false-triggers/more", response_class=HTMLResponse)
-def more_false_triggers(request: Request, offset: int = 0, conn=Depends(get_conn)):
-    visits = db.list_visits(conn, false_triggers=True, has_photo=True, limit=FT_PAGE, offset=offset)
-    next_url = f"/false-triggers/more?offset={offset + FT_PAGE}" if len(visits) == FT_PAGE else None
+def more_false_triggers(request: Request, offset: int = 0, show: str = "", conn=Depends(get_conn)):
+    show_all = show == "all"
+    visits = db.list_visits(conn, false_triggers=True, has_photo=True, unchecked=not show_all, limit=FT_PAGE,
+                            offset=offset)
+    next_url = _ft_more(offset + FT_PAGE, show_all) if len(visits) == FT_PAGE else None
     return page(request, "_cards.html", visits=visits, next_url=next_url, ft_cards=True)
 
 

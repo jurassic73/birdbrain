@@ -3,25 +3,28 @@
 {% block title %}False triggers | Birdbrain{% endblock %}
 {% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
-<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span>{% if storage.photos_deleted %} <small class="muted" data-tip="Older false triggers whose photos were deleted to save space. Their records stay, and so does what the Pi's animal check learned from them.">+{{ storage.photos_deleted }} without photos</small>{% endif %}</h1></div>
-<p class="muted">Birdbrain saw motion and took these photos, but found no animal in them. Now it's your turn to look. If a photo has an animal, open it and pick what it was. The animal check model on the Pi learns from that, and the photo is kept. If none have animals, press Confirm. The animal check learns from those too, and confirmed photos can then be deleted to save space.</p>
+<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span> <span class="muted ft-count" id="ft-unchecked" data-tip="Photos nobody has confirmed or corrected yet. Only these are listed below unless Show confirmed is on.">({{ unchecked }} not yet confirmed)</span>{% if storage.photos_deleted %} <small class="muted" data-tip="Older false triggers whose photos were deleted to save space. Their records stay, and so does what the Pi's animal check learned from them.">+{{ storage.photos_deleted }} without photos</small>{% endif %}</h1></div>
+<p class="muted">Birdbrain saw motion and took these photos, but found no animal in them. Now it's your turn to look. Open a photo to check it on its own: if it's empty, press <b>Confirm: this is correct</b>; if there's an animal, pick what it was. Either way the animal check model on the Pi learns from it, and the photo leaves this list. Confirmed photos can be deleted to save space.</p>
 {% if confirmed is not none %}<p class="notice saved">Confirmed {{ confirmed }} as empty. The Pi's animal check trains on them.</p>{% endif %}
-{% if request.state.admin and unchecked %}
+{% if request.state.admin and (unchecked or total > unchecked) %}
 <form class="ft-confirm" method="post" action="/false-triggers/confirm" id="ft-confirm">
   <input type="hidden" name="ids">
-  <button type="submit" data-tip="Marks every photo loaded below as checked: no animal (more load as you scroll). The Pi's animal check counts checked photos 3 times when it learns. Correct any photo with an animal first.">Confirm</button>
-  <span class="muted small" id="ft-unchecked">{{ unchecked }} not checked yet</span>
+  {% if unchecked and not show_all %}<button type="submit" data-tip="Marks every photo loaded below as empty, in one go (more load as you scroll; only loaded ones count). The Pi's animal check counts confirmed photos 3 times when it learns, so open and correct any photo with an animal first.">Confirm all shown false triggers have no animals</button>{% endif %}
+  {% if total > unchecked or not show_all %}<a class="link-btn" id="ft-show"{% if total == unchecked %} hidden{% endif %} href="/false-triggers{{ '' if show_all else '?show=all' }}" data-tip="Photos you already confirmed (or corrected but still empty) are hidden so the list is only what's left to check. Show them dimmed, or hide them again.">{{ 'Hide confirmed' if show_all else 'Show confirmed (' ~ (total - unchecked) ~ ')' }}</a>{% endif %}
 </form>
 <script>
   document.getElementById("ft-confirm").addEventListener("submit", e => {
     const ids = [...document.querySelectorAll("#ft-grid .card[data-unchecked]")].map(c => c.dataset.id);
-    if (!ids.length) { e.preventDefault(); return; }
+    const n = ids.length, s = n === 1 ? "" : "s";
+    if (!n || !confirm(`You are confirming that ${n === 1 ? "this photo does" : `all ${n} photos shown here do`} not contain an animal.\n\nThe Pi's animal check will train on ${n === 1 ? "it" : "them"} accordingly, as empty photo${s}. If any has an animal, press Cancel and correct ${n === 1 ? "it" : "that one"} first.`)) {
+      e.preventDefault(); return;
+    }
     e.target.ids.value = ids.join(",");
   });
 </script>
 {% endif %}
 {% if cleared is not none %}<p class="notice saved">Deleted {{ cleared }} photo{{ 's' if cleared != 1 }}. The Pi keeps what it learned from them.</p>{% endif %}
-<details class="m-fold" open data-m-closed>
+<details class="m-fold">
   <summary>Storage and triggers by hour</summary>
   {% include "_storage.html" %}
   <div class="charts single">
@@ -29,11 +32,11 @@
   </div>
 </details>
 {% if visits %}
-<div class="grid ft-grid" id="ft-grid" data-total="{{ total }}">
+<div class="grid ft-grid" id="ft-grid" data-total="{{ total }}"{% if show_all %} data-show-all{% endif %}>
   {% include "_cards.html" %}
 </div>
 {% else %}
-<p class="empty">No false triggers recorded.</p>
+<p class="empty">{% if total %}Nothing left to check: every false trigger here is confirmed.{% else %}No false triggers recorded.{% endif %}</p>
 {% endif %}
 
 <!-- A visit opens in a pop-up over this page, so reviewing never loses your place in the grid. -->
@@ -71,7 +74,8 @@
     const ids = [...seen];
     seen.clear();
     if (!ids.length) return;
-    // Swap in fresh cards: a checked pill, a new label, or gone if it turned out to be a real visit.
+    // Swap in fresh cards: a confirmed pill, a new label, or gone if it turned out to be a real visit.
+    // Without Show confirmed, a photo confirmed in the pop-up fades out of the list.
     const r = await fetch("/false-triggers/cards?ids=" + ids.join(","), { cache: "no-store" });
     if (!r.ok) return;
     const tpl = document.createElement("template");
@@ -79,10 +83,20 @@
     const fresh = new Map([...tpl.content.querySelectorAll("a.card")].map(c => [c.dataset.id, c]));
     for (const id of ids) {
       const old = grid.querySelector(`a.card[data-id="${id}"]`);
-      if (old) fresh.has(id) ? old.replaceWith(fresh.get(id)) : old.remove();
+      if (!old) continue;
+      const card = fresh.get(id);
+      if (card && (card.hasAttribute("data-unchecked") || "showAll" in grid.dataset)) { old.replaceWith(card); continue; }
+      old.classList.add("leaving");
+      setTimeout(() => old.remove(), 300);
     }
     const left = r.headers.get("X-Unchecked"), count = document.getElementById("ft-unchecked");
-    if (count && left !== null) count.textContent = `${left} not checked yet`;
+    if (count && left !== null) count.textContent = `(${left} not yet confirmed)`;
+    const show = document.getElementById("ft-show");
+    if (show && left !== null && !("showAll" in grid.dataset)) {
+      const done = +grid.dataset.total - +left;
+      show.textContent = `Show confirmed (${done})`;
+      show.hidden = !done;
+    }
   });
 })();
 </script>

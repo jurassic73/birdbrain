@@ -158,7 +158,7 @@ def test_marking_no_animal_moves_the_visit_to_false_triggers_and_teaches_claude(
     assert r.headers["HX-Refresh"] == "true"
     v = db.get_visit(conn, vid)
     assert (v["corrected_visitor"], v["corrected_species"], v["needs_review"]) == ("none", None, 0)
-    assert f"/visit/{vid}" in client.get("/false-triggers").text
+    assert f"/visit/{vid}" in client.get("/false-triggers?show=all").text  # corrected counts as confirmed
     assert "rock tip" in db.recent_lessons(conn)[0]
     client.post(f"/visit/{vid}/clear-correction")
     assert db.get_visit(conn, vid)["corrected_visitor"] is None
@@ -683,7 +683,7 @@ def test_false_trigger_cards_refresh_after_the_pop_up(client, add_visit, conn):
     db.confirm_visits(conn, [keep])
     r = client.get(f"/false-triggers/cards?ids={keep},{real},abc")
     assert f'data-id="{keep}"' in r.text and f'data-id="{real}"' not in r.text
-    assert "Checked by you" in r.text or "checked" in r.text
+    assert "confirmed by human" in r.text
     assert r.headers["X-Unchecked"] == "0"
 
 
