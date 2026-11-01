@@ -641,6 +641,11 @@ button.danger.sending, button.danger.htmx-request {
 .settings-card .storage { margin: 0; padding: 0; border: 0; }
 .storage-text { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 6px; font-size: .92rem; }
 .storage-text small { font-size: .82rem; }
+/* Delete with what it deletes beside it, so the button never reads as "delete everything". */
+.storage-delete { display: flex; align-items: center; gap: 12px; flex: 1 1 320px; max-width: 460px; }
+.storage-delete small { font-size: .82rem; }
+.photo-gone { aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; border-radius: var(--radius);
+  background: var(--surface); border: 1px dashed var(--line); color: var(--muted); }
 .meter { height: 8px; max-width: 420px; border-radius: 999px; background: var(--line); overflow: hidden; }
 .meter span { display: block; height: 100%; background: var(--accent); }
 

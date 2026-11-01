@@ -508,6 +508,8 @@ async def ask_species(visit_id: int, hint: str = Form(""), conn=Depends(get_conn
     hint = hint.strip()[:200]
     if not hint:
         return JSONResponse({"error": "Type a clue first, e.g. red head, finch."})
+    if v["photo_deleted_at"]:
+        return JSONResponse({"error": "This photo was deleted to save space, so Claude has nothing to look at."})
     jpeg = (config.IMAGES_DIR / v["image_path"]).read_bytes()
     try:
         result, usage = await asyncio.to_thread(
@@ -849,10 +851,10 @@ def false_triggers(request: Request, cleared: int | None = None, confirmed: int 
     return page(
         request,
         "false_triggers.html",
-        visits=(visits := db.list_visits(conn, false_triggers=True, limit=FT_PAGE)),
+        visits=(visits := db.list_visits(conn, false_triggers=True, has_photo=True, limit=FT_PAGE)),
         next_url=f"/false-triggers/more?offset={FT_PAGE}" if len(visits) == FT_PAGE else None,
         hourly=db.hourly_counts(conn, false_triggers=True),
-        total=db.count_visits(conn, false_triggers=True),
+        total=db.count_visits(conn, false_triggers=True, has_photo=True),
         storage=retention.usage(conn),
         cleared=cleared,
         confirmed=confirmed,
@@ -863,7 +865,7 @@ def false_triggers(request: Request, cleared: int | None = None, confirmed: int 
 
 @app.get("/false-triggers/more", response_class=HTMLResponse)
 def more_false_triggers(request: Request, offset: int = 0, conn=Depends(get_conn)):
-    visits = db.list_visits(conn, false_triggers=True, limit=FT_PAGE, offset=offset)
+    visits = db.list_visits(conn, false_triggers=True, has_photo=True, limit=FT_PAGE, offset=offset)
     next_url = f"/false-triggers/more?offset={offset + FT_PAGE}" if len(visits) == FT_PAGE else None
     return page(request, "_cards.html", visits=visits, next_url=next_url, ft_cards=True)
 

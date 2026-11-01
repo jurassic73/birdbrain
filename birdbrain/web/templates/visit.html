@@ -34,12 +34,16 @@
 </nav>
 <article class="visit">
   <div class="visit-photo" id="photo" data-marks="{{ marks | tojson | forceescape }}">
+    {% if visit.photo_deleted_at %}
+    <div class="photo-gone" data-tip="Deleted on {{ visit.photo_deleted_at[:10] }} to save space. The record stays, and so does what the Pi's animal check learned from it.">Photo deleted to save space</div>
+    {% else %}
     <a href="/images/{{ visit.image_path }}" draggable="false"><img class="full" draggable="false" src="/images/{{ visit.image_path }}" width="1920" height="1080" alt="{{ visit.label }}"></a>
+    {% endif %}
     <svg class="marks" aria-hidden="true"></svg>
-    <p class="photo-hint" id="mark-hint">Click to enlarge, pinch to zoom.{% if request.state.admin %} Edit circles to mark things for your feedback.{% endif %}</p>
+    <p class="photo-hint" id="mark-hint"{% if visit.photo_deleted_at %} hidden{% endif %}>Click to enlarge, pinch to zoom.{% if request.state.admin %} Edit circles to mark things for your feedback.{% endif %}</p>
     <p class="muted small mark-legend" id="mark-legend" hidden></p>
     <div class="photo-tools">
-      <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing: drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
+      <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing: drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
       <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
     </div>
     {# Phones: newer/older in the bottom corners, so a thumb on them never covers the photo. #}
@@ -52,7 +56,7 @@
     {% if prev_id %}<a class="photo-viewer-arrow prev" id="zoom-prev" href="/visit/{{ prev_id }}{{ zoom_param }}" aria-label="Newer visit" title="Newer (←)">&#8249;</a>{% endif %}
     {% if next_id %}<a class="photo-viewer-arrow next" id="zoom-next" href="/visit/{{ next_id }}{{ zoom_param }}" aria-label="Older visit" title="Older (→)">&#8250;</a>{% endif %}
     <div class="photo-viewer-frame">
-      <img src="/images/{{ visit.image_path }}" alt="{{ visit.label }}">
+      {% if not visit.photo_deleted_at %}<img src="/images/{{ visit.image_path }}" alt="{{ visit.label }}">{% endif %}
       <svg class="marks" aria-hidden="true"></svg>
     </div>
   </dialog>
@@ -399,6 +403,7 @@
   (() => {
     const photo = document.getElementById("photo");
     const img = photo.querySelector("img"), svg = photo.querySelector("svg");
+    if (!img) return;  // the photo was deleted to save space: nothing to draw on
     const field = document.getElementById("marks") || {};
     const clear = document.getElementById("mark-clear"), hint = document.getElementById("mark-hint");
     const legend = document.getElementById("mark-legend"), claudeSaw = {{ (visit.species or visit.visitor) | lower | tojson }};
@@ -533,6 +538,7 @@
   (() => {
     // Full-size viewer: Esc, the close button or any click closes it.
     const photo = document.getElementById("photo"), viewer = document.getElementById("photo-viewer");
+    if (!photo.querySelector("a")) return;  // photo deleted
     const open = () => {
       // Show the same circles over the full-size photo.
       viewer.querySelector(".marks").replaceWith(photo.querySelector(".marks").cloneNode(true));

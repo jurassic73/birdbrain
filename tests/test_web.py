@@ -213,16 +213,24 @@ def test_decision_steps_handles_refusals_and_old_or_broken_records():
 
 
 def test_false_triggers_page_shows_storage_and_cleans_up(client, stored_visit, conn):
-    stored_visit(visitor="none", species=None)
+    vid = stored_visit(visitor="none", species=None)
+    stored_visit(visitor="none", species=None)  # not checked yet: stays
     stored_visit(visitor="none", species=None, feedback="rock tip")  # a lesson: survives clean-up
     html = client.get("/false-triggers").text
-    assert "False triggers:" in html and "of 500 MB" in html and "Delete 1 photo<" in html
-    assert "Plus 1 you corrected" in html
+    assert "False-trigger photos:" in html and "of 500 MB" in html
+    assert "1 photo you corrected or wrote a note on" in html
+    assert "storage-delete" not in html  # nothing confirmed yet, so no Delete
+    db.confirm_visits(conn, [vid])
+    html = client.get("/false-triggers").text
+    assert ">Delete</button>" in html and "1 photo you confirmed empty" in html
     r = client.post("/false-triggers/clean", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/false-triggers?cleared=1"
     html = client.get("/false-triggers?cleared=1").text
-    assert "Deleted 1 false trigger." in html
-    assert db.count_visits(conn, false_triggers=True) == 1
+    assert "Deleted 1 photo. The Pi keeps what it learned from them." in html
+    assert "+1 without photos" in html and f'href="/visit/{vid}?ft=1"' not in html
+    assert db.count_visits(conn, false_triggers=True) == 3  # the record stays
+    page = client.get(f"/visit/{vid}").text
+    assert "Photo deleted to save space" in page and "/images/" + db.get_visit(conn, vid)["image_path"] not in page
 
 
 def test_settings_page_changes_the_false_trigger_limit_and_photo_size(client, conn):

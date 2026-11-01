@@ -1,10 +1,13 @@
 """Disk space for false-trigger photos: how much they use, an automatic limit, and a manual clean-up.
 
-False triggers the owner corrected or wrote a note on are never deleted: they carry the lessons Claude
+Deleting a false trigger here deletes only its photo files (photo, thumbnail, burst). The row and its BioCLIP
+embedding stay (`visits.photo_deleted_at` is set), so the Pi's animal check keeps learning from it.
+False triggers the owner corrected or wrote a note on keep their photos too: they carry the lessons Claude
 learns from (db.recent_lessons).
 """
 
 import sqlite3
+from datetime import datetime
 
 from . import config, db, images
 
@@ -37,31 +40,48 @@ def save_options(conn: sqlite3.Connection, limit: float, photo: str) -> int:
     return prune(conn)
 
 
-def _rows(conn: sqlite3.Connection, lessons: bool) -> list[sqlite3.Row]:
+# Confirmed by the owner as empty and nothing else to keep: the first photos to go.
+CONFIRMED = f"(confirmed_at IS NOT NULL AND NOT {KEEPS_LESSON})"
+
+
+def _rows(conn: sqlite3.Connection, lessons: bool, confirmed_only: bool = False) -> list[sqlite3.Row]:
+    """False triggers that still have their photo: deletable ones (confirmed first, then oldest first), or the
+    lessons."""
     keep = KEEPS_LESSON if lessons else f"NOT {KEEPS_LESSON}"
+    if confirmed_only:
+        keep = CONFIRMED
     return conn.execute(
-        f"SELECT id, image_path, thumb_path FROM visits WHERE {db.FALSE_TRIGGER} AND {keep} ORDER BY captured_at, id"
+        f"""SELECT id, image_path, thumb_path, confirmed_at IS NOT NULL AS confirmed FROM visits
+            WHERE {db.FALSE_TRIGGER} AND {db.HAS_PHOTO} AND {keep}
+            ORDER BY confirmed_at IS NULL, captured_at, id"""
     ).fetchall()
 
 
 def usage(conn: sqlite3.Connection) -> dict:
-    """Space used by false triggers, split into deletable ones and ones kept as lessons."""
+    """Space used by false-trigger photos: deletable ones (and how many of those the owner confirmed empty),
+    ones kept as lessons, and how many older false triggers already had their photos deleted."""
     deletable = _rows(conn, lessons=False)
     kept = _rows(conn, lessons=True)
     sizes = images.frames_bytes([(r["image_path"], r["thumb_path"]) for r in deletable + kept])  # one pass over the folders
+    confirmed = [size for r, size in zip(deletable, sizes) if r["confirmed"]]
+    gone = conn.execute(f"SELECT COUNT(*) FROM visits WHERE {db.FALSE_TRIGGER} AND NOT {db.HAS_PHOTO}").fetchone()[0]
     return {
         "count": len(deletable),
         "bytes": sum(sizes[:len(deletable)]),
+        "confirmed_count": len(confirmed),
+        "confirmed_bytes": sum(confirmed),
         "lesson_count": len(kept),
         "lesson_bytes": sum(sizes[len(deletable):]),
+        "photos_deleted": gone,
         "limit_bytes": int(limit_mb(conn) * 1_000_000),
         "photo": photo_size(conn),
     }
 
 
 def _delete(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> int:
-    for r in rows:
-        conn.execute("DELETE FROM visits WHERE id = ?", (r["id"],))
+    """Delete these false triggers' photo files; keep their rows and embeddings for training."""
+    now = datetime.now().isoformat(timespec="seconds")
+    conn.executemany("UPDATE visits SET photo_deleted_at = ? WHERE id = ?", [(now, r["id"]) for r in rows])
     conn.commit()
     for r in rows:
         images.delete_frame(r["image_path"], r["thumb_path"])
@@ -69,7 +89,8 @@ def _delete(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> int:
 
 
 def prune(conn: sqlite3.Connection, limit_bytes: int | None = None) -> int:
-    """Delete the oldest deletable false triggers until they fit under the limit. Returns how many went."""
+    """Delete photos until the rest fit under the limit: ones the owner confirmed empty first, then the oldest.
+    Returns how many went."""
     limit = int(limit_mb(conn) * 1_000_000) if limit_bytes is None else limit_bytes
     if limit <= 0:
         return 0  # 0 means no limit
@@ -83,5 +104,5 @@ def prune(conn: sqlite3.Connection, limit_bytes: int | None = None) -> int:
 
 
 def clear(conn: sqlite3.Connection) -> int:
-    """Delete every false trigger except the ones that teach Claude something."""
-    return _delete(conn, _rows(conn, lessons=False))
+    """The Delete button: photos the owner confirmed empty. Unchecked ones stay so they can still be looked at."""
+    return _delete(conn, _rows(conn, lessons=False, confirmed_only=True))

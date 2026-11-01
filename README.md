@@ -103,7 +103,7 @@ It knows mammals too (every iNaturalist mammal, limited to your place's), so squ
 
 ### Local animal check
 
-The same model also answers "is anything there?" for every trigger, using a small check trained on your own labelled frames (Claude's answers, your corrections, and frames you mark "Looks right" or confirm on the False triggers page). It retrains itself whenever labels change. In **gate** mode (Settings > Local animal check) a frame it judges empty skips Claude and is kept as a false trigger marked "pi only" for you to check; correct any with an animal and it learns from that. It needs at least 10 visitors and 30 empty frames with embeddings before it judges anything. To embed frames you already have (about 6 s each on a Pi 4):
+The same model also answers "is anything there?" for every trigger, using a small check trained on your own labelled frames (Claude's answers, your corrections, and frames you mark "Looks right" or confirm on the False triggers page). It retrains itself whenever labels change. In **gate** mode (Settings > Local animal check) a frame it judges empty skips Claude and is kept as a false trigger marked "pi only" for you to check; correct any with an animal and it learns from that. Deleting false-trigger photos (the Delete button, which takes only photos you confirmed empty, or the storage limit, which takes confirmed ones first) deletes only the image files: the record and what the check learned from it stay. It needs at least 10 visitors and 30 empty frames with embeddings before it judges anything. To embed frames you already have (about 6 s each on a Pi 4):
 
 ```bash
 uv run python -m birdbrain.presence --backfill

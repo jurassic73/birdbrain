@@ -1,20 +1,21 @@
 <section class="storage">
   <div class="storage-text">
     <div>
-      False triggers: <strong>{{ storage.bytes | mb }}</strong>{% if storage.limit_bytes %} of {{ storage.limit_bytes | mb }}{% else %}, no limit{% endif %}
-      ({{ storage.count }} photo{{ 's' if storage.count != 1 }}) <span class="info-tip" tabindex="0" aria-label="About false-trigger storage" data-tip="Each false trigger keeps its photo plus its whole burst of frames, so you can check before and after on its page. All of it counts here and is deleted together.">i</span>
+      False-trigger photos: <strong>{{ storage.bytes | mb }}</strong>{% if storage.limit_bytes %} of {{ storage.limit_bytes | mb }}{% else %}, no limit{% endif %}
+      ({{ storage.count }} photo{{ 's' if storage.count != 1 }}) <span class="info-tip" tabindex="0" aria-label="About false-trigger photos" data-tip="Each false trigger keeps its photo plus its whole burst of frames, so you can check before and after on its page. Past the limit, photos you confirmed empty go first, then the oldest. Only the photos are deleted: the record and what the Pi's animal check learned from it stay.">i</span>
     </div>
     {% if storage.limit_bytes %}
     <div class="meter" role="img" aria-label="{{ (100 * storage.bytes / storage.limit_bytes) | round | int }}% of the limit used">
       <span style="width: {{ [100, 100 * storage.bytes / storage.limit_bytes] | min }}%"></span>
     </div>
     {% endif %}
-    {% if storage.lesson_count %}<small class="muted">Plus {{ storage.lesson_count }} you corrected ({{ storage.lesson_bytes | mb }}), always kept as lessons.</small>{% endif %}
+    {% if storage.lesson_count %}<small class="muted">{{ storage.lesson_count }} photo{{ 's' if storage.lesson_count != 1 }} you corrected or wrote a note on ({{ storage.lesson_bytes | mb }}) {{ 'are' if storage.lesson_count != 1 else 'is' }} never deleted: Claude learns from them.</small>{% endif %}
     {% if not on_settings %}<small class="muted"><a href="/settings#storage">Change the limit or photo size</a></small>{% endif %}
   </div>
-  {% if storage.count %}
-  <form method="post" action="/false-triggers/clean" onsubmit="return confirm('Delete all {{ storage.count }} false-trigger photos? The ones you corrected are kept.')">
-    <button type="submit" class="danger">Delete {{ storage.count }} photo{{ 's' if storage.count != 1 }}</button>
+  {% if storage.confirmed_count %}
+  <form class="storage-delete" method="post" action="/false-triggers/clean" onsubmit="return confirm('Delete {{ storage.confirmed_count }} photo{{ 's' if storage.confirmed_count != 1 }} you confirmed empty? The Pi keeps what it learned from them.')">
+    <button type="submit" class="danger">Delete</button>
+    <small class="muted">{{ storage.confirmed_count }} photo{{ 's' if storage.confirmed_count != 1 }} you confirmed empty ({{ storage.confirmed_bytes | mb }}). Not needed any more: the Pi keeps what it learned from them.</small>
   </form>
   {% endif %}
 </section>

@@ -110,7 +110,7 @@ def test_false_triggers_confirm_all_shown_skips_real_visits(client, conn, add_vi
     empty = [add_visit(visitor="none", species=None) for _ in range(3)]
     real = add_visit()
     page = client.get("/false-triggers").text
-    assert "3 not checked yet" in page and "Confirm all shown as empty" in page
+    assert "3 not checked yet" in page and ">Confirm</button>" in page
     r = client.post("/false-triggers/confirm", data={"ids": ",".join(map(str, [*empty[:2], real]))},
                     follow_redirects=False)
     assert r.headers["location"] == "/false-triggers?confirmed=2"

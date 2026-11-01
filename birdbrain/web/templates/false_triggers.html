@@ -2,13 +2,13 @@
 {% block title %}False triggers | Birdbrain{% endblock %}
 {% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
-<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span></h1></div>
-<p class="muted">Motion events where the model saw no visitor. Use these to tune the motion mask. If one actually has an animal in it, open it and correct the label.</p>
+<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span>{% if storage.photos_deleted %} <small class="muted" data-tip="Older false triggers whose photos were deleted to save space. Their records stay, and so does what the Pi's animal check learned from them.">+{{ storage.photos_deleted }} without photos</small>{% endif %}</h1></div>
+<p class="muted">Motion set off the camera, but no animal was found. If a photo below has an animal, open it and correct the label. If none do, press Confirm: the Pi's animal check learns what an empty bath looks like from these. Lots from one spot? Adjust the <a href="/settings#zones" data-tip="The zones are where the camera watches for motion: the rim, the rocks, the open water and the ground. Nothing changes them automatically because of false triggers. Move or shrink one by hand if it keeps firing on leaves or ripples.">zones</a>.</p>
 {% if confirmed is not none %}<p class="notice saved">Confirmed {{ confirmed }} as empty. The Pi's animal check trains on them.</p>{% endif %}
 {% if request.state.admin and unchecked %}
 <form class="ft-confirm" method="post" action="/false-triggers/confirm" id="ft-confirm">
   <input type="hidden" name="ids">
-  <button type="submit" data-tip="Confirms that the frames loaded on this page (marked Pi only or with Claude's answer) really had no animal. The Pi's animal check trains on them, counting them extra. Open and correct any that had an animal first.">Confirm all shown as empty</button>
+  <button type="submit" data-tip="Marks every photo loaded below as checked: no animal (more load as you scroll). The Pi's animal check counts checked photos 3 times when it learns. Correct any photo with an animal first.">Confirm</button>
   <span class="muted small">{{ unchecked }} not checked yet</span>
 </form>
 <script>
@@ -19,7 +19,7 @@
   });
 </script>
 {% endif %}
-{% if cleared is not none %}<p class="notice saved">Deleted {{ cleared }} false trigger{{ 's' if cleared != 1 }}.</p>{% endif %}
+{% if cleared is not none %}<p class="notice saved">Deleted {{ cleared }} photo{{ 's' if cleared != 1 }}. The Pi keeps what it learned from them.</p>{% endif %}
 <details class="m-fold" open data-m-closed>
   <summary>Storage and triggers by hour</summary>
   {% include "_storage.html" %}

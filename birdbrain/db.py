@@ -75,7 +75,11 @@ SETTINGS = {
 }
 ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT", "lesson_off": "INTEGER NOT NULL DEFAULT 0",
                  "also": "TEXT", "corrected_also": "TEXT", "ended_at": "TEXT",
-                 "confirmed_at": "TEXT"}  # the owner pressed Confirm: Claude's answer is right (birdbrain.presence)
+                 "confirmed_at": "TEXT",  # the owner pressed Confirm: Claude's answer is right (birdbrain.presence)
+                 # A false trigger's photo files were deleted to save space (birdbrain.retention); the row and its
+                 # embedding stay, so the Pi's animal check keeps learning from it.
+                 "photo_deleted_at": "TEXT"}
+HAS_PHOTO = "photo_deleted_at IS NULL"
 
 # How many corrections and notes join each identify prompt.
 LESSON_LIMIT = 15
@@ -218,9 +222,12 @@ def _where(
     date_to: str | None = None,
     review: bool = False,
     false_triggers: bool = False,
+    has_photo: bool = False,
 ) -> tuple[str, list]:
     where = [FALSE_TRIGGER if false_triggers else REAL]
     args: list = []
+    if has_photo:
+        where.append(HAS_PHOTO)
     if review:
         where.append("needs_review = 1")
     if species:
@@ -335,7 +342,7 @@ def is_false_trigger(conn: sqlite3.Connection, visit_id: int) -> bool:
 
 def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool = False) -> tuple[int | None, int | None]:
     """Return (prev_id, next_id) for a visit within the same set (real or false triggers), ordered newest-first."""
-    where = FALSE_TRIGGER if false_triggers else REAL
+    where = f"{FALSE_TRIGGER} AND {HAS_PHOTO}" if false_triggers else REAL
     row = conn.execute("SELECT captured_at FROM visits WHERE id = ?", (visit_id,)).fetchone()
     if not row:
         return None, None
@@ -434,8 +441,8 @@ def correct_visit(
 
 
 def count_unchecked_false_triggers(conn: sqlite3.Connection) -> int:
-    """False triggers the owner hasn't confirmed or corrected yet."""
-    return conn.execute(f"""SELECT COUNT(*) FROM visits WHERE NOT {REAL} AND confirmed_at IS NULL
+    """False triggers the owner hasn't confirmed or corrected yet (only ones whose photo is still there to look at)."""
+    return conn.execute(f"""SELECT COUNT(*) FROM visits WHERE NOT {REAL} AND {HAS_PHOTO} AND confirmed_at IS NULL
                             AND corrected_visitor IS NULL AND corrected_species IS NULL""").fetchone()[0]
 
 

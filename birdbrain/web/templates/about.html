@@ -338,7 +338,8 @@
   <p>Most motion is leaves, ripples and light. A small check trained on this yard's own photos, and on your corrections,
     decides whether anything is really there.
     {% if presence_mode == 'gate' %}Photos it calls empty skip Claude and are marked {{ badge("pi only", "pi-only") }} under False triggers, so you can
-    correct any it got wrong (that's how it learns).{% elif presence_mode == 'shadow' %}For now it only keeps score; Claude still sees everything.{% else %}It's switched off here.{% endif %}
+    correct any it got wrong (that's how it learns). Confirming the empty ones teaches it too: checked photos
+    count 3 times, and deleting their photos later keeps what it learned.{% elif presence_mode == 'shadow' %}For now it only keeps score; Claude still sees everything.{% else %}It's switched off here.{% endif %}
     <span data-tip="On the first 683 frames, tested on ones it hadn't trained on, it kept all 55 visitors and caught 616 of 628 empty frames. No night visitors yet.">How well?</span>
     Scorecard on <a href="/stats#presence">Stats</a>.</p>
   <h3 id="classifier">A species guess of its own{% if classifier_mode == 'gate' %} {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %} {{ badge('shadow', 'shadow') }}{% endif %}</h3>

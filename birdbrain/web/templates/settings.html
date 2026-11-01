@@ -120,7 +120,7 @@
 <details class="settings-card" id="storage" open>
   <summary><h2>Storage</h2><span class="summary-hint">{{ storage.bytes | mb }}{% if storage.limit_bytes %} of {{ storage.limit_bytes | mb }}{% endif %}</span></summary>
   <div class="settings-body">
-  {% if pruned is not none %}<p class="notice saved">Saved.{% if pruned %} Deleted the {{ pruned }} oldest false trigger{{ 's' if pruned != 1 }}.{% endif %}</p>{% endif %}
+  {% if pruned is not none %}<p class="notice saved">Saved.{% if pruned %} Deleted {{ pruned }} false-trigger photo{{ 's' if pruned != 1 }} (confirmed ones first, then the oldest).{% endif %}</p>{% endif %}
   {% include "_storage.html" %}
 
   <form class="settings-form" method="post" action="/settings/storage">
@@ -134,7 +134,7 @@
         </label>
         {% endfor %}
       </div>
-      <small class="muted">Oldest are deleted past the limit, right away if you lower it. Corrected ones are kept.</small>
+      <small class="muted">Past the limit, photos you confirmed empty go first, then the oldest, right away if you lower it. Corrected ones are kept, and the Pi keeps what it learned from every one.</small>
     </fieldset>
 
     <fieldset class="field">
