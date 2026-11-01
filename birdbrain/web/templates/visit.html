@@ -113,6 +113,8 @@
           <div>{% if step.guesses %}{{ step.guesses | join(", ") }}{% else %}no local species{% endif %}</div>
           {% if step.gated %}
           <div class="step-why">Sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
+          {% elif step.crowd %}
+          <div class="step-why">Sure it was {{ step.crowd.species }}, but the Pi saw {{ step.crowd.animals }} animals in view, so Claude was asked to count them and name any other kind.</div>
           {% else %}
           <div class="muted step-notes">Its own guess, not used for the label{% if step.night %}; night photos are black and white, which it wasn't trained on{% endif %}. Scored on the <a href="/stats#classifier">Stats</a> page.</div>
           {% endif %}

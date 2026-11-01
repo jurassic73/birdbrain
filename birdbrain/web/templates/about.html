@@ -346,7 +346,9 @@
     among the birds and mammals {% if cfg.INAT_PLACE_ID %}reported to iNaturalist nearby{% else %}reported nearby{% endif %}
     <span data-tip="BioCLIP 2 turns the photo into a fingerprint of numbers and picks the species whose text fingerprint is closest. About 6 s on the Pi, free. Not tried on infrared photos yet.">(how it works)</span>.
     {% if classifier_mode == 'gate' %}By day, when it's at least 93% sure of a species seen here 3+ times, that's the answer and Claude isn't
-    asked; those visits say {{ badge("pi named", "pi-only") }}. Anything less sure, and every night photo, goes to Claude.
+    asked; those visits say {{ badge("pi named", "pi-only") }}. Anything less sure, every night photo, and any photo with
+    <span data-tip="The Pi compares the photo with the empty scene from just before the motion and counts separate animal-sized changes in the crop box. Changes only on the open water (sky reflections, drifting leaves) don't count. One guess can only name one animal, so groups go to Claude, which counts them and names any other kind.">more than one animal in view</span>
+    goes to Claude.
     {% else %}For now it only keeps score and never changes a label.{% endif %}
     {% if classifier.checked %}So far it matched {{ classifier.top1 }} of {{ classifier.checked }} checked visits.{% endif %}
     Scorecard on <a href="/stats#classifier">Stats</a>.</p>

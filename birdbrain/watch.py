@@ -3,6 +3,7 @@
 python -m birdbrain.watch          run forever
 python -m birdbrain.watch --once   capture and identify one frame now, then exit
 """
+from __future__ import annotations
 
 import argparse
 import json
@@ -15,6 +16,7 @@ import threading
 import time
 from datetime import date, datetime
 from pathlib import Path
+from typing import NamedTuple
 
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 
@@ -286,6 +288,32 @@ class MotionDetector:
         """The running background: the scene just before whatever triggered (a visitor fades in at 5%/frame)."""
         return None if self.bg is None else cv2.convertScaleAbs(self.bg)
 
+    def scene(self) -> Scene | None:
+        """The empty scene with where visitors can be and the open water, for counting animals in the photo."""
+        empty = self.empty_scene()
+        if empty is None:
+            return None
+        water = water_mask(empty.shape, self.ring, self.spots) if self.ring else None
+        return Scene(empty, self.stay_mask(empty.shape), water)
+
+
+class Scene(NamedTuple):
+    """The scene just before a trigger (blurred gray substream frame) and its masks, for stay.count_animals."""
+    empty: np.ndarray
+    mask: np.ndarray
+    water: np.ndarray | None
+
+
+def count_animals(scene: Scene | None, jpeg: bytes, crop) -> int | None:
+    """Fail-soft: separate visitor-sized changes in the photo's crop box (None when it can't tell)."""
+    if scene is None:
+        return None
+    try:
+        return stay.count_animals(jpeg, scene.empty, scene.mask, crop, scene.water)
+    except Exception:
+        log.exception("counting animals failed")
+        return None
+
 
 def sharpness(jpeg: bytes, crop=None) -> float:
     """Laplacian variance, measured only inside the crop: busy mulch around the bath shouldn't win."""
@@ -403,10 +431,11 @@ def motion_action(now: float, cooldown_until: float, backoff_until: float, can_p
     return "full"
 
 
-def handle_event(motion: float | None = None, probe: bool = False, trigger: str = "rim") -> str | None:
+def handle_event(motion: float | None = None, probe: bool = False, trigger: str = "rim",
+                 scene: Scene | None = None) -> str | None:
     """Capture, identify and store one visit. Returns the visitor type, None if nothing was captured, or
     PROBE_EMPTY for a backoff probe where the local animal check found nothing (discarded: rain shouldn't fill
-    the disk or the bill)."""
+    the disk or the bill). `scene` is the empty scene from the trigger, used to count the animals in view."""
     captured_at = datetime.now().replace(microsecond=0)
     frames = capture_burst()
     if not frames:
@@ -435,10 +464,16 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         return PROBE_EMPTY
     empty = bool(check and check.get("empty"))
     guess = pick = None
+    animals = None if empty else count_animals(scene, best, crop)
+    crowd = None
     if not empty:  # the species gate: a sure daytime name of a species already settled here skips Claude
         with db.session() as conn:
             settled = db.settled_species(conn)
         guess, pick = classifier.gate_check(emb, night, settled)
+        if pick and animals and animals > 1:
+            # One BioCLIP guess names one animal; Claude counts them and names any other kind.
+            log.info("species gate: %d animals in view, asking Claude instead of naming %s", animals, pick[0])
+            crowd, pick = pick[0], None
     if pick:
         result = identify.settled_by_classifier(guess, pick, check)
     elif pmode == "gate" and empty:
@@ -455,6 +490,10 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     # When Claude answered, the classifier records its guess from Claude's circle for the Stats scorecard.
     if not pick and result.sighting.visitor != "none" and (guess := classifier.run(best, result.raw.get("circle"), crop, night)):
         result.raw["classifier"] = guess
+    if animals is not None:
+        result.raw["animals_seen"] = animals  # scored against Claude's count later
+    if crowd:
+        result.raw["gate_crowd"] = {"species": crowd, "animals": animals}
     s = result.sighting
     false_trigger = s.visitor == "none"
     max_edge, quality = None, 85
@@ -543,14 +582,15 @@ class Watcher:
         self.budget_warned: dict[bool, date] = {}
         # One visit per stay: the scene just before the last trigger, and the open stay after a real visit.
         self.empty: np.ndarray | None = None
+        self.scene: Scene | None = None  # the same, with its masks, for counting the animals in the photo
         self.stay_pending: tuple[int, np.ndarray] | None = None  # set by _work, opened by the frame loop
         self.stay: stay.Stay | None = None
 
     def _work(self, motion: float, probe: bool, trigger: str) -> None:
         global last_visit_id
-        visitor, empty, last_visit_id = None, self.empty, None
+        visitor, empty, scene, last_visit_id = None, self.empty, self.scene, None
         try:
-            visitor = handle_event(motion, probe=probe, trigger=trigger)
+            visitor = handle_event(motion, probe=probe, trigger=trigger, scene=scene)
         except Exception:
             log.exception("failed to handle motion event")
         finally:
@@ -598,6 +638,7 @@ class Watcher:
                 self.cooldown_until = time.time() + 300
             return
         self.empty = self.detector.empty_scene()
+        self.scene = self.detector.scene()
         self.busy.set()
         threading.Thread(target=self._work, args=(motion, probe, trigger), daemon=True).start()
 

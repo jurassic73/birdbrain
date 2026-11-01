@@ -457,6 +457,7 @@ def decision_steps(raw_json: str | None) -> dict:
             "model": "Local classifier",
             "shadow": True,
             "gated": calls.get("settled_by") == "classifier",
+            "crowd": calls.get("gate_crowd"),
             "guesses": [f"{g['name']} ({g['score']:.0%})" for g in guess["top"]],
             "seconds": guess.get("seconds"),
             "crop": CLASSIFIER_CROPS.get(guess.get("crop"), ""),

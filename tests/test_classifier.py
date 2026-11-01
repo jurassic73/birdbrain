@@ -320,6 +320,28 @@ def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit
     assert watch.handle_event() == "bird" and asked
     assert conn.execute("SELECT species FROM visits ORDER BY id DESC").fetchone()[0] == "Bushtit"
 
+    # Sure, but two animals in view: one guess names one animal, so Claude counts them.
+    emb["v"], asked[:] = one_hot(0), []
+    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop: 2)
+    assert watch.handle_event() == "bird" and asked
+    row = conn.execute("SELECT species, raw_json FROM visits ORDER BY id DESC").fetchone()
+    calls = json.loads(row["raw_json"])["calls"]
+    assert row["species"] == "Bushtit" and calls["animals_seen"] == 2
+    assert calls["gate_crowd"] == {"species": "Dark-eyed Junco", "animals": 2}
+
+    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop: 1)  # one: the Pi names it
+    asked[:] = []
+    assert watch.handle_event() == "bird" and not asked
+    calls = json.loads(conn.execute("SELECT raw_json FROM visits ORDER BY id DESC").fetchone()[0])["calls"]
+    assert calls["settled_by"] == "classifier" and calls["animals_seen"] == 1 and "gate_crowd" not in calls
+
+
+def test_visit_page_says_why_a_group_went_to_claude(client, add_visit):
+    vid = add_visit(raw_json=json.dumps({"calls": {
+        "classifier": guess("Dark-eyed Junco"), "gate_crowd": {"species": "Dark-eyed Junco", "animals": 3}}}))
+    html = client.get(f"/visit/{vid}").text
+    assert "the Pi saw 3 animals in view" in html
+
 
 def test_visit_page_says_the_pi_named_it(client, add_visit):
     vid = add_visit(model="bioclip-2", raw_json=json.dumps({"calls": {

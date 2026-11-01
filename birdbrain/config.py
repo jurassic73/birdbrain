@@ -146,6 +146,7 @@ STAY_DIFF = int(_env("STAY_DIFF", "30"))        # brightness change versus the e
 STAY_MIN_BLOB = float(_env("STAY_MIN_BLOB", "0.0015"))  # fraction of the frame: about a bushtit on the far rim
 STAY_LIGHT = float(_env("STAY_LIGHT", "0.4"))   # more of the watched area changed than this: the light changed
 STAY_REARM = int(_env("STAY_REARM", "10"))      # seconds after a stay ends before the next trigger
+GROUP_GAP = int(_env("GROUP_GAP", "8"))  # substream px: changes closer than this count as one animal
 
 SUB_FPS = int(_env("SUB_FPS", "15"))  # the substream's frame rate; the watcher checks every frame
 TRIGGER_FRAMES = 3  # consecutive substream frames of rim motion needed to count as a visit

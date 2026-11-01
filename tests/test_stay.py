@@ -121,3 +121,44 @@ def test_stayed_label():
     assert webapp.stayed("2026-10-28T09:00:00", "2026-10-28T09:03:40") == "stayed 4 min"
     assert webapp.stayed("2026-10-28T09:00:00", "2026-10-28T09:00:40") == ""
     assert webapp.stayed("2026-10-28T09:00:00", None) == ""
+
+
+def main_photo(small: np.ndarray) -> bytes:
+    """A main-stream photo (1080p, color) of a substream-sized gray scene."""
+    big = cv2.resize(small, (1920, 1080), interpolation=cv2.INTER_LINEAR)
+    return cv2.imencode(".jpg", cv2.cvtColor(big, cv2.COLOR_GRAY2BGR))[1].tobytes()
+
+
+def test_counts_the_animals_in_the_photo():
+    empty, everywhere = scene(), np.full((H, W), 255, np.uint8)
+    assert stay.count_animals(main_photo(empty), empty, everywhere) == 0
+    one = with_bird(empty, 200, 200)
+    assert stay.count_animals(main_photo(one), empty, everywhere) == 1
+    two = with_bird(one, 450, 120)
+    assert stay.count_animals(main_photo(two), empty, everywhere) == 2
+    # only the crop box counts
+    assert stay.count_animals(main_photo(two), empty, everywhere, box=(0, 0.3, 0.5, 0.7)) == 1
+
+
+def test_a_bird_and_its_splash_are_one_animal_and_water_alone_is_none():
+    empty, everywhere = scene(), np.full((H, W), 255, np.uint8)
+    splash = with_bird(with_bird(empty, 200, 200), 200 + 18 + 14 + 4, 200, r=14)  # 4 px apart
+    assert stay.count_animals(main_photo(splash), empty, everywhere) == 1
+    water = np.zeros((H, W), np.uint8)
+    cv2.circle(water, (450, 250), 60, 255, -1)
+    glare = with_bird(with_bird(empty, 200, 200), 450, 250, r=25)  # a reflection changed out on the water
+    assert stay.count_animals(main_photo(glare), empty, everywhere, water=water) == 1
+
+
+def test_the_watcher_keeps_the_scene_for_counting(monkeypatch, conn):
+    w = watch.Watcher()
+    w.detector.score(cv2.cvtColor(scene(), cv2.COLOR_GRAY2BGR))
+    got = {}
+    monkeypatch.setattr(watch, "calls_today", lambda ground=False: 0)
+    monkeypatch.setattr(watch, "handle_event", lambda *a, **k: got.update(k) or "none")
+    w._maybe_trigger(0.1)
+    for _ in range(50):
+        if not w.busy.is_set():
+            break
+        watch.time.sleep(0.01)
+    assert got["scene"].empty.shape == (H, W) and got["scene"].mask.shape == (H, W)
