@@ -61,12 +61,14 @@
 <!-- A visit opens in a pop-up over this page, so reviewing never loses your place in the grid. -->
 <dialog class="popup ft-visit" id="ft-visit" aria-label="Visit">
   <iframe title="Visit" src="about:blank"></iframe>
+  <iframe title="Visit" src="about:blank" class="ft-spare" aria-hidden="true" tabindex="-1"></iframe>
 </dialog>
 <script>
 (() => {
   const grid = document.getElementById("ft-grid"), dlg = document.getElementById("ft-visit");
   if (!grid) return;
-  const frame = dlg.querySelector("iframe");
+  // Two frames: the next visit loads in the hidden one and swaps in once loaded, so moving on never flashes white.
+  let [frame, spare] = dlg.querySelectorAll("iframe");
   const seen = new Set();  // visits opened this time, refreshed in the grid on close
   grid.addEventListener("click", e => {
     const card = e.target.closest("a.card");
@@ -78,20 +80,30 @@
     dlg.showModal();
     document.body.style.overflow = "hidden";
   });
-  frame.addEventListener("load", () => {
+  const loaded = f => {
     let path;
-    try { path = frame.contentWindow.location.pathname; } catch (err) { return; }
+    try { path = f.contentWindow.location.pathname; } catch (err) { return; }
+    if (path === "blank" || !dlg.open) return;
+    if (f === spare) {  // swap it in
+      spare.classList.remove("ft-spare"); spare.removeAttribute("aria-hidden"); spare.removeAttribute("tabindex");
+      frame.classList.add("ft-spare"); frame.setAttribute("aria-hidden", "true"); frame.tabIndex = -1;
+      frame.src = "about:blank";
+      [frame, spare] = [spare, frame];
+    }
     const m = path.match(/^\/visit\/(\d+)/);
-    if (m) { seen.add(m[1]); frame.contentWindow.focus(); }
-    else if (path !== "blank" && dlg.open) dlg.close();  // the visit was deleted (it sends you home)
-  });
+    if (m) { seen.add(m[1]); f.contentWindow.focus(); }
+    else dlg.close();  // the visit was deleted (it sends you home)
+  };
+  [frame, spare].forEach(f => f.addEventListener("load", () => loaded(f)));
   window.addEventListener("message", e => {
-    if (e.origin === location.origin && e.data === "birdbrain:close" && dlg.open) dlg.close();
+    if (e.origin !== location.origin || !dlg.open) return;
+    if (e.data === "birdbrain:close") dlg.close();
+    else if (e.data?.goto && e.source === frame.contentWindow) spare.src = e.data.goto;
   });
   dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });  // the dimmed edge
   dlg.addEventListener("close", async () => {
     document.body.style.overflow = "";
-    frame.src = "about:blank";
+    frame.src = spare.src = "about:blank";
     const ids = [...seen];
     seen.clear();
     if (!ids.length) return;

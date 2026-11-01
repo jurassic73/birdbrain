@@ -592,7 +592,7 @@
     });
     // The arrows (and arrow keys, and swipes) go to the next visit, which opens straight into this view (?zoom=1).
     viewer.addEventListener("click", e => { if (!e.target.closest(".photo-viewer-arrow")) viewer.close(); });
-    const go = id => { const a = document.getElementById(id); if (a) location.href = a.href; };
+    const go = id => { const a = document.getElementById(id); if (a) a.click(); };
     viewer.addEventListener("keydown", e => {
       if (e.key === "ArrowLeft") go("zoom-prev");
       if (e.key === "ArrowRight") go("zoom-next");
@@ -648,6 +648,16 @@
   // Inside the False triggers pop-up: Close and Esc tell the page to close it (Esc on the big photo just closes that).
   (() => {
     const close = () => parent.postMessage("birdbrain:close", location.origin);
+    // Moving to another visit: the page loads it out of sight and swaps it in when ready (no white flash).
+    const goto = href => parent.postMessage({ goto: new URL(href, location.href).href }, location.origin);
+    document.addEventListener("click", e => {
+      const a = e.target.closest?.("a[href]");
+      if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target) return;
+      const u = new URL(a.href, location.href);
+      if (u.origin !== location.origin || !/^\/visit\/\d+$/.test(u.pathname)) return;
+      e.preventDefault();
+      goto(u.href);
+    });
     document.querySelectorAll("#embed-close, .embed-close").forEach(a => a.addEventListener("click", e => { e.preventDefault(); close(); }));
     document.addEventListener("keydown", e => {
       if (e.key === "Escape" && !document.querySelector("dialog[open]")) close();
@@ -669,7 +679,7 @@
         if (!r || !r.ok) { btn.classList.remove("sending"); busy = false; return; }
       }
       const next = document.getElementById("nav-next") || document.getElementById("nav-prev");
-      if (next) location.href = next.href;
+      if (next) goto(next.href);
       else if ({{ 'true' if todo else 'false' }}) close();
       else location.reload();
     });
