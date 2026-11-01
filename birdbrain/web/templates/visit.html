@@ -678,10 +678,23 @@
         const r = await fetch(btn.getAttribute("hx-post"), { method: "POST" }).catch(() => null);
         if (!r || !r.ok) { btn.classList.remove("sending"); busy = false; return; }
       }
+      advance();
+    });
+    // Save (a correction) or Confirm: tell the page it was saved for training, then on to the next photo.
+    function advance() {
       const next = document.getElementById("nav-next") || document.getElementById("nav-prev");
+      parent.postMessage({ saved: true, last: !next }, location.origin);
       if (next) goto(next.href);
       else if ({{ 'true' if todo else 'false' }}) close();
       else location.reload();
+    }
+    // beforeOnLoad: the answer's HX-Refresh would reload this page before afterRequest fires.
+    document.body.addEventListener("htmx:beforeOnLoad", e => {
+      const el = e.detail.elt;
+      if (e.detail.xhr.status >= 400 || busy) return;
+      if (!(el.matches?.("form.review") || el.id === "confirm-btn")) return;
+      busy = true;
+      advance();
     });
     {% endif %}
   })();

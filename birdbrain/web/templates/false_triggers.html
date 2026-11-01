@@ -98,8 +98,23 @@
   window.addEventListener("message", e => {
     if (e.origin !== location.origin || !dlg.open) return;
     if (e.data === "birdbrain:close") dlg.close();
+    else if (e.data?.saved && e.source === frame.contentWindow) savedNote(e.data.last);
     else if (e.data?.goto && e.source === frame.contentWindow) spare.src = e.data.goto;
   });
+  // A short note after Save or Confirm: it went to training, and the next photo is coming. OK or 5 s hides it.
+  let noteTimer;
+  function savedNote(last) {
+    document.querySelector(".ft-saved")?.remove();
+    const n = document.createElement("div");
+    n.className = "ft-saved"; n.setAttribute("role", "status");
+    n.innerHTML = '<p><b>Saved for training data.</b> <span></span></p><button type="button">OK</button>';
+    n.querySelector("span").textContent = last ? "That was the last one to check." : "Showing the next false trigger.";
+    n.querySelector("button").addEventListener("click", e => { e.stopPropagation(); n.remove(); });
+    // Inside the pop-up while it's open (it sits in the top layer); on the page once it closes.
+    (dlg.open && !last ? dlg : document.body).append(n);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => n.remove(), 5000);
+  }
   dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });  // the dimmed edge
   dlg.addEventListener("close", async () => {
     document.body.style.overflow = "";
