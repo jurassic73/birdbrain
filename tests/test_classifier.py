@@ -178,7 +178,7 @@ def test_visit_page_shows_the_guess_as_shadow(client, add_visit):
 
 
 def test_stats_page_shows_the_scorecard(client, add_visit):
-    assert "No bird visits scored yet" in client.get("/stats").text
+    assert "No visits scored yet" in client.get("/stats").text
     add_visit(species="Bushtit", raw_json=raw("Bushtit"))
     html = client.get("/stats").text
     assert 'id="classifier"' in html and "100%</span> first guess right (1/1)" in html

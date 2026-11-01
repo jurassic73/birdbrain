@@ -36,7 +36,8 @@
     <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames {{ 'kept from Claude' if presence_mode == 'gate' else 'it would keep from Claude' }}</div>
     {% if p.skipped %}<div><span class="big">{{ p.unchecked }}</span> skipped frames not confirmed yet</div>{% endif %}
   </div>
-  <p class="muted">Last {{ p.days }} days, against Claude's answers and your corrections.
+  <p class="muted">Last {{ p.days }} days, judged against the final answer: your correction if there is one, else Claude's (a frame skipped in gate mode counts as empty until you correct it).
+    <span data-tip="BioCLIP 2 looks at the crop box only. A small model trained on this yard's own frames, with the ones you checked counting 3 times, calls it empty or not. It screens every trigger that reaches the Pi (rim, water, ground, probes), day and night. It needs 10 visitors and 30 empty frames before it judges anything. Frames it skips are marked pi only on False triggers.">How it works</span>
     {% if p.missed %}Missed: {% for m in p.missed %}<a href="/visit/{{ m.id }}">{{ m.label }}</a>{{ ' (night)' if m.night }}{{ ', ' if not loop.last }}{% endfor %}. Correcting them teaches it.{% endif %}
     {% if p.unchecked %}Check skipped frames on <a href="/false-triggers">False triggers</a>.{% endif %}</p>
   {% else %}
@@ -61,13 +62,13 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="muted">All visits named to species so far (birds and mammals), judged against Claude's final answer and your corrections{% if classifier.seconds is not none %}; about {{ classifier.seconds }} s per photo{% endif %}.
+  <p class="muted">All visits named to species so far (birds and mammals), judged against the final label: your correction if there is one, else Claude's. Visits the Pi named itself count only after you check or correct them{% if classifier.seconds is not none %}; about {{ classifier.seconds }} s per photo{% endif %}.
     {% if classifier.misses %}Recent misses:
       {% for m in classifier.misses %}<a href="/visit/{{ m.id }}">{{ m.label }}</a> <span class="muted">(said {{ m.guess }})</span>{{ ', ' if not loop.last }}{% endfor %}.
     {% endif %}
   </p>
   {% else %}
-  <p class="muted">No bird visits scored yet. Older visits can be scored with <code>python -m birdbrain.classifier --backfill</code>.</p>
+  <p class="muted">No visits scored yet (birds and mammals named to a species). Older visits can be scored with <code>python -m birdbrain.classifier --backfill</code>.</p>
   {% endif %}
 </section>
 {% endif %}
