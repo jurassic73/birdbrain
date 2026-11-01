@@ -864,6 +864,8 @@ html { scroll-behavior: smooth; }
 .sp-more > summary:hover { border-color: var(--accent); }
 .sp-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sp-more-body { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
+.sp-more .charts { margin-bottom: 0; }
+.sp-more .charts figure { background: var(--bg); }
 .sp-inline { margin: 0 0 20px; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 @media (max-width: 640px) {
   .sp-dialog { padding: 14px; }

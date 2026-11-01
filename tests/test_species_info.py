@@ -123,6 +123,8 @@ def test_card_fold_only_when_asked(client, add_visit, fake_build):
     assert '<details class="sp-more">' in folded and "More about this species" in folded
     assert folded.index("sp-more") > folded.index("sp-top") and folded.index('class="sp-map"') > folded.index("sp-more")
     assert "Click for more" in client.get("/species-info/Bushtit?mini=1&fold=1").text
+    assert 'id="daily"' in client.get("/species-info/Bushtit?fold=1").text
+    assert 'id="daily"' not in client.get("/species-info/Bushtit").text  # not in the pop-up
 
 
 def test_species_page_folds_and_names_once(client, add_visit, fake_build):
@@ -131,17 +133,21 @@ def test_species_page_folds_and_names_once(client, add_visit, fake_build):
     html = client.get("/species/Bushtit").text
     assert '<details class="sp-more">' in html and html.count("<h1") == 1 and "<h2>" not in html
     assert "?fold=1" not in html  # rendered inline, no htmx load
+    assert html.count('id="daily"') == 1 and html.index('id="daily"') > html.index("sp-more")
+    assert html.count('id="hourly"') == 1 and html.index('id="hourly"') > html.index("sp-more")
 
 
 def test_species_page_loading_card_has_no_title_and_asks_for_fold(client, add_visit):
     add_visit(species="Bushtit")
     html = client.get("/species/Bushtit").text  # no cached card yet: loads over htmx
     assert "<h1>" not in html and "/species-info/Bushtit?fold=1" in html
+    assert 'id="daily"' not in html  # the charts come with the card
 
 
 def test_species_page_without_card_keeps_title(client, add_visit):
     add_visit(species="Other")
-    assert client.get("/species/Other").text.count("<h1>Other</h1>") == 1
+    html = client.get("/species/Other").text
+    assert html.count("<h1>Other</h1>") == 1 and 'id="daily"' in html and "sp-more" not in html
 
 
 def test_card_route_unknown(client, monkeypatch):

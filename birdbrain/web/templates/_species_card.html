@@ -40,6 +40,10 @@
   <details class="sp-more">
     <summary>More about this species</summary>
     <div class="sp-more-body">
+    <div class="charts">
+      <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
+      <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
+    </div>
   {% endif %}
 
   {% if info.sounds %}

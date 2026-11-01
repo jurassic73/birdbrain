@@ -23,17 +23,27 @@
   <p class="muted">Loading species info…</p>
 </div>
 {% endif %}
+{% if not (info or has_card(sp.label)) %}
 <div class="charts">
   <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
   <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
 </div>
+{% endif %}
 <div class="grid" id="visits">
   {% include "_cards.html" %}
 </div>
 <script src="/static/charts.js?v={{ asset_version }}"></script>
 <script>
-  barChart("daily", {{ daily | map(attribute=0) | list | tojson }}.map(d => d.slice(5)), {{ daily | map(attribute=1) | list | tojson }});
-  barChart("hourly", hourLabels(), {{ hourly | tojson }});
+  // The charts sit in the card's fold when there is a card, which may arrive over htmx after the page.
+  function drawSpeciesCharts() {
+    const el = document.getElementById("daily");
+    if (!el || el.dataset.drawn) return;
+    el.dataset.drawn = "1";
+    barChart("daily", {{ daily | map(attribute=0) | list | tojson }}.map(d => d.slice(5)), {{ daily | map(attribute=1) | list | tojson }});
+    barChart("hourly", hourLabels(), {{ hourly | tojson }});
+  }
+  drawSpeciesCharts();
+  document.addEventListener("htmx:afterSwap", drawSpeciesCharts);
   // The star on each card: the server says which visit is the species photo now (or none), so only one is filled.
   document.addEventListener("htmx:afterRequest", (e) => {
     const btn = e.detail.elt;
