@@ -242,7 +242,7 @@ def test_false_triggers_page_shows_storage_and_cleans_up(client, stored_visit, c
     assert r.status_code == 303 and r.headers["location"] == "/false-triggers?cleared=1"
     html = client.get("/false-triggers?cleared=1").text
     assert "Deleted 1 photo. The Pi keeps what it learned from them." in html
-    assert "+1 without photos" in html and f'href="/visit/{vid}?ft=1"' not in html
+    assert "without photos" not in html and f'href="/visit/{vid}?ft=1"' not in html
     assert db.count_visits(conn, false_triggers=True) == 3  # the record stays
     page = client.get(f"/visit/{vid}").text
     assert "Photo deleted to save space" in page and "/images/" + db.get_visit(conn, vid)["image_path"] not in page

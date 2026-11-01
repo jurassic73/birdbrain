@@ -3,14 +3,14 @@
 {% block title %}False triggers | Birdbrain{% endblock %}
 {% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
 {% block content %}
-<div class="page-head"><h1>False triggers <span class="muted">{{ total }}</span> <span class="muted ft-count" id="ft-unchecked" data-tip="Photos nobody has confirmed or corrected yet. Only these are listed below unless Show confirmed is on.">({{ unchecked }} not yet confirmed)</span>{% if storage.photos_deleted %} <small class="muted" data-tip="Older false triggers whose photos were deleted to save space. Their records stay, and so does what the Pi's animal check learned from them.">+{{ storage.photos_deleted }} without photos</small>{% endif %}</h1></div>
+<div class="page-head ft-head"><h1>False triggers <span class="muted ft-count" id="ft-unchecked" data-tip="Photos listed below. Confirmed ones are hidden unless Show confirmed is on.">{{ (total - storage.photos_deleted) if show_all else unchecked }}</span></h1>
+{% if total > unchecked or not show_all %}<a class="link-btn" id="ft-show"{% if total == unchecked %} hidden{% endif %} href="/false-triggers{{ '' if show_all else '?show=all' }}" data-tip="Photos you already confirmed (or corrected but still empty) are hidden so the list is only what's left to check. Show them dimmed, or hide them again.">{{ 'Hide confirmed' if show_all else 'Show confirmed (' ~ (total - unchecked) ~ ')' }}</a>{% endif %}</div>
 <p class="muted">Birdbrain saw motion and took these photos, but found no animal in them. Now it's your turn to look. Open a photo to check it on its own: if it's empty, press <b>Confirm</b>; if there's an animal, pick what it was. Either way the animal check model on the Pi learns from it, and the photo leaves this list. Once confirmed, a photo has done its job: the Pi has already learned from it and doesn't need it again for training, so <a href="#ft-storage" id="ft-delete-link">delete confirmed photos to save space</a>{% if storage.confirmed_count %} ({{ storage.confirmed_count }} photo{{ 's' if storage.confirmed_count != 1 }}, {{ storage.confirmed_bytes | mb }}){% else %} (none waiting yet){% endif %}.</p>
 {% if confirmed is not none %}<p class="notice saved">Confirmed {{ confirmed }} as empty. The Pi's animal check trains on them.</p>{% endif %}
 {% if request.state.admin and (unchecked or total > unchecked) %}
 <form class="ft-confirm" method="post" action="/false-triggers/confirm" id="ft-confirm">
   <input type="hidden" name="ids">
   {% if unchecked and not show_all %}<button type="submit" data-tip="Marks every photo loaded below as empty, in one go (more load as you scroll; only loaded ones count). The Pi's animal check counts confirmed photos 3 times when it learns, so open and correct any photo with an animal first.">Confirm all shown false triggers have no animals</button>{% endif %}
-  {% if total > unchecked or not show_all %}<a class="link-btn" id="ft-show"{% if total == unchecked %} hidden{% endif %} href="/false-triggers{{ '' if show_all else '?show=all' }}" data-tip="Photos you already confirmed (or corrected but still empty) are hidden so the list is only what's left to check. Show them dimmed, or hide them again.">{{ 'Hide confirmed' if show_all else 'Show confirmed (' ~ (total - unchecked) ~ ')' }}</a>{% endif %}
 </form>
 <script>
   document.getElementById("ft-confirm").addEventListener("submit", e => {
@@ -123,7 +123,7 @@
       setTimeout(() => old.remove(), 300);
     }
     const left = r.headers.get("X-Unchecked"), count = document.getElementById("ft-unchecked");
-    if (count && left !== null) count.textContent = `(${left} not yet confirmed)`;
+    if (count && left !== null && !("showAll" in grid.dataset)) count.textContent = left;
     const show = document.getElementById("ft-show");
     if (show && left !== null && !("showAll" in grid.dataset)) {
       const done = +grid.dataset.total - +left;
