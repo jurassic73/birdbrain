@@ -665,7 +665,23 @@ def zone_shapes(z: zones.Zones | None = None) -> dict:
     if z.ground:  # the polygon minus the bath's outer ellipse, as an even-odd hole
         points = " L".join(f"{x * ZONE_W:.2f},{y * ZONE_H:.2f}" for x, y in z.ground)
         shapes["ground"] = " ".join(filter(None, [f"M{points} Z", outer]))
+    shapes.update(zone_colors(z))
     return shapes
+
+
+def zone_colors(z: zones.Zones) -> dict:
+    """Each zone's color, the same as on Settings > Zones (by its place in zones.objects): `colors` by role
+    (ring, water, ground, crop) and `spot_colors`, one per rock spot."""
+    colors: dict = {}
+    spots = []
+    for i, o in enumerate(zones.objects(z)):
+        color = SCENE_COLORS[i % len(SCENE_COLORS)]
+        if o["role"] == "spot":
+            spots.append(color)
+        else:
+            colors[o["role"]] = color
+    colors.setdefault("ring", SCENE_COLORS[0])  # no ring yet: the watched rectangle or whole frame
+    return {"colors": colors, "spot_colors": spots}
 
 
 def backoff_steps() -> list[int]:

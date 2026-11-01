@@ -475,7 +475,12 @@ def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, co
     assert f'href="{config.REPO_URL}"' in html and "Source code on GitHub" in html
     assert "2%</strong> of the watched area" in html                            # MOTION_MIN_AREA, live
     assert f"{config.BURST_FRAMES} full-size photos" in html
-    assert html.count('class="z-rim"') == 2 and 'class="z-water"' in html and 'class="z-crop"' in html
+    assert html.count('class="z-rim"') == 1 and html.count('class="z-spot"') == 1
+    assert 'class="z-water"' in html and 'class="z-crop"' in html
+    # each zone has the color it has on Settings > Zones: rim, water, rock, then crop (no ground here)
+    colors = [webapp.SCENE_COLORS[i] for i in range(4)]
+    for cls, color in zip(("z-rim", "z-water", "z-spot", "z-crop"), colors):
+        assert f'class="{cls}" style="color: {color}"' in html
     assert "1 landing spot inside the water" in html
     assert re.search(r'mode on" role="listitem">\s*<strong>Gate</strong><span class="badge', html)  # mode marked
     assert "claude-haiku-5-5" in html and "claude-sonnet-5-5" in html

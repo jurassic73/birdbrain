@@ -153,16 +153,16 @@
     </figure>
     <ul class="zone-legend">
       {% if zones.rim %}
-      <li><span class="sw sw-rim"></span><div><strong>Rim</strong>The edge of the bowl, where most birds land. Watched for ordinary motion.</div></li>
-      {% if zones.spots %}<li><span class="sw sw-rim"></span><div><strong>Rocks</strong>{{ zones.spots | length }} landing spot{{ 's' if zones.spots | length != 1 }} inside the water, treated like the rim.</div></li>{% endif %}
-      <li><span class="sw sw-water"></span><div><strong>Open water</strong>{% if cfg.WATER_WATCH %}Ripples, rain and sky reflections live here, so it has a much stricter rule (below).{% else %}Ignored: the open-water rule is turned off.{% endif %}</div></li>
+      <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Rim</strong>The edge of the bowl, where most birds land. Watched for ordinary motion.</div></li>
+      {% if zones.spots %}<li><span class="sw-group">{% for c in zones.spot_colors %}<span class="sw sw-rim" style="color: {{ c }}"></span>{% endfor %}</span><div><strong>Rocks</strong>{{ zones.spots | length }} landing spot{{ 's' if zones.spots | length != 1 }} inside the water, treated like the rim.</div></li>{% endif %}
+      <li><span class="sw sw-water" style="color: {{ zones.colors.water }}"></span><div><strong>Open water</strong>{% if cfg.WATER_WATCH %}Ripples, rain and sky reflections live here, so it has a much stricter rule (below).{% else %}Ignored: the open-water rule is turned off.{% endif %}</div></li>
       {% elif zones.roi %}
-      <li><span class="sw sw-rim"></span><div><strong>Watched area</strong>A rectangle; no birdbath ring is calibrated yet.</div></li>
+      <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Watched area</strong>A rectangle; no birdbath ring is calibrated yet.</div></li>
       {% else %}
-      <li><span class="sw sw-rim"></span><div><strong>Whole frame</strong>No zones calibrated yet, so any motion counts.</div></li>
+      <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Whole frame</strong>No zones calibrated yet, so any motion counts.</div></li>
       {% endif %}
-      {% if zones.ground %}<li><span class="sw sw-ground"></span><div><strong>Ground</strong>The lawn and mulch around the bath, for critters passing by. It has its own rule (below).</div></li>{% endif %}
-      <li><span class="sw sw-crop"></span><div><strong>Crop box</strong>{% if zones.crop %}Only this part of the photo is sent to Claude. Less background means sharper answers and fewer tokens.{% else %}Not set, so Claude sees the whole photo.{% endif %}</div></li>
+      {% if zones.ground %}<li><span class="sw sw-ground" style="color: {{ zones.colors.ground }}"></span><div><strong>Ground</strong>The lawn and mulch around the bath, for critters passing by. It has its own rule (below).</div></li>{% endif %}
+      <li><span class="sw sw-crop" style="color: {{ zones.colors.crop or '#ccc' }}"></span><div><strong>Crop box</strong>{% if zones.crop %}Only this part of the photo is sent to Claude. Less background means sharper answers and fewer tokens.{% else %}Not set, so Claude sees the whole photo.{% endif %}</div></li>
     </ul>
   </div>
   <div class="about-note">

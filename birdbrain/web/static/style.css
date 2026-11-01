@@ -810,18 +810,22 @@ button.danger.sending, button.danger.htmx-request {
 .zones-frame img { object-fit: fill; }
 .zones figcaption { margin-top: 6px; }
 .zones-now { margin: 0 0 12px; max-width: 640px; }
-.z-rim { fill: rgba(76, 208, 125, .35); stroke: #4cd07d; stroke-width: 2; vector-effect: non-scaling-stroke; }
-.z-water { fill: rgba(90, 176, 255, .22); stroke: #5ab0ff; stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
-.z-ground { fill: rgba(190, 140, 255, .16); stroke: #be8cff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-.z-crop { fill: none; stroke: #ff9f43; stroke-width: 2.5; stroke-dasharray: 8 5; vector-effect: non-scaling-stroke; }
+/* Each zone's color is set inline (app.zone_colors), the same as on Settings > Zones; only the style differs here. */
+.z-rim, .z-spot, .z-water, .z-ground, .z-crop { stroke: currentColor; fill: currentColor; vector-effect: non-scaling-stroke; }
+.z-rim, .z-spot { fill-opacity: .3; stroke-width: 2; }
+.z-water { fill-opacity: .2; stroke-width: 2; stroke-dasharray: 6 4; }
+.z-ground { fill-opacity: .14; stroke-width: 1.5; }
+.z-crop { fill: none; stroke-width: 2.5; stroke-dasharray: 8 5; }
 .zone-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .zone-legend li { display: flex; gap: 10px; align-items: flex-start; font-size: .92rem; }
 .zone-legend strong { display: block; }
 .sw { flex: none; width: 18px; height: 18px; margin-top: 2px; border-radius: 4px; border: 2px solid; }
-.sw-rim { background: rgba(76, 208, 125, .35); border-color: #4cd07d; }
-.sw-water { background: rgba(90, 176, 255, .22); border-color: #5ab0ff; border-style: dashed; }
-.sw-ground { background: rgba(190, 140, 255, .16); border-color: #be8cff; }
-.sw-crop { border-color: #ff9f43; border-style: dashed; }
+.sw { border-color: currentColor; }
+.sw-rim { background: color-mix(in srgb, currentColor 30%, transparent); }
+.sw-water { background: color-mix(in srgb, currentColor 20%, transparent); border-style: dashed; }
+.sw-ground { background: color-mix(in srgb, currentColor 14%, transparent); }
+.sw-crop { border-style: dashed; }
+.sw-group { flex: none; display: flex; gap: 3px; }
 
 /* Detection rules */
 .rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
