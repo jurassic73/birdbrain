@@ -1340,9 +1340,9 @@ button.se-all { font-weight: 600; }
 @media (max-width: 640px) {
   .ft-visit { width: 100vw; height: 100dvh; border: 0; border-radius: 0; }
 }
-/* The visit page inside it: no site header, a little less padding, the keyboard keys on one line at the top. */
+/* The visit page inside it: no site header, a little less padding, the keyboard keys at the right of the Close line. */
 body.embed main { padding-top: 10px; }
-.embed-keys { margin: 0 0 8px; font-size: .8rem; }
+.embed-keys { margin: 0 0 0 auto; font-size: .8rem; }
 /* The start-to-finish pills get their own row under Close and the arrows. */
 body.embed .visit-nav { flex-wrap: wrap; row-gap: 10px; }
 body.embed .decision-flow.in-nav { flex-basis: 100%; margin-left: 0; }

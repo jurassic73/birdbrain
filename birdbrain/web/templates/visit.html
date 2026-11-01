@@ -29,14 +29,12 @@
 {% set ft_args = (['ft=1'] if is_ft else []) + (['todo=1'] if todo else []) + (['embed=1'] if embed else []) %}
 {% set ft_param = ('?' ~ ft_args | join('&')) if ft_args else '' %}
 {% set settled = not visit.needs_review and visit.confidence == 'high' and not has_correction %}
-{% if embed %}
-<p class="embed-keys muted">Keys: <kbd>&#8592;</kbd> newer <kbd>&#8594;</kbd> older{% if request.state.admin %} · <kbd>C</kbd> confirmed no animal, next photo{% endif %} · <kbd>Esc</kbd> close</p>
-{% endif %}
 <nav class="visit-nav" aria-label="Visit navigation">
   {% if embed %}<a class="visit-nav-back embed-close-btn" href="/false-triggers" id="embed-close" title="Close (Esc)">&times; Close</a>{% endif %}
   {% if prev_id %}<a class="visit-nav-btn" href="/visit/{{ prev_id }}{{ ft_param }}" id="nav-prev" title="Newer (←)">&#8592;</a>{% else %}<span class="visit-nav-btn disabled">&#8592;</span>{% endif %}
   {% if not embed %}<a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>{% endif %}
   {% if next_id %}<a class="visit-nav-btn" href="/visit/{{ next_id }}{{ ft_param }}" id="nav-next" title="Older (→)">&#8594;</a>{% else %}<span class="visit-nav-btn disabled">&#8594;</span>{% endif %}
+  {% if embed %}<p class="embed-keys muted">Keys: <kbd>&#8592;</kbd> newer <kbd>&#8594;</kbd> older{% if request.state.admin %} · <kbd>C</kbd> confirmed no animal, next photo{% endif %} · <kbd>Esc</kbd> close</p>{% endif %}
   {{ flow("in-nav") }}
 </nav>
 <article class="visit">
