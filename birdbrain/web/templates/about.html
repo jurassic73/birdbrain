@@ -30,6 +30,18 @@
   <p class="muted small">Since {{ totals.since | nice_date }}.</p>
 </section>
 {% endif %}
+{% if rate.photos %}
+{% macro per_day(x) %}{{ '%d' | format(x | round) if x >= 10 else '%.1f' | format(x) }}{% endmacro %}
+<section class="about-numbers about-rate" aria-label="How often we capture">
+  <div data-tip="Every photo kept, real visitors and false alarms, averaged over the last {{ rate.recent_days }} day{{ 's' if rate.recent_days != 1 }}. Quiet days count as zero."><span class="big">{{ per_day(rate.photos_per_day) }}</span> photos a day lately</div>
+  <div data-tip="Photos with a real animal in them, averaged over the last {{ rate.recent_days }} day{{ 's' if rate.recent_days != 1 }}."><span class="big">{{ per_day(rate.visitors_per_day) }}</span> visitors a day lately</div>
+  <div data-tip="Every photo kept since the first one, per calendar day."><span class="big">{{ per_day(rate.all_photos_per_day) }}</span> photos a day, all time</div>
+  <div data-tip="Real visitors since the first one, per calendar day."><span class="big">{{ per_day(rate.all_visitors_per_day) }}</span> visitors a day, all time</div>
+  <div data-tip="The hour of day with the most real visitors over the last {{ rate.days }} days."><span class="big">{% if rate.busiest_hour is not none %}{{ (rate.busiest_hour % 12) or 12 }} {{ 'am' if rate.busiest_hour < 12 else 'pm' }}{% else %}–{% endif %}</span> busiest hour</div>
+  <div data-tip="The middle value of the time between one real visitor and the next, over the last {{ rate.days }} days. Half the waits are shorter."><span class="big">{% if rate.median_gap_min is none %}–{% elif rate.median_gap_min < 90 %}{{ rate.median_gap_min | round | int }} min{% else %}{{ '%.1f' | format(rate.median_gap_min / 60) }} h{% endif %}</span> typical wait between visitors</div>
+  <p class="muted small">Last photo {{ rate.last | short_time }}. Each motion event keeps at most one photo; probes the Pi throws away aren't counted here.</p>
+</section>
+{% endif %}
 {% if login_on() %}<p class="muted small">Anyone can browse this site. Corrections, settings and anything that asks Claude need the admin login (the Admin button at the top).</p>{% endif %}
 
 {# ---------- 1. The pipeline at a glance ---------- #}

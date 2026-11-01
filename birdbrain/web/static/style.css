@@ -758,6 +758,7 @@ button.danger.sending, button.danger.htmx-request {
 }
 .about-numbers .big { display: block; font-size: 1.5rem; font-weight: 700; color: var(--text); line-height: 1.2; }
 .about-numbers p { grid-column: 1 / -1; margin: 0; }
+.about-rate { margin-top: 10px; }
 @media (max-width: 800px) { .about-numbers { grid-template-columns: repeat(3, 1fr); } }
 .about-section {
   padding: 18px 22px; scroll-margin-top: 72px;

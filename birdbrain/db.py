@@ -727,6 +727,45 @@ def totals(conn: sqlite3.Connection) -> dict:
     }
 
 
+def capture_rate(conn: sqlite3.Connection, days: int = 7) -> dict:
+    """How often photos are being captured, for the About page: recent and all-time daily rates, the busiest
+    hour and the typical wait between real visitors. Days with no rows still count, so a quiet week reads low."""
+    today = clock.today()
+    since = (today - timedelta(days=days - 1)).isoformat()
+    r = conn.execute(
+        f"""SELECT COUNT(*) AS photos, COALESCE(SUM({REAL}), 0) AS visitors,
+                   SUM(date(captured_at) >= ?) AS recent_photos,
+                   COALESCE(SUM({REAL} AND date(captured_at) >= ?), 0) AS recent_visitors,
+                   MIN(date(captured_at)) AS first_day, MAX(captured_at) AS last
+            FROM visits""",
+        (since, since),
+    ).fetchone()
+    if not r["photos"]:
+        return {"photos": 0}
+    span = max(1, (today - date.fromisoformat(r["first_day"])).days + 1)
+    recent_days = min(days, span)
+    hour = conn.execute(
+        f"SELECT CAST(strftime('%H', captured_at) AS INTEGER) AS h, COUNT(*) AS n FROM visits"
+        f" WHERE {REAL} AND date(captured_at) >= ? GROUP BY h ORDER BY n DESC, h LIMIT 1",
+        (since,),
+    ).fetchone()
+    times = [datetime.fromisoformat(t) for (t,) in conn.execute(
+        f"SELECT captured_at FROM visits WHERE {REAL} AND date(captured_at) >= ? ORDER BY captured_at", (since,))]
+    gaps = sorted((b - a).total_seconds() / 60 for a, b in zip(times, times[1:]))
+    return {
+        "photos": r["photos"],
+        "days": days,
+        "recent_days": recent_days,
+        "photos_per_day": r["recent_photos"] / recent_days,
+        "visitors_per_day": r["recent_visitors"] / recent_days,
+        "all_photos_per_day": r["photos"] / span,
+        "all_visitors_per_day": r["visitors"] / span,
+        "busiest_hour": hour["h"] if hour else None,
+        "median_gap_min": gaps[len(gaps) // 2] if gaps else None,
+        "last": r["last"],
+    }
+
+
 def detector_report(conn: sqlite3.Connection, days: int = 14) -> dict:
     """How gate mode would have done, judged against the final answer (owner corrections win over Claude).
 

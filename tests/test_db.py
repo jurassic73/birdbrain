@@ -333,6 +333,21 @@ def test_totals_on_an_empty_database(conn):
     assert t["events"] == 0 and t["since"] is None and t["claude_usd"] == 0.0
 
 
+def test_capture_rate_counts_quiet_days_and_gaps(conn, add_visit):
+    assert db.capture_rate(conn) == {"photos": 0}
+    day = (TODAY - timedelta(days=1)).isoformat()
+    add_visit(captured_at=f"{day}T08:00:00")
+    add_visit(captured_at=f"{day}T08:10:00")
+    add_visit(captured_at=f"{day}T08:40:00")
+    add_visit(visitor="none", species=None, captured_at=f"{day}T09:00:00")
+    add_visit(captured_at=(TODAY - timedelta(days=30)).isoformat() + "T12:00:00")  # outside the week
+    r = db.capture_rate(conn)
+    assert r["recent_days"] == 7 and r["photos_per_day"] == pytest.approx(4 / 7)
+    assert r["visitors_per_day"] == pytest.approx(3 / 7)
+    assert r["all_photos_per_day"] == pytest.approx(5 / 31)
+    assert r["busiest_hour"] == 8 and r["median_gap_min"] == 30
+
+
 def test_switched_off_lessons_leave_the_prompt_and_the_next_newest_moves_up(conn, add_visit):
     ids = [add_visit(feedback=f"note {i}", captured_at=at(0)) for i in range(db.LESSON_LIMIT + 1)]
     rows = db.all_lessons(conn)

@@ -700,6 +700,7 @@ def about(request: Request, conn=Depends(get_conn)):
         "about.html",
         cfg=config,
         totals=db.totals(conn),
+        rate=db.capture_rate(conn),
         zones=zone_shapes(zones.load(conn)),
         recal=zones.schedule(conn),
         recal_stored=zones.stored(conn) is not None,
