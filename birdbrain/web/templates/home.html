@@ -22,7 +22,6 @@
   {% if lv %}
   <a class="hero-latest" href="/visit/{{ lv.id }}">
     {{ thumb(lv, "thumb hero-photo", lazy=False, full=True) }}
-    <div class="live-title" data-tip="The newest animal Claude found at the bath, with its circle">Most recent visitor</div>
     <div class="hero-caption">
       <span class="hero-kicker">{{ 'Latest visitor' if lv.captured_at[:10] == today.date else 'Last visitor, before today' }}</span>
       <span class="hero-name">{{ lv.label }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}
