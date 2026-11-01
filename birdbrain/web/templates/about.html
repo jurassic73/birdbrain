@@ -162,7 +162,7 @@
       <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Whole frame</strong>No zones calibrated yet, so any motion counts.</div></li>
       {% endif %}
       {% if zones.ground %}<li><span class="sw sw-ground" style="color: {{ zones.colors.ground }}"></span><div><strong>Ground</strong>The lawn and mulch around the bath, for critters passing by. It has its own rule (below).</div></li>{% endif %}
-      <li><span class="sw sw-crop" style="color: {{ zones.colors.crop or '#ccc' }}"></span><div><strong>Crop box</strong>{% if zones.crop %}Only this part of the photo is sent to Claude. Less background means sharper answers and fewer tokens.{% else %}Not set, so Claude sees the whole photo.{% endif %}</div></li>
+      <li><span class="sw sw-crop" style="color: {{ zones.colors.crop or '#ccc' }}"></span><div><strong>Crop box</strong>{% if zones.crop %}Only this part of the photo is checked by the Pi and sent to Claude. Less background means sharper answers and fewer tokens. Every visit photo draws its crop box (dashed) and the zone whose motion took it, so an animal just outside the box shows why it was missed.{% else %}Not set, so Claude sees the whole photo.{% endif %}</div></li>
     </ul>
   </div>
   <div class="about-note">

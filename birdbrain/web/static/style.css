@@ -490,6 +490,14 @@ main.wide { max-width: 1600px; }
   border-radius: 6px; background: rgba(0, 0, 0, .6); color: #fff; font-size: .8rem; pointer-events: none;
 }
 .photo-hint[hidden], .photo-clear[hidden] { display: none; }
+/* The crop box the Pi and Claude looked at (dashed) and the zone that fired (thin outline): no fill worth the
+   name, so the animal always shows through. Faded while drawing circles; the same on every burst frame. */
+.zones-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden;
+  border-radius: var(--radius); filter: drop-shadow(0 0 1px rgba(0, 0, 0, .8)); transition: opacity .15s; }
+.zones-overlay .vz-zone { stroke: currentColor; fill: currentColor; fill-opacity: .06; stroke-width: 1.5; stroke-opacity: .85; vector-effect: non-scaling-stroke; }
+.zones-overlay .vz-crop { stroke: currentColor; fill: none; stroke-width: 2; stroke-dasharray: 8 5; vector-effect: non-scaling-stroke; }
+.visit-photo.zones-off .zones-overlay, .zones-overlay.off { display: none; }
+.visit-photo.editing .zones-overlay { opacity: .35; }
 .photo-tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; }
 .photo-tools button { padding: 4px 12px; font-size: .85rem; }
 .marks .ring { fill: none; stroke: #ffd23f; stroke-width: 2; vector-effect: non-scaling-stroke; }

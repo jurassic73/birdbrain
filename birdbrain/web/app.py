@@ -369,6 +369,7 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         todo=todo,
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
+        vzones=visit_zones(visit, conn),
     )
 
 
@@ -384,6 +385,56 @@ def burst_frames(visit) -> list[dict]:
         info = {}
     fps = info.get("fps") or config.BURST_FPS
     return [{"path": p, "at": i / fps, "best": i == info.get("best")} for i, p in enumerate(paths)]
+
+
+FIRED = {"rim": "the rim and rocks", "water": "the open water", "ground": "the ground"}
+
+
+def visit_zones(visit, conn) -> dict | None:
+    """What the visit photo draws over itself: the crop box the Pi's animal check and Claude looked at, and the
+    zone whose motion fired the capture, each in its Settings color. `source` says whose zones: stored with the
+    photo (since 2026-11-01), rebuilt from the calibration history at the time, or today's."""
+    try:
+        raw = json.loads(visit["raw_json"] or "{}") or {}
+    except (ValueError, AttributeError):
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    z = None
+    for source, data in (("photo", lambda: raw.get("zones")),
+                         ("history", lambda: db.zones_at(conn, visit["captured_at"]))):
+        d = data()
+        if isinstance(d, dict):
+            try:
+                z = zones.Zones.from_dict(d)
+                break
+            except (TypeError, ValueError):
+                pass
+    if z is None:
+        source, z = "today", zones.load(conn)
+    s = zone_shapes(z)
+    colors, trigger = s["colors"], raw.get("trigger")
+    shapes = []
+    if trigger == "rim":
+        if s["rim"]:
+            shapes = [{"d": s["rim"], "color": colors["ring"]}]
+            shapes += [{"d": d, "color": c} for d, c in zip(s["spots"], s["spot_colors"])]
+        elif s["roi"]:
+            r = s["roi"]
+            shapes = [{"d": f"M{r['x']:.2f},{r['y']:.2f} h{r['w']:.2f} v{r['h']:.2f} h{-r['w']:.2f} Z",
+                       "color": colors["ring"]}]
+    elif trigger == "water" and s["water"]:
+        shapes = [{"d": s["water"], "color": colors.get("water", colors["ring"])}]
+    elif trigger == "ground" and s["ground"]:
+        shapes = [{"d": s["ground"], "color": colors.get("ground", SCENE_COLORS[0])}]
+    if trigger == "ground":  # the ground crop isn't a Settings shape: it takes the ground's color
+        crop, crop_color = box_rect(z.ground_crop), colors.get("ground", SCENE_COLORS[0])
+    else:
+        crop, crop_color = box_rect(z.crop), colors.get("crop", SCENE_COLORS[0])
+    if not crop and not shapes:
+        return None
+    return {"w": ZONE_W, "h": ZONE_H, "shapes": shapes, "crop": crop, "crop_color": crop_color,
+            "fired": FIRED.get(trigger), "source": source}
 
 
 def start_marks(visit) -> list[dict]:

@@ -46,10 +46,18 @@
     {% else %}
     <a href="/images/{{ visit.image_path }}" draggable="false"><img class="full" draggable="false" src="/images/{{ visit.image_path }}" width="1920" height="1080" alt="{{ visit.label }}"></a>
     {% endif %}
+    {% if vzones and not visit.photo_deleted_at %}
+    {# The crop box the Pi and Claude looked at, and the zone whose motion fired this capture (app.visit_zones). #}
+    <svg class="zones-overlay" viewBox="0 0 {{ vzones.w }} {{ vzones.h }}" preserveAspectRatio="none" aria-hidden="true">
+      {% for s in vzones.shapes %}<path class="vz-zone" style="color: {{ s.color }}" d="{{ s.d }}" fill-rule="evenodd"/>{% endfor %}
+      {% if vzones.crop %}<rect class="vz-crop" style="color: {{ vzones.crop_color }}" x="{{ vzones.crop.x | round(2) }}" y="{{ vzones.crop.y | round(2) }}" width="{{ vzones.crop.w | round(2) }}" height="{{ vzones.crop.h | round(2) }}"/>{% endif %}
+    </svg>
+    {% endif %}
     <svg class="marks" aria-hidden="true"></svg>
     <p class="photo-hint" id="mark-hint"{% if visit.photo_deleted_at %} hidden{% endif %}>Click to enlarge, pinch to zoom.{% if request.state.admin %} Edit circles to mark things for your feedback.{% endif %}</p>
     <p class="muted small mark-legend" id="mark-legend" hidden></p>
     <div class="photo-tools">
+      {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi's animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
       <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing: drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
       <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
     </div>
@@ -64,6 +72,7 @@
     {% if next_id %}<a class="photo-viewer-arrow next" id="zoom-next" href="/visit/{{ next_id }}{{ zoom_param }}" aria-label="Older visit" title="Older (→)">&#8250;</a>{% endif %}
     <div class="photo-viewer-frame">
       {% if not visit.photo_deleted_at %}<img src="/images/{{ visit.image_path }}" alt="{{ visit.label }}">{% endif %}
+      {% if vzones %}<svg class="zones-overlay" aria-hidden="true"></svg>{% endif %}
       <svg class="marks" aria-hidden="true"></svg>
     </div>
   </dialog>
@@ -409,7 +418,7 @@
   // Numbered circles on the photo, stored as fractions of the image (x, y of the size; r of the width).
   (() => {
     const photo = document.getElementById("photo");
-    const img = photo.querySelector("img"), svg = photo.querySelector("svg");
+    const img = photo.querySelector("img"), svg = photo.querySelector("svg.marks");
     if (!img) return;  // the photo was deleted to save space: nothing to draw on
     const field = document.getElementById("marks") || {};
     const clear = document.getElementById("mark-clear"), hint = document.getElementById("mark-hint");
@@ -531,6 +540,23 @@
     new ResizeObserver(() => { if (marks.length) draw(); }).observe(img);
   })();
   (() => {
+    // The crop box and the zone that fired: shown unless this browser hid them (one switch for every visit).
+    const photo = document.getElementById("photo"), toggle = document.getElementById("zones-toggle");
+    if (!toggle) return;
+    const set = on => {
+      photo.classList.toggle("zones-off", !on);
+      toggle.setAttribute("aria-pressed", on);
+      toggle.textContent = on ? "Hide zones" : "Show zones";
+    };
+    set(localStorage.getItem("bb-visit-zones") !== "off");
+    toggle.addEventListener("click", e => {
+      e.stopPropagation();
+      const on = photo.classList.contains("zones-off");
+      localStorage.setItem("bb-visit-zones", on ? "on" : "off");
+      set(on);
+    });
+  })();
+  (() => {
     // Burst filmstrip: a frame shows in the big photo (and the full-size viewer); circles belong to Claude's frame only.
     const photo = document.getElementById("photo"), frames = document.querySelectorAll(".vburst-frame");
     if (!frames.length) return;
@@ -549,6 +575,12 @@
     const open = () => {
       // Show the same circles over the full-size photo.
       viewer.querySelector(".marks").replaceWith(photo.querySelector(".marks").cloneNode(true));
+      const zonesSvg = photo.querySelector(".zones-overlay");
+      if (zonesSvg) {
+        const copy = zonesSvg.cloneNode(true);
+        copy.classList.toggle("off", photo.classList.contains("zones-off"));
+        viewer.querySelector(".zones-overlay").replaceWith(copy);
+      }
       viewer.showModal();
       // Phones: true full screen, turned to match the 16:9 photo where the browser allows it (not iPhone Safari).
       if (matchMedia("(max-width: 640px), (max-height: 500px)").matches && viewer.requestFullscreen) {

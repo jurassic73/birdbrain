@@ -542,6 +542,9 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             also=json.dumps(also) if also else None,
             raw_json=json.dumps({"answer": s.model_dump(), "calls": result.raw, "motion": motion,
                                  "trigger": trigger, "probe": probe, "frames": len(frames),
+                                 # The zones in use, so the visit page can draw the crop box and the zone that
+                                 # fired as they were, even after recalibration moves them.
+                                 "zones": z.to_dict(),
                                  **({"burst": burst} if burst else {})}),
         )
         if emb is not None:

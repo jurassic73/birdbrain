@@ -6,7 +6,7 @@ A backyard birdbath camera that spots visitors and identifies them with Claude, 
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/visit.jpg" alt="A visit page: a Steller's Jay circled on the rim, Claude's answer and notes, and the steps that decided it"><br><b>Every visit</b> shows the photo, where the animal was spotted, and each step that decided it: motion zone, local detector, Claude Haiku, the local BioCLIP 2 guess.</td>
+<td width="50%"><img src="docs/screenshots/visit.jpg" alt="A visit page: a Steller's Jay circled on the rim, Claude's answer and notes, and the steps that decided it"><br><b>Every visit</b> shows the photo (with its crop box and the motion zone that took it drawn on), where the animal was spotted, and each step that decided it: motion zone, local detector, Claude Haiku, the local BioCLIP 2 guess.</td>
 <td width="50%"><img src="docs/screenshots/species.jpg" alt="A species card for Steller's Jay with a reference photo, description, behavior notes, three local recordings and a monthly chart"><br><b>Species cards</b> with a reference photo, behavior notes, songs and calls recorded nearby, and when the species is usually around in your county.</td>
 </tr>
 <tr>
@@ -119,7 +119,7 @@ With `GROUND_ZONE` set, the ground around the bath is watched for animals walkin
 - **At night** (infrared) the blob must be about cat-sized, since night visitors are raccoons, possums, cats and the like, and moths at the infrared lights are the usual false alarm. Night ground motion goes to Claude, because the detector hasn't proven it recognizes these animals in grayscale.
 - It has its own budget, `GROUND_MAX_CALLS_PER_DAY` (default 100), and its own backoff, so a windy day on the ground never uses up the birdbath's calls or makes the watcher miss a bird at the bath.
 
-Tuning (all optional, fractions of the frame): `GROUND_MIN_BLOB` (day, 0.003), `GROUND_MIN_BLOB_NIGHT` (0.006), `GROUND_DIFF` (20), `GROUND_PERSIST_FRAMES` (8). The visit page says which zone saw the motion.
+Tuning (all optional, fractions of the frame): `GROUND_MIN_BLOB` (day, 0.003), `GROUND_MIN_BLOB_NIGHT` (0.006), `GROUND_DIFF` (20), `GROUND_PERSIST_FRAMES` (8). The visit page says which zone saw the motion and draws it, with the crop box, on the photo.
 
 ## Run it on a Raspberry Pi
 

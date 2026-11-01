@@ -371,7 +371,10 @@ def test_ground_events_use_the_ground_crop(pipeline, monkeypatch):
     monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, crop: crops.append(crop))
     monkeypatch.setattr(watch.config, "GROUND_CROP", (0.0, 0.5, 1.0, 0.5))
     watch.handle_event(trigger="ground")
-    assert watch.json.loads(watch.db.latest_visit(conn)["raw_json"])["trigger"] == "ground"
+    raw = watch.json.loads(watch.db.latest_visit(conn)["raw_json"])
+    assert raw["trigger"] == "ground"
+    # The zones in use are stored with the visit, for the visit page's drawing.
+    assert watch.zones.Zones.from_dict(raw["zones"]).ground_crop == (0.0, 0.5, 1.0, 0.5)
     watch.handle_event(trigger="rim")
     assert crops == [(0.0, 0.5, 1.0, 0.5), watch.config.CROP_ROI]
 

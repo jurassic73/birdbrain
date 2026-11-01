@@ -200,6 +200,24 @@ def get_calibration(conn: sqlite3.Connection, cal_id: int) -> sqlite3.Row | None
     return conn.execute("SELECT * FROM calibrations WHERE id = ?", (cal_id,)).fetchone()
 
 
+def zones_at(conn: sqlite3.Connection, when: str) -> dict | None:
+    """The zones in use at `when` (ISO time) as far as the calibration history tells: the last run's after on or
+    before it, else the first later run's before. None without a usable row. Undo rows carry no zones, so a
+    photo taken right after an undo may get the undone zones."""
+    for sql in ("SELECT after_json FROM calibrations WHERE ran_at <= ? AND after_json IS NOT NULL "
+                "ORDER BY ran_at DESC, id DESC LIMIT 1",
+                "SELECT before_json FROM calibrations WHERE ran_at > ? AND before_json IS NOT NULL "
+                "ORDER BY ran_at, id LIMIT 1"):
+        row = conn.execute(sql, (when,)).fetchone()
+        if row:
+            try:
+                data = json.loads(row[0])
+            except ValueError:
+                return None
+            return data if isinstance(data, dict) else None
+    return None
+
+
 def end_stay(conn: sqlite3.Connection, visit_id: int, ended_at: str, reason: str) -> None:
     """The visitor left (or the stay was cut short: reason light or long, see birdbrain/stay.py)."""
     conn.execute("UPDATE visits SET ended_at = ?, raw_json = json_set(COALESCE(raw_json, '{}'), '$.stay_end', ?)"

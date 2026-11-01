@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from birdbrain import alert, config, db, images
+from birdbrain import alert, config, db, images, zones
 from birdbrain.web import app as webapp
 
 
@@ -541,6 +541,60 @@ def test_zone_shapes_match_the_motion_masks(calibrated, monkeypatch):
     ground = webapp.zone_shapes()["ground"]
     assert ground.startswith("M16.00,45.00 L144.00,45.00 L144.00,90.00 Z")      # polygon in 160x90
     assert ground.endswith(webapp.ellipse_path(0.5, 0.5, 0.25, 0.3))            # minus the bath, like ground_mask
+
+
+def test_visit_photo_draws_its_crop_box_and_the_zone_that_fired(client, add_visit, calibrated, monkeypatch):
+    monkeypatch.setattr(config, "GROUND_ZONE", ((0.1, 0.5), (0.9, 0.5), (0.9, 1), (0.1, 1)))
+    monkeypatch.setattr(config, "GROUND_CROP", (0.0, 0.4, 1.0, 0.6))
+    now = zones.from_env()
+    colors = webapp.zone_colors(now)["colors"]
+    # A rim trigger: the rim band and the rock in their Settings colors, the bath crop dashed in the crop's color.
+    vid = add_visit(raw_json=json.dumps({"trigger": "rim", "zones": now.to_dict()}))
+    html = client.get(f"/visit/{vid}").text
+    assert 'class="zones-overlay"' in html and html.count('class="vz-zone"') == 2
+    assert f'class="vz-zone" style="color: {colors["ring"]}"' in html
+    assert f'class="vz-crop" style="color: {colors["crop"]}" x="32.0" y="9.0" width="96.0" height="72.0"' in html
+    assert "the rim and rocks, the zone whose motion took this photo" in html and "today&#39;s zones" not in html
+    # Water: the open water. Ground: the ground polygon and the ground crop, in the ground's color.
+    vid = add_visit(raw_json=json.dumps({"trigger": "water", "zones": now.to_dict()}))
+    html = client.get(f"/visit/{vid}").text
+    assert html.count('class="vz-zone"') == 1 and f'class="vz-zone" style="color: {colors["water"]}"' in html
+    vid = add_visit(visitor="none", species=None, raw_json=json.dumps({"trigger": "ground", "zones": now.to_dict()}))
+    html = client.get(f"/visit/{vid}").text
+    assert f'class="vz-zone" style="color: {colors["ground"]}"' in html
+    assert f'class="vz-crop" style="color: {colors["ground"]}" x="0.0" y="36.0" width="160.0" height="54.0"' in html
+
+
+def test_visit_photo_uses_the_zones_it_was_taken_with(client, add_visit, calibrated, conn, monkeypatch):
+    then = zones.from_env()
+    monkeypatch.setattr(config, "CROP_ROI", (0.0, 0.0, 0.5, 0.5))  # recalibrated since
+    vid = add_visit(raw_json=json.dumps({"trigger": "rim", "zones": then.to_dict()}))
+    assert 'x="32.0" y="9.0" width="96.0" height="72.0"' in client.get(f"/visit/{vid}").text
+    # An older visit (no zones stored) with no calibration history is drawn with today's, and says so.
+    vid = add_visit(raw_json=json.dumps({"trigger": "rim"}), captured_at="2026-10-20T12:00:00")
+    html = client.get(f"/visit/{vid}").text
+    assert 'x="0.0" y="0.0" width="80.0" height="45.0"' in html and "today&#39;s zones" in html
+    # With a history, the zones in use at the time: the last run before it, else the first run's before.
+    moved = zones.Zones(crop=(0.5, 0.5, 0.25, 0.25))
+    db.add_calibration(conn, ran_at="2026-10-21T08:00:00", reason="hand", status="moved", summary="",
+                       before_json=json.dumps(then.to_dict()), after_json=json.dumps(moved.to_dict()))
+    html = client.get(f"/visit/{vid}").text
+    assert 'x="32.0" y="9.0" width="96.0" height="72.0"' in html and "calibration history" in html
+    vid = add_visit(raw_json=json.dumps({"trigger": "rim"}), captured_at="2026-10-22T12:00:00")
+    assert 'x="80.0" y="45.0" width="40.0" height="22.5"' in client.get(f"/visit/{vid}").text
+    # A capture with no trigger (watch --once): only the crop box.
+    vid = add_visit(raw_json=json.dumps({}))
+    html = client.get(f"/visit/{vid}").text
+    assert 'class="vz-crop"' in html and 'class="vz-zone"' not in html and "Solid outline" not in html
+
+
+def test_visit_photo_without_any_zones_draws_nothing(client, add_visit, monkeypatch):
+    monkeypatch.setattr(config, "MOTION_RING", None)
+    monkeypatch.setattr(config, "MOTION_ROI", None)
+    monkeypatch.setattr(config, "CROP_ROI", None)
+    vid = add_visit(raw_json=json.dumps({"trigger": "rim"}))
+    html = client.get(f"/visit/{vid}").text
+    assert 'class="zones-overlay"' not in html and 'id="zones-toggle"' not in html
 
 
 def test_backoff_steps_stop_at_the_cap(monkeypatch):
