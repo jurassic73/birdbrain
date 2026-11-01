@@ -433,7 +433,7 @@
       svg.replaceChildren();
       marks.forEach((m, i) => {
         const g = el("g", {"data-i": i, class: m.claude ? "mark claude" : "mark"});
-        const cx = m.x * w, cy = m.y * h, r = markRadius(m.r) * w, s = w / 60;
+        const cx = m.x * w, cy = m.y * h, r = (editing ? m.r : markRadius(m.r)) * w, s = w / 60;
         g.append(el("circle", {cx, cy, r, class: "body"}), el("circle", {cx, cy, r, class: "ring-shadow"}), el("circle", {cx, cy, r, class: "ring"}));
         // The × beside the number removes the circle. On touch screens it's sized in screen pixels
         // (a 28 px button inside a 44 px tap area), since a fraction of the photo is a speck on a phone.
