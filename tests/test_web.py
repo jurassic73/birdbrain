@@ -119,14 +119,16 @@ def test_every_status_pill_explains_itself(client, add_visit):
     assert "Night: taken in infrared" in client.get("/false-triggers").text
 
 
-def test_confirmed_pill_after_three_sure_visits(client, add_visit):
+def test_confirmed_pill_after_three_sure_visits(client, add_visit, monkeypatch):
+    from birdbrain import species_info
+    monkeypatch.setattr(species_info, "get", lambda conn, name, fetch=True: {"name": name, "common": name})
     for _ in range(2):
         add_visit(species="Bushtit", confidence="high")
     medium = add_visit(species="Bushtit", confidence="medium")
     assert "Not confirmed yet" in client.get("/species").text
     assert "Not confirmed yet" in client.get(f"/visit/{medium}").text
     add_visit(species="Bushtit", confidence="high")
-    assert ">Confirmed<" in client.get("/species/Bushtit").text
+    assert ">Confirmed<" in client.get("/species-info/Bushtit").text
     assert ">Confirmed<" in client.get(f"/visit/{medium}").text
 
 
@@ -778,3 +780,15 @@ def test_popups_use_the_site_dialog_not_the_browsers(client):
     assert html.index("/static/dialog.js") < html.index("/static/save-feedback.js")
     css = (web / "static/style.css").read_text()
     assert ".popup {" in css and ".viewer {" in css and ".popup-actions" in css
+
+
+def test_species_list_names_open_the_info_card_and_card_has_jump_to_visits(client, add_visit, monkeypatch):
+    add_visit(species="Bushtit")
+    assert 'data-species="Bushtit"' in client.get("/species").text
+    from birdbrain import species_info
+    monkeypatch.setattr(species_info, "get", lambda conn, name, fetch=True: {"name": name, "common": name, "status": "Year-round resident"})
+    html = client.get("/species-info/Bushtit").text
+    assert 'href="/species/Bushtit#visits"' in html and "Jump to visits" in html
+    assert "All visits" not in html and 'class="sp-facts"' in html
+    assert 'id="visits"' in client.get("/species/Bushtit").text
+    assert re.findall(r'class="badge [^"]*"(?! data-tip)', html) == []

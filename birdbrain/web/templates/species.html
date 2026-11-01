@@ -6,12 +6,14 @@
 <div class="page-head">
   <h1>{{ sp.label }}</h1>
 </div>
+{% if not has_card(sp.label) %}
 <div class="facts">
   <div><span class="big">{{ sp.visits }}</span> visits</div>
   <div>First seen <strong>{{ sp.first_seen | nice_date }}</strong></div>
   <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong></div>
   <div>{{ confirm_badge(sp.label) }}</div>
 </div>
+{% endif %}
 {% if info %}
 <div class="sp-inline">{% include "_species_card.html" %}</div>
 {% elif has_card(sp.label) %}
@@ -23,7 +25,7 @@
   <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
   <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
 </div>
-<div class="grid">
+<div class="grid" id="visits">
   {% include "_cards.html" %}
 </div>
 <script src="/static/charts.js?v={{ asset_version }}"></script>

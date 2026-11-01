@@ -106,7 +106,7 @@ def test_card_route_renders_full_card(client, add_visit, fake_build):
     add_visit(species="Bushtit", captured_at="2026-01-05T09:00:00")
     html = client.get("/species-info/Bushtit").text
     assert "Psaltriparus minimus" in html and "Year-round resident" in html
-    assert "AI summary based on Wikipedia" in html and "Seen here 1 time" in html
+    assert "AI summary based on Wikipedia" in html and "Jump to visits" in html and "1</span> visit" in html
     assert 'data-taxon="14886"' in html and "ebird.org/species/bushti" in html
 
 
