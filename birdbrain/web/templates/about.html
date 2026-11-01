@@ -312,7 +312,8 @@
     A ground visit uses a wider crop around the ground zone instead.{% endif %}
     The sharpest goes to Claude; the next two are kept in case a second opinion is needed.
     Only the sharpest is saved with a visit, except for false triggers: there the whole burst is kept, so you can
-    step through the frames before and after on the visit page (it counts toward the false-trigger storage limit).
+    step through the frames before and after on the visit page (it counts toward the false-trigger storage limit).{% if cfg.PHOTO_STAMP %}
+    Saved photos get the time in a small pill in the bottom-left corner; Claude and the Pi's checks see the photo without it.{% endif %}
     Night photos come from the infrared light, so they're black and white.</p>
 </section>
 

@@ -55,3 +55,26 @@ def test_frames_bytes_counts_each_visit_in_a_shared_folder_once(tmp_path):
     burst = images.store_burst([jpeg()] * 3, a[0], tmp_path, max_edge=640)
     size = lambda *rels: sum((tmp_path / r).stat().st_size for r in rels)
     assert images.frames_bytes([a, b, ("gone/x.jpg", "gone/x_t.jpg")], tmp_path) == [size(*a, *burst), size(*b), 0]
+
+
+def test_stored_photo_gets_a_time_stamp_bottom_left_but_the_thumbnail_does_not(tmp_path, monkeypatch):
+    monkeypatch.setattr(images.config, "PHOTO_STAMP", True)
+    image_rel, thumb_rel = images.store_frame(jpeg(), datetime(2026, 11, 1, 9, 33, 50), tmp_path)
+    full = Image.open(tmp_path / image_rel).convert("RGB")
+    assert sum(full.getpixel((60, 1080 - 68))) < sum((90, 120, 200)) - 60  # the pill darkens the corner
+    assert abs(sum(full.getpixel((1800, 100))) - sum((90, 120, 200))) < 30  # the rest is untouched
+    thumb = Image.open(tmp_path / thumb_rel).convert("RGB")
+    assert abs(sum(thumb.getpixel((12, thumb.height - 12))) - sum((90, 120, 200))) < 30
+
+
+def test_stamp_reads_like_a_label():
+    assert images.stamp_text(datetime(2026, 11, 1, 9, 33, 50)) == "Sun Nov 1  \u00b7  9:33 AM"
+    assert images.stamp_text(datetime(2026, 10, 27, 19, 5)) == "Tue Oct 27  \u00b7  7:05 PM"
+    assert images.stamp_text(datetime(2026, 10, 27, 0, 5)) == "Tue Oct 27  \u00b7  12:05 AM"
+
+
+def test_stamp_can_be_turned_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(images.config, "PHOTO_STAMP", False)
+    image_rel, _ = images.store_frame(jpeg(), datetime(2026, 11, 1, 9, 33), tmp_path)
+    full = Image.open(tmp_path / image_rel).convert("RGB")
+    assert abs(sum(full.getpixel((60, 1080 - 68))) - sum((90, 120, 200))) < 30

@@ -4,11 +4,49 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from . import config
 
 THUMB_PX = 400
+DOT = "\u00b7"
+
+
+def _stamp_font(size: int):
+    for path in config.STAMP_FONTS:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+    return ImageFont.load_default(size)
+
+
+def stamp_text(when: datetime) -> str:
+    """'Sun Nov 1  ·  9:33 AM'"""
+    return f"{when:%a %b} {when.day}  {DOT}  {when.hour % 12 or 12}:{when:%M %p}"
+
+
+def stamp(img: Image.Image, when: datetime) -> Image.Image:
+    """Draw the capture time in the lower-left corner: a dark glass pill with a small green dot.
+
+    Sized to the photo (a 64 px pill on a 1080 px frame), so smaller false-trigger photos get a smaller one.
+    Only stored photos get it; Claude and the Pi's checks see the clean frame.
+    """
+    s = img.height / 1080
+    font = _stamp_font(max(10, round(38 * s)))
+    text = stamp_text(when)
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(overlay)
+    w = d.textlength(text, font=font)
+    h, margin = 64 * s, 36 * s
+    x, y = margin, img.height - margin - h
+    d.rounded_rectangle((x, y, x + w + 84 * s, y + h), radius=h / 2, fill=(15, 20, 18, 150),
+                        outline=(255, 255, 255, 60), width=max(1, round(2 * s)))
+    dot = 7 * s
+    d.ellipse((x + 33 * s - dot, y + h / 2 - dot, x + 33 * s + dot, y + h / 2 + dot), fill=(126, 200, 140, 255))
+    d.text((x + 56 * s, y + h / 2), text, font=font, fill=(245, 245, 240, 255), anchor="lm")
+    return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
 
 def store_frame(
@@ -30,6 +68,8 @@ def store_frame(
     full = img.copy()
     if max_edge:
         full.thumbnail((max_edge, max_edge))
+    if config.PHOTO_STAMP:
+        full = stamp(full, captured_at)
     full.save(images_dir / image_rel, "JPEG", quality=quality, optimize=True)
     img.thumbnail((THUMB_PX, THUMB_PX))
     img.save(images_dir / thumb_rel, "JPEG", quality=82)
@@ -42,10 +82,12 @@ def store_burst(
     images_dir: Path | None = None,
     max_edge: int | None = None,
     quality: int = 85,
+    captured_at: datetime | None = None,
 ) -> list[str]:
     """Save a whole burst next to its visit's photo as <stem>_b1.jpg, _b2.jpg... in capture order (no thumbnails).
 
-    Kept for false triggers, so a doubtful one can be checked frame by frame. Returns the relative paths.
+    Kept for false triggers, so a doubtful one can be checked frame by frame. With captured_at, each frame gets the
+    same time stamp as the photo. Returns the relative paths.
     """
     images_dir = images_dir or config.IMAGES_DIR
     stem = image_rel.removesuffix(".jpg")
@@ -54,6 +96,8 @@ def store_burst(
         img = Image.open(io.BytesIO(jpeg)).convert("RGB")
         if max_edge:
             img.thumbnail((max_edge, max_edge))
+        if captured_at and config.PHOTO_STAMP:
+            img = stamp(img, captured_at)
         rel = f"{stem}_b{i}.jpg"
         img.save(images_dir / rel, "JPEG", quality=quality, optimize=True)
         paths.append(rel)

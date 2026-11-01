@@ -152,6 +152,15 @@ SUB_FPS = int(_env("SUB_FPS", "15"))  # the substream's frame rate; the watcher 
 TRIGGER_FRAMES = 3  # consecutive substream frames of rim motion needed to count as a visit
 BURST_FRAMES = 6    # main-stream frames captured per visit, at BURST_FPS; the sharpest goes to Claude
 BURST_FPS = 4
+# Stored photos get the capture time drawn in their lower-left corner (a dark glass pill). The camera's own
+# burn-in is turned off, so this is the only timestamp. 0 turns it off.
+PHOTO_STAMP = _env("PHOTO_STAMP", "1") != "0"
+# Font for the stamp; the first of these that exists is used, else Pillow's built-in font.
+STAMP_FONTS = [f for f in _env("STAMP_FONT").split(",") if f] + [
+    "/usr/share/fonts/opentype/urw-base35/URWGothic-Demi.otf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Futura.ttc",
+]
 
 
 def false_trigger_wait(streak: int) -> int:

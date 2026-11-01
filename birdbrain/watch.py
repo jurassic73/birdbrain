@@ -505,7 +505,7 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     if false_trigger and len(frames) > 1:
         # The whole burst, in capture order, so a doubtful false trigger can be checked before and after.
         try:
-            images.store_burst(frames, image_rel, max_edge=max_edge, quality=quality)
+            images.store_burst(frames, image_rel, max_edge=max_edge, quality=quality, captured_at=captured_at)
             burst = {"count": len(frames), "best": frames.index(best), "fps": config.BURST_FPS,
                      "sharpness": [round(sharpness(f, crop), 1) for f in frames]}
         except Exception:
