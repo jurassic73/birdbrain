@@ -516,6 +516,12 @@ def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, co
     assert "claude-haiku-5-5" in html and "claude-sonnet-5-5" in html
     assert "2</span> motion events checked" in html and "Example: a summer visitor" in html
     assert "—" not in html
+    # diagrams first, then the numbers with visible titles, then the zones
+    assert "How a visit gets spotted, identified and shared here" in html
+    assert "The network path, from the bird to you" in html
+    assert "How often visitors come" in html
+    pos = [html.index(f'id="{i}"') for i in ("flow", "network", "numbers", "zones")]
+    assert pos == sorted(pos) and '<a href="#numbers">Numbers</a>' in html
 
 
 def test_about_page_without_calibration_or_data(client, monkeypatch):
@@ -527,6 +533,7 @@ def test_about_page_without_calibration_or_data(client, monkeypatch):
     assert 'class="z-water"' not in html and "Open water</h3>" not in html
     assert 'class="z-ground"' not in html and "Ground around the bath" not in html
     assert "motion events checked" not in html
+    assert 'id="numbers"' not in html and 'href="#numbers"' not in html
 
 
 def test_about_page_explains_the_ground_zone(client, calibrated, monkeypatch):

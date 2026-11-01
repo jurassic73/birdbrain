@@ -17,40 +17,18 @@
     <span data-tip="Rim: {{ cfg.TRIGGER_FRAMES }} frames in a row (about {{ secs(cfg.TRIGGER_FRAMES) }}).{% if cfg.WATER_WATCH and zones.water %} Open water: {{ cfg.WATER_PERSIST_FRAMES }} (about {{ secs(cfg.WATER_PERSIST_FRAMES) }}).{% endif %}{% if zones.ground %} Ground: {{ cfg.GROUND_PERSIST_FRAMES }} (about {{ secs(cfg.GROUND_PERSIST_FRAMES) }}).{% endif %} The models only run after that.">Movement has to last a fraction of a second</span>
     before it takes full-size photos and checks what's there.</p>
   <nav class="chips about-toc" aria-label="On this page">
-    <a href="#flow">Overview</a><a href="#network">Hardware</a><a href="#zones">Zones</a><a href="#rules">Detection rules</a><a href="#burst">Photos</a>
+    <a href="#flow">How it works</a><a href="#network">Network path</a>{% if totals.events or rate.photos %}<a href="#numbers">Numbers</a>{% endif %}<a href="#zones">Zones</a><a href="#rules">Detection rules</a><a href="#burst">Photos</a>
     <a href="#local">Local model</a><a href="#claude">Claude</a><a href="#learning">Learning</a>
     <a href="#sources">Outside sources</a><a href="#seasons">Seasons and alerts</a><a href="#stack">Under the hood</a>
   </nav>
 </header>
 
-{% if totals.events %}
-<section class="about-numbers" aria-label="By the numbers">
-  <div><span class="big">{{ '{:,}'.format(totals.events) }}</span> motion events checked</div>
-  <div><span class="big">{{ '{:,}'.format(totals.visitors) }}</span> real visitors</div>
-  <div><span class="big">{{ totals.species }}</span> species and mammals</div>
-  <div><span class="big">{{ '{:,}'.format(totals.false_alarms) }}</span> false alarms caught</div>
-  <div><span class="big">{{ '{:,}'.format(totals.kept_on_pi) }}</span> settled on the Pi, free</div>
-  <div><span class="big">{{ '$%.2f' | format(totals.claude_usd) if totals.claude_usd >= 0.01 or not totals.claude_usd else '< 1¢' }}</span> spent on Claude</div>
-  <p class="muted small">Since {{ totals.since | nice_date }}.</p>
-</section>
-{% endif %}
-{% if rate.photos %}
-{% macro per_day(x) %}{{ '%d' | format(x | round) if x >= 10 else '%.1f' | format(x) }}{% endmacro %}
-<section class="about-numbers about-rate" aria-label="How often we capture">
-  <div data-tip="Every photo kept, real visitors and false alarms, averaged over the last {{ rate.recent_days }} day{{ 's' if rate.recent_days != 1 }}. Quiet days count as zero."><span class="big">{{ per_day(rate.photos_per_day) }}</span> photos a day lately</div>
-  <div data-tip="Photos with a real animal in them, averaged over the last {{ rate.recent_days }} day{{ 's' if rate.recent_days != 1 }}."><span class="big">{{ per_day(rate.visitors_per_day) }}</span> visitors a day lately</div>
-  <div data-tip="Every photo kept since the first one, per calendar day."><span class="big">{{ per_day(rate.all_photos_per_day) }}</span> photos a day, all time</div>
-  <div data-tip="Real visitors since the first one, per calendar day."><span class="big">{{ per_day(rate.all_visitors_per_day) }}</span> visitors a day, all time</div>
-  <div data-tip="The hour of day with the most real visitors over the last {{ rate.days }} days."><span class="big">{% if rate.busiest_hour is not none %}{{ (rate.busiest_hour % 12) or 12 }} {{ 'am' if rate.busiest_hour < 12 else 'pm' }}{% else %}–{% endif %}</span> busiest hour</div>
-  <div data-tip="The middle value of the time between one real visitor and the next, over the last {{ rate.days }} days. Half the waits are shorter."><span class="big">{% if rate.median_gap_min is none %}–{% elif rate.median_gap_min < 90 %}{{ rate.median_gap_min | round | int }} min{% else %}{{ '%.1f' | format(rate.median_gap_min / 60) }} h{% endif %}</span> typical wait between visitors</div>
-  <p class="muted small">Last photo {{ rate.last | short_time }}. Each motion event keeps at most one photo; probes the Pi throws away aren't counted here.</p>
-</section>
-{% endif %}
 {% if login_on() %}<p class="muted small">Anyone can browse this site. Corrections, settings and anything that asks Claude need the admin login (the Admin button at the top).</p>{% endif %}
+
 
 {# ---------- 1. The pipeline at a glance ---------- #}
 <section class="about-section" id="flow">
-  <h2>The whole trip, from splash to photo</h2>
+  <h2>How a visit gets spotted, identified and shared here</h2>
   <ol class="flow">
     <li class="flow-step where-cam">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -103,7 +81,7 @@
 
 {# ---------- 1b. The hardware path ---------- #}
 <section class="about-section" id="network">
-  <h2>How the pieces connect</h2>
+  <h2>The network path, from the bird to you</h2>
   <ol class="flow">
     <li class="flow-step where-cam">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h18c0 4-4 6-9 6s-9-2-9-6z"/><path d="M12 16v4M8 21h8"/><path d="M14 7c1-2 3-2 4-1-1 0-2 1-2 2h-2z"/></svg>
@@ -139,6 +117,37 @@
     <span class="where where-pi">On the Pi</span><span class="where where-cloud">Cloud</span><span class="where where-you">You</span>
   </p>
 </section>
+
+{# ---------- 1c. By the numbers ---------- #}
+{% if totals.events or rate.photos %}
+<section class="about-section" id="numbers">
+  <h2>By the numbers</h2>
+{% if totals.events %}
+<div class="about-numbers" aria-label="By the numbers">
+  <div><span class="big">{{ '{:,}'.format(totals.events) }}</span> motion events checked</div>
+  <div><span class="big">{{ '{:,}'.format(totals.visitors) }}</span> real visitors</div>
+  <div><span class="big">{{ totals.species }}</span> species and mammals</div>
+  <div><span class="big">{{ '{:,}'.format(totals.false_alarms) }}</span> false alarms caught</div>
+  <div><span class="big">{{ '{:,}'.format(totals.kept_on_pi) }}</span> settled on the Pi, free</div>
+  <div><span class="big">{{ '$%.2f' | format(totals.claude_usd) if totals.claude_usd >= 0.01 or not totals.claude_usd else '< 1¢' }}</span> spent on Claude</div>
+  <p class="muted small">Since {{ totals.since | nice_date }}.</p>
+</div>
+{% endif %}
+{% if rate.photos %}
+{% macro per_day(x) %}{{ '%d' | format(x | round) if x >= 10 else '%.1f' | format(x) }}{% endmacro %}
+<h3 class="about-rate-title">How often visitors come</h3>
+<div class="about-numbers about-rate" aria-label="How often visitors come">
+  <div data-tip="Every photo kept, real visitors and false alarms, averaged over the last {{ rate.recent_days }} day{{ 's' if rate.recent_days != 1 }}. Quiet days count as zero."><span class="big">{{ per_day(rate.photos_per_day) }}</span> photos a day lately</div>
+  <div data-tip="Photos with a real animal in them, averaged over the last {{ rate.recent_days }} day{{ 's' if rate.recent_days != 1 }}."><span class="big">{{ per_day(rate.visitors_per_day) }}</span> visitors a day lately</div>
+  <div data-tip="Every photo kept since the first one, per calendar day."><span class="big">{{ per_day(rate.all_photos_per_day) }}</span> photos a day, all time</div>
+  <div data-tip="Real visitors since the first one, per calendar day."><span class="big">{{ per_day(rate.all_visitors_per_day) }}</span> visitors a day, all time</div>
+  <div data-tip="The hour of day with the most real visitors over the last {{ rate.days }} days."><span class="big">{% if rate.busiest_hour is not none %}{{ (rate.busiest_hour % 12) or 12 }} {{ 'am' if rate.busiest_hour < 12 else 'pm' }}{% else %}–{% endif %}</span> busiest hour</div>
+  <div data-tip="The middle value of the time between one real visitor and the next, over the last {{ rate.days }} days. Half the waits are shorter."><span class="big">{% if rate.median_gap_min is none %}–{% elif rate.median_gap_min < 90 %}{{ rate.median_gap_min | round | int }} min{% else %}{{ '%.1f' | format(rate.median_gap_min / 60) }} h{% endif %}</span> typical wait between visitors</div>
+  <p class="muted small">Last photo {{ rate.last | short_time }}. Each motion event keeps at most one photo; probes the Pi throws away aren't counted here.</p>
+</div>
+{% endif %}
+</section>
+{% endif %}
 
 {# ---------- 2. Zones ---------- #}
 <section class="about-section" id="zones">

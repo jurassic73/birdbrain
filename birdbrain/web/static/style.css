@@ -859,7 +859,10 @@ html { scroll-behavior: smooth; }
 }
 .about-numbers .big { display: block; font-size: 1.5rem; font-weight: 700; color: var(--text); line-height: 1.2; }
 .about-numbers p { grid-column: 1 / -1; margin: 0; }
-.about-rate { margin-top: 10px; }
+.about-section .about-numbers { padding: 0; background: none; border: 0; }
+.about-rate-title { font-size: 1rem; margin: 18px 0 8px; }
+.about-numbers + .about-rate-title { margin-top: 18px; }
+.about-section > h2 + .about-rate-title { margin-top: 0; }
 @media (max-width: 800px) { .about-numbers { grid-template-columns: repeat(3, 1fr); } }
 .about-section {
   padding: 18px 22px; scroll-margin-top: 72px;
