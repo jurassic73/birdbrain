@@ -563,7 +563,7 @@ def set_lesson_off(conn: sqlite3.Connection, visit_id: int, off: bool) -> None:
 
 
 def mark_reviewed(conn: sqlite3.Connection, visit_id: int) -> None:
-    """Confirm: this is correct. Off the review queue, and confirmed (the local animal check trains on it, counting extra)."""
+    """Confirm (the visit page button). Off the review queue, and confirmed (the local animal check trains on it, counting extra)."""
     conn.execute("UPDATE visits SET needs_review = 0, confirmed_at = COALESCE(confirmed_at, ?) WHERE id = ?",
                  (datetime.now().isoformat(timespec="seconds"), visit_id))
     conn.commit()

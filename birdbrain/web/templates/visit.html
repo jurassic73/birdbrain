@@ -79,7 +79,7 @@
         {% if visit.confirmed_at %}
         <span class="confirmed-pair">{{ badge("Confirmed No Animal" if visit.label == 'None' else "confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button></span>
         {% elif not (visit.corrected_species or visit.corrected_visitor) %}
-        <button hx-post="/visit/{{ visit.id }}/reviewed" id="confirm-btn" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi).">Confirm: this is correct</button>
+        <span class="confirm-pair">{% if visit.label == 'None' %}<span class="confirm-hint">No animal in image:</span>{% endif %}<button hx-post="/visit/{{ visit.id }}/reviewed" id="confirm-btn" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi).">Confirm</button></span>
         {% endif %}
         {% if settled %}<button type="button" class="m-only secondary" id="correct-open">Not right? Correct it</button>{% endif %}
         <button class="danger m-hide" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Its photo is deleted too. This can't be undone." data-confirm-title="Delete this visit?" data-confirm-ok="Delete">Delete visit</button>

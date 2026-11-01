@@ -420,7 +420,8 @@ dialog.popup[open] { animation: popup-in .14s ease-out; }
 .badge.shadow { color: var(--muted); white-space: nowrap; }
 .badge.checked { color: var(--accent); white-space: nowrap; }
 /* The confirmed pill and its Undo, centered on one line beside the visit's buttons. */
-.confirmed-pair { display: inline-flex; align-items: center; gap: 6px; align-self: center; }
+.confirmed-pair, .confirm-pair { display: inline-flex; align-items: center; gap: 6px; align-self: center; }
+.confirm-hint { color: var(--muted); white-space: nowrap; }
 .badge.pi-only { color: var(--medium); white-space: nowrap; }
 .ft-confirm { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
 /* With Show confirmed on, the confirmed photos stay in the grid but step back. */

@@ -98,13 +98,19 @@ def client(conn):
 
 def test_looks_right_confirms_and_undo_takes_it_back(client, conn, add_visit):
     vid = add_visit()
-    assert "Confirm: this is correct" in client.get(f"/visit/{vid}").text
+    assert ">Confirm</button>" in client.get(f"/visit/{vid}").text
     client.post(f"/visit/{vid}/reviewed")
     assert db.get_visit(conn, vid)["confirmed_at"]
     page = client.get(f"/visit/{vid}").text
-    assert "confirmed by human" in page and "Confirm: this is correct</button>" not in page
+    assert "confirmed by human" in page and ">Confirm</button>" not in page
     client.post(f"/visit/{vid}/unconfirm")
     assert db.get_visit(conn, vid)["confirmed_at"] is None
+
+
+def test_confirm_says_no_animal_only_on_empty_frames(client, add_visit):
+    assert "No animal in image:" not in client.get(f"/visit/{add_visit()}").text
+    empty = add_visit(visitor="none", species=None, count=0)
+    assert "No animal in image:</span><button" in client.get(f"/visit/{empty}").text
 
 
 def test_false_triggers_confirm_all_shown_skips_real_visits(client, conn, add_visit):
