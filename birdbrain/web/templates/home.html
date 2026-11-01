@@ -23,13 +23,14 @@
   <a class="hero-latest" href="/visit/{{ lv.id }}">
     {{ thumb(lv, "thumb hero-photo", lazy=False, full=True) }}
     {% set kicker = 'Latest visitor' if lv.captured_at[:10] == today.date else 'Last visitor, before today' %}
-    {# Desktop: the label sits at the top-left of the photo (CSS hides the copy in the caption). #}
-    <span class="hero-kicker-top" aria-hidden="true">{{ kicker }}</span>
+    {# One chip at the top-left (the camera burns its date stamp into the bottom-left): kicker, then name and time. #}
     <div class="hero-caption">
       <span class="hero-kicker">{{ kicker }}</span>
-      <span class="hero-name">{{ lv.label }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}
-        {%- for a in also_of(lv) %} + {{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}</span>
-      <span class="hero-time">{{ lv.captured_at | short_time }}</span>
+      <div class="hero-row">
+        <span class="hero-name">{{ lv.label }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}
+          {%- for a in also_of(lv) %} + {{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}</span>
+        <span class="hero-time">{{ lv.captured_at | short_time }}</span>
+      </div>
     </div>
   </a>
   {% else %}

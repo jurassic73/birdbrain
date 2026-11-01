@@ -647,6 +647,7 @@ def test_latest_visitor_takes_the_big_photo_and_live_view_moves_to_today(client,
     html = client.get("/").text
     hero = html[html.index('class="hero-latest"'):html.index('class="today"')]
     assert f'href="/visit/{vid}"' in hero and "Bushtit x3" in hero and "_t.jpg" not in hero  # full-size frame
+    assert "hero-kicker-top" not in html and hero.index("hero-kicker") < hero.index("hero-name") < hero.index("hero-time")  # one chip, kicker first
     assert html.count('id="live-box"') == 1 and html.index('class="today"') < html.index('id="live-box"')
 
 
