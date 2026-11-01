@@ -13,7 +13,7 @@
     picks the sharpest one. A small local model and then Claude decide who came to visit, and a few free nature
     sites fill in the rest: photos, songs, range maps and when each species is usually around.</p>
   <nav class="chips about-toc" aria-label="On this page">
-    <a href="#flow">Overview</a><a href="#zones">Zones</a><a href="#rules">Detection rules</a><a href="#burst">Photos</a>
+    <a href="#flow">Overview</a><a href="#network">Hardware</a><a href="#zones">Zones</a><a href="#rules">Detection rules</a><a href="#burst">Photos</a>
     <a href="#local">Local model</a><a href="#claude">Claude</a><a href="#learning">Learning</a>
     <a href="#sources">Outside sources</a><a href="#seasons">Seasons and alerts</a><a href="#stack">Under the hood</a>
   </nav>
@@ -88,6 +88,45 @@
   <p class="flow-legend">
     <span class="where where-cam">Camera</span><span class="where where-pi">On the Pi at home</span>
     <span class="where where-cloud">Claude, in the cloud</span><span class="where where-you">You</span>
+  </p>
+</section>
+
+{# ---------- 1b. The hardware path ---------- #}
+<section class="about-section" id="network">
+  <h2>How the pieces connect</h2>
+  <ol class="flow">
+    <li class="flow-step where-cam">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h18c0 4-4 6-9 6s-9-2-9-6z"/><path d="M12 16v4M8 21h8"/><path d="M14 7c1-2 3-2 4-1-1 0-2 1-2 2h-2z"/></svg>
+      <strong>The birdbath</strong><small>Birds land on the rim and the rocks; critters pass by on the ground</small>
+    </li>
+    <li class="flow-step where-cam">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="12" rx="2"/><circle cx="12" cy="9" r="3"/><path d="M12 15v3M8 21h8l-1-3H9z"/></svg>
+      <strong>Wyze Cam v3</strong><small>Open-source Thingino firmware; infrared after dark</small>
+    </li>
+    <li class="flow-step where-net">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1"/></svg>
+      <strong>Wi-Fi</strong><small>Two video streams: a small one for watching, a full-size one for photos</small>
+    </li>
+    <li class="flow-step where-net">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M8 13l-2-8M16 13l2-8"/></svg>
+      <strong>Home router</strong><small>Keeps the camera on the home network, never open to the internet</small>
+    </li>
+    <li class="flow-step where-pi">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+      <strong>Raspberry Pi 4</strong><small>Watches for motion, takes the photos, runs the local checks, stores everything and serves this site</small>
+    </li>
+    <li class="flow-step where-cloud">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.5-10 6 6 0 0 1 11.5 2 4 4 0 0 1-.5 8z"/></svg>
+      <strong>Claude</strong><small>Only the hard photos go out, to name the visitor</small>
+    </li>
+    <li class="flow-step where-you">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+      <strong>You</strong><small>This gallery on any screen, plus phone alerts</small>
+    </li>
+  </ol>
+  <p class="flow-legend">
+    <span class="where where-cam">In the yard</span><span class="where where-net">Home network</span>
+    <span class="where where-pi">On the Pi</span><span class="where where-cloud">Cloud</span><span class="where where-you">You</span>
   </p>
 </section>
 

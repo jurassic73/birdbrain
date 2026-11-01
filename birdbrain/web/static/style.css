@@ -778,6 +778,7 @@ button.danger.sending, button.danger.htmx-request {
 .where-pi { --tone: var(--accent); }
 .where-cloud { --tone: var(--night); }
 .where-you { --tone: var(--medium); }
+.where-net { --tone: var(--text); }
 .flow { list-style: none; margin: 0 0 10px; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 18px; }
 .flow-step {
   position: relative; display: flex; flex-direction: column; gap: 4px; padding: 12px 10px;
