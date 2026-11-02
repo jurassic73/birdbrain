@@ -1492,3 +1492,25 @@ button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
   background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.3); color: #fff; font-size: .9rem; cursor: pointer; }
 .viewer-reset:hover { background: rgba(255,255,255,.2); }
 .viewer-reset[hidden] { display: none; }
+
+/* Guided tour (static/tour.js): a dimmed page with a cut-out around one element and a small card beside it. */
+.tour { position: fixed; inset: 0; z-index: 2000; }
+.tour-block { position: absolute; inset: 0; }
+.tour-spot {
+  position: absolute; border-radius: 12px; pointer-events: none;
+  box-shadow: 0 0 0 100vmax rgba(10, 14, 12, .62);
+  outline: 2px solid var(--accent);
+  transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease;
+}
+.tour-card {
+  position: absolute; box-sizing: border-box; padding: 14px 16px; background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0, 0, 0, .35); outline: none;
+  transition: left .25s ease, top .25s ease;
+}
+.tour-count { font-size: .78rem; color: var(--muted); margin-bottom: 2px; }
+.tour-title { margin: 0 0 6px; font-size: 1.05rem; }
+.tour-text { margin: 0 0 12px; font-size: .92rem; line-height: 1.4; }
+.tour-actions { display: flex; align-items: center; gap: 6px; }
+.tour-gap { flex: 1; }
+.tour-actions [hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .tour-spot, .tour-card { transition: none; } }

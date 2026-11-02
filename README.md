@@ -179,6 +179,10 @@ scripts/deploy.sh
 
 This copies the code to `/opt/birdbrain`, installs Python packages, copies `.env` (readable only by that user), and starts two services that also start at boot: `birdbrain-web` (the site on port 8000) and `birdbrain-watch`. Photos and the database live in `/var/lib/birdbrain`, separate from the code, so redeploying never touches them. Logs: `journalctl -u birdbrain-watch -f`.
 
+## Guided tour
+
+The first time a browser opens the home page, a short tour points at the latest photo, the eye button that hides circles and zones, the live view, the menus and the species cards; an admin gets three more steps (Review, Claude's Notes, Settings) once after logging in. Whether it has run is remembered in that browser's local storage (`bb_tour_seen`, `bb_tour_admin_seen`); if storage is blocked it never starts by itself. **Run the tour again** is a button in Settings and on the About page (or open `/?tour=1`). Code: `birdbrain/web/static/tour.js`.
+
 ## Optional: read-only mode for guests
 
 Set `ADMIN_PASSWORD` in `.env` and the site becomes read-only for everyone else: they can browse visits, species, stats and the About page, but can't correct, delete, change settings or ask Claude anything. The Admin button at the top logs you in on that device for 30 days. Leave it blank to keep the site fully open (fine on a home LAN). Before putting the site on the internet, put HTTPS in front of it so the password isn't sent in the clear.

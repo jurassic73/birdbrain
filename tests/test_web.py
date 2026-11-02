@@ -883,3 +883,11 @@ def test_visit_opened_from_species_page_keeps_the_species_scope(client, add_visi
     plain = client.get(f"/visit/{new}").text
     assert "Browsing:" not in plain and "species=Bushtit" not in plain
     assert f'href="/visit/{sparrow}" id="nav-next"' in plain
+
+
+def test_tour_script_and_rerun_buttons(client):
+    assert "/static/tour.js" in client.get("/").text
+    assert "data-tour-restart" in client.get("/about").text
+    assert "data-tour-restart" in client.get("/settings").text
+    assert "data-admin=\"1\"" in client.get("/").text  # no password: everyone is admin
+    assert "tour.js" not in client.get("/?embed=1").text

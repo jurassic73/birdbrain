@@ -2,7 +2,8 @@
 {% from "_macros.html" import badge %}
 {% block title %}Settings | Birdbrain{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Settings</h1></div>
+<div class="page-head"><h1>Settings</h1>
+  <a class="button-link solid" href="/?tour=1" data-tour-restart data-tip="Replays the guided tour of the main buttons, on the home page">Run the tour again</a></div>
 
 <details class="settings-card" id="zones" open data-m-closed>
   <summary><h2>Zones</h2><span class="summary-hint">{{ ('Checked daily at ' ~ recal.labels | join(' and ')) if recal.auto and recal.times else 'Automatic checks off' }}</span></summary>

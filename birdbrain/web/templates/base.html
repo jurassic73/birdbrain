@@ -30,9 +30,10 @@
   <script src="/static/dialog.js?v={{ asset_version }}" defer></script>
   <script src="/static/save-feedback.js?v={{ asset_version }}" defer></script>
   <script src="/static/scene-edit.js?v={{ asset_version }}" defer></script>
+  {% if not embed %}<script src="/static/tour.js?v={{ asset_version }}" defer></script>{% endif %}
   {% block head %}{% endblock %}
 </head>
-<body{% if embed %} class="embed"{% endif %}>
+<body{% if embed %} class="embed"{% endif %}{% if request.state.admin %} data-admin="1"{% endif %}>
   {% if not embed %}
   <header class="topbar">
     {% if public() %}<a class="home-link" href="https://somegeek.com/" aria-label="somegeek.com home" title="somegeek.com home"><img src="/static/somegeek-logo.png?v={{ asset_version }}" alt="" width="34" height="34"></a>{% endif %}
