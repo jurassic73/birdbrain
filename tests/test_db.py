@@ -88,8 +88,9 @@ def test_multiple_filter_uses_effective_also(conn, add_visit):
     add_visit(species="Bushtit", captured_at=at(0, 10))
     add_visit(species="Bushtit", also=also, corrected_also="[]", captured_at=at(0, 11))
     d = add_visit(species="Bushtit", corrected_also=also, captured_at=at(0, 12))
+    pair = add_visit(species="Bushtit", count=2, captured_at=at(0, 13))  # two of one species count too
     ids = {r["id"] for r in db.list_visits(conn, kind="multiple")}
-    assert ids == {a, d}
+    assert ids == {a, d, pair}
 
 
 def test_list_order_paging_and_review_queue_oldest_first(conn, add_visit):

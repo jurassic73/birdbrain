@@ -262,7 +262,8 @@ def _where(
         where.append(f"{VISITOR} IN ({', '.join('?' for _ in MAMMALS)})")
         args.extend(MAMMALS)
     elif kind == "multiple":
-        where.append(f"json_array_length(COALESCE({ALSO}, '[]')) > 0")
+        # Two or more animals: several of one species, or another kind in the photo too.
+        where.append(f"(count > 1 OR json_array_length(COALESCE({ALSO}, '[]')) > 0)")
     if tod == "day":
         where.append("is_night = 0")
     elif tod == "night":
