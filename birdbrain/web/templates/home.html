@@ -51,14 +51,6 @@
     <a class="notice" href="/review">{{ today.review }} visit{{ 's' if today.review != 1 }} waiting for review</a>
     {% endif %}
 
-    <div class="today-foot muted">
-      {% if today.last_motion %}
-      Last motion {{ today.last_motion.captured_at | short_time }}
-      ({{ 'no animal' if today.last_motion.label == 'None' else today.last_motion.label }})
-      {% else %}
-      No motion recorded yet
-      {% endif %}
-    </div>
     </div>
   </aside>
 </section>
@@ -80,9 +72,16 @@
     </nav>
     {% endif %}
     {% if any_visits %}
-    <details class="more-filters" {% if more_filters_open %}open{% endif %}>
-      <summary>More filters</summary>
-      <form class="filters" method="get" action="/">
+    <button type="button" class="filters-toggle" aria-controls="more-filters" aria-expanded="{{ 'true' if more_filters_open else 'false' }}"
+            data-tip="Filter by species, birds or mammals, day or night, and a date range">
+      <svg class="filters-funnel" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
+      More filters
+      <svg class="filters-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    {% endif %}
+  </div>
+  {% if any_visits %}
+      <form class="filters more-filters-form" id="more-filters" method="get" action="/"{% if not more_filters_open %} hidden{% endif %}>
       <select name="species" aria-label="Species">
         <option value="">All species</option>
         {% for name in species_names %}
@@ -104,9 +103,7 @@
       <button type="submit">Apply</button>
       {% if filtered %}<a class="clear" href="/">Clear</a>{% endif %}
       </form>
-    </details>
-    {% endif %}
-  </div>
+  {% endif %}
 
   {% if visits %}
   <div class="grid">
@@ -424,4 +421,17 @@
   })();
 </script>
 <script src="/static/photo-reminder.js?v={{ asset_version }}" defer></script>
+<script>
+  // More filters: the button after the chips shows or hides the filter boxes under the row.
+  (() => {
+    const btn = document.querySelector(".filters-toggle"), form = document.getElementById("more-filters");
+    if (!btn || !form) return;
+    btn.addEventListener("click", () => {
+      const open = form.hidden;
+      form.hidden = !open;
+      btn.setAttribute("aria-expanded", String(open));
+      if (open) form.querySelector("select, input")?.focus({preventScroll: true});
+    });
+  })();
+</script>
 {% endblock %}

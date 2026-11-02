@@ -321,10 +321,11 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 .critter-name { color: var(--text); text-decoration: none; }
 .critter-name:hover, .critter-name:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .info-tip.card-tip { cursor: pointer; }
+/* The Today list's info icons, 50% bigger than elsewhere (owner: too small to see or tap). */
+.critters .info-tip { font-size: .825em; }
 .info-tip.card-tip:hover, .info-tip.card-tip:focus-visible { color: var(--accent); }
 .critter-n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); text-decoration: none; }
 .critter-n:hover, .critter-n:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-.today-foot { margin-top: auto; font-size: .85rem; }
 /* Desktop, with a latest-visitor photo: the Today panel ends exactly where the photo does. contain: size makes the panel count as
    0 tall when the grid sizes its row, so the photo alone sets the height and the panel stretches to match. The live view keeps its
    16:9 shape (flex: none) and the visitors list takes what is left and scrolls inside it. It keeps at least ~2 rows; on a short
@@ -337,7 +338,7 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
   .hero-latest ~ .today .critters { flex: 1 1 auto; display: flex; flex-direction: column; }
   .hero-latest ~ .today .critters .score-head { flex: none; }
   .hero-latest ~ .today .critters ul { flex: 1 1 0; min-height: 2.6em; max-height: none; }
-  .hero-latest ~ .today .notice, .hero-latest ~ .today .today-foot { flex: none; }
+  .hero-latest ~ .today .notice { flex: none; }
 }
 /* Today's visitor count: plain text on the row with More filters; the other numbers live on Stats. */
 .tally-box { margin: 0; }
@@ -385,12 +386,21 @@ a.tally-label:hover { color: var(--accent); }
 .more-filters { margin-bottom: 14px; }
 .more-filters summary { cursor: pointer; color: var(--muted); font-size: .9rem; width: max-content; }
 .more-filters .filters { margin: 10px 0 0; }
-/* Home: the summary sits at the right end of the chips row; opened, the boxes take their own line below the chips. */
-.visits-head { position: relative; padding-right: 110px; }
-.visits-head .more-filters { flex: 0 0 100%; margin: -8px 0 0; height: 0; }
-.visits-head .more-filters[open] { height: auto; margin-top: 0; }
-.visits-head .more-filters summary { position: absolute; right: 0; top: 0; height: 32px; display: flex; align-items: center; }
-.visits-head .more-filters .filters { margin: 2px 0 6px; }
+/* Home: More filters is a toggle right after the quick-filter chips, styled apart from them (funnel, accent text, chevron),
+   and the filter boxes it opens get their own line under the row. */
+.visits-head { justify-content: flex-start; }
+button.filters-toggle {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 5px 12px 5px 10px; min-height: 0;
+  border-radius: 999px; border: 1px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  background: transparent; color: var(--accent); font-size: .9rem; font-weight: 600; white-space: nowrap;
+}
+button.filters-toggle:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); border-style: solid; }
+button.filters-toggle[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); border-style: solid; }
+.filters-toggle svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.filters-toggle .filters-chev { transition: transform .2s; }
+.filters-toggle[aria-expanded="true"] .filters-chev { transform: rotate(180deg); }
+.more-filters-form { margin: 0 0 14px; }
+.filters[hidden] { display: none; }
 .filters label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .9rem; }
 
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
@@ -1226,10 +1236,8 @@ details.review-fold > summary { display: none; }
   .tally li { overflow: hidden; text-overflow: ellipsis; }
   .hero { gap: 12px; margin-bottom: 16px; }
   .today { padding: 10px 12px; gap: 8px; }
-  .visits-head { padding-right: 0; }
   .visits-head .chips { flex: 1 1 0; min-width: 0; }
-  .visits-head .more-filters, .visits-head .more-filters[open] { height: auto; margin-top: 0; }
-  .visits-head .more-filters summary { position: static; height: auto; }
+  .visits-head .filters-toggle { flex: none; }
   .visits-head h2 { white-space: nowrap; }
   .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .chips a { white-space: nowrap; }

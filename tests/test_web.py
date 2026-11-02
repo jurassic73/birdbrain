@@ -32,15 +32,26 @@ def stored_visit(add_visit):
 
 def test_home_empty_state_hides_filters(client):
     html = client.get("/").text
-    assert "No visitors yet." in html and "more-filters" not in html
+    assert "No visitors yet." in html and 'class="filters-toggle"' not in html and 'id="more-filters"' not in html
 
 
-def test_home_lists_visits_with_chips_and_last_motion(client, add_visit):
+def test_home_lists_visits_with_chips_and_filters_toggle(client, add_visit):
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None)
     html = client.get("/").text
     assert "Bushtit" in html and "tally-box" in html and "Mammals" in html
-    assert "Last motion" in html
+    # More filters is a toggle after the chips; its boxes start hidden. The Today panel has no Last motion line any more.
+    assert 'class="filters-toggle"' in html and 'aria-expanded="false"' in html and 'id="more-filters"' in html
+    assert html.index('class="chips"') < html.index('class="filters-toggle"') < html.index('id="more-filters"')
+    assert "Last motion" not in html
+
+
+def test_home_more_filters_open_when_a_species_is_picked(client, add_visit):
+    add_visit(species="Bushtit")
+    html = client.get("/?species=Bushtit").text
+    assert 'aria-expanded="true"' in html
+    form = html[html.index('id="more-filters"'):]
+    assert form[:form.index(">")].count("hidden") == 0
 
 
 def test_home_lists_todays_visitors_with_counts(client, add_visit):
