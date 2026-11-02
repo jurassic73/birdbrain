@@ -630,6 +630,20 @@ def set_species_photo(conn: sqlite3.Connection, label: str, visit_id: int | None
     _save_species_photos(conn, photos)
 
 
+def species_without_favorite(conn: sqlite3.Connection, min_photos: int = 2) -> list[str]:
+    """Species labels with `min_photos`+ visits that still have a photo and no owner pick that is still valid
+    (the picked visit must still show the species and still have its photo), most visited first."""
+    where, args = _where()
+    rows = conn.execute(f"SELECT label, id FROM ({_seen(where + ' AND ' + HAS_PHOTO)})", [*args, *args]).fetchall()
+    ids: dict[str, set[int]] = {}
+    for r in rows:
+        ids.setdefault(r["label"], set()).add(r["id"])
+    picks = species_photos(conn)
+    out = [(label, len(v)) for label, v in ids.items()
+           if len(v) >= min_photos and label.lower() not in ("none", "other") and picks.get(label) not in v]
+    return [label for label, _ in sorted(out, key=lambda t: (-t[1], t[0]))]
+
+
 SPECIES_SORTS = {
     "visits": "visits DESC, label",
     "newest": "first_seen DESC",

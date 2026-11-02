@@ -91,3 +91,34 @@ def test_visitors_get_no_star_and_cannot_pick(client, conn, add_visit, monkeypat
     assert 'class="fav-star"' not in client.get("/species/Bushtit").text
     assert client.post("/species/Bushtit/photo", data={"visit_id": pick}).status_code == 403
     assert db.species_photos(conn) == {}
+
+
+def test_species_without_favorite(conn, add_visit):
+    b1 = add_visit(species="Bushtit")
+    add_visit(species="Bushtit")
+    add_visit(species="Dark-eyed Junco")  # one photo only
+    j1 = add_visit(species="Steller's Jay")
+    add_visit(species="Steller's Jay")
+    assert db.species_without_favorite(conn) == ["Bushtit", "Steller's Jay"]
+    db.set_species_photo(conn, "Steller's Jay", j1)  # picked: not listed
+    assert db.species_without_favorite(conn) == ["Bushtit"]
+    conn.execute("UPDATE visits SET photo_deleted_at = '2026-01-01T00:00:00' WHERE id = ?", (b1,))
+    assert db.species_without_favorite(conn) == []  # only one photo left
+
+
+def test_stale_pick_counts_as_no_pick(conn, add_visit):
+    add_visit(species="Bushtit")
+    pick = add_visit(species="Bushtit")
+    db.set_species_photo(conn, "Bushtit", pick)
+    assert db.species_without_favorite(conn) == []
+    conn.execute("UPDATE visits SET photo_deleted_at = '2026-01-01T00:00:00' WHERE id = ?", (pick,))
+    add_visit(species="Bushtit")
+    assert db.species_without_favorite(conn) == ["Bushtit"]
+
+
+def test_photo_reminder_is_admin_only(client, add_visit, monkeypatch):
+    add_visit(species="Bushtit")
+    add_visit(species="Bushtit")
+    assert client.get("/api/photo-reminder").json() == {"species": ["Bushtit"]}  # no password: everyone is admin
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    assert client.get("/api/photo-reminder").json() == {"species": []}

@@ -657,6 +657,13 @@ def species_list(request: Request, sort: str = "visits", conn=Depends(get_conn))
                 confirmed=db.confirmed_species(conn))
 
 
+@app.get("/api/photo-reminder")
+def photo_reminder(request: Request, conn=Depends(get_conn)):
+    """Species with 2+ photos and no favourite yet, for the weekly reminder pop-up. Admins only (visitors get none)."""
+    names = db.species_without_favorite(conn) if request.state.admin else []
+    return {"species": names}
+
+
 @app.get("/species/{name}", response_class=HTMLResponse)
 def species_page(request: Request, name: str, conn=Depends(get_conn)):
     row = db.species_row(conn, name)
