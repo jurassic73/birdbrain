@@ -442,6 +442,15 @@
       show(`Using <b>${esc(r.name)}</b>. <button type="button" class="check-save">Save</button>`);
     });
   });
+  // Save beside "Using X" (circle checks and Ask): the same path as the Save button at the bottom, so htmx submits
+  // form.review (marks are kept current by draw()) and a false trigger moves on to the next one.
+  document.querySelector(".review").addEventListener("click", e => {
+    const save = e.target.closest(".check-save");
+    if (!save || save.disabled) return;
+    save.classList.add("sending"); save.disabled = true;
+    e.currentTarget.requestSubmit();
+    setTimeout(() => { save.classList.remove("sending"); save.disabled = false; }, 15000);
+  });
   // What's in your circle: the Pi looks at the first circle the owner drew (free); if it isn't sure, Haiku, then
   // Sonnet. Each answer is added below with Use buttons that fill the form; nothing is saved until Save.
   (() => {
@@ -475,15 +484,6 @@
         note.querySelectorAll(".check-used").forEach(u => u.remove());
         use.closest(".check-answer").insertAdjacentHTML("beforeend", `<p class="check-used"><span>Using <b>${esc(use.dataset.label)}</b>.</span> <button type="button" class="check-save">Save</button></p>`);
         scrollTo(note.querySelector(".check-used"));
-        return;
-      }
-      const save = e.target.closest(".check-save");
-      if (save) {
-        // The same path as the Save button at the bottom: htmx submits form.review (marks are kept current by draw()).
-        const form = document.querySelector("form.review");
-        save.classList.add("sending"); save.disabled = true;
-        form.requestSubmit();
-        setTimeout(() => { save.classList.remove("sending"); save.disabled = false; }, 15000);
         return;
       }
       const anyway = e.target.closest(".check-anyway");
