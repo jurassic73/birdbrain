@@ -313,6 +313,19 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 .critter-n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); text-decoration: none; }
 .critter-n:hover, .critter-n:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .today-foot { margin-top: auto; font-size: .85rem; }
+/* Desktop, with a latest-visitor photo: the Today panel ends exactly where the photo does. contain: size makes the panel count as
+   0 tall when the grid sizes its row, so the photo alone sets the height and the panel stretches to match. The live view keeps its
+   16:9 shape (flex: none) and the visitors list takes what is left and scrolls inside it; it never shrinks below ~3 rows (the
+   panel then clips its bottom on a very short window, instead of the list vanishing). */
+@media (min-width: 801px) {
+  .hero-latest ~ .today { contain: size; overflow: hidden; min-height: 0; }
+  .hero-latest ~ .today .live { flex: none; }
+  .hero-latest ~ .today .today-rule { flex: none; }
+  .hero-latest ~ .today .critters { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .hero-latest ~ .today .critters .score-head { flex: none; }
+  .hero-latest ~ .today .critters ul { flex: 1 1 0; min-height: 5.2em; max-height: none; }
+  .hero-latest ~ .today .notice, .hero-latest ~ .today .today-foot { flex: none; }
+}
 /* Today's visitor count: plain text on the row with More filters; the other numbers live on Stats. */
 .tally-box { margin: 0; }
 .tally-box.tally-head { font-size: 1rem; white-space: nowrap; }
