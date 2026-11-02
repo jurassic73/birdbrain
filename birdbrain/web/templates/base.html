@@ -42,7 +42,7 @@
       <a href="/" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Latest</a>
       <a href="/visits" {% if request.url.path == '/visits' %}aria-current="page"{% endif %}>Visits</a>
       <a href="/species" {% if request.url.path.startswith('/species') %}aria-current="page"{% endif %}>Species</a>
-      <a href="/stats" {% if request.url.path == '/stats' %}aria-current="page"{% endif %}>Stats</a>
+      <a href="/stats" {% if request.url.path in ('/stats', '/weather') %}aria-current="page"{% endif %}>Stats</a>
       {% if request.state.admin %}
       {% set waiting = nav_waiting(request) %}
       <a href="/review" data-nav="review" {% if request.url.path == '/review' %}aria-current="page"{% endif %}{% if waiting.review %} class="waiting" title="{{ waiting.review }} waiting for review" aria-label="Review, {{ waiting.review }} waiting for review"{% endif %}>Review{% if waiting.review %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.review) }}</span>{% endif %}</a>

@@ -10,7 +10,7 @@ A backyard birdbath camera that spots visitors and identifies them with Claude, 
 <td width="50%"><img src="docs/screenshots/species.jpg" alt="A species card for Steller's Jay with a reference photo, description, behavior notes, three local recordings and a monthly chart"><br><b>Species cards</b> with a reference photo, behavior notes, songs and calls recorded nearby, and when the species is usually around in your county.</td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/screenshots/stats.jpg" alt="The stats page: visits per day and by hour, top visitors, new species and scorecards for the local models"><br><b>Stats</b>: visits by day and hour, top visitors, new arrivals, and scorecards that show how well the local models would do without Claude.</td>
+<td width="50%"><img src="docs/screenshots/stats.jpg" alt="The stats page: visits per day and by hour, top visitors, new species and scorecards for the local models"><br><b>Stats</b>: visits by day and hour, top visitors, new arrivals, how the weather lines up with visits, and scorecards that show how well the local models would do without Claude.</td>
 <td width="50%"><img src="docs/screenshots/about.jpg" alt="The About page: live totals, including Claude spend, and a diagram of the whole pipeline from camera to the owner"><br><b>How it works</b>, built into the site: live totals (2,700 false alarms caught, $0.54 spent on Claude) and the trip from splash to photo.</td>
 </tr>
 <tr>
@@ -188,11 +188,11 @@ This copies the code to `/opt/birdbrain`, installs Python packages, copies `.env
 
 ## Weather
 
-When `SITE_LAT` and `SITE_LON` are set, the watcher keeps hourly weather for the bath (temperature, rain, cloud, wind) in the database, from the day of your first visit on, so visits can be compared with the weather. It comes from [Open-Meteo](https://open-meteo.com) (free, no key; weather data by Open-Meteo.com, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), the first time shortly after the watcher starts (which fills in the past) and then once an hour in a background thread; a failed fetch is logged and retried an hour later. `WEATHER=off` in `.env` skips it. To fetch by hand:
+When `SITE_LAT` and `SITE_LON` are set, the watcher keeps hourly weather for the bath (temperature, rain, cloud, wind, humidity) in the database, from the day of your first visit on, so visits can be compared with the weather on the **Weather & visits** page (`/weather`, linked from Stats): a diary strip with each day's weather, visitors and species, a chart of rain against visitors per daylight hour, and visitors per hour in rainy vs dry, overcast vs clearer, calm vs windy hours and by temperature, each with its sample size. The page only reads the database, so the public mirror shows it too. It comes from [Open-Meteo](https://open-meteo.com) (free, no key; weather data by Open-Meteo.com, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), the first time shortly after the watcher starts (which fills in the past) and then once an hour in a background thread; a failed fetch is logged and retried an hour later. `WEATHER=off` in `.env` skips it. To fetch by hand:
 
 ```bash
 uv run python -m birdbrain.weather               # whatever is missing, like the watcher does
-uv run python -m birdbrain.weather --backfill    # refetch every day from the first visit
+uv run python -m birdbrain.weather --backfill    # refetch every day from the first visit (fills humidity and wind on older days)
 uv run python -m birdbrain.weather --days 7      # refetch the last 7 days
 ```
 

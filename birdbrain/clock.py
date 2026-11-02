@@ -28,3 +28,9 @@ def stale() -> bool:
 def today() -> date:
     tz = _zone["tz"]
     return datetime.now(tz).date() if tz else date.today()
+
+
+def now() -> datetime:
+    """The site's local time now, naive like visits.captured_at."""
+    tz = _zone["tz"]
+    return datetime.now(tz).replace(tzinfo=None) if tz else datetime.now()

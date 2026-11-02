@@ -165,6 +165,7 @@
   <div data-tip="The middle value of the time between one real visitor and the next, over the last {{ rate.days }} days. Half the waits are shorter."><span class="big">{% if rate.median_gap_min is none %}–{% elif rate.median_gap_min < 90 %}{{ rate.median_gap_min | round | int }} min{% else %}{{ '%.1f' | format(rate.median_gap_min / 60) }} h{% endif %}</span> typical wait between visitors</div>
   <p class="muted small">Last photo {{ rate.last | short_time }}. Each motion event keeps at most one photo; probes the Pi throws away aren't counted here.</p>
 </div>
+<p class="about-weather">Does the weather matter? <a href="/weather">Weather &amp; visits</a> lines up each day's rain, cloud, temperature, wind and humidity with its visitors and species, and compares visitors per hour in rainy and dry, calm and windy hours, with the number of hours behind every figure. The weather is an hourly estimate for the yard from Open-Meteo, saved by the Pi.</p>
 {% endif %}
 </section>
 {% endif %}
@@ -471,7 +472,7 @@
     <a class="source" href="https://ebird.org" target="_blank" rel="noopener">
       <strong>eBird</strong><span>Its species list supplies the link to each bird's eBird page</span></a>
     <a class="source{{ '' if cfg.WEATHER and cfg.SITE_LAT is not none and cfg.SITE_LON is not none else ' off' }}" href="https://open-meteo.com" target="_blank" rel="noopener">
-      <strong>Open-Meteo</strong><span>{% if cfg.WEATHER and cfg.SITE_LAT is not none and cfg.SITE_LON is not none %}Hourly rain, cloud and temperature at the bath, kept so visits can be compared with the weather. Weather data by Open-Meteo.com (CC BY 4.0){% else %}Hourly weather to compare with visits (free, no key; needs the bath's coordinates, not set up here){% endif %}</span></a>
+      <strong>Open-Meteo</strong><span>{% if cfg.WEATHER and cfg.SITE_LAT is not none and cfg.SITE_LON is not none %}Hourly rain, cloud, temperature, wind and humidity at the bath, kept so visits can be compared with the weather on the Weather &amp; visits page. Weather data by Open-Meteo.com (CC BY 4.0){% else %}Hourly weather to compare with visits (free, no key; needs the bath's coordinates, not set up here){% endif %}</span></a>
     <a class="source" href="https://www.openstreetmap.org" target="_blank" rel="noopener">
       <strong>OpenStreetMap and Leaflet</strong><span>The map under the range layer</span></a>
     <a class="source" href="https://www.allaboutbirds.org" target="_blank" rel="noopener">

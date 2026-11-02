@@ -15,7 +15,8 @@ import logging
 import sqlite3
 import threading
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -26,7 +27,7 @@ log = logging.getLogger("birdbrain.weather")
 HEADERS = {"User-Agent": "Birdbrain/0.1 (personal backyard bird camera)", "Accept-Encoding": "gzip"}
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-HOURLY = "temperature_2m,precipitation,rain,cloud_cover,wind_speed_10m,weather_code,is_day"
+HOURLY = "temperature_2m,precipitation,rain,cloud_cover,wind_speed_10m,relative_humidity_2m,weather_code,is_day"
 DAILY = "temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_hours,weather_code,sunrise,sunset"
 FORECAST_DAYS = 90      # the forecast API reaches back 92 days; older days come from the archive
 FINAL_AFTER = 2         # a day is final once it is this many days old (yesterday is still refreshed)
@@ -83,31 +84,69 @@ def _int(values: list | None, i: int) -> int | None:
     return None if v is None else int(v)
 
 
+def _local_times(data: dict):
+    """A function turning the response's times into the site's real local time. Open-Meteo gives every time in one
+    response at a single UTC offset (`utc_offset_seconds`, today's), even across a daylight saving change, so without
+    this the hours before a change would sit an hour off the visits' clock. Daily figures stay on Open-Meteo's days."""
+    name, offset = data.get("timezone"), data.get("utc_offset_seconds")
+    try:
+        zone, fixed = ZoneInfo(name), timezone(timedelta(seconds=int(offset)))
+    except Exception:
+        return lambda t: t
+
+    def local(t):
+        if not t:
+            return t
+        try:
+            return datetime.fromisoformat(t).replace(tzinfo=fixed).astimezone(zone).strftime("%Y-%m-%dT%H:%M")
+        except ValueError:
+            return t
+
+    return local
+
+
+def _mean(values: list) -> float | None:
+    vals = [v for v in values if v is not None]
+    return round(sum(vals) / len(vals), 1) if vals else None
+
+
+def _day_means(hours: list[dict]) -> dict:
+    """A day's figures from its hours: mean cloud and humidity over all of them, mean wind over the daytime hours
+    (birds come by day, and nights are often calm), and the windiest hour."""
+    winds = [r["wind_kmh"] for r in hours if r["wind_kmh"] is not None]
+    return {"cloud_pct": _mean([r["cloud_pct"] for r in hours]),
+            "humidity_pct": _mean([r.get("humidity_pct") for r in hours]),
+            "wind_kmh": _mean([r["wind_kmh"] for r in hours if r["is_day"]]),
+            "wind_max_kmh": max(winds) if winds else None}
+
+
 def parse(data: dict, fetched_at: str) -> tuple[list[dict], list[dict]]:
     """(days, hours) rows, as dicts keyed by column name, from one Open-Meteo response. Rows with nothing in them
     (the archive's latest hours are null) are left out. `final` is 0; refresh() sets it."""
+    local = _local_times(data)
     h = data.get("hourly") or {}
     hours = []
     for i, t in enumerate(h.get("time") or []):
-        row = {"hour": t, "temp_c": _num(h.get("temperature_2m"), i), "precip_mm": _num(h.get("precipitation"), i),
+        row = {"hour": local(t), "temp_c": _num(h.get("temperature_2m"), i), "precip_mm": _num(h.get("precipitation"), i),
                "rain_mm": _num(h.get("rain"), i), "cloud_pct": _num(h.get("cloud_cover"), i),
-               "wind_kmh": _num(h.get("wind_speed_10m"), i), "code": _int(h.get("weather_code"), i),
+               "wind_kmh": _num(h.get("wind_speed_10m"), i), "humidity_pct": _num(h.get("relative_humidity_2m"), i),
+               "code": _int(h.get("weather_code"), i),
                "is_day": _int(h.get("is_day"), i), "fetched_at": fetched_at}
         if row["temp_c"] is not None or row["precip_mm"] is not None or row["code"] is not None:
             hours.append(row)
-    clouds: dict[str, list[float]] = {}
+    by_day: dict[str, list[dict]] = {}
     for r in hours:
-        if r["cloud_pct"] is not None:
-            clouds.setdefault(r["hour"][:10], []).append(r["cloud_pct"])
+        by_day.setdefault(r["hour"][:10], []).append(r)
     d = data.get("daily") or {}
     days = []
     for i, day in enumerate(d.get("time") or []):
-        cloud = clouds.get(day)
+        mine = by_day.get(day, [])
         row = {"day": day, "temp_max_c": _num(d.get("temperature_2m_max"), i),
                "temp_min_c": _num(d.get("temperature_2m_min"), i), "precip_mm": _num(d.get("precipitation_sum"), i),
                "precip_hours": _num(d.get("precipitation_hours"), i),
-               "cloud_pct": round(sum(cloud) / len(cloud), 1) if cloud else None, "code": _int(d.get("weather_code"), i),
-               "sunrise": (d.get("sunrise") or [None] * (i + 1))[i], "sunset": (d.get("sunset") or [None] * (i + 1))[i],
+               **_day_means(mine), "code": _int(d.get("weather_code"), i),
+               "sunrise": local((d.get("sunrise") or [None] * (i + 1))[i]),
+               "sunset": local((d.get("sunset") or [None] * (i + 1))[i]),
                "final": 0, "fetched_at": fetched_at}
         if row["temp_max_c"] is not None or row["precip_mm"] is not None or row["code"] is not None:
             days.append(row)
@@ -124,6 +163,8 @@ def _partial_today(day: dict, hours: list[dict]) -> None:
     if precip:
         day["precip_mm"] = round(sum(precip), 2)
         day["precip_hours"] = float(sum(1 for p in precip if p > 0))
+    if mine:
+        day.update(_day_means(mine))
 
 
 def refresh(conn: sqlite3.Connection, now: datetime | None = None, days: int | None = None, force: bool = False) -> dict | None:

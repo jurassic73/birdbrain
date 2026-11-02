@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS pi_checks (  -- one row per Ask the Pi click; no fore
 CREATE TABLE IF NOT EXISTS weather_hours (  -- local hourly weather from Open-Meteo (birdbrain.weather), metric
     hour TEXT PRIMARY KEY,  -- 'YYYY-MM-DDTHH:00' in the site's local time, like visits.captured_at
     temp_c REAL, precip_mm REAL, rain_mm REAL, cloud_pct REAL, wind_kmh REAL,
+    humidity_pct REAL,      -- relative humidity at 2 m
     code INTEGER,           -- WMO weather code (weather.describe turns it into words)
     is_day INTEGER,
     fetched_at TEXT
@@ -81,6 +82,9 @@ CREATE TABLE IF NOT EXISTS weather_days (
     day TEXT PRIMARY KEY,   -- 'YYYY-MM-DD'
     temp_max_c REAL, temp_min_c REAL, precip_mm REAL, precip_hours REAL,
     cloud_pct REAL,         -- mean of the day's hourly cloud cover
+    humidity_pct REAL,      -- mean of the day's hourly relative humidity
+    wind_kmh REAL,          -- mean wind speed over the daytime hours (is_day)
+    wind_max_kmh REAL,      -- the windiest hour
     code INTEGER, sunrise TEXT, sunset TEXT,
     final INTEGER NOT NULL DEFAULT 0,  -- 1 once the day is long over; final days are never fetched again
     fetched_at TEXT
@@ -168,12 +172,21 @@ def init_db(conn: sqlite3.Connection) -> None:
     for col, kind in ADDED_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE visits ADD COLUMN {col} {kind}")
+    for table, cols in WEATHER_ADDED_COLUMNS.items():
+        have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col in cols:
+            if col not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
     conn.commit()
 
 
-WEATHER_HOUR_COLS = ("temp_c", "precip_mm", "rain_mm", "cloud_pct", "wind_kmh", "code", "is_day", "fetched_at")
-WEATHER_DAY_COLS = ("temp_max_c", "temp_min_c", "precip_mm", "precip_hours", "cloud_pct", "code", "sunrise", "sunset",
-                    "final", "fetched_at")
+WEATHER_HOUR_COLS = ("temp_c", "precip_mm", "rain_mm", "cloud_pct", "wind_kmh", "humidity_pct", "code", "is_day",
+                     "fetched_at")
+WEATHER_DAY_COLS = ("temp_max_c", "temp_min_c", "precip_mm", "precip_hours", "cloud_pct", "humidity_pct", "wind_kmh",
+                    "wind_max_kmh", "code", "sunrise", "sunset", "final", "fetched_at")
+# Weather columns added after the tables first shipped; init_db adds them to older databases (all REAL, NULL until
+# the day is fetched again: `python -m birdbrain.weather --backfill`).
+WEATHER_ADDED_COLUMNS = {"weather_hours": ("humidity_pct",), "weather_days": ("humidity_pct", "wind_kmh", "wind_max_kmh")}
 
 
 def _upsert(conn: sqlite3.Connection, table: str, key: str, cols: tuple[str, ...], rows: list[dict]) -> None:
@@ -219,6 +232,200 @@ def first_visit_day(conn: sqlite3.Connection) -> str | None:
     """'YYYY-MM-DD' of the oldest visit, or None when there are none."""
     row = conn.execute("SELECT MIN(captured_at) AS t FROM visits").fetchone()
     return row["t"][:10] if row and row["t"] else None
+
+
+# The Weather & visits page (/weather). Thresholds live here so the page, its findings and the tests agree.
+RAIN_HOUR_MM = 0.2      # an hour with at least this much rain or snow (mm) is a rainy hour
+WET_DAY_MM = 1.0        # a day with at least this much is a wet day
+OVERCAST_PCT = 70       # cloud cover at or above this is overcast
+TEMP_BANDS_C = (8, 12)  # hour temperature bands: below 8, 8 to 12, 12 and up (degrees C)
+# Windy from 15 km/h (about 9 mph): the top of a gentle breeze, where leaves and twigs keep moving, perches sway and
+# floating leaves drift across the bath (more false alarms). Below it, branches are mostly still.
+WINDY_KMH = 15
+HUMIDITY_BANDS_PCT = (80, 95)  # hour humidity bands: below 80, 80 to 95, 95 and up (fall air here is mostly damp)
+MIN_HOURS = 10         # each side of a comparison needs this many hours before it counts as a finding
+MIN_DAYS = 2            # each side of the wet vs dry days comparison needs this many days
+MIN_DAYLIGHT = 1.0      # a day needs this many watched daylight hours for a per-hour rate
+
+
+def _hours_between(a: datetime, b: datetime) -> float:
+    return max(0.0, (b - a).total_seconds() / 3600)
+
+
+def _rate_group(key: str, hours: list[dict], **extra) -> dict:
+    n, v = len(hours), sum(h["visitors"] for h in hours)
+    return {"key": key, "hours": n, "visitors": v, "rate": v / n if n else None, "enough": n >= MIN_HOURS, **extra}
+
+
+def weather_report(conn: sqlite3.Connection, now: datetime | None = None) -> dict:
+    """Weather and visits side by side, from the first stored photo through now (site local time). Reads the database
+    only (the public mirror runs this too); birdbrain.weather keeps the weather tables filled.
+
+    days: one dict per calendar day, oldest first: its weather (None when not fetched yet), real visitors (photos with
+    an animal), daytime visitors per watched daylight hour (sunrise to sunset, clipped to when the camera started and to
+    now), distinct species (each counted once a day, other animals in the same photo included), and false alarms
+    (stored false triggers plus the probes the Pi threw away).
+
+    rain / cloud / temp: daylight hours compared, each with its hours, visitors and visitors an hour. An hour H takes
+    its rain from weather row H+1 (Open-Meteo's precipitation is the sum of the hour before it) and its cloud and
+    temperature from the mean of rows H and H+1. Only whole hours after the first photo count; cloud compares dry
+    hours only, so rain doesn't decide it."""
+    now = now or clock.now()
+    report = {"days": [], "first": None, "now": now, "has_weather": False, "hours": 0, "rain": [], "cloud": [],
+              "temp": [], "wind": [], "humidity": [], "points": [], "max_rain": 0.0, "max_visitors": 0}
+    first = conn.execute("SELECT MIN(captured_at) FROM visits").fetchone()[0]
+    if not first:
+        return report
+    start = datetime.fromisoformat(first)
+    a, b = start.date().isoformat(), now.date().isoformat()
+    wdays = {r["day"]: r for r in weather_days(conn, a, b)}
+    whours = {r["hour"]: r for r in weather_hours(conn, a, b)}
+    seen = [datetime.fromisoformat(t) for (t,) in conn.execute(
+        f"SELECT captured_at FROM visits WHERE {REAL} AND date(captured_at) BETWEEN ? AND ? ORDER BY captured_at", (a, b))]
+    false = {r[0]: r[1] for r in conn.execute(
+        f"SELECT date(captured_at), COUNT(*) FROM visits WHERE {FALSE_TRIGGER} AND date(captured_at) BETWEEN ? AND ?"
+        " GROUP BY 1", (a, b))}
+    for d, n in conn.execute("SELECT day, SUM(n) FROM counters WHERE name = 'probe_empty' AND day BETWEEN ? AND ?"
+                             " GROUP BY day", (a, b)):
+        false[d] = false.get(d, 0) + n
+    species: dict[str, list[tuple[str, int]]] = {}
+    for r in conn.execute(
+            f"""SELECT date(captured_at) AS d, label, COUNT(DISTINCT id) AS n
+                FROM ({_seen(f"{REAL} AND date(captured_at) BETWEEN :a AND :b")})
+                WHERE seen_visitor != 'other' AND label IS NOT NULL
+                GROUP BY d, label ORDER BY d, n DESC, label""", {"a": a, "b": b}):
+        species.setdefault(r["d"], []).append((r["label"], r["n"]))
+
+    days = []
+    d = start.date()
+    while d <= now.date():
+        key = d.isoformat()
+        w = wdays.get(key)
+        mine = [t for t in seen if t.date() == d]
+        row = {"day": key, "date": d, "today": d == now.date(), "first": d == start.date(),
+               "since": start if d == start.date() else None, "weather": dict(w) if w else None,
+               "visitors": len(mine), "species": len(species.get(key, [])), "top": species.get(key, []),
+               "false_alarms": false.get(key, 0), "daylight": None, "day_visitors": None, "per_hour": None}
+        if w and w["sunrise"] and w["sunset"]:
+            lo = max(datetime.fromisoformat(w["sunrise"]), start)
+            hi = min(datetime.fromisoformat(w["sunset"]), now)
+            row["daylight"] = _hours_between(lo, hi)
+            row["day_visitors"] = sum(1 for t in mine if lo <= t < hi)
+            if row["daylight"] >= MIN_DAYLIGHT:
+                row["per_hour"] = row["day_visitors"] / row["daylight"]
+        days.append(row)
+        d += timedelta(days=1)
+
+    # Whole daylight hours with weather for them.
+    by_hour: dict[str, int] = {}
+    for t in seen:
+        k = t.strftime("%Y-%m-%dT%H:00")
+        by_hour[k] = by_hour.get(k, 0) + 1
+    hours = []
+    h = start.replace(minute=0, second=0, microsecond=0)
+    if h < start:
+        h += timedelta(hours=1)
+    while h + timedelta(hours=1) <= now:
+        k, k1 = h.strftime("%Y-%m-%dT%H:00"), (h + timedelta(hours=1)).strftime("%Y-%m-%dT%H:00")
+        w1, wd, mid = whours.get(k1), wdays.get(h.date().isoformat()), h + timedelta(minutes=30)
+        if (w1 is not None and w1["precip_mm"] is not None and wd and wd["sunrise"] and wd["sunset"]
+                and datetime.fromisoformat(wd["sunrise"]) <= mid < datetime.fromisoformat(wd["sunset"])):
+            both = [x for x in (whours.get(k), w1) if x is not None]
+
+            def mean(col: str) -> float | None:
+                vals = [x[col] for x in both if x[col] is not None]
+                return sum(vals) / len(vals) if vals else None
+
+            hours.append({"hour": k, "rain": w1["precip_mm"], "cloud": mean("cloud_pct"), "temp": mean("temp_c"),
+                          "wind": mean("wind_kmh"), "humidity": mean("humidity_pct"), "visitors": by_hour.get(k, 0)})
+        h += timedelta(hours=1)
+    wet = [x for x in hours if x["rain"] >= RAIN_HOUR_MM]
+    dry = [x for x in hours if x["rain"] < RAIN_HOUR_MM]
+    lo_t, hi_t = TEMP_BANDS_C
+    temps = [x for x in hours if x["temp"] is not None]
+    clouded = [x for x in dry if x["cloud"] is not None]
+    winds = [x for x in hours if x["wind"] is not None]
+    damp = [x for x in hours if x["humidity"] is not None]
+    lo_h, hi_h = HUMIDITY_BANDS_PCT
+    humidity = [_rate_group("dryish", [x for x in damp if x["humidity"] < lo_h], high=lo_h),
+                _rate_group("damp", [x for x in damp if lo_h <= x["humidity"] < hi_h], low=lo_h, high=hi_h),
+                _rate_group("soaked", [x for x in damp if x["humidity"] >= hi_h], low=hi_h)]
+    report.update({
+        "days": days, "first": start, "has_weather": bool(wdays), "hours": len(hours),
+        "rain": [_rate_group("rain", wet), _rate_group("dry", dry)],
+        "cloud": [_rate_group("clearer", [x for x in clouded if x["cloud"] < OVERCAST_PCT]),
+                  _rate_group("overcast", [x for x in clouded if x["cloud"] >= OVERCAST_PCT])],
+        "temp": [_rate_group("cold", [x for x in temps if x["temp"] < lo_t], high=lo_t),
+                 _rate_group("mild", [x for x in temps if lo_t <= x["temp"] < hi_t], low=lo_t, high=hi_t),
+                 _rate_group("warm", [x for x in temps if x["temp"] >= hi_t], low=hi_t)],
+        "wind": [_rate_group("calm", [x for x in winds if x["wind"] < WINDY_KMH]),
+                 _rate_group("windy", [x for x in winds if x["wind"] >= WINDY_KMH])],
+        # Humidity only once two of its bands have enough hours to compare (a damp fall can be all one band).
+        "humidity": humidity if sum(g["enough"] for g in humidity) >= 2 else [],
+        "points": [{"day": r["day"], "rain": r["weather"]["precip_mm"] or 0.0, "rate": round(r["per_hour"], 2),
+                    "visitors": r["day_visitors"], "daylight": round(r["daylight"], 1),
+                    "partial": r["today"] or r["first"]}
+                   for r in days if r["weather"] and r["per_hour"] is not None],
+        "max_rain": max([r["weather"]["precip_mm"] or 0.0 for r in days if r["weather"]] or [0.0]),
+        "max_visitors": max([r["visitors"] for r in days] or [0]),
+    })
+    return report
+
+
+def weather_findings(report: dict) -> list[str]:
+    """Plain sentences from a weather_report's numbers. They say what was seen, never why."""
+    per = lambda x: f"{x:.1f}"
+    out: list[str] = []
+    wet, dry = report["rain"] or ({"enough": False, "hours": 0}, {"enough": False, "hours": 0})
+    if wet["enough"] and dry["enough"] and dry["rate"]:
+        change = wet["rate"] / dry["rate"] - 1
+        how = ("about the same as" if abs(change) < 0.15 else
+               f"{round(-100 * change)}% fewer than" if change < 0 else f"{round(100 * change)}% more than")
+        out.append(f"Rainy daylight hours had {per(wet['rate'])} visitors an hour ({wet['visitors']} in {wet['hours']} "
+                   f"hours), {how} dry hours at {per(dry['rate'])} ({dry['visitors']} in {dry['hours']} hours).")
+    elif report["hours"]:
+        few = wet if wet["hours"] < dry["hours"] else dry
+        out.append(f"Not enough {'rainy' if few is wet else 'dry'} daylight hours yet to compare rain with dry weather "
+                   f"({few['hours']} so far, {MIN_HOURS} needed).")
+    rated = [r for r in report["days"] if r["per_hour"] is not None and r["weather"]]
+    wet_days = [r for r in rated if (r["weather"]["precip_mm"] or 0) >= WET_DAY_MM]
+    dry_days = [r for r in rated if (r["weather"]["precip_mm"] or 0) < WET_DAY_MM]
+    if len(wet_days) >= MIN_DAYS and len(dry_days) >= MIN_DAYS:
+        pooled = lambda rs: sum(r["day_visitors"] for r in rs) / sum(r["daylight"] for r in rs)
+        out.append(f"On the {len(wet_days)} wet days the bath averaged {per(pooled(wet_days))} visitors per daylight "
+                   f"hour; on the {len(dry_days)} dry days, {per(pooled(dry_days))}.")
+        order = {r["day"]: i for i, r in enumerate(report["days"])}
+        mean_pos = lambda rs: sum(order[r["day"]] for r in rs) / len(rs)
+        if mean_pos(wet_days) < mean_pos(dry_days) - 1:
+            out.append("The wet days mostly came first, when the camera was new (and birds may still have been finding "
+                       "the bath), so rain and newness are mixed together here.")
+    whole = [r for r in rated if not r["today"] and not r["first"]]
+    if len(whole) >= 3:
+        best, worst = max(whole, key=lambda r: r["per_hour"]), min(whole, key=lambda r: r["per_hour"])
+        rain = lambda r: (f"{r['weather']['precip_mm']:.0f} mm of rain" if (r["weather"]["precip_mm"] or 0) >= 0.5
+                          else "no rain")
+        name = lambda r: r["date"].strftime("%a %b %-d")
+        out.append(f"Busiest whole day: {name(best)}, {best['visitors']} visitors with {rain(best)}. "
+                   f"Quietest: {name(worst)}, {worst['visitors']} with {rain(worst)}.")
+    if report["wind"]:
+        calm, windy = report["wind"]
+        if calm["enough"] and windy["enough"] and calm["rate"]:
+            change = windy["rate"] / calm["rate"] - 1
+            if abs(change) >= 0.15:
+                out.append(f"Windy hours ({WINDY_KMH} km/h or more) had {per(windy['rate'])} visitors an hour "
+                           f"({windy['hours']} hours), {round(abs(100 * change))}% {'fewer' if change < 0 else 'more'} "
+                           f"than calm hours at {per(calm['rate'])} ({calm['hours']} hours).")
+    if report["cloud"]:
+        clear, grey = report["cloud"]
+        if clear["enough"] and grey["enough"]:
+            if abs(grey["rate"] - clear["rate"]) < 0.15 * max(grey["rate"], clear["rate"], 0.01):
+                out.append(f"Among dry hours, overcast and clearer skies drew about the same ({per(grey['rate'])} and "
+                           f"{per(clear['rate'])} visitors an hour).")
+            else:
+                more = "more" if grey["rate"] > clear["rate"] else "fewer"
+                out.append(f"Among dry hours, overcast ones had {more} visitors ({per(grey['rate'])} an hour in "
+                           f"{grey['hours']} hours) than clearer ones ({per(clear['rate'])} in {clear['hours']} hours).")
+    return out
 
 
 def get_settings(conn: sqlite3.Connection) -> dict[str, str]:

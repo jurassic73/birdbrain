@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth, viewer
-from .. import alert, camera, circle_check, clock, config, db, identify, images, names, presence, privacy, refine, retention, species_info, zones
+from .. import alert, camera, circle_check, clock, config, db, identify, images, names, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 PAGE_SIZE = 24
@@ -126,6 +126,47 @@ def mb(value: int) -> str:
     return f"{value / 1e9:.1f} GB" if value >= 1e9 else f"{value / 1e6:.0f} MB" if value >= 1e6 else f"{value / 1e6:.1f} MB"
 
 
+# The Weather & visits page's units: "us" (°F, mph) or "metric" (°C, km/h); the other one shows in a tip.
+UNITS = "us"
+TEMP_UNIT = "F" if UNITS == "us" else "C"
+WIND_UNIT = "mph" if UNITS == "us" else "km/h"
+
+
+def _wind(kmh: float | None, unit: str) -> str:
+    if kmh is None:
+        return "n/a"
+    return f"{round(kmh / 1.609344)} mph" if unit == "mph" else f"{round(kmh)} km/h"
+
+
+def wind(kmh: float | None) -> str:
+    """A wind speed (stored km/h) in the page's unit: '6 mph', or 'n/a'."""
+    return _wind(kmh, WIND_UNIT)
+
+
+def wind_alt(kmh: float | None) -> str:
+    return _wind(kmh, "km/h" if WIND_UNIT == "mph" else "mph")
+
+
+def _temp(c: float | None, unit: str) -> str:
+    if c is None:
+        return "?"
+    return f"{round(c * 9 / 5 + 32)}°" if unit == "F" else f"{round(c)}°"
+
+
+def temp(c: float | None) -> str:
+    """A Celsius temperature in the page's unit: '56°'."""
+    return _temp(c, TEMP_UNIT)
+
+
+def temp_alt(c: float | None) -> str:
+    """The same temperature in the other unit, for a tip: '13°C'."""
+    other = "C" if TEMP_UNIT == "F" else "F"
+    return _temp(c, other) + other
+
+
+templates.env.globals["temp_unit"] = TEMP_UNIT
+templates.env.globals["wind_unit"] = WIND_UNIT
+templates.env.filters.update(temp=temp, temp_alt=temp_alt, wind=wind, wind_alt=wind_alt)
 templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, short_time=short_time, usd=usd, mb=mb,
                              month_name=lambda v: datetime.fromisoformat(v).strftime("%B"))
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
@@ -866,6 +907,26 @@ def stats(request: Request, conn=Depends(get_conn)):
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",
         classifier_mode=config.CLASSIFIER,
+    )
+
+
+@app.get("/weather", response_class=HTMLResponse)
+def weather_page(request: Request, conn=Depends(get_conn)):
+    """Weather & visits: each day's weather beside its visitors. Reads the database only; the watcher fetches the
+    weather (birdbrain.weather), so the public mirror shows whatever the Pi last sent."""
+    report = db.weather_report(conn)
+    return page(
+        request,
+        "weather.html",
+        w=report,
+        findings=db.weather_findings(report) if report["has_weather"] else [],
+        located=weather.located(),
+        rain_hour_mm=db.RAIN_HOUR_MM,
+        wet_day_mm=db.WET_DAY_MM,
+        overcast_pct=db.OVERCAST_PCT,
+        min_hours=db.MIN_HOURS,
+        windy_kmh=db.WINDY_KMH,
+        describe=weather.describe,
     )
 
 
