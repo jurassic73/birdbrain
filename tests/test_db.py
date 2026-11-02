@@ -169,6 +169,10 @@ def test_scoreboard_counts_between_dates(conn, add_visit):
     assert rows(day(1), day(1)) == [("Bushtit", 1), ("Song Sparrow", 1)]
     assert rows(day(6), day(0)) == [("Bushtit", 2), ("Song Sparrow", 1)]
     assert rows() == [("Bushtit", 2), ("Song Sparrow", 1), ("Steller's Jay", 1)]
+    # The total counts photos: the two-animal photo is one visitor, the false trigger none.
+    assert db.scoreboard_total(conn, day(1), day(1)) == 1
+    assert db.scoreboard_total(conn, day(6), day(0)) == 2
+    assert db.scoreboard_total(conn) == 3
 
 
 def test_latest_visit_skips_false_triggers(conn, add_visit):

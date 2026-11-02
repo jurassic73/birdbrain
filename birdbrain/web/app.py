@@ -306,7 +306,8 @@ def score_range(key: str | None) -> dict:
 
 def scoreboard_ctx(conn, key: str | None) -> dict:
     r = score_range(key)
-    return {"score": r, "score_rows": db.scoreboard(conn, r["date_from"], r["date_to"]), "score_ranges": SCORE_RANGES}
+    return {"score": r, "score_rows": db.scoreboard(conn, r["date_from"], r["date_to"]),
+            "score_total": db.scoreboard_total(conn, r["date_from"], r["date_to"]), "score_ranges": SCORE_RANGES}
 
 
 @app.get("/", response_class=HTMLResponse)

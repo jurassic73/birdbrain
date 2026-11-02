@@ -70,12 +70,12 @@ def test_scoreboard_periods(client, add_visit):
     assert "None yet today." in client.get("/scoreboard?range=today").text
     assert "None yesterday." in client.get("/scoreboard?range=yesterday").text
     week = client.get("/scoreboard?range=week").text
-    assert "Visitors this week" in week and "Bushtit" in week and 'class="score-range on"' in week
-    assert "Visitors today" in client.get("/scoreboard?range=bogus").text
+    assert '<strong class="score-total">1</strong> Visitor this week' in week and "Bushtit" in week and 'class="score-range on"' in week
+    assert '<strong class="score-total">0</strong> Visitors today' in client.get("/scoreboard?range=bogus").text
     assert "Bushtit" in client.get("/scoreboard?range=all").text
     # The This week chip shows the week on the scoreboard too.
     href = next(f for n, f in webapp.quick_filters() if n == "This week")
-    assert "Visitors this week" in client.get("/?" + webapp.query_string(href)).text
+    assert "Visitor this week" in client.get("/?" + webapp.query_string(href)).text
 
 
 def test_home_filter_chip_is_marked_active(client, add_visit):
@@ -342,7 +342,7 @@ def test_home_shows_visitor_count_as_text_and_stats_has_the_rest(client, add_vis
     html = client.get("/").text
     assert 'class="tally-box tally-head"' in html and '<details class="tally-box' not in html
     assert "Sent to Claude" not in html and "Kept on the Pi" not in html
-    assert html.index("Visitors today") < html.index("More filters")
+    assert html.index("Visitor today") < html.index("More filters")
     stats = client.get("/stats").text
     rows = ["Visitor", "False alarms", "Kept on the Pi", "Sent to Claude"]
     start = stats.index("Today's motion")

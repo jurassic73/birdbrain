@@ -1,7 +1,7 @@
 {# The Today panel's scoreboard: every animal seen in the chosen period, most seen first. #}
 <div class="critters" data-range="{{ score.key }}">
   <div class="score-head">
-    <span class="muted">Visitors {{ score.words }}{% if score_rows %} · {{ score_rows | length }} kind{{ 's' if score_rows | length != 1 }}{% endif %}</span>
+    <span class="muted"><strong class="score-total">{{ score_total }}</strong> Visitor{{ 's' if score_total != 1 }} {{ score.words }}{% if score_rows %} · {{ score_rows | length }} kind{{ 's' if score_rows | length != 1 }}{% endif %}</span>
     <nav class="score-ranges" aria-label="Scoreboard period">
       {% for key, label, words, _ in score_ranges %}
       <button type="button" class="score-range{{ ' on' if key == score.key }}" aria-pressed="{{ 'true' if key == score.key else 'false' }}"

@@ -443,6 +443,18 @@ def scoreboard(conn: sqlite3.Connection, date_from: str | None = None, date_to: 
     ).fetchall()
 
 
+def scoreboard_total(conn: sqlite3.Connection, date_from: str | None = None, date_to: str | None = None) -> int:
+    """Real visits (photos with an animal) between two dates, same bounds as `scoreboard`; each photo counts once."""
+    where, args = REAL, []
+    if date_from:
+        where += " AND date(captured_at) >= ?"
+        args.append(date_from)
+    if date_to:
+        where += " AND date(captured_at) <= ?"
+        args.append(date_to)
+    return conn.execute(f"SELECT COUNT(*) FROM visits WHERE {where}", args).fetchone()[0]
+
+
 def plan_correction(visit: sqlite3.Row, visitor: str, species: str) -> tuple[str | None, str | None]:
     """Turn the review form into what to store: only the parts that differ from Claude's answer.
 

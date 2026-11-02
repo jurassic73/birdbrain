@@ -312,6 +312,7 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
 .critters p { margin: 4px 0 0; }
 /* The scoreboard's period buttons: small pills like the quick filters, the picked one filled. */
 .score-head { display: flex; flex-direction: column; gap: 5px; }
+.score-total { color: var(--accent); font-weight: 700; }
 .score-ranges { display: flex; flex-wrap: wrap; gap: 4px; }
 button.score-range {
   padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: transparent;
