@@ -431,8 +431,13 @@
     if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
     if (document.querySelector("dialog[open]")) return;
     const link = document.querySelector(".hero-link");
-    if (link) location.href = link.href;
+    if (!link) return;
+    // Tells the visit page it was reached by arrow keys, so Esc there comes back here (see visit.html).
+    try { sessionStorage.setItem("bb_arrow_trail", "1"); } catch (err) { /* private mode: Esc just stays */ }
+    location.href = link.href;
   });
+  // Home is never part of a trail: any other way into a visit (a card click) starts without the flag.
+  try { sessionStorage.removeItem("bb_arrow_trail"); } catch (err) {}
 </script>
 <script src="/static/photo-reminder.js?v={{ asset_version }}" defer></script>
 <script>

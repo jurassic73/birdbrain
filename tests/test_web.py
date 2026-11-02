@@ -38,6 +38,14 @@ def test_home_right_arrow_opens_the_latest_visit(client, add_visit):
     assert "ArrowLeft" not in html.split('e.key !== "ArrowRight"')[1].split("</script>")[0]
 
 
+def test_visit_escape_goes_home_only_after_arrow_trail(client, add_visit):
+    vid = add_visit(species="Dark-eyed Junco")
+    assert 'setItem("bb_arrow_trail"' in client.get("/").text
+    html = client.get(f"/visit/{vid}").text
+    assert 'getItem("bb_arrow_trail")' in html and 'location.href = "/"' in html
+    assert 'getItem("bb_arrow_trail")' not in client.get(f"/visit/{vid}?embed=1").text
+
+
 def test_home_empty_state_hides_filters(client):
     html = client.get("/").text
     assert "No visitors yet." in html and 'class="filters-toggle"' not in html and 'id="more-filters"' not in html
