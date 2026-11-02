@@ -32,9 +32,6 @@
 </svg>
 {%- endmacro %}
 
-{% macro wx_wind() -%}<svg class="wx-mini" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6h8a2.2 2.2 0 1 0-2.2-2.2M2 10h10a2 2 0 1 1-2 2"/></svg>{%- endmacro %}
-{% macro wx_drop() -%}<svg class="wx-mini" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5c2.5 3.2 4 5.3 4 7.3a4 4 0 0 1-8 0c0-2 1.5-4.1 4-7.3z"/></svg>{%- endmacro %}
-
 <div class="page-head"><h1>Weather &amp; visits
   {% if w.days %}<span class="muted" data-tip="Weather for the yard's spot on the map, hour by hour, from Open-Meteo (a free weather service). The Pi saves it every hour; this page only reads what it saved.">{{ w.days | length }} day{{ 's' if w.days | length != 1 }} since {{ w.first.strftime('%b %-d') }}</span>{% endif %}
 </h1>
@@ -74,18 +71,15 @@
 {% set visit_top = [w.max_visitors, 5] | max %}
 
 <section class="wx-diary-wrap" aria-label="Weather diary, one column per day">
-  <div class="wx-key" aria-hidden="true"><span class="wx-swatch rain"></span> Rain that day <span class="wx-swatch visits"></span> Visitors (photos with an animal)</div>
+  <div class="wx-key" aria-hidden="true"><span class="wx-swatch rain"></span> Rain <span class="wx-swatch visits"></span> Visitors</div>
   <div class="wx-diary" id="wx-diary">
     <ol class="wx-days">
       <li class="wx-labels" aria-hidden="true">
         <span class="wx-r-date"></span><span class="wx-r-icon"></span>
-        <span class="wx-r-temp" data-tip="High and low for the day, in °{{ temp_unit }}. Hover a day for °{{ 'C' if temp_unit == 'F' else 'F' }}.">High / low</span>
-        <span class="wx-r-air" data-tip="Daytime wind, its average in {{ wind_unit }}, and the day's average humidity. Hover a day for the windiest hour.">Wind, humidity</span>
+        <span class="wx-r-temp" data-tip="High and low, in °{{ temp_unit }}. Hover a day for °{{ 'C' if temp_unit == 'F' else 'F' }}.">High / low</span>
         <span class="wx-r-rain">Rain</span>
         <span class="wx-r-visits">Visitors</span>
-        <span class="wx-r-species">Species</span>
         <span class="wx-r-top">Most seen</span>
-        <span class="wx-r-false" data-tip="Motion with no animal in it: rain, wind, leaves, ripples. Counted apart, never as visitors.">False alarms</span>
       </li>
       {% for d in w.days %}
       {% set x = d.weather %}
@@ -95,35 +89,32 @@
           {%- if d.today %}<em class="wx-partial" data-tip="Today isn't over: these are the numbers so far.">so far</em>
           {%- elif d.first and d.since %}<em class="wx-partial" data-tip="The first photo was at {{ d.since.strftime('%-I:%M %p') }}, so this day is only partly watched.">from {{ d.since.strftime('%-I %p') | lower }}</em>{% endif %}</span>
         {% if x %}
-        <span class="wx-r-icon" data-tip="{{ words }}{% if x.cloud_pct is not none %}, {{ x.cloud_pct | round | int }}% cloud cover on average{% endif %}" aria-label="{{ words }}">{{ wx_icon(kind) }}</span>
+        <span class="wx-r-icon" data-tip="{{ words }}{% if x.cloud_pct is not none %}, {{ x.cloud_pct | round | int }}% cloud cover on average{% endif %}. Daytime wind {{ x.wind_kmh | wind }} on average ({{ x.wind_kmh | wind_alt }}), windiest hour {{ x.wind_max_kmh | wind }}. Humidity {{ (x.humidity_pct | round | int ~ '%') if x.humidity_pct is not none else 'n/a' }} on average." aria-label="{{ words }}">{{ wx_icon(kind) }}</span>
         <span class="wx-r-temp" data-tip="High {{ x.temp_max_c | temp_alt }}, low {{ x.temp_min_c | temp_alt }}">{{ x.temp_max_c | temp }} <span class="muted">{{ x.temp_min_c | temp }}</span></span>
-        <span class="wx-r-air" data-tip="Daytime wind {{ x.wind_kmh | wind }} on average ({{ x.wind_kmh | wind_alt }}), windiest hour {{ x.wind_max_kmh | wind }} ({{ x.wind_max_kmh | wind_alt }}). Humidity {{ (x.humidity_pct | round | int ~ '%') if x.humidity_pct is not none else 'n/a' }} on average.">
-          <span class="wx-wind">{{ wx_wind() }}{{ x.wind_kmh | wind }}</span>
-          <span class="wx-hum">{{ wx_drop() }}{{ (x.humidity_pct | round | int ~ '%') if x.humidity_pct is not none else 'n/a' }}</span></span>
         {% set mm = x.precip_mm or 0 %}
         <span class="wx-r-rain wx-bar" data-tip="{{ '%.1f' | format(mm) }} mm ({{ '%.2f' | format(mm / 25.4) }} in) of rain{% if x.precip_hours %}, falling in {{ x.precip_hours | round | int }} hour{{ 's' if x.precip_hours != 1 }}{% endif %}">
           <span class="wx-fill" style="--v: {{ (mm / rain_top) | round(3) }}"></span>
           <b>{{ '%.0f' | format(mm) if mm >= 1 else ('%.1f' | format(mm) if mm else '0') }}<small> mm</small></b></span>
         {% else %}
-        <span class="wx-r-icon muted wx-noweather">no weather yet</span><span class="wx-r-temp"></span><span class="wx-r-air"></span><span class="wx-r-rain wx-bar"></span>
+        <span class="wx-r-icon muted wx-noweather">no weather yet</span><span class="wx-r-temp"></span><span class="wx-r-rain wx-bar"></span>
         {% endif %}
-        <span class="wx-r-visits wx-bar" data-tip="{{ d.visitors }} visitor{{ 's' if d.visitors != 1 }}{% if d.per_hour is not none %}; {{ '%.1f' | format(d.per_hour) }} an hour over {{ '%.1f' | format(d.daylight) }} watched daylight hours{% endif %}">
+        <span class="wx-r-visits wx-bar" data-tip="{{ d.visitors }} visitor{{ 's' if d.visitors != 1 }}{% if d.per_hour is not none %}; {{ '%.1f' | format(d.per_hour) }} an hour over {{ '%.1f' | format(d.daylight) }} watched daylight hours{% endif %}. {{ d.species }} species. {{ d.false_alarms }} false alarm{{ 's' if d.false_alarms != 1 }} (motion with no animal: rain, wind, leaves; never counted as visitors).">
           <b>{{ d.visitors }}</b><span class="wx-fill" style="--v: {{ (d.visitors / visit_top) | round(3) }}"></span></span>
-        <span class="wx-r-species">{{ d.species }}</span>
         <span class="wx-r-top">{% if d.top %}{{ sp_name(d.top[0][0]) }}{% if d.top | length > 1 %} <span class="muted" data-tip="{% for s, n in d.top[1:] %}{{ s }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}">+{{ d.top | length - 1 }}</span>{% endif %}{% else %}<span class="muted">none</span>{% endif %}</span>
-        <span class="wx-r-false muted">{{ d.false_alarms }}</span>
       </li>
       {% endfor %}
     </ol>
   </div>
 </section>
 
+<details class="wx-more" id="wx-more">
+<summary data-tip="The chart, what it can and can't tell you, and visitors per hour in rainy, dry, calm and windy hours.">The numbers behind it</summary>
 <div class="notes-grid wx-grid">
   <div class="notes-col">
     <section class="wx-card">
       <h2>Rain and visitors, day by day</h2>
       <figure class="wx-chart"><canvas id="wx-scatter" aria-label="Scatter chart: each day's rain against its visitors per daylight hour"></canvas></figure>
-      <p class="muted small">One dot per day. Visitors per daylight hour, so a short or unfinished day compares fairly; hollow dots are partly watched days.</p>
+      <p class="muted small" data-tip="Visitors per daylight hour, so a short or unfinished day compares fairly.">One dot per day; hollow dots are partly watched days.</p>
     </section>
     <section class="wx-card wx-says">
       <h2>What the data says, and doesn't</h2>
@@ -135,7 +126,7 @@
         <li data-tip="After a run of false alarms (rain, leaves) the camera waits longer between photos and then only checks quick probes, sending one to Claude when the Pi sees an animal. A bird that comes and goes during the wait isn't counted.">Rain makes the camera back off, so wet hours may miss a few visitors.</li>
         <li data-tip="Open-Meteo's weather model for the yard's spot, not a gauge in the yard. Hourly rain can be off by an hour or come in bursts.">Weather is a model's estimate for the yard, not a rain gauge.</li>
       </ul>
-      <p class="muted small">Weather data by <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0). Behaviors like bathing or feeding aren't recorded yet.</p>
+      <p class="muted small">Bathing and feeding aren't recorded yet.</p>
     </section>
   </div>
   <div class="notes-col">
@@ -176,15 +167,21 @@
     </section>
   </div>
 </div>
+</details>
 
-
+<p class="muted small wx-credit">Weather data by <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0).</p>
 
 <script src="/static/charts.js?v={{ asset_version }}"></script>
 <script>
-  scatterChart("wx-scatter", {{ w.points | tojson }}, {
-    x: "Rain that day (mm)",
-    y: "Visitors per daylight hour",
-  });
+  // A chart in a closed <details> has no size, so draw it the first time the section opens.
+  (more => {
+    const draw = () => scatterChart("wx-scatter", {{ w.points | tojson }}, {
+      x: "Rain that day (mm)",
+      y: "Visitors per daylight hour",
+    });
+    if (more.open) draw();
+    else more.addEventListener("toggle", () => { if (more.open) draw(); }, { once: true });
+  })(document.getElementById("wx-more"));
   // Newest day at the right edge: start the diary scrolled there when it's wider than the screen.
   (el => { if (el) el.scrollLeft = el.scrollWidth; })(document.getElementById("wx-diary"));
 </script>

@@ -190,3 +190,21 @@ def test_stats_and_about_link_to_it(client, add_visit):
     add_visit()
     assert 'href="/weather"' in client.get("/stats").text
     assert 'href="/weather"' in client.get("/about").text
+
+
+def test_research_is_folded_away_and_credit_stays_visible(client, week):
+    html = client.get("/weather").text
+    start = html.index('<details class="wx-more"')
+    end = html.index("</details>", start)
+    inside = html[start:end]
+    assert "The numbers behind it" in inside
+    assert 'id="wx-scatter"' in inside and "Hour by hour" in inside and "wx-rates" in inside
+    assert "What the data says" in inside
+    assert "open-meteo.com" in html[end:] and "CC BY 4.0" in html[end:]
+
+
+def test_diary_is_slim_and_keeps_the_detail_in_tips(client, week):
+    html = client.get("/weather").text
+    for gone in ("wx-r-air", "wx-r-species", "wx-r-false", "False alarms"):
+        assert gone not in html
+    assert "false alarm" in html and "species." in html and "Humidity" in html
