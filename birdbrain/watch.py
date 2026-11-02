@@ -24,7 +24,7 @@ import cv2  # noqa: E402  (must come after the capture options are set)
 import numpy as np  # noqa: E402
 
 from . import (alert, autocal, classifier, config, db, identify, images, motion_circle, presence,  # noqa: E402
-               retention, species_info, stay, zones)
+               retention, species_info, stay, weather, zones)
 
 log = logging.getLogger("birdbrain.watch")
 
@@ -752,6 +752,7 @@ def main() -> None:
     if args.once:
         handle_event()
         return
+    weather.start_background()  # hourly weather in its own thread and DB connection, never on the frame loop
     Watcher().run()
 
 

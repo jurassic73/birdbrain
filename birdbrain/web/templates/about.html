@@ -470,6 +470,8 @@
       <strong>xeno-canto</strong><span>{% if cfg.XC_API_KEY %}Songs and calls, preferring recordings within {{ local_km }} km, then {{ nearby_km }} km, so they match local dialects. Streamed, not stored{% else %}Bird songs and calls (needs a free key, not set up here){% endif %}</span></a>
     <a class="source" href="https://ebird.org" target="_blank" rel="noopener">
       <strong>eBird</strong><span>Its species list supplies the link to each bird's eBird page</span></a>
+    <a class="source{{ '' if cfg.WEATHER and cfg.SITE_LAT is not none and cfg.SITE_LON is not none else ' off' }}" href="https://open-meteo.com" target="_blank" rel="noopener">
+      <strong>Open-Meteo</strong><span>{% if cfg.WEATHER and cfg.SITE_LAT is not none and cfg.SITE_LON is not none %}Hourly rain, cloud and temperature at the bath, kept so visits can be compared with the weather. Weather data by Open-Meteo.com (CC BY 4.0){% else %}Hourly weather to compare with visits (free, no key; needs the bath's coordinates, not set up here){% endif %}</span></a>
     <a class="source" href="https://www.openstreetmap.org" target="_blank" rel="noopener">
       <strong>OpenStreetMap and Leaflet</strong><span>The map under the range layer</span></a>
     <a class="source" href="https://www.allaboutbirds.org" target="_blank" rel="noopener">

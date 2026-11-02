@@ -70,6 +70,21 @@ CREATE TABLE IF NOT EXISTS pi_checks (  -- one row per Ask the Pi click; no fore
     visit_id INTEGER,
     model_seconds REAL      -- the model's own compute time, when it answered
 );
+CREATE TABLE IF NOT EXISTS weather_hours (  -- local hourly weather from Open-Meteo (birdbrain.weather), metric
+    hour TEXT PRIMARY KEY,  -- 'YYYY-MM-DDTHH:00' in the site's local time, like visits.captured_at
+    temp_c REAL, precip_mm REAL, rain_mm REAL, cloud_pct REAL, wind_kmh REAL,
+    code INTEGER,           -- WMO weather code (weather.describe turns it into words)
+    is_day INTEGER,
+    fetched_at TEXT
+);
+CREATE TABLE IF NOT EXISTS weather_days (
+    day TEXT PRIMARY KEY,   -- 'YYYY-MM-DD'
+    temp_max_c REAL, temp_min_c REAL, precip_mm REAL, precip_hours REAL,
+    cloud_pct REAL,         -- mean of the day's hourly cloud cover
+    code INTEGER, sunrise TEXT, sunset TEXT,
+    final INTEGER NOT NULL DEFAULT 0,  -- 1 once the day is long over; final days are never fetched again
+    fetched_at TEXT
+);
 """
 # Approximate Claude prices (USD per million tokens) for the cost and savings figures on the home page.
 HAIKU_USD_PER_MTOK = {"input": 0.10, "output": 0.50}
@@ -154,6 +169,56 @@ def init_db(conn: sqlite3.Connection) -> None:
         if col not in have:
             conn.execute(f"ALTER TABLE visits ADD COLUMN {col} {kind}")
     conn.commit()
+
+
+WEATHER_HOUR_COLS = ("temp_c", "precip_mm", "rain_mm", "cloud_pct", "wind_kmh", "code", "is_day", "fetched_at")
+WEATHER_DAY_COLS = ("temp_max_c", "temp_min_c", "precip_mm", "precip_hours", "cloud_pct", "code", "sunrise", "sunset",
+                    "final", "fetched_at")
+
+
+def _upsert(conn: sqlite3.Connection, table: str, key: str, cols: tuple[str, ...], rows: list[dict]) -> None:
+    names = (key, *cols)
+    conn.executemany(
+        f"INSERT INTO {table} ({', '.join(names)}) VALUES ({', '.join('?' * len(names))}) "
+        f"ON CONFLICT({key}) DO UPDATE SET {', '.join(f'{c} = excluded.{c}' for c in cols)}",
+        [tuple(r.get(n) for n in names) for r in rows],
+    )
+
+
+def save_weather(conn: sqlite3.Connection, days: list[dict], hours: list[dict]) -> None:
+    """Insert or update weather rows (dicts keyed by column name; see birdbrain.weather.parse)."""
+    _upsert(conn, "weather_hours", "hour", WEATHER_HOUR_COLS, hours)
+    _upsert(conn, "weather_days", "day", WEATHER_DAY_COLS, days)
+    conn.commit()
+
+
+def weather_days(conn: sqlite3.Connection, start: str, end: str) -> list[sqlite3.Row]:
+    """Daily weather from day `start` through `end` ('YYYY-MM-DD', inclusive), oldest first."""
+    return conn.execute("SELECT * FROM weather_days WHERE day BETWEEN ? AND ? ORDER BY day", (start, end)).fetchall()
+
+
+def weather_hours(conn: sqlite3.Connection, start: str, end: str) -> list[sqlite3.Row]:
+    """Hourly weather for the days `start` through `end` ('YYYY-MM-DD', inclusive), oldest first."""
+    stop = (date.fromisoformat(end) + timedelta(days=1)).isoformat()
+    return conn.execute("SELECT * FROM weather_hours WHERE hour >= ? AND hour < ? ORDER BY hour", (start, stop)).fetchall()
+
+
+def weather_missing_days(conn: sqlite3.Connection, start: str, end: str) -> list[str]:
+    """Days from `start` through `end` that have no weather yet or aren't final, oldest first."""
+    done = {r["day"] for r in conn.execute("SELECT day FROM weather_days WHERE final = 1 AND day BETWEEN ? AND ?",
+                                           (start, end))}
+    d, last, out = date.fromisoformat(start), date.fromisoformat(end), []
+    while d <= last:
+        if d.isoformat() not in done:
+            out.append(d.isoformat())
+        d += timedelta(days=1)
+    return out
+
+
+def first_visit_day(conn: sqlite3.Connection) -> str | None:
+    """'YYYY-MM-DD' of the oldest visit, or None when there are none."""
+    row = conn.execute("SELECT MIN(captured_at) AS t FROM visits").fetchone()
+    return row["t"][:10] if row and row["t"] else None
 
 
 def get_settings(conn: sqlite3.Connection) -> dict[str, str]:

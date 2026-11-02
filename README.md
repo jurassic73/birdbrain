@@ -186,6 +186,16 @@ scripts/deploy.sh
 
 This copies the code to `/opt/birdbrain`, installs Python packages, copies `.env` (readable only by that user), and starts two services that also start at boot: `birdbrain-web` (the site on port 8000) and `birdbrain-watch`. Photos and the database live in `/var/lib/birdbrain`, separate from the code, so redeploying never touches them. Logs: `journalctl -u birdbrain-watch -f`.
 
+## Weather
+
+When `SITE_LAT` and `SITE_LON` are set, the watcher keeps hourly weather for the bath (temperature, rain, cloud, wind) in the database, from the day of your first visit on, so visits can be compared with the weather. It comes from [Open-Meteo](https://open-meteo.com) (free, no key; weather data by Open-Meteo.com, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)), the first time shortly after the watcher starts (which fills in the past) and then once an hour in a background thread; a failed fetch is logged and retried an hour later. `WEATHER=off` in `.env` skips it. To fetch by hand:
+
+```bash
+uv run python -m birdbrain.weather               # whatever is missing, like the watcher does
+uv run python -m birdbrain.weather --backfill    # refetch every day from the first visit
+uv run python -m birdbrain.weather --days 7      # refetch the last 7 days
+```
+
 ## Guided tour
 
 The first time a browser opens the home page, a short tour points at the latest photo, the eye button that hides circles and zones, the live view, the menus and the species cards; an admin gets three more steps (Review, Claude's Notes, Settings) once after logging in. Whether it has run is remembered in that browser's local storage (`bb_tour_seen`, `bb_tour_admin_seen`); if storage is blocked it never starts by itself. **Run the tour again** is a button in Settings and on the About page (or open `/?tour=1`). Code: `birdbrain/web/static/tour.js`.

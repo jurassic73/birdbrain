@@ -224,6 +224,8 @@ INAT_PLACE_ID = _env("INAT_PLACE_ID").strip()
 # Where the bath is, for local sunrise and sunset (Settings > Zones); city-level precision is plenty
 SITE_LAT = float(_env("SITE_LAT")) if _env("SITE_LAT").strip() else None
 SITE_LON = float(_env("SITE_LON")) if _env("SITE_LON").strip() else None
+# Hourly weather from Open-Meteo (no key; birdbrain/weather.py) needs SITE_LAT and SITE_LON; WEATHER=off skips it.
+WEATHER = _env("WEATHER", "on").strip().lower() not in ("off", "0", "no", "false")
 XC_API_KEY = _env("XC_API_KEY").strip()  # xeno-canto, for bird sounds on species cards; unset hides them
 
 
