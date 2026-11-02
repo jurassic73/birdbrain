@@ -602,6 +602,20 @@
       const taken = [], rings = marks.map(m => ({x: m.x * w, y: m.y * h, r: (editing ? m.r : markRadius(m.r)) * w}));
       const keepIn = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
       const hits = (b, c) => Math.hypot(c.x - keepIn(c.x, b[0], b[2]), c.y - keepIn(c.y, b[1], b[3])) < c.r;
+      // The line under the photo that explains the circles is written first, so the pills can stay off it too.
+      const ci = marks.flatMap((m, i) => m.claude ? [i] : []);
+      const pi = marks.flatMap((m, i) => m.pi ? [i] : []);
+      legend.hidden = !ci.length && !pi.length;
+      legend.textContent = pi.length
+        ? `Circle ${pi[0] + 1}: where the Pi saw it move (named on the Pi). Remove it if that's wrong.`
+        : ci.length === 1
+        ? `Circle ${ci[0] + 1}: where Claude saw the ${marks[ci[0]].label || claudeSaw}. Remove it if that's wrong.`
+        : `Where Claude saw them: ${ci.map(i => `${i + 1} ${marks[i].label || claudeSaw}`).join(", ")}. Remove any that's wrong.`;
+      const lr = legend.getBoundingClientRect(), ib = img.getBoundingClientRect();
+      if (lr.width && ib.width) {
+        const k = w / ib.width, gap = w / 120;
+        taken.push([(lr.left - ib.left) * k - gap, (lr.top - ib.top) * k - gap, (lr.right - ib.left) * k + gap, (lr.bottom - ib.top) * k + gap]);
+      }
       marks.forEach((m, i) => {
         const g = el("g", {"data-i": i, class: m.pi ? "mark claude pi" : m.claude ? "mark claude" : "mark"});
         const cx = m.x * w, cy = m.y * h, r = (editing ? m.r : markRadius(m.r)) * w, s = w / 60;
@@ -610,9 +624,10 @@
         // (a 28 px button inside a 44 px tap area), since a fraction of the photo is a speck on a phone.
         const px = w / (img.clientWidth || w), touch = matchMedia("(pointer: coarse)").matches;
         const dr = touch ? Math.max(s * 0.85, 14 * px) : s * 0.85;
-        // Number and × sit off the circle's top-right, the number's edge a third of its width clear of
-        // the ring so it never covers the animal; near an edge they swing to the first corner that
-        // stays on the photo (the ring itself is clipped at the photo's edge).
+        // Number and × sit off the circle's bottom-right (below the animal, so the label is there for reference
+        // without spoiling the view; owner, 2026-11-02), the number's edge a third of its width clear of
+        // the ring so it never covers the animal; near an edge, another pill or the line under the photo they
+        // swing to the first corner that's free (bottom-left, then the top ones).
         // With a name the number is the end of one pill: a dark tile with the name runs away from the ring
         // (to the right from a right-hand corner, to the left from a left-hand one). Names over 24 letters are cut short.
         let name = nameOf(m);
@@ -635,7 +650,7 @@
           const b = box(c);
           return !taken.some(t => b[0] < t[2] && t[0] < b[2] && b[1] < t[3] && t[1] < b[3]) && !rings.some((o, j) => j !== i && hits(b, o));
         };
-        const corners = [[1, -1], [-1, -1], [1, 1], [-1, 1]].map(place);
+        const corners = [[1, 1], [-1, 1], [1, -1], [-1, -1]].map(place);
         const onPhoto = corners.filter(c => fits(c.lx, c.ly, rad) && fits(c.dx, c.ly, dr));
         let {lx, ly, dx, sx} = onPhoto.find(free) || onPhoto[0] || corners[0];
         const keep = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
@@ -674,14 +689,6 @@
       document.getElementById("circles-toggle").hidden = editing || !marks.length;
       clear.hidden = !editing || !marks.length;
       hint.hidden = editing || marks.length > 0;
-      const ci = marks.flatMap((m, i) => m.claude ? [i] : []);
-      const pi = marks.flatMap((m, i) => m.pi ? [i] : []);
-      legend.hidden = !ci.length && !pi.length;
-      legend.textContent = pi.length
-        ? `Circle ${pi[0] + 1}: where the Pi saw it move (named on the Pi). Remove it if that's wrong.`
-        : ci.length === 1
-        ? `Circle ${ci[0] + 1}: where Claude saw the ${marks[ci[0]].label || claudeSaw}. Remove it if that's wrong.`
-        : `Where Claude saw them: ${ci.map(i => `${i + 1} ${marks[i].label || claudeSaw}`).join(", ")}. Remove any that's wrong.`;
     };
     const at = e => {
       const b = img.getBoundingClientRect();
