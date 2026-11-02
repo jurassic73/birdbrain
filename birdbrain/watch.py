@@ -491,12 +491,16 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             lessons = db.recent_lessons(conn)
             site = db.prompt_site(conn)
             confirmed = db.confirmed_species(conn)
+        # By day the Pi's own guess on Haiku's circle can veto skipping Sonnet (not checked on infrared yet).
+        local_check = None if night else (lambda circle: classifier.run(best, circle, crop, night))
         result = identify.identify(best, captured_at, crop, lessons, extra_frames=ranked[1:], site=site,
-                                   confirmed=confirmed)
+                                   confirmed=confirmed, local_check=local_check)
         if check:
             result.raw["presence"] = check
-    # When Claude answered, the classifier records its guess from Claude's circle for the Stats scorecard.
-    if not pick and result.sighting.visitor != "none" and (guess := classifier.run(best, result.raw.get("circle"), crop, night)):
+    # When Claude answered, the classifier records its guess from Claude's circle for the Stats scorecard (already
+    # made on Haiku's circle when it decided whether to ask Sonnet; again on Sonnet's circle if Sonnet answered).
+    if (not pick and result.sighting.visitor != "none" and (result.escalated or "classifier" not in result.raw)
+            and (guess := classifier.run(best, result.raw.get("circle"), crop, night))):
         result.raw["classifier"] = guess
     if animals is not None:
         result.raw["animals_seen"] = animals  # scored against Claude's count later

@@ -173,6 +173,44 @@ def test_medium_answer_naming_a_confirmed_species_skips_sonnet(fake_ask):
     assert [m for m, _, _ in calls] == [HAIKU] and r.raw["skipped_sonnet"] == "confirmed species"
 
 
+def guess_of(name):
+    return {"model": "bioclip-2", "top": [{"name": name, "scientific": "", "score": 0.9}], "local_share": 0.9}
+
+
+def test_local_classifier_disagreeing_sends_a_confirmed_species_to_sonnet(fake_ask):
+    calls = fake_ask({HAIKU: sighting(species="House Finch", confidence="medium"), SONNET: sighting()})
+    circles = []
+    r = identify.identify(jpeg(), WHEN, confirmed={"House Finch"},
+                          local_check=lambda c: circles.append(c) or guess_of("Dark-eyed Junco"))
+    assert [m for m, _, _ in calls] == [HAIKU, SONNET] and r.escalated and r.sighting.species == "Dark-eyed Junco"
+    assert r.raw["local_disagreed"] == "Dark-eyed Junco" and "skipped_sonnet" not in r.raw
+    assert r.raw["classifier"]["top"][0]["name"] == "Dark-eyed Junco"
+    assert len(circles) == 1  # asked once, on Haiku's circle
+
+
+@pytest.mark.parametrize("said, local", [("Dark-eyed Junco", "Dark-eyed Junco"), ("Raccoon", "Common Raccoon")])
+def test_local_classifier_agreeing_still_skips_sonnet(fake_ask, said, local):
+    calls = fake_ask({HAIKU: sighting(species=said, confidence="medium"), SONNET: sighting(species="Song Sparrow")})
+    r = identify.identify(jpeg(), WHEN, confirmed={said}, local_check=lambda c: guess_of(local))
+    assert [m for m, _, _ in calls] == [HAIKU] and r.raw["skipped_sonnet"] == "confirmed species"
+    assert r.raw["local_agreed"] and "local_disagreed" not in r.raw
+
+
+def test_local_check_only_runs_when_sonnet_would_be_skipped(fake_ask):
+    asked = []
+    fake_ask({HAIKU: sighting(confidence="high"), SONNET: sighting()})
+    identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"}, local_check=lambda c: asked.append(c))
+    fake_ask({HAIKU: sighting(species="Song Sparrow", confidence="medium"), SONNET: sighting()})
+    identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"}, local_check=lambda c: asked.append(c))
+    assert asked == []
+
+
+def test_no_local_guess_keeps_the_skip(fake_ask):
+    calls = fake_ask({HAIKU: sighting(confidence="medium"), SONNET: sighting(species="Song Sparrow")})
+    r = identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"}, local_check=lambda c: None)
+    assert [m for m, _, _ in calls] == [HAIKU] and "local_agreed" not in r.raw and "classifier" not in r.raw
+
+
 @pytest.mark.parametrize("confidence, species", [("low", "Dark-eyed Junco"), ("medium", "Song Sparrow")])
 def test_low_answers_and_new_names_still_get_sonnet(fake_ask, confidence, species):
     calls = fake_ask({HAIKU: sighting(species=species, confidence=confidence), SONNET: sighting()})

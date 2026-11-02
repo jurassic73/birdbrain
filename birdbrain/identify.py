@@ -6,7 +6,7 @@ import json
 import sys
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Callable, Literal
 
 import anthropic
 from PIL import Image
@@ -185,6 +185,18 @@ def needs_second_look(s: Sighting | None, confirmed: set[str] = frozenset()) -> 
     return not (s.confidence == "medium" and s.species in confirmed)
 
 
+def local_disagrees(s: Sighting, guess: dict | None) -> str | None:
+    """The local classifier's first guess when it names a different species than Claude, else None. A generic
+    label agrees with a species ending in it ("Raccoon": Common Raccoon), as in db.classifier_report."""
+    top = (guess or {}).get("top") or []
+    if not top or not s.species:
+        return None
+    name, said = top[0]["name"].casefold(), s.species.strip().casefold()
+    if name == said or name.endswith(" " + said):
+        return None
+    return top[0]["name"]
+
+
 def identify(
     jpeg: bytes,
     captured_at: datetime,
@@ -193,15 +205,30 @@ def identify(
     extra_frames: list[bytes] = (),
     site: dict | None = None,
     confirmed: set[str] = frozenset(),
+    local_check: Callable[[dict | None], dict | None] | None = None,
 ) -> Result:
-    """Haiku looks at the best frame; if unsure, Sonnet gets that frame plus the next-best burst frames."""
+    """Haiku looks at the best frame; if unsure, Sonnet gets that frame plus the next-best burst frames.
+    `local_check(circle)` is the local classifier on Haiku's circle (full-frame fractions), asked only when a
+    medium answer about a confirmed species would skip Sonnet: if it names a different species, Sonnet is asked
+    anyway (2026-11-02: three such skips in one morning were wrong, juncos called a House Finch and a
+    chickadee, while BioCLIP on the circle said junco). Its guess is kept as raw["classifier"]."""
     image_b64 = prepare(jpeg, crop)
     sighting, meta = ask(HAIKU, [image_b64], captured_at, lessons, site)
     raw = {"haiku": {**meta, "answer": sighting.model_dump() if sighting else None}, "lessons": len(lessons or [])}
     model, escalated = HAIKU, False
-    if not needs_second_look(sighting, confirmed) and needs_second_look(sighting):
-        raw["skipped_sonnet"] = "confirmed species"
-    elif needs_second_look(sighting, confirmed):
+    second = needs_second_look(sighting, confirmed)
+    if not second and needs_second_look(sighting):
+        guess = local_check(frame_circle(sighting, crop)) if local_check else None
+        if guess:
+            raw["classifier"] = guess
+        if other := local_disagrees(sighting, guess):
+            raw["local_disagreed"] = other
+            second = True
+        else:
+            raw["skipped_sonnet"] = "confirmed species"
+            if guess and guess.get("top"):
+                raw["local_agreed"] = True
+    if second:
         images = [image_b64, *(prepare(f, crop) for f in extra_frames)]
         second, meta2 = ask(SONNET, images, captured_at, lessons, site)
         raw["sonnet"] = {**meta2, "frames": len(images), "answer": second.model_dump() if second else None}

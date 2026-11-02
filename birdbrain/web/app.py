@@ -610,7 +610,8 @@ def decision_steps(raw_json: str | None) -> dict:
         })
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),
             "owner_checks": owner_checks(calls),
-            "skipped_sonnet": bool(calls.get("skipped_sonnet")), "asked_sonnet": bool(calls.get("sonnet"))}
+            "skipped_sonnet": bool(calls.get("skipped_sonnet")), "asked_sonnet": bool(calls.get("sonnet")),
+            "local_disagreed": calls.get("local_disagreed"), "local_agreed": bool(calls.get("local_agreed"))}
 
 
 CHECK_BY = {"pi": "The Pi", "haiku": "Haiku", "sonnet": "Sonnet"}

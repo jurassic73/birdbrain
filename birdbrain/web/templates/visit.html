@@ -183,10 +183,12 @@
           <div>{{ step.said }} {% if step.confidence %}{{ badge(step.confidence, "conf-" ~ step.confidence) }}{% endif %}{% if step.also %} <span class="muted">with {{ step.also | join(", ") }}</span>{% endif %}</div>
           {% if step.notes %}<div class="muted step-notes">{{ step.notes }}</div>{% endif %}
           {% endif %}
-          {% if step.model == 'Haiku' and decision.asked_sonnet %}
+          {% if step.model == 'Haiku' and decision.asked_sonnet and decision.local_disagreed %}
+          <div class="step-why">Fairly sure, but the Pi's classifier said {{ decision.local_disagreed }}, so it asked Sonnet for a second look with more frames.</div>
+          {% elif step.model == 'Haiku' and decision.asked_sonnet %}
           <div class="step-why">Not confident enough, so it asked Sonnet for a second look with more frames.</div>
           {% elif step.model == 'Haiku' and decision.skipped_sonnet %}
-          <div class="step-why">A species already confirmed here several times, so Sonnet wasn't asked.</div>
+          <div class="step-why">A species already confirmed here several times{% if decision.local_agreed %}, and the Pi's classifier agreed{% endif %}, so Sonnet wasn't asked.</div>
           {% endif %}
           {% endif %}
         </li>

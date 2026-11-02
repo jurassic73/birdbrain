@@ -58,7 +58,9 @@ TOP = 3
 # A square around Claude's circle, this many radii from the center to each side (1.0: the circle's bounding
 # square). On the first 28 real bird visits BioCLIP 2 named 25 right with 1.0 or 1.5, and averaging 1.5 and 3
 # didn't help; each extra square costs another ~6 s on the Pi. (MobileNet needed 1.5 + 3 to see a bird at all.)
-CIRCLE_MARGINS = (1.0,)
+# 2.0 since 2026-11-02: Claude's circles are often too small (a junco's became a 96 px square cutting the bird,
+# Junco 0.29); on 105 daytime visits 2.0 named 96 right vs 94 at 1.0, and would gate 72 vs 61.
+CIRCLE_MARGINS = (2.0,)
 CIRCLE_MARGIN = CIRCLE_MARGINS[0]
 MIN_SIDE = 96  # px; never classify a smaller patch than this (it's upscaled to 224 anyway)
 
