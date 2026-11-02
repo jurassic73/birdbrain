@@ -33,8 +33,17 @@ def test_init_db_adds_new_columns_to_an_old_database(tmp_path):
         db.init_db(conn)
         db.init_db(conn)  # idempotent
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(visits)")}
-        assert {"corrected_visitor", "feedback"} <= cols
+        assert {"corrected_visitor", "feedback", "public_ok"} <= cols
         assert db.count_visits(conn) == 1
+
+
+def test_public_ok_is_stored_and_taken_back(conn, add_visit):
+    vid, other = add_visit(), add_visit()
+    db.set_public_ok(conn, vid, {"at": "2026-11-02T09:00:00", "files": {"img.jpg": 0.278}})
+    assert json.loads(db.get_visit(conn, vid)["public_ok"])["files"] == {"img.jpg": 0.278}
+    assert db.get_visit(conn, other)["public_ok"] is None
+    db.set_public_ok(conn, vid, None)
+    assert db.get_visit(conn, vid)["public_ok"] is None
 
 
 def test_labels_prefer_corrections_then_species_then_capitalized_visitor(conn, add_visit):

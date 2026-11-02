@@ -5,6 +5,11 @@ quarters, so someone small on the far lawn still registers. The bar is low on pu
 only keeps one photo off the mirror. Everything fails closed: a photo that can't be checked isn't pushed.
 
 Scores are cached per photo in DATA_DIR/privacy.json, so each file is checked once.
+
+"Public anyway": when the owner looks at a held-back visit and sees no person, the visit page pins the
+scores its photos had then in visits.public_ok ({"at": time, "files": {photo: score}}). Only those files at
+no more than those scores are let through; a new file, or one that scores higher when checked again, holds
+the visit back again. An override that can't be read counts as none (fails closed).
 CLI (exit 0 = clean, 1 = person or not checked, 2 = error):
   python -m birdbrain.privacy check live.jpg          is it safe to push this frame?
   python -m birdbrain.privacy filter mirror.db excl   drop visits with a person from a copy of the database
@@ -83,11 +88,39 @@ def save_cache(cache: dict[str, float]) -> None:
     tmp.replace(cache_path())
 
 
+def parse_override(text: str | None) -> dict[str, float]:
+    """The photo scores the owner cleared with Public anyway ({} when none, or when it can't be read)."""
+    try:
+        files = json.loads(text)["files"] if text else {}
+        return {str(rel): float(score) for rel, score in files.items()}
+    except Exception:
+        return {}
+
+
+def held_back(rel: str, score: float, override: dict[str, float]) -> bool:
+    """A person score that keeps the visit off the mirror: over the bar, and not cleared by the owner for
+    this very file at this score or higher."""
+    return score >= MIN_SCORE and not (rel in override and score <= override[rel])
+
+
+def make_override(image_rel: str, cache: dict[str, float]) -> dict | None:
+    """What Public anyway stores: the scores of the visit's photos that showed a person. None unless every
+    photo has been checked and at least one held the visit back (there's nothing to clear otherwise)."""
+    files = {}
+    for rel in visit_files(image_rel, thumbs=False):
+        if rel not in cache:
+            return None
+        if cache[rel] >= MIN_SCORE:
+            files[rel] = cache[rel]
+    return {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "files": files} if files else None
+
+
 _status: tuple[float, dict] = (0.0, {})
 
 
-def visit_status(image_rel: str) -> str | None:
-    """'person', 'unchecked' or None (clean) for a visit's photos, for the pill on the Pi's visit page."""
+def visit_status(image_rel: str, public_ok: str | None = None) -> str | None:
+    """'person', 'unchecked', 'cleared' (the owner said Public anyway) or None (clean) for a visit's
+    photos, for the pill on the Pi's visit page."""
     global _status
     try:
         mtime = cache_path().stat().st_mtime
@@ -95,11 +128,13 @@ def visit_status(image_rel: str) -> str | None:
         return None  # the mirror filter has never run: nothing to report
     if mtime != _status[0]:
         _status = (mtime, load_cache())
-    cache = _status[1]
-    scores = [cache.get(rel) for rel in visit_files(image_rel, thumbs=False)]
-    if any(s is not None and s >= MIN_SCORE for s in scores):
+    cache, override = _status[1], parse_override(public_ok)
+    scores = {rel: cache.get(rel) for rel in visit_files(image_rel, thumbs=False)}
+    if any(s is not None and held_back(rel, s, override) for rel, s in scores.items()):
         return "person"
-    return "unchecked" if None in scores else None
+    if None in scores.values():
+        return "unchecked"
+    return "cleared" if any(s >= MIN_SCORE for s in scores.values()) else None
 
 
 def visit_files(image_rel: str, thumb_rel: str | None = None, thumbs: bool = True) -> list[str]:
@@ -110,10 +145,12 @@ def visit_files(image_rel: str, thumb_rel: str | None = None, thumbs: bool = Tru
 
 def blocked_visits(rows, cache: dict[str, float], budget: float = FILTER_BUDGET) -> tuple[list, int]:
     """Check unchecked photos (newest visits first, within the time budget) and return the visits to keep
-    off the mirror: a person in any frame, or not checked yet. Also returns how many photos were checked."""
+    off the mirror: a person in any frame (unless the owner cleared it), or not checked yet. Rows are
+    (id, image, thumb[, public_ok]). Also returns how many photos were checked."""
     start, checked = time.monotonic(), 0
     blocked = []
-    for vid, image_rel, _thumb in rows:
+    for vid, image_rel, _thumb, *rest in rows:
+        override = parse_override(rest[0] if rest else None)
         person = unchecked = False
         for rel in visit_files(image_rel, thumbs=False):
             if rel not in cache:
@@ -125,7 +162,7 @@ def blocked_visits(rows, cache: dict[str, float], budget: float = FILTER_BUDGET)
                     continue  # a missing burst frame can't leak anything
                 cache[rel] = score_file(path)
                 checked += 1
-            person |= cache[rel] >= MIN_SCORE
+            person |= held_back(rel, cache[rel], override)
         if person or unchecked:
             blocked.append(vid)
     return blocked, checked
@@ -135,7 +172,10 @@ def filter_db(db_path: Path, exclude_path: Path) -> int:
     """Remove blocked visits from a copy of the database; list their files for rsync. Returns how many."""
     cache = load_cache()
     db = sqlite3.connect(db_path)
-    rows = db.execute("SELECT id, image_path, thumb_path FROM visits ORDER BY id DESC").fetchall()
+    try:
+        rows = db.execute("SELECT id, image_path, thumb_path, public_ok FROM visits ORDER BY id DESC").fetchall()
+    except sqlite3.OperationalError:  # a database from before Public anyway: no overrides
+        rows = db.execute("SELECT id, image_path, thumb_path FROM visits ORDER BY id DESC").fetchall()
     try:
         blocked, checked = blocked_visits(rows, cache)
     finally:
@@ -143,9 +183,14 @@ def filter_db(db_path: Path, exclude_path: Path) -> int:
     by_id = {r[0]: r for r in rows}
     lines = []
     for vid in blocked:
-        _, image_rel, thumb_rel = by_id[vid]
+        _, image_rel, thumb_rel, *_ = by_id[vid]
         lines += ["/" + rel for rel in visit_files(image_rel, thumb_rel)]
+    cleared = sum(1 for r in rows if len(r) > 3 and r[0] not in blocked and parse_override(r[3]))
     db.executemany("DELETE FROM visits WHERE id = ?", [(v,) for v in blocked])
+    try:
+        db.execute("UPDATE visits SET public_ok = NULL")  # the owner's privacy calls stay on the Pi
+    except sqlite3.OperationalError:
+        pass
     for table in ("embeddings",):  # rows keyed by visit that would otherwise outlive it
         try:
             db.execute(f"DELETE FROM {table} WHERE visit_id NOT IN (SELECT id FROM visits)")
@@ -155,7 +200,8 @@ def filter_db(db_path: Path, exclude_path: Path) -> int:
     db.execute("VACUUM")
     db.close()
     exclude_path.write_text("".join(f"{line}\n" for line in lines))
-    print(f"privacy: {checked} photos checked, {len(blocked)} visits kept off the mirror")
+    print(f"privacy: {checked} photos checked, {len(blocked)} visits kept off the mirror, "
+          f"{cleared} let through by Public anyway")
     return len(blocked)
 
 

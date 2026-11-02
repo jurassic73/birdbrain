@@ -80,3 +80,124 @@ def test_check_cli_fails_closed(setup, tmp_path, monkeypatch):
     monkeypatch.setattr(privacy, "_det", None)
     monkeypatch.setattr(config, "DETECTOR_MODEL", tmp_path / "nope.onnx")
     assert privacy.main(["check", str(tmp_path / "images" / "a.jpg")]) == 2
+
+
+def mirror_copy(tmp_path):
+    """What push_public.sh hands the filter: a copy of the Pi's database."""
+    dst = tmp_path / "mirror.db"
+    dst.unlink(missing_ok=True)
+    src, out = sqlite3.connect(config.DB_PATH), sqlite3.connect(dst)
+    src.backup(out)
+    src.close()
+    out.close()
+    return dst
+
+
+def pushed(tmp_path) -> set[int]:
+    """Run the filter on a fresh copy; the visit ids that would go to the mirror."""
+    copy = mirror_copy(tmp_path)
+    privacy.filter_db(copy, tmp_path / "excl.txt")
+    return {r[0] for r in sqlite3.connect(copy).execute("SELECT id FROM visits")}
+
+
+@pytest.fixture
+def fresh_status(monkeypatch):
+    monkeypatch.setattr(privacy, "_status", (0.0, {}))
+
+
+def test_public_anyway_lets_a_flagged_visit_through(setup, tmp_path, conn, fresh_status):
+    from birdbrain import db
+
+    _, clean, person, burst = setup
+    assert pushed(tmp_path) == {clean}  # also scores every photo
+    cache = privacy.load_cache()
+    assert privacy.make_override("a.jpg", cache) is None  # nothing to clear on a clean visit
+    assert privacy.make_override("b.jpg", {}) is None  # nor before it's checked
+    override = privacy.make_override("b.jpg", cache)
+    assert override["files"] == {"b.jpg": 0.6}
+    db.set_public_ok(conn, person, override)
+    assert privacy.visit_status("b.jpg", db.get_visit(conn, person)["public_ok"]) == "cleared"
+    assert privacy.visit_status("c.jpg", None) == "person"
+
+    assert pushed(tmp_path) == {clean, person}
+    lines = (tmp_path / "excl.txt").read_text().split()
+    assert "/b.jpg" not in lines and "/c_b2.jpg" in lines
+    # The owner's call stays on the Pi: the copy has no overrides left.
+    copy = mirror_copy(tmp_path)
+    privacy.filter_db(copy, tmp_path / "excl.txt")
+    assert sqlite3.connect(copy).execute("SELECT COUNT(*) FROM visits WHERE public_ok IS NOT NULL").fetchone()[0] == 0
+
+    # Undo holds it back again.
+    db.set_public_ok(conn, person, None)
+    assert db.get_visit(conn, person)["public_ok"] is None
+    assert pushed(tmp_path) == {clean}
+
+
+def test_public_anyway_covers_only_the_photos_and_scores_cleared(setup, tmp_path, conn):
+    import cv2
+    from birdbrain import db
+
+    _, clean, person, burst = setup
+    pushed(tmp_path)
+    db.set_public_ok(conn, burst, privacy.make_override("c.jpg", privacy.load_cache()))
+    assert burst in pushed(tmp_path)
+
+    # A higher score on a re-check holds it back.
+    score = privacy.load_cache()["c_b2.jpg"]
+    privacy.save_cache({"c_b2.jpg": score + 0.1})
+    assert burst not in pushed(tmp_path)
+    privacy.save_cache({"c_b2.jpg": score})
+    assert burst in pushed(tmp_path)
+
+    # So does a new photo for the visit that shows a person.
+    img = np.zeros((40, 60, 3), np.uint8)
+    img[0, 0] = 255
+    cv2.imwrite(str(tmp_path / "images" / "c_b3.jpg"), img)
+    assert burst not in pushed(tmp_path)
+
+
+def test_unreadable_override_keeps_the_visit_private(setup, tmp_path, conn):
+    _, clean, person, burst = setup
+    pushed(tmp_path)
+    for bad in ("not json", '{"files": ["b.jpg"]}', '{"files": {"b.jpg": "high"}}', "[]"):
+        conn.execute("UPDATE visits SET public_ok = ? WHERE id = ?", (bad, person))
+        conn.commit()
+        assert privacy.parse_override(bad) == {}
+        assert person not in pushed(tmp_path), bad
+
+
+def test_filter_reads_an_old_database_without_overrides(setup, tmp_path):
+    copy = mirror_copy(tmp_path)
+    old = sqlite3.connect(copy)
+    old.execute("ALTER TABLE visits DROP COLUMN public_ok")
+    old.commit()
+    old.close()
+    assert privacy.filter_db(copy, tmp_path / "excl.txt") == 2
+
+
+def test_public_anyway_route_is_admin_only(setup, tmp_path, conn, monkeypatch, fresh_status):
+    from fastapi.testclient import TestClient
+
+    from birdbrain import db
+    from birdbrain.web import app as webapp
+    from birdbrain.web import auth
+
+    _, clean, person, burst = setup
+    pushed(tmp_path)
+    with TestClient(webapp.app) as client:
+        page = client.get(f"/visit/{person}").text
+        assert f'hx-post="/visit/{person}/public"' in page and 'data-confirm-title="No person' in page
+        assert client.post(f"/visit/{clean}/public").status_code == 409
+        assert client.post(f"/visit/{person}/public").status_code == 200
+        assert db.get_visit(conn, person)["public_ok"]
+        page = client.get(f"/visit/{person}").text
+        assert ">public (checked)<" in page and f'hx-post="/visit/{person}/private"' in page
+        assert client.post(f"/visit/{person}/private").status_code == 200
+        assert db.get_visit(conn, person)["public_ok"] is None
+
+        monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+        auth._fails.clear()
+        for path in (f"/visit/{person}/public", f"/visit/{person}/private"):
+            assert client.post(path).status_code == 403
+        assert db.get_visit(conn, person)["public_ok"] is None
+        assert "Public anyway" not in client.get(f"/visit/{person}").text

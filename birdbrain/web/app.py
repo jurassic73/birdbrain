@@ -805,6 +805,27 @@ def unconfirm(visit_id: int, conn=Depends(get_conn)):
     return Response(headers=REFRESH)
 
 
+@app.post("/visit/{visit_id}/public")
+def public_anyway(visit_id: int, conn=Depends(get_conn)):
+    """The owner saw no person in a photo the Pi's person check flagged: pin today's scores so the next push
+    to the public mirror includes the visit (birdbrain.privacy)."""
+    visit = db.get_visit(conn, visit_id)
+    if visit is None:
+        raise HTTPException(404)
+    override = privacy.make_override(visit["image_path"], privacy.load_cache())
+    if override is None:
+        raise HTTPException(409, "Nothing to clear: this visit isn't held back for a person, or isn't fully checked yet.")
+    db.set_public_ok(conn, visit_id, override)
+    return Response(headers=REFRESH)
+
+
+@app.post("/visit/{visit_id}/private")
+def public_undo(visit_id: int, conn=Depends(get_conn)):
+    """Undo Public anyway: the visit is held back again from the next push (and taken off the mirror)."""
+    db.set_public_ok(conn, visit_id, None)
+    return Response(headers=REFRESH)
+
+
 @app.post("/false-triggers/confirm")
 def confirm_false_triggers(ids: str = Form(""), conn=Depends(get_conn)):
     """Confirm all on the page: the false triggers the owner looked at had no animal."""

@@ -105,7 +105,10 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  "confirmed_at": "TEXT",  # the owner pressed Confirm: Claude's answer is right (birdbrain.presence)
                  # A false trigger's photo files were deleted to save space (birdbrain.retention); the row and its
                  # embedding stay, so the Pi's animal check keeps learning from it.
-                 "photo_deleted_at": "TEXT"}
+                 "photo_deleted_at": "TEXT",
+                 # The owner saw no person in a photo the Pi's person check flagged ("Public anyway"):
+                 # JSON {"at", "files": {photo: score}} pinning the scores they cleared (birdbrain.privacy).
+                 "public_ok": "TEXT"}
 HAS_PHOTO = "photo_deleted_at IS NULL"
 
 # How many corrections and notes join each identify prompt.
@@ -829,6 +832,13 @@ def confirm_visits(conn: sqlite3.Connection, ids: list[int], on: bool = True) ->
     local animal check retrains."""
     conn.executemany("UPDATE visits SET confirmed_at = ? WHERE id = ?",
                      [(datetime.now().isoformat(timespec="seconds") if on else None, i) for i in ids])
+    conn.commit()
+
+
+def set_public_ok(conn: sqlite3.Connection, visit_id: int, override: dict | None) -> None:
+    """Record (or with None, take back) the owner's Public anyway for a visit's flagged photos."""
+    conn.execute("UPDATE visits SET public_ok = ? WHERE id = ?",
+                 (json.dumps(override) if override else None, visit_id))
     conn.commit()
 
 
