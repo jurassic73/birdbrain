@@ -15,7 +15,7 @@
 </div>
 {% from "_macros.html" import sp_name, confirm_badge with context %}
 {% if species %}
-<div class="grid">
+<div class="grid species-grid">
   {% for s in species %}
   <a class="card" href="/species/{{ s.label | urlencode }}">
     <img src="/images/{{ s.thumb_path }}" alt="{{ s.label }}" loading="lazy">

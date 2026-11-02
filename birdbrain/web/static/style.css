@@ -399,6 +399,9 @@ dialog.popup[open] { animation: popup-in .14s ease-out; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 @media (max-width: 480px) { .grid { grid-template-columns: repeat(2, 1fr); gap: 8px; } }
+/* Species list: photos 1.5x (column minimum 220 px to 330 px); one column on phones, where 1.5x two columns won't fit. */
+.grid.species-grid { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); }
+@media (max-width: 480px) { .grid.species-grid { grid-template-columns: 1fr; } }
 .card {
   display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius); overflow: hidden; color: var(--text); text-decoration: none;
