@@ -84,6 +84,16 @@ def test_home_filter_chip_is_marked_active(client, add_visit):
     assert 'aria-current="page">Mammals<' in html and "matching</h2>" in html
 
 
+def test_multiple_chip_follows_mammals_and_filters(client, add_visit):
+    add_visit(species="Bushtit", also='[{"visitor": "bird", "species": "Song Sparrow", "count": 1}]')
+    add_visit(species="Dark-eyed Junco", count=2)
+    html = client.get("/?kind=multiple").text
+    assert 'aria-current="page">Multiple<' in html and "1 matching</h2>" in html
+    assert html.index(">Mammals<") < html.index(">Multiple<") < html.index(">Night<")
+    assert '<option value="multiple" selected>' in html
+    assert "1 visit matching" in client.get("/visits?kind=multiple").text
+
+
 def test_load_more_pages_in_24s(client, add_visit):
     for _ in range(30):
         add_visit()
