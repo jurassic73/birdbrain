@@ -63,9 +63,11 @@ CREATE TABLE IF NOT EXISTS embeddings (  -- BioCLIP 2 embedding of each frame's 
     vec BLOB NOT NULL,      -- float16
     -- For a false trigger later corrected to an animal: the saved burst frame whose crop box looks most like one
     -- (birdbrain.presence.pick_frames). animal_frame is 1-based; 0 = looked, no burst frames to look at.
+    -- animal_by_owner = 1: the frame the owner's first circle is on, embedded because they circled it there.
     animal_vec BLOB,
     animal_frame INTEGER,
-    animal_score REAL
+    animal_score REAL,
+    animal_by_owner INTEGER
 );
 CREATE TABLE IF NOT EXISTS pi_checks (  -- one row per Ask the Pi click; no foreign key, so deleting visits keeps them
     id INTEGER PRIMARY KEY,
@@ -115,7 +117,8 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  # JSON {"at", "files": {photo: score}} pinning the scores they cleared (birdbrain.privacy).
                  "public_ok": "TEXT"}
 HAS_PHOTO = "photo_deleted_at IS NULL"
-EMBEDDING_ADDED_COLUMNS = {"animal_vec": "BLOB", "animal_frame": "INTEGER", "animal_score": "REAL"}
+EMBEDDING_ADDED_COLUMNS = {"animal_vec": "BLOB", "animal_frame": "INTEGER", "animal_score": "REAL",
+                           "animal_by_owner": "INTEGER"}
 
 # How many corrections and notes join each identify prompt.
 LESSON_LIMIT = 15
@@ -869,8 +872,13 @@ def set_public_ok(conn: sqlite3.Connection, visit_id: int, override: dict | None
     conn.commit()
 
 
-def parse_marks(text: str | None) -> list[dict]:
-    """The owner's numbered circles on a photo: [{x, y, r}] as fractions of the width, height and width. At most 9."""
+MAX_FRAME = 60  # a burst frame number past this isn't one (bursts are 6 frames)
+
+
+def parse_marks(text: str | None, claude_frame: int | None = None) -> list[dict]:
+    """The owner's numbered circles on a photo: [{x, y, r}] as fractions of the width, height and width. At most 9.
+    A circle drawn on another frame of the burst carries `frame` (1-based, as the visit page's filmstrip counts);
+    none means the photo Claude saw. `claude_frame` (that photo's place in the burst) folds `frame` back into none."""
     try:
         raw = json.loads(text or "[]")
     except ValueError:
@@ -889,6 +897,10 @@ def parse_marks(text: str | None) -> list[dict]:
                 mark[by] = True
         if (mark.get("claude") or mark.get("pi")) and isinstance(m.get("label"), str) and m["label"].strip():
             mark["label"] = m["label"].strip()[:60]  # which animal, when there are several
+        frame = m.get("frame")
+        if (isinstance(frame, int) and not isinstance(frame, bool) and 1 <= frame <= MAX_FRAME
+                and frame != claude_frame and not (mark.get("claude") or mark.get("pi"))):
+            mark["frame"] = frame  # Claude's and the Pi's circles belong to the photo they were drawn on
         marks.append(mark)
     return marks[:9]
 
@@ -897,8 +909,24 @@ def describe_marks(marks: list[dict]) -> str:
     """Where each circle sits, so Claude can match the owner's note ("1 is a rock") to a place in the frame."""
     return "; ".join(
         f"circle {i}{_drew(m)} at {m['x']:.0%} across, {m['y']:.0%} down"
+        + (f" (on burst frame {m['frame']}, not the photo you saw)" if m.get("frame") else "")
         for i, m in enumerate(marks, 1)
     )
+
+
+def mark_frame(mark: dict) -> int | None:
+    """The burst frame a circle was drawn on (1-based), or None for the photo Claude saw."""
+    return mark.get("frame") or None
+
+
+def claude_frame(raw_json: str | dict | None) -> int | None:
+    """Where the photo Claude saw sits in the visit's saved burst (1-based), or None without a burst."""
+    try:
+        raw = json.loads(raw_json or "{}") if isinstance(raw_json, (str, bytes)) or raw_json is None else raw_json
+        best = (raw.get("burst") or {}).get("best")
+    except (ValueError, AttributeError):
+        return None
+    return best + 1 if isinstance(best, int) and not isinstance(best, bool) else None
 
 
 def _drew(mark: dict) -> str:

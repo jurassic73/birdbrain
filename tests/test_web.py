@@ -262,6 +262,37 @@ def test_feedback_circles_are_saved_shown_and_described_to_claude(client, add_vi
     assert db.get_visit(conn, vid)["marks"] is None
 
 
+def test_circles_keep_the_burst_frame_they_were_drawn_on():
+    marks = json.dumps([
+        {"x": 0.5, "y": 0.5, "r": 0.05},                          # on the photo Claude saw
+        {"x": 0.2, "y": 0.3, "r": 0.05, "frame": 4},              # on burst frame 4
+        {"x": 0.2, "y": 0.3, "r": 0.05, "frame": 2},              # frame 2 is the photo Claude saw: no frame
+        {"x": 0.1, "y": 0.1, "r": 0.05, "frame": 0},              # not a frame
+        {"x": 0.1, "y": 0.1, "r": 0.05, "frame": "3"},            # not a number
+        {"x": 0.1, "y": 0.1, "r": 0.05, "frame": True},           # not a number either
+        {"x": 0.1, "y": 0.1, "r": 0.05, "frame": 999},            # no burst is that long
+        {"x": 0.3, "y": 0.3, "r": 0.05, "frame": 5, "claude": True},  # Claude's circles stay on its photo
+    ] + [{"x": 0.9, "y": 0.9, "r": 0.02, "frame": 6}] * 4)
+    got = db.parse_marks(marks, claude_frame=2)
+    assert len(got) == 9  # still at most 9, frames or not
+    assert [m.get("frame") for m in got[:8]] == [None, 4, None, None, None, None, None, None]
+    assert got[7] == {"x": 0.3, "y": 0.3, "r": 0.05, "claude": True} and got[8]["frame"] == 6
+    assert db.parse_marks(marks)[2]["frame"] == 2  # without knowing Claude's frame it stays
+    assert db.claude_frame(json.dumps({"burst": {"best": 1}})) == 2 and db.claude_frame("{}") is None
+    assert "circle 2 at 20% across, 30% down (on burst frame 4, not the photo you saw)" in db.describe_marks(got)
+
+
+def test_saving_circles_on_burst_frames_keeps_them_off_the_cards(client, add_visit, conn):
+    vid = add_visit(raw_json=json.dumps({"burst": {"count": 6, "best": 2, "fps": 4}}))
+    marks = [{"x": 0.4, "y": 0.4, "r": 0.05, "frame": 3}, {"x": 0.6, "y": 0.6, "r": 0.05, "frame": 5}]
+    client.post(f"/visit/{vid}/correct", data={"visitor": "bird", "marks": json.dumps(marks)})
+    # frame 3 is the photo Claude saw, so that circle needs no frame
+    assert db.parse_marks(db.get_visit(conn, vid)["marks"]) == [{"x": 0.4, "y": 0.4, "r": 0.05},
+                                                                {"x": 0.6, "y": 0.6, "r": 0.05, "frame": 5}]
+    card = webapp.templates.env.globals["photo_marks"](db.get_visit(conn, vid))
+    assert card == [{"x": 0.4, "y": 0.4, "r": 0.05}]
+
+
 def test_visit_page_starts_with_claudes_circle_until_the_owner_saves_their_own(client, add_visit, conn):
     circle = {"x": 0.45, "y": 0.65, "r": 0.05, "claude": True}
     vid = add_visit(raw_json=json.dumps({"calls": {"circle": circle}}))

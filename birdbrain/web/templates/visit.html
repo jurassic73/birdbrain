@@ -42,7 +42,7 @@
   <div class="photo-tools" id="photo-tools">
     {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi's animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
     {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards).">Hide circles</button>{% endif %}
-    <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing (false triggers open with it already on): drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
+    <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing (false triggers open with it already on): drag to draw a circle, drag a circle's middle to move it, its × removes it. With a burst, pick any frame below and draw on that one. Pinching with two fingers still zooms.">Edit circles</button>
     <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
     {% set nc = no_circle_note(visit) %}{% if nc and not visit.photo_deleted_at %}<span class="photo-note muted small" data-tip="Claude wasn't asked, and the Pi's circle from the motion found nothing it was sure of (see How it was decided), so there's no circle on this photo.">{{ nc }}</span>{% endif %}
   </div>
@@ -107,13 +107,14 @@
     {% if burst %}
     <section class="vburst" aria-label="Burst">
       <h2 class="vburst-head">Burst <span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
-        <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo.">i</span>
+        <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi's animal check learns from.">i</span>
         <span class="vburst-steps"><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
       <div class="vburst-strip">
         {% for f in burst %}
-        <button type="button" class="vburst-frame{% if f.best %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
+        <button type="button" class="vburst-frame{% if f.best %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
           <img src="/images/{{ f.path }}" alt="" loading="lazy" width="96" height="54">
           <span class="vburst-at">+{{ '%g' | format(f.at) }} s</span>
+          <span class="vburst-marks" hidden></span>
         </button>
         {% endfor %}
       </div>
@@ -121,7 +122,9 @@
     </section>
     {% endif %}
     {{ flow("in-info") }}
-    {% if decision.steps or decision.owner_checks %}
+    {# What this visit teaches the Pi's animal check (presence.teaches; admins only). #}
+    {% set teach_line %}{% if teaches %}{% if not teaches.animal %}Teaches the Pi's animal check an empty frame.{% if teaches.checked %} Counts 3 times: you checked it.{% endif %}{% elif teaches.used %}Teaches the Pi's animal check what an animal in the dashed box looks like, from {{ teaches.why }}.{% if teaches.checked %} Counts 3 times: you checked it.{% endif %}{% else %}Left out of the Pi's animal check's training: {{ teaches.why }}.{% endif %}{% endif %}{% endset %}
+    {% if decision.steps or decision.owner_checks or teaches %}
     <details class="decision">
       <summary><h2>How it was decided</h2></summary>
       {% if decision.trigger %}<p class="muted small">Spotted moving {{ decision.trigger }}.</p>{% endif %}
@@ -153,6 +156,7 @@
           {% if step.skipped_claude %}
           <div class="step-why">Judged empty, so Claude wasn't asked. If there is an animal, correct it below: the check learns from it.</div>
           {% endif %}
+          {% if teach_line %}<div class="muted step-notes" id="teaches">{{ teach_line }}</div>{% endif %}
           {% elif step.motion_circle %}
           <div class="step-head">
             <strong>Circle from the motion</strong> {{ badge("pi circle", "pi-only") }}
@@ -198,6 +202,7 @@
         {% endfor %}
       </ol>
       {% if visit.needs_review %}<p class="step-why">Still unsure, so it was sent to you for review.</p>{% endif %}
+      {% if teach_line and not (decision.steps | selectattr("presence") | list) %}<p class="muted small" id="teaches">{{ teach_line }}</p>{% endif %}
       {% if decision.owner_checks %}
       <h3 class="owner-checks-head">Your circle checks</h3>
       <ol class="owner-checks">
@@ -205,7 +210,7 @@
         <li>
           <div class="step-head">
             <strong>{{ c.by }}</strong> {{ badge("your check", "owner-check") }}
-            <span class="muted">{{ c.at | nice_time if c.at else '' }}{% if c.pi and c.seconds is not none %}, {{ c.seconds }} s{% elif c.usd is not none %}, {{ '%.2f' | format(c.usd * 100) }}&cent;{% endif %}</span>
+            <span class="muted">{{ c.at | nice_time if c.at else '' }}{% if c.frame %}, burst frame {{ c.frame }}{% endif %}{% if c.pi and c.seconds is not none %}, {{ c.seconds }} s{% elif c.usd is not none %}, {{ '%.2f' | format(c.usd * 100) }}&cent;{% endif %}</span>
           </div>
           <div>{{ c.say }}</div>
           {% if c.detail %}<div class="muted step-notes">{{ c.detail }}</div>{% endif %}
@@ -219,7 +224,11 @@
     {% if request.state.admin %}
     <details class="review-fold" open {% if settled %}data-m-closed{% endif %}>
     <summary class="m-hide-summary">Correct it</summary>
-    <form class="review" hx-post="/visit/{{ visit.id }}/correct">
+    {# What Save teaches (presence.py): the tip on every Save follows the answer picked. #}
+    {% set save_base = "Saving teaches the Pi's \"Anything there?\" check, which looks only at the dashed box: it retrains within about a minute, and your answer counts 3 times." %}
+    {% set save_none = save_base ~ " No animal: this photo becomes a checked example of an empty box. Your note goes to Claude as a lesson." %}
+    {% set save_animal = save_base ~ " An animal: if your first circle is on another burst frame, that frame becomes its example of an animal in the box, as long as the circle is mostly inside the dashed box (if not, this visit is left out). Otherwise it uses the burst frame that looks most like an animal, or this photo when the circle is inside the box. It learns whether an animal is in the box, not where, and no species names: your species and note go to Claude as lessons." %}
+    <form class="review" hx-post="/visit/{{ visit.id }}/correct" data-save-none="{{ save_none }}" data-save-animal="{{ save_animal }}">
       <div class="review-head">
         <h2>Was this right? <span class="info-tip" tabindex="0" aria-label="About corrections" data-tip="The answer you pick trains the Pi's local animal check (it counts 3 times). Your answer and your note are also shown to Claude on future identifications, so it learns from its mistakes at this birdbath.">i</span></h2>
         <a class="muted small" href="/notes#lessons">All lessons</a>
@@ -258,7 +267,7 @@
       <div class="field circle-check" id="circle-check">
         <div class="circle-check-head">
           <span class="field-title">What's in your circle?</span>
-          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Circle the animal (Edit circles, then drag on the photo) and ask. The Pi's own model looks at just that part of the photo: free, and 5 to 20 seconds on the Pi. If it isn't sure, ask Haiku, then Sonnet, on the same part. Nothing changes until you press Save; saving the right answer is what teaches the Pi.">i</span>
+          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Circle the animal (Edit circles, then drag on the photo) and ask. The Pi's own model looks at just that part of the photo: free, and 5 to 20 seconds on the Pi. If it isn't sure, ask Haiku, then Sonnet, on the same part. It looks at the frame your first circle is on. Nothing changes until you press Save; saving the right answer is what teaches the Pi's animal check (Save's tip says how).">i</span>
         </div>
         <div class="circle-check-btns">
           <button type="button" class="check-btn" data-source="pi" data-tip="The Pi's local model names what's in your first circle. Free; {% if pi_average.avg %}usually about {{ pi_average.avg|round|int }} seconds on the Pi (average of {{ pi_average.n }}){% else %}takes 5 to 20 seconds on the Pi{% endif %}.">Ask the Pi</button>
@@ -306,7 +315,7 @@
           <textarea id="feedback" name="feedback" rows="4"
                     placeholder="For Claude only, read on future identifications (nothing is sent now). Notes are not used by the Pi's local animal check; it learns from the answer you pick above. What did Claude get wrong, and how can it tell next time? e.g. No bird: those are the rocks poking out after I refilled the bath.">{{ visit.feedback or '' }}</textarea>
           <div class="feedback-actions">
-            <button type="submit">Save</button>
+            <button type="submit" class="save-btn" data-tip="{{ save_none if current_visitor == 'none' else save_animal }}">Save</button>
             {% if has_correction %}
             <button type="button" class="secondary" hx-post="/visit/{{ visit.id }}/clear-correction">Undo</button>
             {% endif %}
@@ -323,6 +332,16 @@
 
 <script>
   if (document.querySelector("form.review")) {  // visitors (read-only) have no correction form
+  (() => {
+    // Every Save (the form's and the one beside "Using X") says what saving teaches, for the answer picked now.
+    // Set as the pointer or focus reaches it, before tips.js reads the tip.
+    const form = document.querySelector("form.review");
+    const update = () => {
+      const none = document.querySelector('input[name="visitor"]:checked')?.value === "none";
+      form.querySelectorAll(".save-btn, .check-save").forEach(b => { b.dataset.tip = none ? form.dataset.saveNone : form.dataset.saveAnimal; });
+    };
+    for (const ev of ["mouseover", "focusin", "change"]) form.addEventListener(ev, update);
+  })();
   (() => {
     const radios = document.querySelectorAll('input[name="visitor"]');
     const field = document.getElementById("species-field"), also = document.getElementById("also-field");
@@ -522,7 +541,7 @@
         if (r.pi_average?.avg) b.dataset.tip = `The Pi's local model names what's in your first circle. Free; usually about ${Math.round(r.pi_average.avg)} seconds on the Pi (average of ${r.pi_average.n}).`;
       }
       if (r.error) { scrollTo(add(esc(r.error), true)); return; }
-      const where = `<span class="muted">circle ${r.circle_n}${source === "pi" ? `, ${r.seconds} s` : `, ${(r.usd * 100).toFixed(2)}&cent;`}</span>`;
+      const where = `<span class="muted">circle ${r.circle_n}${r.frame ? `, frame ${r.frame}` : ""}${source === "pi" ? `, ${r.seconds} s` : `, ${(r.usd * 100).toFixed(2)}&cent;`}</span>`;
       let html = `<p><b>${esc(r.say)}</b> ${where}</p>`;
       if (source === "pi") {
         if (r.top.length) html += `<ul class="check-guesses">${r.top.map(g =>
@@ -573,7 +592,9 @@
     fold.scrollIntoView({behavior: "smooth", block: "start"});
   });
   }
-  // Numbered circles on the photo, stored as fractions of the image (x, y of the size; r of the width).
+  // Numbered circles on the photo, stored as fractions of the image (x, y of the size; r of the width). With a burst,
+  // a circle drawn on another frame carries that frame's number (1-based); none means the photo Claude saw. Only
+  // the shown frame's circles are drawn, numbered across all frames so the list and the circle checks match.
   (() => {
     const photo = document.getElementById("photo");
     const img = photo.querySelector("img"), svg = photo.querySelector("svg.marks");
@@ -590,6 +611,8 @@
     };
     const edit = document.getElementById("mark-edit");
     let marks = JSON.parse(photo.dataset.marks || "[]"), press = null, drag = null, editing = false;
+    let cur = null;  // the burst frame in the big photo, null for Claude's
+    const here = m => (m.frame || null) === cur;
     // Fingers on the photo: a second one means a pinch, which zooms and never draws.
     const fingers = new Set();
     const NS = "http://www.w3.org/2000/svg";
@@ -599,12 +622,12 @@
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.replaceChildren();
       // Pills placed so far, and every ring: a pill takes the first corner that covers neither.
-      const taken = [], rings = marks.map(m => ({x: m.x * w, y: m.y * h, r: (editing ? m.r : markRadius(m.r)) * w}));
+      const taken = [], rings = marks.map(m => here(m) ? {x: m.x * w, y: m.y * h, r: (editing ? m.r : markRadius(m.r)) * w} : null);
       const keepIn = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
       const hits = (b, c) => Math.hypot(c.x - keepIn(c.x, b[0], b[2]), c.y - keepIn(c.y, b[1], b[3])) < c.r;
       // The line under the photo that explains the circles is written first, so the pills can stay off it too.
-      const ci = marks.flatMap((m, i) => m.claude ? [i] : []);
-      const pi = marks.flatMap((m, i) => m.pi ? [i] : []);
+      const ci = cur === null ? marks.flatMap((m, i) => m.claude ? [i] : []) : [];  // machine circles: Claude's frame
+      const pi = cur === null ? marks.flatMap((m, i) => m.pi ? [i] : []) : [];
       legend.hidden = !ci.length && !pi.length;
       legend.textContent = pi.length
         ? `Circle ${pi[0] + 1}: where the Pi saw it move (named on the Pi). Remove it if that's wrong.`
@@ -617,6 +640,7 @@
         taken.push([(lr.left - ib.left) * k - gap, (lr.top - ib.top) * k - gap, (lr.right - ib.left) * k + gap, (lr.bottom - ib.top) * k + gap]);
       }
       marks.forEach((m, i) => {
+        if (!here(m)) return;
         const g = el("g", {"data-i": i, class: m.pi ? "mark claude pi" : m.claude ? "mark claude" : "mark"});
         const cx = m.x * w, cy = m.y * h, r = (editing ? m.r : markRadius(m.r)) * w, s = w / 60;
         g.append(el("circle", {cx, cy, r, class: "body"}), el("circle", {cx, cy, r, class: "ring-shadow"}), el("circle", {cx, cy, r, class: "ring"}));
@@ -648,7 +672,7 @@
         };
         const free = c => {
           const b = box(c);
-          return !taken.some(t => b[0] < t[2] && t[0] < b[2] && b[1] < t[3] && t[1] < b[3]) && !rings.some((o, j) => j !== i && hits(b, o));
+          return !taken.some(t => b[0] < t[2] && t[0] < b[2] && b[1] < t[3] && t[1] < b[3]) && !rings.some((o, j) => o && j !== i && hits(b, o));
         };
         const corners = [[1, 1], [-1, 1], [1, -1], [-1, -1]].map(place);
         const onPhoto = corners.filter(c => fits(c.lx, c.ly, rad) && fits(c.dx, c.ly, dr));
@@ -686,15 +710,26 @@
         }
       });
       field.value = JSON.stringify(marks);
-      document.getElementById("circles-toggle").hidden = editing || !marks.length;
-      clear.hidden = !editing || !marks.length;
-      hint.hidden = editing || marks.length > 0;
+      const shown = marks.filter(here).length;
+      document.getElementById("circles-toggle").hidden = editing || !shown;
+      clear.hidden = !editing || !shown;
+      hint.hidden = editing || shown > 0;
+      // The filmstrip marks each frame that has circles with their numbers.
+      document.querySelectorAll(".vburst-frame").forEach(b => {
+        const f = b.dataset.best === "1" ? null : +b.dataset.frame;
+        const nums = marks.flatMap((m, i) => (m.frame || null) === f ? [i + 1] : []);
+        const tag = b.querySelector(".vburst-marks");
+        tag.hidden = !nums.length;
+        tag.textContent = nums.join(" ");
+        b.setAttribute("aria-label", b.getAttribute("aria-label").replace(/, circles? [\d ]+$/, "")
+          + (nums.length ? `, circle${nums.length > 1 ? "s" : ""} ${nums.join(" ")}` : ""));
+      });
     };
     const at = e => {
       const b = img.getBoundingClientRect();
       return {x: Math.min(Math.max((e.clientX - b.left) / b.width, 0), 1), y: Math.min(Math.max((e.clientY - b.top) / b.height, 0), 1), ratio: b.height / b.width};
     };
-    clear.addEventListener("click", () => { marks = []; draw(); });
+    clear.addEventListener("click", () => { marks = marks.filter(m => !here(m)); draw(); });  // this frame's only
     const setEditing = on => {
       editing = on;
       if (editing && !bbOverlays.on("circles")) bbOverlays.set("circles", true);  // can't edit what you can't see
@@ -729,7 +764,7 @@
         if (Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8) return;
         if (press.move) drag = {start: press.p, mark: press.move, from: {x: press.move.x, y: press.move.y}};
         else if (marks.length >= 9) return;
-        else { drag = {start: press.p, mark: {x: press.p.x, y: press.p.y, r: 0.04}}; marks.push(drag.mark); }
+        else { drag = {start: press.p, mark: {x: press.p.x, y: press.p.y, r: 0.04, ...(cur ? {frame: cur} : {})}}; marks.push(drag.mark); }
         photo.setPointerCapture(e.pointerId);
       }
       const p = at(e), dx = p.x - drag.start.x, dy = (p.y - drag.start.y) * p.ratio;
@@ -755,8 +790,11 @@
       if (photo.dataset.dragged || !e.target.closest(".del")) return;
       marks.splice(+hit.dataset.i, 1); draw();
     });
-    img.complete ? draw() : img.addEventListener("load", draw);
+    img.addEventListener("load", draw);  // also when the filmstrip swaps in a frame of another size
+    if (img.complete) draw();
     new ResizeObserver(() => { if (marks.length) draw(); }).observe(img);
+    // The filmstrip shows another frame: draw its circles (editing stays on).
+    photo.addEventListener("birdbrain:frame", e => { press = drag = null; cur = e.detail.frame; draw(); });
   })();
   (() => {
     // The crop box and the zone that fired, and the circles: each shown unless this browser hid them
@@ -781,7 +819,7 @@
     sync();
   })();
   (() => {
-    // Burst filmstrip: a frame shows in the big photo (and the full-size viewer); circles belong to Claude's frame only.
+    // Burst filmstrip: a frame shows in the big photo (and the full-size viewer), with the circles drawn on it.
     const photo = document.getElementById("photo"), frames = document.querySelectorAll(".vburst-frame");
     if (!frames.length) return;
     const full = photo.querySelector(".full"), link = photo.querySelector("a");
@@ -791,7 +829,7 @@
     frames.forEach(b => b.addEventListener("click", () => {
       frames.forEach(o => o.classList.toggle("on", o === b));
       full.src = viewerImg.src = link.href = b.dataset.src;
-      photo.classList.toggle("other-frame", b.dataset.best !== "1");
+      photo.dispatchEvent(new CustomEvent("birdbrain:frame", {detail: {frame: b.dataset.best === "1" ? null : +b.dataset.frame}}));
       n.textContent = list.indexOf(b) + 1;
     }));
     const step = d => list[(shown() + d + list.length) % list.length].click();

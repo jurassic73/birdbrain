@@ -56,10 +56,11 @@ def release_if_idle() -> None:
             classifier._classifier = None
 
 
-def owner_circle(text: str | None) -> tuple[int, dict] | None:
+def owner_circle(text: str | None, claude_frame: int | None = None) -> tuple[int, dict] | None:
     """The circle to check, from the page's marks: the first one the owner drew (Claude's and the Pi's are skipped),
-    with its number on the photo."""
-    return next(((i, m) for i, m in enumerate(db.parse_marks(text), 1) if not (m.get("claude") or m.get("pi"))), None)
+    with its number on the photo. Its `frame`, if any, is the burst frame it was drawn on."""
+    return next(((i, m) for i, m in enumerate(db.parse_marks(text, claude_frame), 1)
+                 if not (m.get("claude") or m.get("pi"))), None)
 
 
 def square(circle: dict, width: int, height: int, margin: float = MARGIN) -> tuple[float, float, float, float]:
@@ -168,6 +169,7 @@ def record(conn, visit_id: int, entry: dict, circle: dict) -> dict:
         raw = {}
     calls = raw.setdefault("calls", {})
     stored = {**entry, "circle": {k: circle[k] for k in ("x", "y", "r")},
+              **({"frame": circle["frame"]} if circle.get("frame") else {}),
               "at": datetime.now().replace(microsecond=0).isoformat()}
     calls["owner_checks"] = [*(calls.get("owner_checks") or []), stored][-KEEP:]
     db.set_raw_json(conn, visit_id, raw)
@@ -182,8 +184,17 @@ def frame_size(jpeg: bytes) -> tuple[int, int]:
     return Image.open(io.BytesIO(jpeg)).size
 
 
-def jpeg_of(visit) -> bytes | None:
+def jpeg_of(visit, frame: int | None = None) -> tuple[bytes | None, int | None]:
+    """The photo to crop from and which burst frame it is: burst frame `frame` (1-based) when the circle was drawn
+    there and the file is still on disk, else the visit's photo (frame None). Marks are fractions, so a burst frame
+    of another size than the photo needs nothing special."""
+    from . import images
+
     if visit["photo_deleted_at"]:
-        return None
+        return None, None
+    if frame:
+        paths = images.burst_paths(visit["image_path"])
+        if frame <= len(paths) and (path := config.IMAGES_DIR / paths[frame - 1]).exists():
+            return path.read_bytes(), frame
     path = config.IMAGES_DIR / visit["image_path"]
-    return path.read_bytes() if path.exists() else None
+    return (path.read_bytes() if path.exists() else None), None

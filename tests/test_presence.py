@@ -310,6 +310,93 @@ def test_looking_through_a_burst_waits_for_a_capture(conn, yard, add_visit):
     assert len(presence.pending_picks(conn)) == 1  # tried again on the next round
 
 
+def on_frame(circle: dict, frame: int) -> dict:
+    return {**circle, "frame": frame}
+
+
+def pick_of(conn, vid) -> dict:
+    return dict(conn.execute("SELECT animal_frame, animal_score, animal_by_owner, animal_vec IS NOT NULL AS has_vec "
+                             "FROM embeddings WHERE visit_id = ?", (vid,)).fetchone())
+
+
+def test_the_frame_the_owner_circled_teaches_animal(conn, yard, add_visit):
+    # The bird is bright in frame 5, but the owner circled it on frame 2 (dark here, so the model scores it low):
+    # their pick wins over the automatic one, whatever it scores.
+    vid = burst_visit(conn, add_visit, [60, 60, 60, 60, 200, 60])
+    found_animal(conn, vid, circle=on_frame(INSIDE, 2))
+    assert left_out(conn) == {vid: "waiting for burst frame 2 (your circle) to be looked at"}
+    assert [r["owner_frame"] for r in presence.pending_picks(conn)] == [2]
+    key = presence.label_key(conn)
+    clf = FakeClf(yard)
+    assert presence.pick_frames(conn, clf=clf) == 1 and clf.calls == 1  # just that frame, not all six
+    pick = pick_of(conn, vid)
+    assert pick["animal_frame"] == 2 and pick["animal_by_owner"] == 1 and pick["has_vec"]
+    assert pick["animal_score"] < presence.PICK_MIN
+    assert left_out(conn) == {} and presence.label_key(conn) != key and presence.pending_picks(conn) == []
+    ex = presence.examples(conn)
+    i = list(ex["ids"]).index(vid)
+    assert ex["y"][i] and ex["X"][i][0] < 0  # frame 2's (dark) crop, not frame 5's
+    assert presence.teaches(conn, vid) == {"animal": True, "used": True, "why": "burst frame 2 (your circle)",
+                                           "checked": True}
+
+    # Moving the circle to frame 5 and saving again: picked again, and the labels change so it retrains.
+    key = presence.label_key(conn)
+    db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(INSIDE, 5)])
+    assert presence.label_key(conn) != key
+    assert left_out(conn) == {vid: "waiting for burst frame 5 (your circle) to be looked at"}
+    assert presence.pick_frames(conn, clf=clf) == 1 and clf.calls == 2
+    assert pick_of(conn, vid)["animal_frame"] == 5 and left_out(conn) == {}
+    i = list(presence.examples(conn)["ids"]).index(vid)
+    assert presence.examples(conn)["X"][i][0] > 0
+
+    # Only the frame changes (same spot, same text length): still a new label key.
+    key = presence.label_key(conn)
+    db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(INSIDE, 4)])
+    assert presence.label_key(conn) != key
+
+    # Back on the photo Claude saw: the owner's pick is forgotten and the burst is looked through as before.
+    db.correct_visit(conn, vid, "squirrel", None, None, [INSIDE])
+    assert presence.pick_frames(conn, clf=clf) == 1 and pick_of(conn, vid)["animal_frame"] is None
+    assert presence.pick_frames(conn, clf=clf) == 1
+    assert pick_of(conn, vid)["animal_frame"] == 5 and not pick_of(conn, vid)["animal_by_owner"]
+    assert presence.teaches(conn, vid)["why"] == "burst frame 5 (the one it scored most like an animal)"
+
+
+def test_a_circle_outside_the_crop_box_on_its_frame_leaves_the_visit_out(conn, yard, add_visit):
+    vid = burst_visit(conn, add_visit, [60, 200, 60])
+    found_animal(conn, vid, circle=on_frame(ABOVE, 2))  # visit 693: only the tail was in the box
+    presence.pick_frames(conn, clf=FakeClf(yard))
+    assert pick_of(conn, vid)["animal_frame"] == 2
+    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the crop box"}
+    # A circle on the photo doesn't count for frame 2: only the circles on that frame do.
+    db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(ABOVE, 2), INSIDE])
+    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the crop box"}
+    db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(ABOVE, 2), on_frame(INSIDE, 2)])
+    assert left_out(conn) == {}
+
+
+def test_an_owners_pick_needs_no_trained_model_and_a_gone_frame_is_left_out(conn, add_visit):
+    vid = burst_visit(conn, add_visit, [60, 200])
+    found_animal(conn, vid, circle=on_frame(INSIDE, 2))
+    clf = FakeClf(np.random.default_rng(2))
+    assert presence.model(conn) is None and presence.pick_frames(conn, clf=clf) == 1
+    assert pick_of(conn, vid) == {"animal_frame": 2, "animal_score": None, "animal_by_owner": 1, "has_vec": 1}
+    db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(INSIDE, 7)])  # no frame 7 on disk
+    presence.pick_frames(conn, clf=clf)
+    assert left_out(conn) == {vid: "burst frame 7 (your circle) is no longer on disk"}
+    assert presence.pending_picks(conn) == []  # not tried again until the circle moves
+
+
+def test_the_visit_page_says_which_frame_teaches_the_check(conn, yard, add_visit):
+    vid = burst_visit(conn, add_visit, [60, 200])
+    found_animal(conn, vid, circle=on_frame(INSIDE, 2))
+    presence.pick_frames(conn, clf=FakeClf(yard))
+    with TestClient(webapp.app) as c:
+        html = c.get(f"/visit/{vid}").text
+    assert "what an animal in the dashed box looks like, from burst frame 2 (your circle)" in html
+    assert 'class="save-btn"' in html and "your first circle is on another burst frame" in html
+
+
 def test_one_outlier_visitor_cant_drag_the_threshold_to_zero():
     scores = np.array([0.0006, 0.2, 0.3, 0.5, 0.9, 0.95] + [0.97] * 10)
     birds = np.array(["bird/day"] * 16, object)
@@ -424,4 +511,4 @@ def test_init_db_adds_the_burst_pick_columns_to_old_databases(tmp_path):
     old.execute("CREATE TABLE embeddings (visit_id INTEGER PRIMARY KEY, vec BLOB NOT NULL)")
     db.init_db(old)
     cols = {r["name"] for r in old.execute("PRAGMA table_info(embeddings)")}
-    assert {"animal_vec", "animal_frame", "animal_score"} <= cols
+    assert {"animal_vec", "animal_frame", "animal_score", "animal_by_owner"} <= cols

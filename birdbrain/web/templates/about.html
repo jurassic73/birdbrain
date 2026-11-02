@@ -373,7 +373,7 @@
     count 3 times, and deleting their photos later keeps what it learned.{% elif presence_mode == 'shadow' %}For now it only keeps score; Claude still sees everything.{% else %}It's switched off here.{% endif %}
     It looks at the sharpest photo of the burst{% if cfg.PRESENCE_LAST_FRAME %} and, when that one looks empty, at the last one too, since a landing
     bird is often only in the bowl by then (if only the last one shows it, that becomes the photo Claude sees){% endif %}.
-    <span data-tip="Correct a false trigger to an animal and the Pi looks through its saved burst for the frame where the animal is inside the crop box. If none shows it, the photo counts only when your circle is mostly inside the box; otherwise that visit is left out, so one photo of a tail can't make every empty frame look possible. Circle the animal when you correct one.">What it learns from your corrections</span>.
+    <span data-tip="It learns whether an animal is inside the crop box, not where. A false trigger keeps every frame of its burst, and you can circle on any of them: circle the animal on the frame that shows it best and save, and that frame becomes the example (the Pi looks at it in the background, about 6 seconds). Without a circle on another frame, the Pi looks through the burst itself for the frame where the animal is inside the crop box, or uses the photo when your circle there is mostly inside the box. A circle mostly outside the box leaves that visit out, so one photo of a tail can't make every empty frame look possible.">What it learns from your corrections</span>.
     <span data-tip="On the first 683 frames, tested on ones it hadn't trained on, it kept all 55 visitors and caught 616 of 628 empty frames. No night visitors yet.">How well?</span>
     Scorecard on <a href="/stats#presence">Stats</a>.</p>
   <h3 id="classifier">A species guess of its own{% if classifier_mode == 'gate' %} {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %} {{ badge('shadow', 'shadow') }}{% endif %}</h3>
@@ -448,14 +448,14 @@
     {% if totals.corrected %}You've corrected or annotated {{ totals.corrected }} visit{{ 's' if totals.corrected != 1 }} so far.{% endif %}</p>
   <h3 id="circle-check">Missed something? Circle it and ask, cheapest first</h3>
   <ol class="loop ladder" aria-label="Asking about a circle">
-    <li><strong>You circle it</strong><small>Usually on a false trigger, around the animal it missed</small></li>
+    <li><strong>You circle it</strong><small>Usually on a false trigger, around the animal it missed, on whichever burst frame shows it best</small></li>
     <li><strong>The Pi looks</strong><small>Its own species model on just the circle: free</small></li>
     <li><strong>Haiku, then Sonnet</strong><small>Only if the Pi isn't sure: a fraction of a cent, then about half a cent</small></li>
     <li><strong>You save it</strong><small>Nothing changes until you do</small></li>
   </ol>
   <p>Each answer comes with a Use button that fills in the correction form, and every check is listed on the visit
     under "How it was decided"{% if totals.owner_checks %} ({{ totals.owner_checks }} Claude check{{ 's' if totals.owner_checks != 1 }} so far, counted in the spend above){% endif %}.
-    <span data-tip="The Pi's animal check trains on the whole crop box of every photo, labelled with the final answer. Saving an animal on a false trigger flips that photo from empty to animal and counts it 3 times, so the next photo like it is more likely to reach Claude.">How it teaches the Pi</span></p>
+    <span data-tip="The checks look at the frame your first circle is on. Saving teaches the Pi's animal check, not its species model: it trains on the whole crop box of every photo, labelled with the final answer. Saving an animal on a false trigger flips that visit from empty to animal and counts it 3 times; if your first circle is on another burst frame, that frame's crop box is what it learns from, so the next photo like it is more likely to reach Claude.">How it teaches the Pi</span></p>
 </section>
 
 {# ---------- 8. Outside sources ---------- #}

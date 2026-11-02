@@ -433,8 +433,9 @@ def run(jpeg: bytes, circle: dict | None, box, night: bool) -> dict | None:
 # --- backfill -------------------------------------------------------------------------------------------
 
 def visit_circle(marks: str | None, raw: dict) -> dict | None:
-    """The owner's first circle if they drew one, else Claude's."""
-    owner = db.parse_marks(marks)
+    """The owner's first circle on the photo if they drew one (circles on other burst frames don't count), else
+    Claude's."""
+    owner = [m for m in db.parse_marks(marks) if not db.mark_frame(m)]
     if owner:
         return owner[0]
     return (raw.get("calls") or {}).get("circle")

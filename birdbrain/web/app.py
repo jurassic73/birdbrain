@@ -174,7 +174,8 @@ templates.env.globals["mirror_status"] = privacy.visit_status
 templates.env.globals["has_card"] = species_info.has_card
 templates.env.globals["season_badge"] = species_info.visit_badge
 templates.env.globals["short_status"] = species_info.short_status
-templates.env.globals["photo_marks"] = lambda visit: start_marks(visit)
+# Cards show the photo Claude saw, so circles drawn on other burst frames stay on the visit page.
+templates.env.globals["photo_marks"] = lambda visit: [m for m in start_marks(visit) if not db.mark_frame(m)]
 templates.env.globals["no_circle_note"] = lambda visit: no_circle_note(visit)
 templates.env.globals["also_of"] = db.also_of
 templates.env.globals["also_label"] = db.also_label
@@ -462,6 +463,8 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         scope=scope,
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
+        claude_frame=db.claude_frame(visit["raw_json"]),
+        teaches=presence.teaches(conn, visit_id) if request.state.admin else None,
         vzones=visit_zones(visit, conn),
         pi_average=db.pi_check_average(conn),
     )
@@ -671,7 +674,8 @@ def owner_checks(calls: dict) -> list[dict]:
         else:
             detail = (c.get("answer") or {}).get("notes") or ""
         out.append({"by": CHECK_BY[c["source"]], "pi": c["source"] == "pi", "say": c.get("say") or "",
-                    "detail": detail, "at": c.get("at") or "", "usd": c.get("usd"), "seconds": c.get("seconds")})
+                    "detail": detail, "at": c.get("at") or "", "usd": c.get("usd"), "seconds": c.get("seconds"),
+                    "frame": c.get("frame")})
     return out
 
 
@@ -697,7 +701,8 @@ def correct(
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
     also = db.plan_also(v, also_species, also_count, visitor.strip() or None)
-    db.correct_visit(conn, visit_id, new_visitor, new_species, feedback, db.parse_marks(marks), also)
+    db.correct_visit(conn, visit_id, new_visitor, new_species, feedback,
+                     db.parse_marks(marks, db.claude_frame(v["raw_json"])), also)
     return Response(headers=REFRESH)
 
 
@@ -749,11 +754,13 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
     v = db.get_visit(conn, visit_id)
     if not v:
         raise HTTPException(404)
-    picked = circle_check.owner_circle(marks)
+    picked = circle_check.owner_circle(marks, db.claude_frame(v["raw_json"]))
     if not picked:
         return JSONResponse({"error": "Circle the animal first: press Edit circles and drag on the photo."})
     number, circle = picked
-    jpeg = circle_check.jpeg_of(v)
+    # The frame the circle was drawn on (a burst frame), else the photo when that frame is gone.
+    jpeg, frame = circle_check.jpeg_of(v, db.mark_frame(circle))
+    circle = {k: circle[k] for k in ("x", "y", "r")} | ({"frame": frame} if frame else {})
     if jpeg is None:
         return JSONResponse({"error": "This photo was deleted to save space, so there's nothing to look at."})
     loop = asyncio.get_running_loop()
@@ -778,7 +785,7 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
         entry["wall_seconds"] = round(time.monotonic() - started, 1)
         extra["pi_average"] = db.record_pi_check(conn, entry["wall_seconds"], True, visit_id, entry.get("seconds"))
     circle_check.record(conn, visit_id, entry, circle)
-    return JSONResponse({**entry, "circle_n": number, **extra})
+    return JSONResponse({**entry, "circle_n": number, "frame": frame, **extra})
 
 
 @app.get("/species-photo")

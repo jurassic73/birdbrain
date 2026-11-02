@@ -120,6 +120,50 @@ def test_ask_the_pi_names_whats_in_the_circle_and_changes_nothing(client, conn, 
     assert db.totals(conn)["claude_usd"] == 0  # the Pi is free
 
 
+def test_a_circle_on_a_burst_frame_is_checked_on_that_frame(client, conn, photo_visit, fake_pi, monkeypatch):
+    """The photo is blue; burst frame 4 is red and smaller (frames can be another size: marks are fractions)."""
+    seen = []
+
+    class Clf(FakeClassifier):
+        def embed(self, bgr):
+            seen.append((bgr.shape, tuple(int(c) for c in bgr.reshape(-1, 3).mean(0))))
+            return self.vec
+
+    fake_pi(Clf(i=0))
+    vid = photo_visit(raw_json=json.dumps({"burst": {"count": 6, "best": 0, "fps": 4}}))
+    frames = []
+    for i in range(6):
+        buf = io.BytesIO()
+        Image.new("RGB", (320, 180), (220, 30, 30) if i == 3 else (30, 220, 30)).save(buf, "JPEG")
+        frames.append(buf.getvalue())
+    images.store_burst(frames, db.get_visit(conn, vid)["image_path"])
+    on4 = json.dumps([{"x": 0.2, "y": 0.2, "r": 0.1, "claude": True}, {"x": 0.5, "y": 0.5, "r": 0.05, "frame": 4}])
+    r = client.post(f"/visit/{vid}/check-circle/pi", data={"marks": on4}).json()
+    assert r["circle_n"] == 2 and r["frame"] == 4
+    shape, (b, g, red) = seen[-1]
+    assert red > 150 and b < 100  # cropped from frame 4 (OpenCV's BGR), not the blue photo
+    stored = checks_of(conn, vid)[-1]
+    assert stored["frame"] == 4 and stored["circle"] == {"x": 0.5, "y": 0.5, "r": 0.05}
+    assert "burst frame 4" in client.get(f"/visit/{vid}?ft=1").text  # the check's line under Your circle checks
+
+    # Haiku crops the same frame, using that frame's own size.
+    sizes = []
+
+    def ask(model, images_b64, captured_at, lessons=None, site=None, note=""):
+        return None, {"model": model, "input_tokens": 1, "output_tokens": 0}
+    monkeypatch.setattr(identify, "ask", ask)
+    monkeypatch.setattr(circle_check, "square", lambda c, w, h, margin=circle_check.MARGIN: sizes.append((w, h)) or (0, 0, 1, 1))
+    client.post(f"/visit/{vid}/check-circle/haiku", data={"marks": on4})
+    assert sizes == [(320, 180)]
+
+    # Frame 1 is the photo Claude saw (best 0): that circle is checked on the photo itself.
+    r = client.post(f"/visit/{vid}/check-circle/pi", data={"marks": json.dumps([{"x": 0.5, "y": 0.5, "r": 0.05, "frame": 1}])}).json()
+    assert r["frame"] is None and seen[-1][1][0] > 150  # blue
+    # A frame that's gone: the photo instead, and the check says so by having no frame.
+    r = client.post(f"/visit/{vid}/check-circle/pi", data={"marks": json.dumps([{"x": 0.5, "y": 0.5, "r": 0.05, "frame": 9}])}).json()
+    assert r["frame"] is None and seen[-1][1][0] > 150 and "frame" not in checks_of(conn, vid)[-1]
+
+
 def test_ask_the_pi_weak_answer_and_squirrels(client, photo_visit, fake_pi):
     vid = photo_visit()
     fake_pi(FakeClassifier(i=2, k=0.01))  # spread over every species

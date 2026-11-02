@@ -1531,7 +1531,9 @@ button.se-all { font-weight: 600; }
 .vburst-frame.on { border-color: var(--accent); }
 .vburst-at { position: absolute; left: 3px; bottom: 3px; padding: 1px 4px; border-radius: 4px; background: rgba(0, 0, 0, .6); color: #fff; font-size: .7rem; line-height: 1.3; }
 .vburst-note { margin: 6px 0 0; }
-.visit-photo.other-frame .marks { display: none; }
+/* A frame with circles on it: their numbers, top right. */
+.vburst-marks { position: absolute; right: 3px; top: 3px; min-width: 1.3em; padding: 1px 5px; border-radius: 999px; background: var(--accent); color: var(--accent-text); border: 1px solid var(--surface); font-size: .7rem; font-weight: 600; line-height: 1.3; text-align: center; }
+.vburst-marks[hidden] { display: none; }
 /* Zones: the turn handle above an ellipse, and the open water drawn dashed like the bath ring's water line */
 .se-handles .se-handle.se-rotate { fill: #ffd34d; cursor: grab; }
 .se-handles .se-stem { stroke: #fff; stroke-width: 1.5px; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; pointer-events: none; }

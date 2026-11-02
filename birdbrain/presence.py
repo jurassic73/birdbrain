@@ -13,6 +13,10 @@ has to look emptier than every animal so far (and at most MAX_THRESHOLD).
 One visitor whose crop box doesn't actually show it would drag that threshold to ~0 (visit 693: a dove whose sharpest
 frame held only its tail; labelled a dove it took the threshold from 0.11 to 0.006 on 2026-11-02). So a visitor
 only teaches "animal" with a frame that shows it (animal_example):
+  - the owner's pick: when their first circle sits on another frame of the burst (the visit page lets them draw on
+    any frame), that frame's crop box is the example, if the circle is mostly (MIN_COVERAGE) inside it, else the
+    visit is left out. pick_frames embeds it in the background (~6 s on a Pi 4), and again whenever the circle
+    moves to another frame; until then the visit waits, left out;
   - a false trigger corrected to an animal keeps its whole burst on disk: pick_frames embeds every burst frame and
     keeps the one that scores highest; it's used when it scores at least PICK_MIN (more likely an animal than not);
   - else the photo's own crop, when the owner's circle (or Claude's) is mostly (MIN_COVERAGE) inside the crop box,
@@ -37,7 +41,8 @@ Modes (Settings, else PRESENCE in .env): off; shadow records the score; gate ski
 Skipped frames are stored as false triggers for the owner's daily review; correcting one teaches it.
 
 CLI: python -m birdbrain.presence --backfill [--limit N]   (embeddings for stored frames that have none)
-     python -m birdbrain.presence --pick                   (burst frames for corrected false triggers, now)
+     python -m birdbrain.presence --pick                   (burst frames for corrected false triggers and the
+                                                           owner's circled frames, now)
 """
 
 import argparse
@@ -119,14 +124,37 @@ def coverage(circle: dict, box, aspect: float = ASPECT) -> float:
     return float(inside.sum() / seen.sum())
 
 
-def photo_coverage(marks: str | None, raw: dict, box) -> float | None:
-    """How much of the animal is inside the crop box on the photo: the owner's circles (the best of them), else
-    Claude's (or the Pi's) circle. None when there's no circle or no crop box."""
+def photo_coverage(marks: str | None, raw: dict, box, frame: int | None = None) -> float | None:
+    """How much of the animal is inside the crop box on the photo (or on burst frame `frame`): the owner's circles
+    on that frame (the best of them), else, on the photo, Claude's (or the Pi's) circle. None when there's no circle
+    or no crop box."""
     circle = (raw.get("calls") or {}).get("circle")
-    circles = db.parse_marks(marks) or ([circle] if isinstance(circle, dict) and circle.get("r") else [])
+    circles = [m for m in db.parse_marks(marks, db.claude_frame(raw)) if db.mark_frame(m) == frame]
+    if not circles and frame is None and isinstance(circle, dict) and circle.get("r"):
+        circles = [circle]
     if not box or not circles:
         return None
     return max(coverage(c, box) for c in circles)
+
+
+def owner_frame(marks: str | None, raw: dict | None = None) -> int | None:
+    """The burst frame the owner's first circle is on (1-based), or None when it's on the photo Claude saw (or
+    there's no circle of theirs). Claude's and the Pi's circles are always on the photo."""
+    first = next((m for m in db.parse_marks(marks, db.claude_frame(raw or {})) if not (m.get("claude") or m.get("pi"))),
+                 None)
+    return db.mark_frame(first) if first else None
+
+
+def _raw(row) -> dict:
+    try:
+        raw = json.loads(row["raw_json"] or "{}") or {}
+    except ValueError:
+        raw = {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _by_owner(row) -> bool:
+    return bool("animal_by_owner" in row.keys() and row["animal_by_owner"])
 
 
 def needs_pick(row) -> bool:
@@ -138,15 +166,24 @@ def needs_pick(row) -> bool:
 def animal_example(row, conn=None) -> tuple[bytes | None, str]:
     """The embedding that teaches "animal" for a visitor (see the module notes), or None to leave it out, with why.
     `conn` finds the crop box of older visits that didn't save their zones."""
-    if row["animal_vec"] is not None and (row["animal_score"] or 0) >= PICK_MIN:
-        return row["animal_vec"], f"burst frame {row['animal_frame']}"
-    try:
-        raw = json.loads(row["raw_json"] or "{}") or {}
-    except ValueError:
-        raw = {}
+    raw = _raw(row)
     box = crop_box(raw)
     if box is None and conn is not None:
         box = crop_box(raw, zones_then(conn, row["captured_at"]))
+    own = owner_frame(row["marks"], raw)
+    if own is not None:  # the owner circled it on another burst frame: that frame or nothing
+        picked = _by_owner(row) and row["animal_frame"] == own
+        if not picked and row["has_burst"] and row["photo_deleted_at"] is None:
+            return None, f"waiting for burst frame {own} (your circle) to be looked at"
+        if not picked or row["animal_vec"] is None:
+            return None, f"burst frame {own} (your circle) is no longer on disk"
+        cover = photo_coverage(row["marks"], raw, box, own)
+        if cover is not None and cover < MIN_COVERAGE:
+            return None, f"your circle on burst frame {own} is outside the crop box"
+        return row["animal_vec"], f"burst frame {own} (your circle)"
+    if (row["animal_vec"] is not None and not _by_owner(row)  # an owner's pick from a circle since moved: stale
+            and (row["animal_score"] or 0) >= PICK_MIN):
+        return row["animal_vec"], f"burst frame {row['animal_frame']}"
     cover = photo_coverage(row["marks"], raw, box)
     if cover is not None:
         return (row["vec"], "photo") if cover >= MIN_COVERAGE else (None, "the circle is outside the crop box")
@@ -157,17 +194,33 @@ def animal_example(row, conn=None) -> tuple[bytes | None, str]:
     return None, "no frame shows the animal in the crop box"
 
 
+EXAMPLE_ROWS = f"""SELECT e.visit_id, e.vec, e.animal_vec, e.animal_frame, e.animal_score, e.animal_by_owner,
+                          {db.REAL} AS real, {CHECKED} AS confirmed, v.visitor, v.marks, v.raw_json,
+                          v.photo_deleted_at, v.is_night, v.captured_at,
+                          COALESCE(v.corrected_visitor, v.visitor) AS final,
+                          json_extract(v.raw_json, '$.burst') IS NOT NULL AS has_burst
+                   FROM embeddings e JOIN visits v ON v.id = e.visit_id"""
+
+
+def teaches(conn, visit_id: int) -> dict | None:
+    """What one visit teaches the check, for its page: {"animal", "used", "why", "checked"}, or None without an
+    embedding. `why` names the frame it learns from ("burst frame 4 (your circle)") or why it's left out."""
+    row = conn.execute(EXAMPLE_ROWS + " WHERE e.visit_id = ?", (visit_id,)).fetchone()
+    if row is None:
+        return None
+    if not row["real"]:
+        return {"animal": False, "used": True, "why": "", "checked": bool(row["confirmed"])}
+    vec, why = animal_example(row, conn)
+    if vec is not None and why.startswith("burst frame") and "(" not in why:
+        why += " (the one it scored most like an animal)"
+    return {"animal": True, "used": vec is not None, "why": "the photo" if why == "photo" else why,
+            "checked": bool(row["confirmed"])}
+
+
 def examples(conn) -> dict:
     """Every stored frame as training data: embeddings X, labels y (an animal was there), weights w, visit ids,
     groups (visitor type and day/night, for threshold_from) and the visitors left out [(id, why)]."""
-    rows = conn.execute(
-        f"""SELECT e.visit_id, e.vec, e.animal_vec, e.animal_frame, e.animal_score, {db.REAL} AS real,
-                   {CHECKED} AS confirmed, v.visitor, v.marks, v.raw_json, v.photo_deleted_at, v.is_night,
-                   v.captured_at,
-                   COALESCE(v.corrected_visitor, v.visitor) AS final,
-                   json_extract(v.raw_json, '$.burst') IS NOT NULL AS has_burst
-            FROM embeddings e JOIN visits v ON v.id = e.visit_id ORDER BY e.visit_id"""
-    ).fetchall()
+    rows = conn.execute(EXAMPLE_ROWS + " ORDER BY e.visit_id").fetchall()
     vecs, y, w, ids, groups, left_out = [], [], [], [], [], []
     for r in rows:
         vec, why = animal_example(r, conn) if r["real"] else (r["vec"], "")
@@ -262,9 +315,14 @@ def train(X, y, w, ids, groups=None) -> dict | None:
 
 def label_key(conn) -> tuple:
     """Changes with every new frame, correction or confirm, burst frame picked or circle drawn: (frames, visitors,
-    frames the owner checked, burst frames picked, length of the owner's circles)."""
+    frames the owner checked, burst frames picked, which ones and whose, length of the owner's circles, the burst
+    frames their circles are on)."""
     return tuple(conn.execute(
-        f"""SELECT COUNT(*), SUM({db.REAL}), SUM({CHECKED}), COUNT(e.animal_frame), SUM(length(v.marks))
+        f"""SELECT COUNT(*), SUM({db.REAL}), SUM({CHECKED}), COUNT(e.animal_frame), SUM(e.animal_frame),
+                   SUM(e.animal_by_owner), SUM(length(v.marks)),
+                   SUM(CASE WHEN v.marks LIKE '%"frame"%' AND json_valid(v.marks) THEN
+                       (SELECT TOTAL(json_extract(j.value, '$.frame') * (j.key + 1)) FROM json_each(v.marks) j)
+                       END)
             FROM embeddings e JOIN visits v ON v.id = e.visit_id""").fetchone())
 
 
@@ -361,53 +419,94 @@ def check(conn, emb: np.ndarray | None) -> dict | None:
 
 
 def pending_picks(conn) -> list:
-    """False triggers corrected to an animal whose saved burst hasn't been looked through, oldest first."""
-    return conn.execute(
-        f"""SELECT v.id, v.image_path, v.raw_json, v.captured_at FROM embeddings e JOIN visits v ON v.id = e.visit_id
-            WHERE {db.REAL} AND v.visitor = 'none' AND e.animal_frame IS NULL AND v.photo_deleted_at IS NULL
-              AND json_extract(v.raw_json, '$.burst') IS NOT NULL
+    """Visits whose burst needs looking at, the owner's picks first, then oldest first: false triggers corrected to an animal whose saved burst
+    hasn't been looked through, and visitors whose owner's first circle sits on a burst frame other than the one
+    embedded for it (`owner_frame` set on the row) or no longer does (an owner's pick to undo)."""
+    rows = conn.execute(
+        f"""SELECT v.id, v.image_path, v.raw_json, v.captured_at, v.marks, v.visitor, e.animal_frame, e.animal_by_owner
+            FROM embeddings e JOIN visits v ON v.id = e.visit_id
+            WHERE {db.REAL} AND v.photo_deleted_at IS NULL AND json_extract(v.raw_json, '$.burst') IS NOT NULL
+              AND ((v.visitor = 'none' AND e.animal_frame IS NULL) OR e.animal_by_owner
+                   OR v.marks LIKE '%"frame"%')
             ORDER BY v.id""").fetchall()
+    out = []
+    for r in rows:
+        own = owner_frame(r["marks"], _raw(r))
+        if own is not None:
+            if r["animal_by_owner"] and r["animal_frame"] == own:
+                continue  # already embedded from that frame
+        elif r["animal_by_owner"]:
+            pass  # the circle left its burst frame: undo the owner's pick
+        elif not (r["visitor"] == "none" and r["animal_frame"] is None):
+            continue
+        out.append({**dict(r), "owner_frame": own})
+    return sorted(out, key=lambda r: r["owner_frame"] is None)  # the owner's picks first: one frame each, not six
+
+
+def _save_pick(conn, visit_id: int, emb, frame: int | None, score: float | None, by_owner: bool) -> None:
+    conn.execute("""UPDATE embeddings SET animal_vec = ?, animal_frame = ?, animal_score = ?, animal_by_owner = ?
+                    WHERE visit_id = ?""",
+                 (None if emb is None else np.asarray(emb, np.float16).tobytes(), frame,
+                  None if emb is None or score is None else round(score, 4), 1 if by_owner else None, visit_id))
+    conn.commit()
 
 
 def pick_frames(conn, limit: int | None = None, busy: threading.Event | None = None, clf=None) -> int:
-    """For false triggers the owner corrected to an animal: embed the crop box of every saved burst frame and keep
-    the one the current model scores highest (animal_vec, animal_frame, animal_score), so training sees the frame
-    where the animal is in the crop box rather than the sharpest one. ~6 s a frame on a Pi 4. Stops (and tries again
-    later) while `busy` is set. Returns how many visits were looked through."""
+    """Embed burst frames for training (see pending_picks), ~6 s a frame on a Pi 4:
+    - the owner circled the animal on burst frame k: embed k's crop box (animal_by_owner), score it if a model is
+      trained (shown, not used to judge it);
+    - a false trigger the owner corrected to an animal: embed the crop box of every saved burst frame and keep the
+      one the current model scores highest (animal_vec, animal_frame, animal_score), so training sees the frame
+      where the animal is in the crop box rather than the sharpest one;
+    - an owner's pick whose circle went back to the photo: forget it (a false trigger then gets looked through
+      as above on a later round).
+    Stops (and tries again later) while `busy` is set. Returns how many visits were done."""
     import cv2
 
     from . import images
 
-    rows = pending_picks(conn)[:limit]
+    rows = pending_picks(conn)
     if not rows or (busy is not None and busy.is_set()):
         return 0
-    m = model(conn)
     clf = clf or classifier.load()
-    if m is None or clf is None:
+    if clf is None:
         return 0
+    m = model(conn)
+    if m is None:  # nothing to score with: only the owner's picks (and undoing them) can go ahead
+        rows = [r for r in rows if r["owner_frame"] is not None or r["animal_by_owner"]]
     done = 0
-    for r in rows:
+    for r in rows[:limit]:
+        if r["owner_frame"] is None and r["animal_by_owner"]:  # the circle left its burst frame: back to the automatic pick
+            _save_pick(conn, r["id"], None, None, None, False)
+            log.info("visit %d: your circle is back on the photo, so its burst frame is forgotten", r["id"])
+            done += 1
+            continue
         raw = json.loads(r["raw_json"] or "{}") or {}
         box = crop_box(raw) or crop_box(raw, zones_then(conn, r["captured_at"]))
+        paths = images.burst_paths(r["image_path"])
+        want = [r["owner_frame"]] if r["owner_frame"] is not None else range(1, len(paths) + 1)
         emb, best, n = None, -1.0, 0
-        for i, rel in enumerate(images.burst_paths(r["image_path"]), 1):
+        for i in want:
             if busy is not None and busy.is_set():
                 return done
-            img = cv2.imread(str(config.IMAGES_DIR / rel))
+            img = cv2.imread(str(config.IMAGES_DIR / paths[i - 1])) if i <= len(paths) else None
             if img is None:
                 continue
             e = clf.embed(classifier.crop_for(img, None, box)[0])
-            s = score(m, e)
-            if s > best:
-                emb, best, n = e, s, i
-        conn.execute("UPDATE embeddings SET animal_vec = ?, animal_frame = ?, animal_score = ? WHERE visit_id = ?",
-                     (None if emb is None else np.asarray(emb, np.float16).tobytes(), n,
-                      None if emb is None else round(best, 4), r["id"]))
-        conn.commit()
-        if n:
-            log.info("visit %d: burst frame %d shows the animal best (score %.3f)", r["id"], n, best)
+            s = score(m, e) if m is not None else None
+            if s is None or s > best:
+                emb, best, n = e, (-1.0 if s is None else s), i
+        if r["owner_frame"] is not None:
+            # Recorded even when the frame is gone (vec None), so it isn't tried again until the circle moves.
+            _save_pick(conn, r["id"], emb, r["owner_frame"], best if emb is not None and m is not None else None, True)
+            log.info("visit %d: burst frame %d (the owner's circle) %s", r["id"], r["owner_frame"],
+                     "embedded" if emb is not None else "is gone")
         else:
-            log.info("visit %d: no burst frames to look through", r["id"])
+            _save_pick(conn, r["id"], emb, n, None if emb is None else best, False)
+            if n:
+                log.info("visit %d: burst frame %d shows the animal best (score %.3f)", r["id"], n, best)
+            else:
+                log.info("visit %d: no burst frames to look through", r["id"])
         done += 1
     return done
 
@@ -444,7 +543,8 @@ def main() -> None:
     parser.add_argument("--backfill", action="store_true", help="embed stored frames that have no embedding")
     parser.add_argument("--limit", type=int, help="with --backfill: at most this many, newest first")
     parser.add_argument("--pick", action="store_true",
-                        help="look through the bursts of false triggers corrected to an animal")
+                        help="look through the bursts of false triggers corrected to an animal, and embed the frames "
+                             "the owner circled")
     args = parser.parse_args()
     with db.session() as conn:
         db.init_db(conn)
@@ -454,7 +554,7 @@ def main() -> None:
         logging.basicConfig(level=logging.INFO, format="%(message)s")  # one line per visit as it goes
         with db.session() as conn:
             todo = len(pending_picks(conn))
-            print(f"{todo} corrected false triggers to look through (~{todo * 36} s on a Pi 4)")
+            print(f"{todo} visits whose burst needs looking at (up to ~36 s each on a Pi 4)")
             print(f"looked through {pick_frames(conn)}")
     with db.session() as conn:
         start = time.perf_counter()
