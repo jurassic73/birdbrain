@@ -323,6 +323,33 @@ def scoreboard(request: Request, range: str = "today", conn=Depends(get_conn)):
     return page(request, "_scoreboard.html", **scoreboard_ctx(conn, range))
 
 
+@app.get("/visits", response_class=HTMLResponse)
+def visits_archive(request: Request, conn=Depends(get_conn)):
+    """The plain archive: every real visit, newest first, one grid with the home page's filters."""
+    filters = filters_from(request)
+    active = {k: v for k, v in filters.items() if v}
+    visits = db.list_visits(conn, **filters, limit=PAGE_SIZE)
+    return page(
+        request,
+        "visits.html",
+        visits=visits,
+        zoom_btn_on=True,
+        filters=filters,
+        filtered=bool(active),
+        total=db.count_visits(conn, **filters),
+        species_names=db.species_names(conn),
+        next_url=f"/visits/archive-more?{query_string(filters, offset=PAGE_SIZE)}" if len(visits) == PAGE_SIZE else None,
+    )
+
+
+@app.get("/visits/archive-more", response_class=HTMLResponse)
+def visits_archive_more(request: Request, offset: int = 0, conn=Depends(get_conn)):
+    filters = filters_from(request)
+    visits = db.list_visits(conn, **filters, limit=PAGE_SIZE, offset=offset)
+    more = f"/visits/archive-more?{query_string(filters, offset=offset + PAGE_SIZE)}" if len(visits) == PAGE_SIZE else None
+    return page(request, "_cards.html", visits=visits, zoom_btn_on=True, next_url=more)
+
+
 @app.get("/visits/more", response_class=HTMLResponse)
 def more_visits(request: Request, offset: int = 0, conn=Depends(get_conn)):
     filters = filters_from(request)

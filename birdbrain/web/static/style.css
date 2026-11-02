@@ -1447,3 +1447,7 @@ button.zoom-btn:hover { background: rgba(0, 0, 0, .75); }
 button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .card-zoom button.zoom-btn { top: 6px; right: 6px; }
 @media (pointer: coarse) { button.zoom-btn::before { inset: -6px; } }
+
+/* Visits archive page */
+.visits-archive .visits-bar .visits-count { font-size: 1.1rem; margin: 0; }
+.visits-archive .archive-intro { margin: 0 0 12px; font-size: .9rem; }

@@ -843,3 +843,26 @@ def test_manifest_has_maskable_icon_and_base_path(client, monkeypatch):
     assert m["start_url"] == "/birdbrain/" and m["scope"] == "/birdbrain/"
     assert all(i["src"].startswith("/birdbrain/static/") for i in m["icons"])
     assert 'href="/birdbrain/manifest.webmanifest' in client.get("/").text
+
+
+def test_visits_archive_lists_real_visits_only(client, add_visit):
+    add_visit(species="Bushtit")
+    add_visit(visitor="none", species=None)
+    html = client.get("/visits").text
+    assert html.count('class="card"') == 1 and "Bushtit" in html and "1 visit<" in html
+    assert 'href="/visits" aria-current="page"' in html
+
+
+def test_nav_has_visits_link(client):
+    assert 'href="/visits"' in client.get("/").text
+
+
+def test_visits_archive_load_more_and_filters(client, add_visit):
+    for _ in range(30):
+        add_visit(species="Bushtit")
+    add_visit(visitor="raccoon", species=None)
+    first = client.get("/visits").text
+    assert first.count('class="card"') == 24 and "/visits/archive-more?offset=24" in first and "31 visits" in first
+    more = client.get("/visits/archive-more?offset=24").text
+    assert more.count('class="card"') == 7 and "load-more" not in more and "grid-break" not in more
+    assert "1 visit matching" in client.get("/visits?kind=mammal").text
