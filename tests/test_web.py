@@ -906,6 +906,7 @@ def test_tour_script_and_rerun_buttons(client):
     about = client.get("/about").text
     assert "data-tour-restart" in about
     assert 'class="popup-close about-tour-close"' in about and "bb-about-tour-off" in about  # the box can be hidden per browser
+    assert '<p class="about-tour-mini" hidden><a href="/?tour=1" data-tour-restart' in about  # and a small link takes its place
     assert "data-tour-restart" in client.get("/settings").text
     assert "data-admin=\"1\"" in client.get("/").text  # no password: everyone is admin
     assert "tour.js" not in client.get("/?embed=1").text

@@ -28,14 +28,17 @@
   <a class="button-link solid" href="/?tour=1" data-tour-restart data-tip="A short walkthrough of the main buttons on the home page">Run the tour again</a>
   <button type="button" class="popup-close about-tour-close" aria-label="Hide this box" data-tip="Hide this box. It stays hidden in this browser."><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M3 3 13 13M13 3 3 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
 </div>
+<p class="about-tour-mini" hidden><a href="/?tour=1" data-tour-restart data-tip="A short walkthrough of the main buttons on the home page">Run the tour</a></p>
 <script>
   // The tour box can be hidden with its x; the choice is kept in this browser and applied before the box is drawn.
+  // Hidden, a one-line "Run the tour" link takes its place, so visitors (who can't open Settings) can still find it.
   (() => {
-    const box = document.currentScript.previousElementSibling, KEY = "bb-about-tour-off";
-    try { if (localStorage.getItem(KEY) === "1") { box.remove(); return; } } catch {}
+    const mini = document.currentScript.previousElementSibling, box = mini.previousElementSibling, KEY = "bb-about-tour-off";
+    const hide = () => { box.remove(); mini.hidden = false; };
+    try { if (localStorage.getItem(KEY) === "1") { hide(); return; } } catch {}
     box.querySelector(".about-tour-close").addEventListener("click", () => {
       try { localStorage.setItem(KEY, "1"); } catch {}
-      box.remove();
+      hide();
     });
   })();
 </script>

@@ -1003,6 +1003,7 @@ html { scroll-behavior: smooth; }
 .about-tour p { flex: 1; margin: 0; line-height: 1.45; }
 .about-tour .button-link { flex: none; white-space: nowrap; }
 .about-tour { position: relative; }
+.about-tour-mini { margin: 14px 0 10px; font-size: .9rem; }
 button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 0 0; }  /* the look: .popup-close */
 @media (max-width: 640px) {
   .about-tour { flex-direction: column; align-items: stretch; }
