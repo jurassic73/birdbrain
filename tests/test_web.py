@@ -43,8 +43,12 @@ def test_visit_escape_goes_home_only_after_arrow_trail(client, add_visit):
     # The trail rides in the URL fragment, not sessionStorage (a prerendered visit page can see a stale copy).
     home = client.get("/").text
     assert '"#from-home"' in home and "sessionStorage.setItem" not in home.split('e.key !== "ArrowRight"')[1].split("</script>")[0]
+    # The latest-visitor photo isn't prerendered: a prerender swapped in by the arrow key may lack focus and lose the first Esc.
+    rules = json.loads(re.search(r'<script type="speculationrules">(.*?)</script>', home, re.S).group(1))
+    assert {"not": {"selector_matches": ".hero-link, .hero-goto"}} in rules["prerender"][0]["where"]["and"]
     html = client.get(f"/visit/{vid}").text
     assert 'location.hash !== "#from-home"' in html and "history.replaceState" in html
+    assert 'addEventListener("hashchange", readTrail)' in html
     assert 'stepVisit("nav-next")' in html and 'a.href.split("#")[0] + "#from-home"' in html  # arrows pass it on
     assert 'location.href = (window.BB_BASE || "") + "/"' in html and "bb_arrow_trail" not in html
     assert 'e.key !== "Escape"' not in client.get(f"/visit/{vid}?embed=1").text

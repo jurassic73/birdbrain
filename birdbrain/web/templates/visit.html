@@ -810,6 +810,7 @@
   };
   if (document.prerendering) document.addEventListener("prerenderingchange", readTrail, { once: true });
   else readTrail();
+  addEventListener("hashchange", readTrail);  // the fragment can land after the page itself (a reused prerender)
   // On a trail the arrows pass the fragment on, so Esc still goes home after a few steps.
   const stepVisit = id => {
     const a = document.getElementById(id);
