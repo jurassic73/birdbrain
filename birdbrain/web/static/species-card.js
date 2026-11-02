@@ -13,7 +13,7 @@
 
   const dialog = document.createElement("dialog");
   dialog.className = "popup sp-dialog";
-  dialog.innerHTML = '<button type="button" class="popup-close sp-close" aria-label="Close">&times;</button><div class="sp-body"></div>';
+  dialog.innerHTML = '<button type="button" class="popup-close sp-close" aria-label="Close"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M3 3 13 13M13 3 3 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><div class="sp-body"></div>';
   const body = dialog.querySelector(".sp-body");
   dialog.querySelector(".sp-close").addEventListener("click", () => dialog.close());
   dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });  // backdrop
