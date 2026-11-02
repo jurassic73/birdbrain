@@ -800,3 +800,23 @@ def test_species_list_names_open_the_info_card_and_card_has_jump_to_visits(clien
     assert "All visits" not in html and 'class="sp-facts"' in html
     assert 'id="visits"' in client.get("/species/Bushtit").text
     assert re.findall(r'class="badge [^"]*"(?! data-tip)', html) == []
+
+
+def test_home_photos_carry_a_zoom_button_but_other_pages_do_not(client, add_visit, monkeypatch):
+    monkeypatch.setattr(webapp, "PAGE_SIZE", 1)
+    first = add_visit(image_path="2026/11/01/a.jpg", thumb_path="2026/11/01/a_t.jpg", species="Bushtit")
+    second = add_visit(image_path="2026/11/01/b.jpg", thumb_path="2026/11/01/b_t.jpg", species="Dark-eyed Junco")
+    html = client.get("/").text
+    hero = html[html.index('class="hero-latest"'):html.index('class="today"')]
+    assert 'href="/visit/%d"' % second in hero and 'data-zoom-photo="/images/2026/11/01/b.jpg"' in hero
+    assert hero.index("</a>") < hero.index("zoom-btn")  # a sibling of the link, not inside it
+    card = html[html.index('class="card-zoom"'):]
+    assert 'data-zoom-photo="/images/2026/11/01/b.jpg"' in card
+    assert html.count('class="card-zoom"') == 1 and "live-zoom-btn" in html and 'id="home-viewer"' in html
+    # Load more cards get it too
+    more = client.get("/visits/more?offset=1").text
+    assert f'href="/visit/{first}"' in more and 'data-zoom-photo="/images/2026/11/01/a.jpg"' in more
+    # species and false-trigger pages are unchanged
+    assert "zoom-btn" not in client.get("/species/Bushtit").text
+    add_visit(visitor="none", species=None)
+    assert "zoom-btn" not in client.get("/false-triggers").text

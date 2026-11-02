@@ -78,3 +78,10 @@
           {% if zones.crop %}<rect class="z-crop" style="color: {{ zones.colors.crop }}" x="{{ zones.crop.x }}" y="{{ zones.crop.y }}" width="{{ zones.crop.w }}" height="{{ zones.crop.h }}"/>{% endif %}
         </svg>
 {%- endmacro %}
+
+{# A small magnifier in a photo's upper-right corner (home page trial): opens the photo big in place, while a click
+   on the rest of the photo keeps its link. Put it beside the link, not inside it. Without a visit it is the live view's. #}
+{% macro zoom_btn(v=none) -%}
+<button type="button" class="zoom-btn{{ '' if v else ' live-zoom-btn' }}"{% if v %} data-zoom-photo="/images/{{ v.image_path }}" data-zoom-alt="{{ v.label }}"{% endif %}
+  aria-label="Open {{ 'the photo' if v else 'the live view' }} big" data-tip="Open big"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M10.5 8v5M8 10.5h5"/></svg></button>
+{%- endmacro %}

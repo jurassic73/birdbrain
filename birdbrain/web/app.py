@@ -298,6 +298,7 @@ def home(request: Request, conn=Depends(get_conn)):
         request,
         "home.html",
         visits=visits,
+        zoom_btn_on=True,  # trial: a magnifier on each photo opens it big
         filters=filters,
         filtered=bool(active),
         more_filters_open=bool(filters["species"] or (filters["date_to"] and filters["date_from"] != filters["date_to"])),
@@ -337,6 +338,7 @@ def more_visits(request: Request, offset: int = 0, conn=Depends(get_conn)):
         request,
         "_cards.html",
         visits=visits,
+        zoom_btn_on=True,
         split_day=split_day,
         prev_day=prev_day,
         next_url=f"/visits/more?{query_string(filters, offset=next_offset)}" if len(visits) == PAGE_SIZE else None,

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import sp_name, thumb %}
+{% from "_macros.html" import sp_name, thumb, zoom_btn %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
 {# Hovering a visit card prerenders its page, so the click shows it finished instead of building it out. #}
@@ -9,7 +9,8 @@
 {% macro live_box() %}
 <div class="live" id="live-box">
   <img id="live" src="/live/latest.jpg" alt="Live view of the birdbath"{% if not today.latest %} fetchpriority="high"{% endif %}>
-  <button type="button" class="live-zoom" aria-label="Open the live view big" data-tip="Open big (keeps updating)"></button>
+  <button type="button" class="live-zoom" aria-label="Open the live view big"></button>
+  {{ zoom_btn() }}
   <div class="live-badge"><span class="dot"></span><span id="live-status">Live</span> <span class="muted" id="live-age"></span></div>
   <div class="live-title" data-tip="What the camera sees right now, refreshed every few seconds">Live view</div>
   <div class="live-offline">Camera offline</div>
@@ -20,7 +21,8 @@
 <section class="hero">
   {% set lv = today.latest %}
   {% if lv %}
-  <a class="hero-latest" href="/visit/{{ lv.id }}">
+  <div class="hero-latest">
+  <a class="hero-link" href="/visit/{{ lv.id }}">
     {{ thumb(lv, "thumb hero-photo", lazy=False, full=True) }}
     {% set kicker = 'Latest visitor' if lv.captured_at[:10] == today.date else 'Last visitor, before today' %}
     {# One chip at the top-left (the camera burns its date stamp into the bottom-left): kicker, then name and time. #}
@@ -33,6 +35,8 @@
       </div>
     </div>
   </a>
+  {% if not lv.photo_deleted_at %}{{ zoom_btn(lv) }}{% endif %}
+  </div>
   {% else %}
   {{ live_box() }}
   {% endif %}
@@ -129,7 +133,36 @@
   <button type="button" class="viewer-close live-viewer-close" aria-label="Close">&times;</button>
 </dialog>
 
+<dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
+  <button type="button" class="viewer-close photo-viewer-close" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+  <div class="photo-viewer-frame"><img alt=""><svg class="marks" aria-hidden="true"></svg></div>
+</dialog>
+
 <script>
+  // The magnifier on a photo (hero and cards, also the ones added later) opens it big here: the full-size file, never
+  // stretched past its own size, with the same circles. Esc, the x or a click closes it. Phones go full screen.
+  (() => {
+    const viewer = document.getElementById("home-viewer"), img = viewer.querySelector("img");
+    document.addEventListener("click", e => {
+      const btn = e.target.closest("[data-zoom-photo]");
+      if (!btn) return;
+      e.preventDefault(); e.stopPropagation();  // never follows a link; keeps tips.js quiet
+      img.removeAttribute("src");  // the last photo doesn't flash while this one loads
+      img.src = btn.dataset.zoomPhoto;
+      img.alt = btn.dataset.zoomAlt || "";
+      const marks = btn.parentElement.querySelector("svg.thumb-marks[viewBox]");
+      const none = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      none.setAttribute("class", "marks");
+      viewer.querySelector(".marks").replaceWith(marks ? marks.cloneNode(true) : none);
+      viewer.showModal();
+      if (matchMedia("(max-width: 640px), (max-height: 500px)").matches && viewer.requestFullscreen) {
+        viewer.requestFullscreen().then(() => screen.orientation?.lock?.("landscape")).catch(() => {});
+      }
+    }, true);
+    viewer.addEventListener("click", () => viewer.close());
+    viewer.addEventListener("close", () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); });
+  })();
+
   // Stale-while-revalidate: the saved frame paints instantly (img src above), then fresh frames are
   // downloaded and decoded off-screen and swapped in only when complete, so the box never blanks.
   (() => {
@@ -142,11 +175,12 @@
     // Click the live view to open it big; it keeps refreshing there. Escape, the x or a click off the photo closes it.
     const viewer = document.getElementById("live-viewer");
     const big = document.getElementById("live-big");
-    box.querySelector(".live-zoom").addEventListener("click", () => {
+    box.querySelectorAll(".live-zoom, .live-zoom-btn").forEach(b => b.addEventListener("click", e => {
+      e.stopPropagation();  // keeps tips.js from showing its touch tooltip behind the viewer
       big.src = img.src;
       viewer.showModal();
       refresh();
-    });
+    }));
     viewer.addEventListener("click", e => { if (e.target !== big) viewer.close(); });
     // Say Offline only after a while with no good frame and repeated failures: one slow camera grab isn't an outage.
     const OFFLINE_AFTER_MS = 15000;
@@ -255,7 +289,7 @@
           if (s.ok && board) { board.outerHTML = await s.text(); htmx.process(document.querySelector(".critters")); }
         }
         const hero = document.querySelector(".hero-latest"), freshHero = doc.querySelector(".hero-latest");
-        if (hero && freshHero && hero.getAttribute("href") !== freshHero.getAttribute("href")) {
+        if (hero && freshHero && hero.querySelector(".hero-link").getAttribute("href") !== freshHero.querySelector(".hero-link").getAttribute("href")) {
           const big = new Image();  // decode the new photo off-screen so the slot never blanks
           big.src = freshHero.querySelector("img").src;
           await big.decode().catch(() => {});
@@ -277,7 +311,7 @@
         for (const card of freshGrid.querySelectorAll(".card")) {
           if (have.has(card.getAttribute("href"))) break;
           card.classList.add("card-new");
-          added.push(card);
+          added.push(card.closest(".card-zoom") || card);  // the magnifier travels with its card
         }
         if (!added.length) return;
         const scrolled = gridAbove();
@@ -306,7 +340,7 @@
       const seen = new Set();
       grid()?.querySelectorAll(".card").forEach(c => {
         const href = c.getAttribute("href");
-        if (seen.has(href)) c.remove(); else seen.add(href);
+        if (seen.has(href)) (c.closest(".card-zoom") || c).remove(); else seen.add(href);
       });
     });
   })();

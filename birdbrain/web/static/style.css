@@ -204,7 +204,8 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   max-height: calc(100vh - 140px);
 }
 /* The big photo: the latest visitor. Its caption chip sits at the top-left; the camera's own date stamp is burned into the bottom-left. */
-.hero-latest { display: block; color: #fff; text-decoration: none; }
+.hero-latest { display: block; color: #fff; }
+.hero-link { display: block; width: 100%; height: 100%; color: inherit; text-decoration: none; }
 .hero-photo, .hero-photo img { width: 100%; height: 100%; }
 .hero-photo img { object-fit: cover; }
 .thumb.hero-photo .marks .ring { stroke-width: 2.5; }
@@ -408,8 +409,8 @@ dialog.popup[open] { animation: popup-in .14s ease-out; }
 .card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); font-size: .85rem; }
 /* Species page (admin): a star in the photo's top corner picks the species photo. It's drawn over the photo,
    so its colors are fixed; small, so it doesn't hide the animal, but a 40px tap target. */
-.card-fav { position: relative; display: flex; }
-.card-fav > .card { flex: 1; min-width: 0; }
+.card-fav, .card-zoom { position: relative; display: flex; }
+.card-fav > .card, .card-zoom > .card { flex: 1; min-width: 0; }
 button.fav-star { position: absolute; top: 4px; right: 4px; width: 40px; height: 40px; padding: 0; margin: 0;
   display: grid; place-items: center; border-radius: 50%; border: 0; background: rgba(0,0,0,.4); color: #fff; }
 button.fav-star svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
@@ -1430,3 +1431,16 @@ kbd {
 .embed-close-btn { white-space: nowrap; }
 .ft-head { flex-wrap: nowrap; align-items: baseline; }
 .ft-head .link-btn { white-space: nowrap; font-size: .9rem; }
+
+/* Zoom button (home page trial): a magnifier in a photo's upper-right corner, dark and a little see-through like the
+   captions on the photo; it opens the photo big, the rest of the photo keeps its link. Drawn over photos, so fixed
+   colors. 34 px to see, a 42 px tap area; the star on species-page cards could sit to its left or right later. */
+button.zoom-btn { position: absolute; top: 8px; right: 8px; z-index: 2; width: 34px; height: 34px; padding: 0; margin: 0;
+  display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, .5); border: 1px solid rgba(255, 255, 255, .35);
+  color: #fff; cursor: zoom-in; backdrop-filter: blur(2px); transition: background .15s; }
+button.zoom-btn::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
+button.zoom-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+button.zoom-btn:hover { background: rgba(0, 0, 0, .75); }
+button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.card-zoom button.zoom-btn { top: 6px; right: 6px; }
+@media (pointer: coarse) { button.zoom-btn::before { inset: -6px; } }
