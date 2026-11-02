@@ -35,6 +35,7 @@
 <body{% if embed %} class="embed"{% endif %}>
   {% if not embed %}
   <header class="topbar">
+    {% if public() %}<a class="home-link" href="https://somegeek.com/" aria-label="somegeek.com home" title="somegeek.com home"><img src="/static/somegeek-logo.png?v={{ asset_version }}" alt="" width="34" height="34"></a>{% endif %}
     <a class="brand" href="/"><img src="/static/logo.png?v={{ asset_version }}" alt="" width="34" height="34">Birdbrain</a>
     <nav>
       <a href="/" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Latest</a>

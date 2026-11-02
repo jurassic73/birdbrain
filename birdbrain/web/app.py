@@ -137,6 +137,7 @@ templates.env.globals["photo_marks"] = lambda visit: start_marks(visit)
 templates.env.globals["also_of"] = db.also_of
 templates.env.globals["also_label"] = db.also_label
 # Templates check `request.state.admin` (set by the read_only middleware); this says whether a login exists at all.
+templates.env.globals["public"] = auth.public
 templates.env.globals["login_on"] = lambda: bool(auth.password()) and not auth.public()
 # Changes whenever a static file changes, so browsers fetch fresh CSS/JS after a deploy.
 templates.env.globals["asset_version"] = int(max(p.stat().st_mtime for p in (HERE / "static").iterdir()))

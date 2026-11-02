@@ -150,6 +150,9 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
   padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--line);
 }
+/* Public mirror only: round somegeek.com logo that links back to the main site. */
+.home-link { order: 0; display: block; flex: none; line-height: 0; border-radius: 50%; margin-right: -4px; }
+.home-link img { display: block; width: 34px; height: 34px; }
 .brand { order: 1; display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.15rem; color: var(--text); text-decoration: none; }
 .brand img { display: block; width: 34px; height: 34px; }
 .topbar nav { order: 2; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }

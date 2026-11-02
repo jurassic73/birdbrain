@@ -122,3 +122,12 @@ def test_mirror_today_follows_site_timezone(client, add_visit, conn, monkeypatch
         assert clock.today() == datetime.now().date()
     finally:
         clock.set_zone(None); clock._zone["checked"] = 0.0
+
+
+def test_somegeek_home_logo_only_on_public_mirror(client, monkeypatch):
+    assert "somegeek.com" not in client.get("/").text
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    monkeypatch.setattr(webapp, "BASE", "/birdbrain")
+    page = client.get("/").text
+    assert 'href="https://somegeek.com/"' in page and 'aria-label="somegeek.com home"' in page
+    assert 'src="/birdbrain/static/somegeek-logo.png' in page
