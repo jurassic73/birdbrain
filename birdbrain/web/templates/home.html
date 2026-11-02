@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import sp_name, thumb, zoom_btn %}
+{% from "_macros.html" import sp_name, thumb, zoom_btn, zoom_out_btn %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
 {# Hovering a visit card prerenders its page, so the click shows it finished instead of building it out. #}
@@ -131,12 +131,12 @@
     <img id="live-big" alt="Live view of the birdbath">
     <div class="live-badge"><span class="dot"></span><span id="live-big-status">Live</span> <span class="muted" id="live-big-age"></span></div>
   </div>
-  <button type="button" class="viewer-close live-viewer-close" aria-label="Close">&times;</button>
+  {{ zoom_out_btn("live-viewer-close") }}
 </dialog>
 
 <dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
   <button type="button" class="viewer-reset" id="home-viewer-reset" hidden>Reset view</button>
-  <button type="button" class="viewer-close photo-viewer-close" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+  {{ zoom_out_btn("photo-viewer-close") }}
   <div class="photo-viewer-frame"><img alt="" draggable="false"><svg class="marks" aria-hidden="true"></svg></div>
 </dialog>
 

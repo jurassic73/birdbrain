@@ -1408,7 +1408,7 @@ button.se-all { font-weight: 600; }
 .live-zoom:hover { background: none; }
 .live-viewer { display: none; place-items: center; }  /* a .viewer (the Pop-ups section) */
 .live-viewer[open] { display: grid; }
-.live-viewer img { width: auto; height: auto; max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; cursor: default; }
+.live-viewer img { width: auto; height: auto; max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 8px; cursor: zoom-out; }
 /* Native size: never stretched, only shrunk to fit the screen. */
 .live-viewer-frame { position: relative; line-height: 0; }
 .live-viewer .live-badge { top: 10px; bottom: auto; left: 10px; line-height: normal; }
@@ -1478,6 +1478,9 @@ button.zoom-btn::before { content: ""; position: absolute; inset: -4px; border-r
 button.zoom-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 button.zoom-btn:hover { background: rgba(0, 0, 0, .75); }
 button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+/* Its partner in the big view: the close button shows a minus magnifier, since closing zooms back out. */
+.viewer-close.viewer-zoom-out { display: grid; place-items: center; cursor: zoom-out; }
+.viewer-zoom-out svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 @media (pointer: coarse) { button.zoom-btn::before { inset: -6px; } }
 
 /* Visits archive page */

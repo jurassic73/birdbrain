@@ -86,3 +86,9 @@
 <button type="button" class="zoom-btn{{ '' if v else ' live-zoom-btn' }}"{% if v %} data-zoom-photo="/images/{{ v.image_path }}" data-zoom-alt="{{ v.label }}"{% endif %}
   aria-label="Open {{ 'the photo' if v else 'the live view' }} big" data-tip="Open big"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M10.5 8v5M8 10.5h5"/></svg></button>
 {%- endmacro %}
+
+{# The other half of zoom_btn: in a big view opened by the magnifier, the close button is the same round button with a
+   minus, since closing takes the photo back to its small size. #}
+{% macro zoom_out_btn(cls) -%}
+<button type="button" class="viewer-close viewer-zoom-out {{ cls }}" aria-label="Zoom out (Esc)" title="Zoom out (Esc)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M8 10.5h5"/></svg></button>
+{%- endmacro %}
