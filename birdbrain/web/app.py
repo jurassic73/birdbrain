@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth, viewer
-from .. import alert, camera, circle_check, clock, config, db, identify, images, names, presence, privacy, refine, retention, species_info, weather, zones
+from .. import alert, camera, circle_check, clock, config, db, identify, images, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 PAGE_SIZE = 24
@@ -942,6 +942,8 @@ def weather_page(request: Request, conn=Depends(get_conn)):
         request,
         "weather.html",
         w=report,
+        # Today at the bath: rules over stored data, cached species cards only (never the network).
+        today=outlook.outlook(conn, report, species_info.cached_cards(), report["now"], temp=temp),
         findings=db.weather_findings(report) if report["has_weather"] else [],
         located=weather.located(),
         rain_hour_mm=db.RAIN_HOUR_MM,
@@ -1068,6 +1070,8 @@ def about(request: Request, conn=Depends(get_conn)):
         card_days=species_info.REFRESH_AFTER.days,
         local_km=species_info.LOCAL_KM,
         nearby_km=species_info.NEARBY_KM,
+        min_hours=db.MIN_HOURS,
+        min_like_today=db.MIN_LIKE_TODAY,
     )
 
 

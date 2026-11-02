@@ -259,6 +259,12 @@ HUMIDITY_BANDS_PCT = (80, 95)  # hour humidity bands: below 80, 80 to 95, 95 and
 MIN_HOURS = 10         # each side of a comparison needs this many hours before it counts as a finding
 MIN_DAYS = 2            # each side of the wet vs dry days comparison needs this many days
 MIN_DAYLIGHT = 1.0      # a day needs this many watched daylight hours for a per-hour rate
+# "Today at the bath" (birdbrain.outlook): photos with an animal taken in daylight hours with weather like today's
+# (wet or dry, same temperature band) before the box names the regulars for that weather; fewer, and it shows the
+# most seen of the last week instead.
+MIN_LIKE_TODAY = 15
+HOT_C = 27              # a high at or above this (about 81°F) makes a hot day
+FREEZING_C = 0          # a low at or below this makes a freezing day
 
 
 def _hours_between(a: datetime, b: datetime) -> float:
@@ -282,9 +288,10 @@ def weather_report(conn: sqlite3.Connection, now: datetime | None = None) -> dic
     rain / cloud / temp: daylight hours compared, each with its hours, visitors and visitors an hour. An hour H takes
     its rain from weather row H+1 (Open-Meteo's precipitation is the sum of the hour before it) and its cloud and
     temperature from the mean of rows H and H+1. Only whole hours after the first photo count; cloud compares dry
-    hours only, so rain doesn't decide it."""
+    hours only, so rain doesn't decide it. by_hour: those hours themselves ({"hour": 'YYYY-MM-DDTHH:00', "rain",
+    "cloud", "temp", "wind", "humidity", "visitors"}), oldest first."""
     now = now or clock.now()
-    report = {"days": [], "first": None, "now": now, "has_weather": False, "hours": 0, "rain": [], "cloud": [],
+    report = {"days": [], "first": None, "now": now, "has_weather": False, "hours": 0, "by_hour": [], "rain": [], "cloud": [],
               "temp": [], "wind": [], "humidity": [], "points": [], "max_rain": 0.0, "max_visitors": 0}
     first = conn.execute("SELECT MIN(captured_at) FROM visits").fetchone()[0]
     if not first:
@@ -364,7 +371,7 @@ def weather_report(conn: sqlite3.Connection, now: datetime | None = None) -> dic
                 _rate_group("damp", [x for x in damp if lo_h <= x["humidity"] < hi_h], low=lo_h, high=hi_h),
                 _rate_group("soaked", [x for x in damp if x["humidity"] >= hi_h], low=hi_h)]
     report.update({
-        "days": days, "first": start, "has_weather": bool(wdays), "hours": len(hours),
+        "days": days, "first": start, "has_weather": bool(wdays), "hours": len(hours), "by_hour": hours,
         "rain": [_rate_group("rain", wet), _rate_group("dry", dry)],
         "cloud": [_rate_group("clearer", [x for x in clouded if x["cloud"] < OVERCAST_PCT]),
                   _rate_group("overcast", [x for x in clouded if x["cloud"] >= OVERCAST_PCT])],
@@ -383,6 +390,16 @@ def weather_report(conn: sqlite3.Connection, now: datetime | None = None) -> dic
         "max_visitors": max([r["visitors"] for r in days] or [0]),
     })
     return report
+
+
+def seen_labels(conn: sqlite3.Connection, start: str, end: str) -> list[sqlite3.Row]:
+    """Every animal seen in a real visit from day `start` through `end` ('YYYY-MM-DD', inclusive): (id, captured_at,
+    label), one row per kind per photo, other animals in the photo included, "other" left out; oldest first."""
+    return conn.execute(
+        f"""SELECT DISTINCT id, captured_at, label
+            FROM ({_seen(f"{REAL} AND date(captured_at) BETWEEN :a AND :b")})
+            WHERE seen_visitor != 'other' AND label IS NOT NULL ORDER BY captured_at, label""",
+        {"a": start, "b": end}).fetchall()
 
 
 def weather_findings(report: dict) -> list[str]:

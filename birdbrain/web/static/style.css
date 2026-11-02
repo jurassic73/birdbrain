@@ -1634,6 +1634,16 @@ button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 :root[data-palette="ocean"] { --rain: #22958a; }
 :root[data-palette="ocean"][data-theme="dark"] { --rain: #5fc7b9; }
 @media (prefers-color-scheme: dark) { :root[data-palette="ocean"]:not([data-theme="light"]) { --rain: #5fc7b9; } }
+/* Today at the bath: the quick read at the top of the Weather & visits page */
+.wx-now { padding: 12px 16px; margin-bottom: 16px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--radius); }
+.wx-now h2 { font-size: 1.1rem; margin: 0 0 6px; }
+.wx-now h2 .muted { font-size: .85rem; font-weight: 400; margin-left: 4px; }
+.wx-now-head { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
+.wx-now-icon .wx-svg { width: 40px; height: 40px; display: block; }
+.wx-now-lines { list-style: none; margin: 0; padding: 0; }
+.wx-now-lines li { position: relative; padding: 3px 0 3px 18px; line-height: 1.4; }
+.wx-now-lines li::before { content: ""; position: absolute; left: 4px; top: .85em; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.wx-now .info-tip { font-size: .7em; }
 .wx-empty { max-width: 640px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .wx-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted); font-size: .85rem; margin-bottom: 6px; }
 .wx-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
