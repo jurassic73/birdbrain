@@ -598,6 +598,10 @@
       const w = img.naturalWidth || 1920, h = img.naturalHeight || 1080;
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.replaceChildren();
+      // Pills placed so far, and every ring: a pill takes the first corner that covers neither.
+      const taken = [], rings = marks.map(m => ({x: m.x * w, y: m.y * h, r: (editing ? m.r : markRadius(m.r)) * w}));
+      const keepIn = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+      const hits = (b, c) => Math.hypot(c.x - keepIn(c.x, b[0], b[2]), c.y - keepIn(c.y, b[1], b[3])) < c.r;
       marks.forEach((m, i) => {
         const g = el("g", {"data-i": i, class: m.pi ? "mark claude pi" : m.claude ? "mark claude" : "mark"});
         const cx = m.x * w, cy = m.y * h, r = (editing ? m.r : markRadius(m.r)) * w, s = w / 60;
@@ -622,11 +626,22 @@
           const lx = cx + sx * out, ly = cy + sy * out;
           return {lx, ly, sx, dx: lx + sx * (ext + dr * 1.4)};
         };
+        // The pill's box; the × beyond it only counts while editing (it's hidden otherwise).
+        const box = c => {
+          const far = editing ? c.dx + Math.sign(c.dx - c.lx) * dr : c.lx + Math.sign(c.dx - c.lx) * ext, hy = editing ? Math.max(rad, dr) : rad;
+          return [Math.min(c.lx - rad, far), c.ly - hy, Math.max(c.lx + rad, far), c.ly + hy];
+        };
+        const free = c => {
+          const b = box(c);
+          return !taken.some(t => b[0] < t[2] && t[0] < b[2] && b[1] < t[3] && t[1] < b[3]) && !rings.some((o, j) => j !== i && hits(b, o));
+        };
         const corners = [[1, -1], [-1, -1], [1, 1], [-1, 1]].map(place);
-        let {lx, ly, dx, sx} = corners.find(c => fits(c.lx, c.ly, rad) && fits(c.dx, c.ly, dr)) || corners[0];
+        const onPhoto = corners.filter(c => fits(c.lx, c.ly, rad) && fits(c.dx, c.ly, dr));
+        let {lx, ly, dx, sx} = onPhoto.find(free) || onPhoto[0] || corners[0];
         const keep = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
         const shift = keep(dx, dr, w - dr) - dx, lift = keep(ly, Math.max(rad, dr), h - Math.max(rad, dr)) - ly;
         lx = keep(lx + shift, rad, w - rad); dx += shift; ly += lift;
+        taken.push(box({lx, ly, dx}));
         if (name) {
           const x0 = sx > 0 ? lx - rad : lx - ext;
           g.append(el("rect", {x: x0, y: ly - rad, width: ext + rad, height: rad * 2, rx: rad, class: "pill-tile"}));
@@ -646,6 +661,14 @@
         del.append(x);
         g.append(del);
         svg.append(g);
+        // Now it's on the page, fit the tile to the name's real width (the guess above only picks the corner).
+        const nt = g.querySelector(".pill-name"), tile = g.querySelector(".pill-tile");
+        const real = nt && nt.getComputedTextLength();  // 0 while the circles are hidden: keep the guess
+        if (real) {
+          const wide = rad * 2 + pad * 2 + real;
+          tile.setAttribute("width", wide);
+          if (sx < 0) tile.setAttribute("x", lx + rad - wide);
+        }
       });
       field.value = JSON.stringify(marks);
       document.getElementById("circles-toggle").hidden = editing || !marks.length;
