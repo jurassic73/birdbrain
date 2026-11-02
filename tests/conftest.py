@@ -46,6 +46,9 @@ def offline_species_info(monkeypatch):
     """Species cards are built from the internet; tests that need one patch build() themselves."""
     from birdbrain import species_info
     monkeypatch.setattr(species_info, "build", lambda name: {"name": name, "links": []})
+    # prefetch() builds in a background thread that can outlive the test: once this patch is undone it ran the real build()
+    # (Wikipedia, iNaturalist, then Haiku with the fake key, a stray 401 after "100%" in about 1 run in 3). Tests never need it.
+    monkeypatch.setattr(species_info, "prefetch", lambda name: None)
     species_info.forget_cached_cards()
 
 
