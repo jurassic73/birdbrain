@@ -382,7 +382,7 @@
         for (const card of freshGrid.querySelectorAll(".card")) {
           if (have.has(card.getAttribute("href"))) break;
           card.classList.add("card-new");
-          added.push(card.closest(".card-zoom") || card);  // the magnifier travels with its card
+          added.push(card);
         }
         if (!added.length) return;
         const scrolled = gridAbove();
@@ -411,7 +411,7 @@
       const seen = new Set();
       grid()?.querySelectorAll(".card").forEach(c => {
         const href = c.getAttribute("href");
-        if (seen.has(href)) (c.closest(".card-zoom") || c).remove(); else seen.add(href);
+        if (seen.has(href)) c.remove(); else seen.add(href);
       });
     });
   })();

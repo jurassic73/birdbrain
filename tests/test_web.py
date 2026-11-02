@@ -810,7 +810,7 @@ def test_species_list_names_open_the_info_card_and_card_has_jump_to_visits(clien
     assert re.findall(r'class="badge [^"]*"(?! data-tip)', html) == []
 
 
-def test_home_photos_carry_a_zoom_button_but_other_pages_do_not(client, add_visit, monkeypatch):
+def test_only_the_latest_visitor_and_live_view_carry_a_zoom_button(client, add_visit, monkeypatch):
     monkeypatch.setattr(webapp, "PAGE_SIZE", 1)
     first = add_visit(image_path="2026/11/01/a.jpg", thumb_path="2026/11/01/a_t.jpg", species="Bushtit")
     second = add_visit(image_path="2026/11/01/b.jpg", thumb_path="2026/11/01/b_t.jpg", species="Dark-eyed Junco")
@@ -818,16 +818,15 @@ def test_home_photos_carry_a_zoom_button_but_other_pages_do_not(client, add_visi
     hero = html[html.index('class="hero-latest"'):html.index('class="today"')]
     assert 'href="/visit/%d"' % second in hero and 'data-zoom-photo="/images/2026/11/01/b.jpg"' in hero
     assert hero.index("</a>") < hero.index("zoom-btn")  # a sibling of the link, not inside it
-    card = html[html.index('class="card-zoom"'):]
-    assert 'data-zoom-photo="/images/2026/11/01/b.jpg"' in card
-    assert html.count('class="card-zoom"') == 1 and "live-zoom-btn" in html and 'id="home-viewer"' in html
+    assert html.count('data-zoom-photo="') == 1 and "card-zoom" not in html  # visit cards have none
+    assert "live-zoom-btn" in html and 'id="home-viewer"' in html
     assert f'<a class="hero-goto" href="/visit/{second}">Go to visit</a>' in hero  # after the kicker, a real link
     assert hero.index("hero-kicker") < hero.index("hero-goto") < hero.index("hero-name")
     assert 'id="home-viewer-reset"' in html and "Reset view" in html  # zoom viewer
-    # Load more cards get it too
+    # Load more cards and the other pages have none
     more = client.get("/visits/more?offset=1").text
-    assert f'href="/visit/{first}"' in more and 'data-zoom-photo="/images/2026/11/01/a.jpg"' in more
-    # species and false-trigger pages are unchanged
+    assert f'href="/visit/{first}"' in more and "zoom-btn" not in more
+    assert "zoom-btn" not in client.get("/visits").text
     assert "zoom-btn" not in client.get("/species/Bushtit").text
     add_visit(visitor="none", species=None)
     assert "zoom-btn" not in client.get("/false-triggers").text

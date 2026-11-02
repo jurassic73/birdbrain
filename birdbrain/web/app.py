@@ -299,7 +299,6 @@ def home(request: Request, conn=Depends(get_conn)):
         request,
         "home.html",
         visits=visits,
-        zoom_btn_on=True,  # trial: a magnifier on each photo opens it big
         filters=filters,
         filtered=bool(active),
         more_filters_open=bool(filters["species"] or (filters["date_to"] and filters["date_from"] != filters["date_to"])),
@@ -334,7 +333,6 @@ def visits_archive(request: Request, conn=Depends(get_conn)):
         request,
         "visits.html",
         visits=visits,
-        zoom_btn_on=True,
         filters=filters,
         filtered=bool(active),
         total=db.count_visits(conn, **filters),
@@ -348,7 +346,7 @@ def visits_archive_more(request: Request, offset: int = 0, conn=Depends(get_conn
     filters = filters_from(request)
     visits = db.list_visits(conn, **filters, limit=PAGE_SIZE, offset=offset)
     more = f"/visits/archive-more?{query_string(filters, offset=offset + PAGE_SIZE)}" if len(visits) == PAGE_SIZE else None
-    return page(request, "_cards.html", visits=visits, zoom_btn_on=True, next_url=more)
+    return page(request, "_cards.html", visits=visits, next_url=more)
 
 
 @app.get("/visits/more", response_class=HTMLResponse)
@@ -366,7 +364,6 @@ def more_visits(request: Request, offset: int = 0, conn=Depends(get_conn)):
         request,
         "_cards.html",
         visits=visits,
-        zoom_btn_on=True,
         split_day=split_day,
         prev_day=prev_day,
         next_url=f"/visits/more?{query_string(filters, offset=next_offset)}" if len(visits) == PAGE_SIZE else None,
