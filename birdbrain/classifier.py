@@ -244,17 +244,23 @@ def crop_for(img: np.ndarray, circle: dict | None, box, margin: float = CIRCLE_M
     else the crop box. Returns the patch and which crop was used."""
     H, W = img.shape[:2]
     if circle and circle.get("r"):
-        cx, cy = circle["x"] * W, circle["y"] * H
-        half = max(circle["r"] * W * margin, MIN_SIDE / 2)
-        half = min(half, min(W, H) / 2)
-        x0 = int(round(min(max(cx - half, 0), W - 2 * half)))
-        y0 = int(round(min(max(cy - half, 0), H - 2 * half)))
-        side = int(round(2 * half))
+        x0, y0, side = circle_square(circle, W, H, margin)
         return img[y0:y0 + side, x0:x0 + side], "circle"
     if box:
         x, y, w, h = box
         return img[int(y * H):int((y + h) * H), int(x * W):int((x + w) * W)], "box"
     return img, "frame"
+
+
+def circle_square(circle: dict, W: int, H: int, margin: float = CIRCLE_MARGIN) -> tuple[int, int, int]:
+    """The square (left, top, side in pixels) `margin` radii from the circle's center to each side, at least
+    MIN_SIDE, slid inside the frame when the circle is near an edge."""
+    cx, cy = circle["x"] * W, circle["y"] * H
+    half = max(circle["r"] * W * margin, MIN_SIDE / 2)
+    half = min(half, min(W, H) / 2)
+    x0 = int(round(min(max(cx - half, 0), W - 2 * half)))
+    y0 = int(round(min(max(cy - half, 0), H - 2 * half)))
+    return x0, y0, int(round(2 * half))
 
 
 def to_input(bgr: np.ndarray) -> np.ndarray:
@@ -277,11 +283,13 @@ class Classifier:
         opts = ort.SessionOptions()
         opts.intra_op_num_threads = THREADS
         self.session = ort.InferenceSession(str(folder / "bioclip2_int8.onnx"), opts)
-        texts, self.labels = [], []
+        texts, self.labels, self.mammals = [], [], set()
         for kind in ("ebird", "mammals"):
             texts.append(np.load(folder / f"bioclip2_{kind}_text.npy").astype(np.float32))
             names = json.loads((folder / f"bioclip2_{kind}_names.json").read_text())
             self.labels += [(sci, common, True) for sci, common in names]
+            if kind == "mammals":
+                self.mammals = {sci for sci, _ in names}
         self.text = np.concatenate(texts)
 
     def embed(self, bgr: np.ndarray) -> np.ndarray:

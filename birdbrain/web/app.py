@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth, viewer
-from .. import alert, camera, clock, config, db, identify, images, names, presence, privacy, refine, retention, species_info, zones
+from .. import alert, camera, circle_check, clock, config, db, identify, images, names, presence, privacy, refine, retention, species_info, zones
 
 HERE = Path(__file__).parent
 PAGE_SIZE = 24
@@ -551,7 +551,26 @@ def decision_steps(raw_json: str | None) -> dict:
             "night": bool(guess.get("night")),
         })
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),
+            "owner_checks": owner_checks(calls),
             "skipped_sonnet": bool(calls.get("skipped_sonnet")), "asked_sonnet": bool(calls.get("sonnet"))}
+
+
+CHECK_BY = {"pi": "The Pi", "haiku": "Haiku", "sonnet": "Sonnet"}
+
+
+def owner_checks(calls: dict) -> list[dict]:
+    """The owner's circle checks (circle_check), oldest first, for the visit page's decision trail."""
+    out = []
+    for c in calls.get("owner_checks") or []:
+        if not isinstance(c, dict) or c.get("source") not in CHECK_BY:
+            continue
+        if c["source"] == "pi":
+            detail = ", ".join(f"{g['name']} ({g['score']:.0%})" for g in c.get("top") or []) or "no local species"
+        else:
+            detail = (c.get("answer") or {}).get("notes") or ""
+        out.append({"by": CHECK_BY[c["source"]], "pi": c["source"] == "pi", "say": c.get("say") or "",
+                    "detail": detail, "at": c.get("at") or "", "usd": c.get("usd"), "seconds": c.get("seconds")})
+    return out
 
 
 REFRESH = {"HX-Refresh": "true"}
@@ -617,6 +636,40 @@ async def ask_species(visit_id: int, hint: str = Form(""), conn=Depends(get_conn
         name = official or name
     return JSONResponse({"name": name, "visitor": visitor, "confidence": result.confidence,
                          "reason": result.reason.strip(), "usd": round(names.cost(usage), 4)})
+
+
+@app.post("/visit/{visit_id}/check-circle/{source}")
+async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=Depends(get_conn)):
+    """What's in the owner's circle: the Pi's local model (free), else Haiku or Sonnet on just that square.
+    Kept with the visit (raw_json.calls.owner_checks); the label only changes when the owner saves."""
+    if source not in circle_check.SOURCES:
+        raise HTTPException(404)
+    v = db.get_visit(conn, visit_id)
+    if not v:
+        raise HTTPException(404)
+    picked = circle_check.owner_circle(marks)
+    if not picked:
+        return JSONResponse({"error": "Circle the animal first: press Edit circles and drag on the photo."})
+    number, circle = picked
+    jpeg = circle_check.jpeg_of(v)
+    if jpeg is None:
+        return JSONResponse({"error": "This photo was deleted to save space, so there's nothing to look at."})
+    loop = asyncio.get_running_loop()
+    try:
+        if source == "pi":
+            # Its own low-priority thread, one check at a time: ~6 to 22 s of the Pi's cores.
+            entry = await loop.run_in_executor(circle_check.POOL, circle_check.ask_pi, conn, jpeg, circle,
+                                               bool(v["is_night"]))
+            loop.call_later(circle_check.IDLE + 1, circle_check.release_if_idle)
+        else:
+            entry = await asyncio.to_thread(circle_check.ask_claude, conn, source, jpeg, circle,
+                                            datetime.fromisoformat(v["captured_at"]), circle_check.frame_size(jpeg))
+    except Exception as e:
+        if source == "pi":
+            return JSONResponse({"error": f"The Pi's model isn't available right now ({e})."})
+        return JSONResponse({"error": f"Claude couldn't be reached ({type(e).__name__})."})
+    circle_check.record(conn, visit_id, entry, circle)
+    return JSONResponse({**entry, "circle_n": number})
 
 
 @app.post("/visit/{visit_id}/clear-correction")

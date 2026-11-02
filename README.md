@@ -23,6 +23,7 @@ A backyard birdbath camera that spots visitors and identifies them with Claude, 
 - Motion on the rim (not ripples in the water) triggers a burst of photos.
 - Claude Haiku identifies the visitor from the sharpest photo. If it isn't sure, Claude Sonnet takes a second look at three photos. If it's still unsure, the visit waits for you on the Review page.
 - When you correct a mistake, your correction is shown to Claude on future photos, so it learns your birdbath's quirks.
+- Did it miss an animal? Circle it on the visit page and ask the Pi's own model what's in the circle (free); only if the Pi isn't sure, ask Claude Haiku, then Sonnet, about just that part of the photo.
 - Phone alerts come through [ntfy.sh](https://ntfy.sh), a notification service that takes minutes to set up: install the free ntfy app, subscribe to a topic name you make up, and put the same name on the Settings page. No account or server needed, and the free tier allows 250 notifications a day, far more than a birdbath sends.
 
 > **A note on Claude tokens:** a big part of this project is spending as few Claude API tokens as possible. Claude is very good at naming birds, but most motion at a birdbath is rain, leaves and ripples, and on busy days nearly every call was an empty frame. So the work is steadily moving onto a stronger local model running on the Pi itself: [BioCLIP 2](#local-species-classifier-shadow-mode) already decides whether anything is there at all (the [local animal check](#local-animal-check), which keeps empty frames off Claude) and makes its own species guess on every visit, scored against Claude's answers (25 of the first 28 birds right on its first guess). The goal is for the Pi to name the everyday visitors by itself and to save Claude for the hard cases: new species, odd angles, night visitors and anything the local model isn't sure about.
@@ -153,6 +154,10 @@ uv run python -m birdbrain.presence --backfill
 ```
 
 Set `CLASSIFIER=off` in `.env` to skip it. It hasn't been checked on infrared night photos yet.
+
+### What's in your circle?
+
+On any visit page (most useful on a false trigger that missed an animal), press **Edit circles**, circle the animal, and press **Ask the Pi** under "What's in your circle?". The local species model looks at just the circle's square (a little bigger than the circle) and gives its top 3 with scores, plus the animal check's view of the same square: "Looks like X", "Maybe X", or "The Pi didn't find an animal here". It's free and takes 5 to 20 seconds on a Pi 4 (it runs at low priority, one at a time, and the web process lets go of the model after 10 idle minutes). If it isn't sure, **Ask Haiku** (a fraction of a cent) and then **Ask Sonnet** (about half a cent) look at the same square with the usual prompt, Claude's Notes and your lessons. Each answer has a **Use** button that fills in the correction form; nothing changes until you press Save. Every check is kept with the visit (`raw_json.calls.owner_checks`), listed under "How it was decided", and the Claude ones count in the spend on the About page. Saving an animal on a false trigger is what teaches the Pi: its animal check then trains on that photo as an animal, counted 3 times.
 
 ### The ground zone
 

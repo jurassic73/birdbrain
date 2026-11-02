@@ -134,13 +134,15 @@ def system_prompt(lessons: list[str] | None = None, site: dict | None = None) ->
     return "\n\n".join(parts)
 
 
-def user_content(images_b64: list[str], captured_at: datetime) -> list[dict]:
+def user_content(images_b64: list[str], captured_at: datetime, note: str = "") -> list[dict]:
     when = f"{captured_at:%B %-d, %Y at %-I:%M %p} local time"
     if len(images_b64) == 1:
         text = f"Photo taken {when}."
     else:
         text = (f"These {len(images_b64)} photos are from the same visit, taken a fraction of a second apart "
                 f"on {when}. Combine what each one shows (face, breast, wings, tail) into one identification.")
+    if note:
+        text += " " + note
     blocks = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b}} for b in images_b64]
     return [*blocks, {"type": "text", "text": text}]
 
@@ -151,6 +153,7 @@ def ask(
     captured_at: datetime,
     lessons: list[str] | None = None,
     site: dict | None = None,
+    note: str = "",
 ) -> tuple[Sighting | None, dict]:
     response = client().beta.messages.parse(
         model=model,
@@ -159,7 +162,7 @@ def ask(
         fallbacks="default",
         output_config={"effort": "low" if model == HAIKU else "medium"},
         system=system_prompt(lessons, site),
-        messages=[{"role": "user", "content": user_content(images_b64, captured_at)}],
+        messages=[{"role": "user", "content": user_content(images_b64, captured_at, note)}],
         output_format=Sighting,
     )
     usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}

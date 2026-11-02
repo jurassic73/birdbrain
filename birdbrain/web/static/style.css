@@ -619,6 +619,24 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .also-row { flex-wrap: wrap; }
 .ask-note { margin: 4px 0 0; flex-basis: 100%; }
 .ask-note.error { color: var(--low); }
+/* What's in your circle: the Pi, then Haiku, then Sonnet; each answer is added under the buttons. */
+.circle-check { gap: 6px; }
+.circle-check-head { display: flex; align-items: center; gap: 6px; }
+.circle-check-head .field-title { font-weight: 600; }
+.circle-check-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.circle-check-btns .check-btn[hidden] { display: none; }
+.check-note { display: flex; flex-direction: column; gap: 6px; }
+.check-answer { padding: 6px 10px; border-left: 3px solid var(--line); }
+.check-answer p { margin: 0; }
+.check-answer p + p, .check-answer p + ul, .check-answer ul + p { margin-top: 2px; }
+.check-answer.error { color: var(--low); border-left-color: var(--low); }
+.check-guesses { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.check-guesses li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.check-guesses .check-use { min-width: 2.6em; text-align: left; }
+.review .check-answer button.link-btn { padding: 0; }
+.check-used { color: var(--accent); }
+.badge.owner-check { color: var(--muted); white-space: nowrap; }
+.decision .owner-checks-head { font-size: .95rem; margin: 12px 0 6px; }
 .combo-list li.ebird { color: var(--muted); }
 .combo-list li:not(.ebird) + li.ebird { border-top: 1px solid var(--line); }
 .field .combo input { padding-right: 40px; }
@@ -1060,7 +1078,8 @@ html { scroll-behavior: smooth; }
 }
 .loop li small { color: var(--muted); font-size: .8rem; }
 .loop li:not(:last-child)::after { content: "→"; position: absolute; right: -19px; top: 50%; transform: translateY(-50%); color: var(--muted); }
-.loop li:last-child::after { content: "↺"; position: absolute; right: 8px; top: 6px; color: var(--accent); font-size: 1.1rem; }
+.loop.ladder li:last-child::after { content: none; }
+.loop:not(.ladder) li:last-child::after { content: "↺"; position: absolute; right: 8px; top: 6px; color: var(--accent); font-size: 1.1rem; }
 @media (max-width: 760px) {
   .loop { grid-template-columns: 1fr 1fr; }
   .loop li:nth-child(2)::after { content: ""; }

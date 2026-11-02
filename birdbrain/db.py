@@ -809,6 +809,7 @@ def totals(conn: sqlite3.Connection) -> dict:
             FROM visits"""
     ).fetchone()
     probes = conn.execute("SELECT COALESCE(SUM(n), 0) FROM counters WHERE name = 'probe_empty'").fetchone()[0]
+    checks = owner_checks_spend(conn)
     n = lambda k: r[k] or 0
     return {
         "since": r["since"],
@@ -822,8 +823,21 @@ def totals(conn: sqlite3.Connection) -> dict:
         "escalated": n("escalated"),
         "waiting_review": n("waiting_review"),
         "corrected": n("corrected"),
-        "claude_usd": r["claude_usd"] or 0.0,
+        "claude_usd": (r["claude_usd"] or 0.0) + checks["usd"],
+        "owner_checks": checks["n"],
+        "owner_checks_usd": checks["usd"],
     }
+
+
+def owner_checks_spend(conn: sqlite3.Connection) -> dict:
+    """The Claude calls the owner asked for on a circle (birdbrain.circle_check): how many and what they cost."""
+    r = conn.execute(
+        """SELECT COUNT(*) AS n, COALESCE(SUM(json_extract(c.value, '$.usd')), 0) AS usd
+           FROM visits v,
+                json_each(CASE WHEN json_valid(v.raw_json) THEN v.raw_json END, '$.calls.owner_checks') c
+           WHERE json_extract(c.value, '$.source') IN ('haiku', 'sonnet')"""
+    ).fetchone()
+    return {"n": r["n"] or 0, "usd": r["usd"] or 0.0}
 
 
 def capture_rate(conn: sqlite3.Connection, days: int = 7) -> dict:

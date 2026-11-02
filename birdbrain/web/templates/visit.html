@@ -119,7 +119,7 @@
     </section>
     {% endif %}
     {{ flow("in-info") }}
-    {% if decision.steps %}
+    {% if decision.steps or decision.owner_checks %}
     <details class="decision">
       <summary><h2>How it was decided</h2></summary>
       {% if decision.trigger %}<p class="muted small">Spotted moving {{ decision.trigger }}.</p>{% endif %}
@@ -181,6 +181,21 @@
         {% endfor %}
       </ol>
       {% if visit.needs_review %}<p class="step-why">Still unsure, so it was sent to you for review.</p>{% endif %}
+      {% if decision.owner_checks %}
+      <h3 class="owner-checks-head">Your circle checks</h3>
+      <ol class="owner-checks">
+        {% for c in decision.owner_checks %}
+        <li>
+          <div class="step-head">
+            <strong>{{ c.by }}</strong> {{ badge("your check", "owner-check") }}
+            <span class="muted">{{ c.at | nice_time if c.at else '' }}{% if c.pi and c.seconds is not none %}, {{ c.seconds }} s{% elif c.usd is not none %}, {{ '%.2f' | format(c.usd * 100) }}&cent;{% endif %}</span>
+          </div>
+          <div>{{ c.say }}</div>
+          {% if c.detail %}<div class="muted step-notes">{{ c.detail }}</div>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% endif %}
       {% if decision.lessons %}<p class="muted small">Used {{ decision.lessons }} of your past corrections as lessons.</p>{% endif %}
     </details>
     {% endif %}
@@ -221,6 +236,21 @@
           <p class="ask-note small" hidden></p>
         </div>
       </div>
+      {% if not visit.photo_deleted_at %}
+      {# What's in the owner's circle: the Pi first (free), then Haiku, then Sonnet (circle_check.py). #}
+      <div class="field circle-check" id="circle-check">
+        <div class="circle-check-head">
+          <span class="field-title">What's in your circle?</span>
+          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Circle the animal (Edit circles, then drag on the photo) and ask. The Pi's own model looks at just that part of the photo: free, and 5 to 20 seconds on the Pi. If it isn't sure, ask Haiku, then Sonnet, on the same part. Nothing changes until you press Save; saving the right answer is what teaches the Pi.">i</span>
+        </div>
+        <div class="circle-check-btns">
+          <button type="button" class="check-btn" data-source="pi" data-tip="The Pi's local model names what's in your first circle. Free; takes 5 to 20 seconds on the Pi.">Ask the Pi</button>
+          <button type="button" class="claude-btn check-btn" data-source="haiku" hidden data-tip="Claude Haiku looks at just your circle, with Claude's Notes and your lessons. A fraction of a cent.">{{ claude_mark() }}Ask Haiku</button>
+          <button type="button" class="claude-btn check-btn" data-source="sonnet" hidden data-tip="Claude Sonnet takes a closer look at just your circle. About half a cent.">{{ claude_mark() }}Ask Sonnet</button>
+        </div>
+        <div class="check-note small" hidden aria-live="polite"></div>
+      </div>
+      {% endif %}
       {% macro also_row(name="", count=1) %}
       <li class="also-row">
         <div class="combo">
@@ -399,6 +429,64 @@
       show(`Using <b>${esc(r.name)}</b>. Press Save to keep it.`);
     });
   });
+  // What's in your circle: the Pi looks at the first circle the owner drew (free); if it isn't sure, Haiku, then
+  // Sonnet. Each answer is added below with Use buttons that fill the form; nothing is saved until Save.
+  (() => {
+    const box = document.getElementById("circle-check");
+    if (!box) return;
+    const note = box.querySelector(".check-note"), buttons = box.querySelectorAll(".check-btn");
+    const btn = s => box.querySelector(`.check-btn[data-source="${s}"]`);
+    const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+    const add = (html, err) => {
+      const p = document.createElement("div");
+      p.className = "check-answer" + (err ? " error" : "");
+      p.innerHTML = html;
+      note.append(p); note.hidden = false;
+      return p;
+    };
+    const useBtn = (name, visitor, label = name) => `<button type="button" class="link-btn check-use" data-name="${esc(name)}" data-label="${esc(label)}" data-visitor="${esc(visitor)}">Use ${esc(label)}</button>`;
+    const next = {pi: "haiku", haiku: "sonnet"}, who = {haiku: "Haiku", sonnet: "Sonnet"};
+    box.addEventListener("click", async e => {
+      const use = e.target.closest(".check-use");
+      if (use) {
+        const {name, visitor} = use.dataset, input = document.getElementById("species");
+        const radio = document.querySelector(`input[name="visitor"][value="${visitor}"]`);
+        if (["bird", "squirrel", "raccoon", "possum"].includes(visitor)) input.value = name || input.value;
+        if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event("change")); }
+        if (["bird", "squirrel", "raccoon", "possum"].includes(visitor)) input.value = name || input.value;
+        note.querySelectorAll(".check-used").forEach(u => u.remove());
+        use.closest(".check-answer").insertAdjacentHTML("beforeend", `<p class="check-used">Using <b>${esc(use.dataset.label)}</b>. Press Save to keep it.</p>`);
+        return;
+      }
+      const anyway = e.target.closest(".check-anyway");
+      if (anyway) { anyway.remove(); btn(anyway.dataset.source).hidden = false; btn(anyway.dataset.source).click(); return; }
+      const b = e.target.closest(".check-btn");
+      if (!b || b.disabled) return;
+      const source = b.dataset.source;
+      buttons.forEach(x => x.disabled = true); b.classList.add("sending");
+      const r = await fetch(`/visit/{{ visit.id }}/check-circle/${source}`, {method: "POST",
+        body: new URLSearchParams({marks: document.getElementById("marks").value || "[]"})})
+        .then(r => r.json()).catch(() => ({error: "Couldn't reach the site."}));
+      buttons.forEach(x => x.disabled = false); b.classList.remove("sending");
+      if (r.error) { add(esc(r.error), true); return; }
+      const where = `<span class="muted">circle ${r.circle_n}${source === "pi" ? `, ${r.seconds} s` : `, ${(r.usd * 100).toFixed(2)}&cent;`}</span>`;
+      let html = `<p><b>${esc(r.say)}</b> ${where}</p>`;
+      if (source === "pi") {
+        if (r.top.length) html += `<ul class="check-guesses">${r.top.map(g =>
+          `<li><button type="button" class="link-btn check-use" data-name="${esc(g.name)}" data-label="${esc(g.name)}" data-visitor="${esc(g.visitor)}" aria-label="Use ${esc(g.name)}">Use</button> ${esc(g.name)} <span class="muted">${Math.round(g.score * 100)}%</span></li>`).join("")}</ul>`;
+      } else {
+        if (r.answer?.notes) html += `<p class="muted">${esc(r.answer.notes)}</p>`;
+        if (r.visitor && r.visitor !== "none") html += `<p>${useBtn(r.name || "", r.visitor, r.name || r.visitor[0].toUpperCase() + r.visitor.slice(1))}</p>`;
+      }
+      const after = next[source];
+      if (after) {
+        // Not sure (or nothing found): offer the next step up. Sure: it stays one tap away, just not pushed.
+        if (r.verdict === "sure") html += `<p><button type="button" class="link-btn check-anyway" data-source="${after}">Not convinced? Ask ${who[after]}</button></p>`;
+        else btn(after).hidden = false;
+      }
+      add(html);
+    });
+  })();
   // "Also in the photo": a row per other kind of animal; + adds an empty one, × removes one.
   (() => {
     const rows = document.getElementById("also-rows"), tpl = document.getElementById("also-template");
