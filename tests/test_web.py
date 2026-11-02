@@ -51,7 +51,9 @@ def test_visit_escape_goes_home_only_after_arrow_trail(client, add_visit):
     assert 'addEventListener("hashchange", readTrail)' in html
     assert 'stepVisit("nav-next")' in html and 'a.href.split("#")[0] + "#from-home"' in html  # arrows pass it on
     assert 'location.href = (window.BB_BASE || "") + "/"' in html and "bb_arrow_trail" not in html
-    assert 'e.key !== "Escape"' not in client.get(f"/visit/{vid}?embed=1").text
+    assert 'e.key !== "ArrowUp"' in html and "if (scrollY > 0) return;" in html  # Up at the top goes home, any visit
+    embed = client.get(f"/visit/{vid}?embed=1").text
+    assert 'e.key !== "Escape"' not in embed and 'e.key !== "ArrowUp"' not in embed
 
 
 def test_home_empty_state_hides_filters(client):

@@ -834,6 +834,16 @@
     readTrail();
     if (fromHome) location.href = (window.BB_BASE || "") + "/";  // BB_BASE: the public mirror's /birdbrain prefix
   });
+  // Up arrow goes home from any visit (the owner's pick, since Esc only does after the Right arrow from home), but
+  // only at the top of the page, where Up has nothing left to scroll; held down, it scrolls up and stops there.
+  document.addEventListener("keydown", e => {
+    if (e.key !== "ArrowUp" || e.repeat || e.defaultPrevented || e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return;
+    if (document.documentElement.dataset.tour || document.querySelector("dialog[open]")) return;
+    if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+    if (scrollY > 0) return;
+    e.preventDefault();
+    location.href = (window.BB_BASE || "") + "/";
+  });
 {% endif %}
   // On the newest visit, a visitor that arrives (tab-alert.js checks every 20 s) turns on the Newer arrows:
   // the bar's, the phone ones on the photo and the full-screen viewer's, each pulsing briefly.
