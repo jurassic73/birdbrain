@@ -641,6 +641,8 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
   padding: 3px 10px; border-radius: 6px; background: rgba(0, 0, 0, .6); color: #fff; pointer-events: none;
 }
 .mark-legend[hidden] { display: none; }
+.marks .pill-tile { fill: rgba(20, 24, 28, .72); stroke: rgba(255, 255, 255, .25); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.marks .pill-name { fill: #fff; font-weight: 600; dominant-baseline: central; font-family: inherit; }
 .marks .num {fill: #111; font-weight: 700; text-anchor: middle; dominant-baseline: central; font-family: inherit; }
 .feedback-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .review .feedback-head button { padding: 4px 12px; font-size: .85rem; align-self: center; }

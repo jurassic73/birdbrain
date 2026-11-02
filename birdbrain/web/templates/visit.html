@@ -581,6 +581,13 @@
     const field = document.getElementById("marks") || {};
     const clear = document.getElementById("mark-clear"), hint = document.getElementById("mark-hint");
     const legend = document.getElementById("mark-legend"), claudeSaw = {{ (visit.species or visit.visitor) | lower | tojson }};
+    // The name that goes after a circle's number: the visit's own, unless it names no animal.
+    const visitName = {{ (visit.label if visit.label and visit.label not in ('None', 'Other') else '') | tojson }};
+    const oneKind = {{ (not also_of(visit)) | tojson }};
+    const nameOf = m => {
+      const n = (m.pi || m.claude) ? (m.label || visitName) : (oneKind ? visitName : "");
+      return n && !["none", "other"].includes(n.toLowerCase()) ? n : "";
+    };
     const edit = document.getElementById("mark-edit");
     let marks = JSON.parse(photo.dataset.marks || "[]"), press = null, drag = null, editing = false;
     // Fingers on the photo: a second one means a pinch, which zooms and never draws.
@@ -602,20 +609,36 @@
         // Number and × sit off the circle's top-right, the number's edge a third of its width clear of
         // the ring so it never covers the animal; near an edge they swing to the first corner that
         // stays on the photo (the ring itself is clipped at the photo's edge).
+        // With a name the number is the end of one pill: a dark tile with the name runs away from the ring
+        // (to the right from a right-hand corner, to the left from a left-hand one). Names over 24 letters are cut short.
+        let name = nameOf(m);
+        if (name.length > 24) name = name.slice(0, 23).trimEnd() + "\u2026";
+        const fs = Math.max(s * 1.05, 10.5 * px), rad = name ? Math.max(s, fs * 0.85) : s, pad = fs * 0.45;
+        const tw = name ? name.length * fs * 0.56 : 0;  // a fair guess at the text's width
+        const ext = name ? rad + pad * 2 + tw : rad;  // number's center to the pill's far end
         const fits = (x, y, rad) => x - rad >= 0 && x + rad <= w && y - rad >= 0 && y + rad <= h;
-        const out = (r + s + 2 * s / 3) * 0.71;
+        const out = (r + rad + 2 * rad / 3) * 0.71;
         const place = ([sx, sy]) => {
           const lx = cx + sx * out, ly = cy + sy * out;
-          return {lx, ly, dx: lx + sx * (s + dr * 1.4)};
+          return {lx, ly, sx, dx: lx + sx * (ext + dr * 1.4)};
         };
         const corners = [[1, -1], [-1, -1], [1, 1], [-1, 1]].map(place);
-        let {lx, ly, dx} = corners.find(c => fits(c.lx, c.ly, s) && fits(c.dx, c.ly, dr)) || corners[0];
+        let {lx, ly, dx, sx} = corners.find(c => fits(c.lx, c.ly, rad) && fits(c.dx, c.ly, dr)) || corners[0];
         const keep = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-        const shift = keep(dx, dr, w - dr) - dx, lift = keep(ly, Math.max(s, dr), h - Math.max(s, dr)) - ly;
-        lx = keep(lx + shift, s, w - s); dx += shift; ly += lift;
-        g.append(el("circle", {cx: lx, cy: ly, r: s, class: "num-bg"}));
-        const t = el("text", {x: lx, y: ly, "font-size": s * 1.3, class: "num"}); t.textContent = i + 1;
+        const shift = keep(dx, dr, w - dr) - dx, lift = keep(ly, Math.max(rad, dr), h - Math.max(rad, dr)) - ly;
+        lx = keep(lx + shift, rad, w - rad); dx += shift; ly += lift;
+        if (name) {
+          const x0 = sx > 0 ? lx - rad : lx - ext;
+          g.append(el("rect", {x: x0, y: ly - rad, width: ext + rad, height: rad * 2, rx: rad, class: "pill-tile"}));
+        }
+        g.append(el("circle", {cx: lx, cy: ly, r: rad, class: "num-bg"}));
+        const t = el("text", {x: lx, y: ly, "font-size": rad * 1.3, class: "num"}); t.textContent = i + 1;
         g.append(t);
+        if (name) {
+          const nt = el("text", {x: lx + sx * (rad + pad), y: ly, "font-size": fs, class: "pill-name", "text-anchor": sx > 0 ? "start" : "end"});
+          nt.textContent = name;
+          g.append(nt);
+        }
         const del = el("g", {class: "del"});
         if (touch) del.append(el("circle", {cx: dx, cy: ly, r: 22 * px, class: "del-hit"}));
         del.append(el("circle", {cx: dx, cy: ly, r: dr, class: "del-bg"}));
