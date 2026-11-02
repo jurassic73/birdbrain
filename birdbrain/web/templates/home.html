@@ -432,13 +432,12 @@
     if (document.querySelector("dialog[open]")) return;
     const link = document.querySelector(".hero-link");
     if (!link) return;
-    // Tells the visit page it was reached by arrow keys, so Esc there comes back here (see visit.html).
-    try { sessionStorage.setItem("bb_arrow_trail", "1"); } catch (err) { /* private mode: Esc just stays */ }
-    location.href = link.href;
+    // "#from-home" tells the visit page it was reached by arrow keys, so Esc there comes back here (see visit.html).
+    // It rides in the URL rather than sessionStorage: a page prerendered on hover (speculation rules above) can
+    // run with a copy of sessionStorage taken before this press, and a fragment is never sent to the server, so
+    // the prefetched page is still used.
+    location.href = link.href.split("#")[0] + "#from-home";
   });
-  // Home is never part of a trail: any other way into a visit (a card click) starts without the flag.
-  // pageshow also fires when Back restores home from the cache, where this script doesn't run again.
-  addEventListener("pageshow", () => { try { sessionStorage.removeItem("bb_arrow_trail"); } catch (err) {} });
 </script>
 <script src="/static/photo-reminder.js?v={{ asset_version }}" defer></script>
 <script>

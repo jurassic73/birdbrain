@@ -797,38 +797,42 @@
       img.complete ? open() : img.addEventListener("load", open, { once: true });
     }
   })();
+  // fromHome: this visit was reached by arrow keys from the home page (home.html adds "#from-home" on its Right
+  // arrow) and then followed with the arrows, so Esc goes back home. It travels in the URL, not sessionStorage,
+  // because a page prerendered on hover may hold a copy of sessionStorage from before the arrow press. Any other
+  // way in (a card, Visits, a species page, a direct link) has no fragment. The fragment is dropped from the
+  // address bar so a reload or a copied link starts without it. A prerendered page reads it on activation.
+  let fromHome = false;
+  const readTrail = () => {
+    if (location.hash !== "#from-home") return;
+    fromHome = true;
+    history.replaceState(history.state, "", location.pathname + location.search);
+  };
+  if (document.prerendering) document.addEventListener("prerenderingchange", readTrail, { once: true });
+  else readTrail();
+  // On a trail the arrows pass the fragment on, so Esc still goes home after a few steps.
+  const stepVisit = id => {
+    const a = document.getElementById(id);
+    if (!a) return;
+    if (fromHome) location.href = a.href.split("#")[0] + "#from-home";
+    else a.click();
+  };
   document.addEventListener("keydown", e => {
     if (document.getElementById("photo-viewer").open) return;
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
     if (e.target.closest?.(".vburst")) return;
-    if (e.key === "ArrowLeft") document.getElementById("nav-prev")?.click();
-    if (e.key === "ArrowRight") document.getElementById("nav-next")?.click();
+    if (e.key === "ArrowLeft") stepVisit("nav-prev");
+    if (e.key === "ArrowRight") stepVisit("nav-next");
   });
 {% if not embed %}
-  // Esc goes back home only if this visit was reached by arrow keys from the home page (flag set by home.html on
-  // its Right arrow) and then followed with the arrows. Any other way in (a card, Visits, a species page, a direct
-  // link) has a referrer that is not "/" or a visit, so the flag is dropped. A prerendered page (speculation rules
-  // on home) waits for activation, when its referrer is settled, and never touches the flag before then.
-  (() => {
-    const check = () => {
-      try {
-        const r = document.referrer ? new URL(document.referrer) : null;
-        if (!r || r.origin !== location.origin || !(r.pathname === "/" || r.pathname.startsWith("/visit/")))
-          sessionStorage.removeItem("bb_arrow_trail");
-      } catch (err) {}
-    };
-    if (document.prerendering) document.addEventListener("prerenderingchange", check, { once: true });
-    else check();
-    document.addEventListener("keydown", e => {
-      if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return;
-      if (document.documentElement.dataset.tour || document.querySelector("dialog[open]")) return;
-      const t = e.target;
-      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
-      let on = false;
-      try { on = sessionStorage.getItem("bb_arrow_trail") === "1"; } catch (err) {}
-      if (on) location.href = "/";
-    });
-  })();
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return;
+    if (document.documentElement.dataset.tour || document.querySelector("dialog[open]")) return;
+    const t = e.target;
+    if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
+    readTrail();
+    if (fromHome) location.href = (window.BB_BASE || "") + "/";  // BB_BASE: the public mirror's /birdbrain prefix
+  });
 {% endif %}
   // On the newest visit, a visitor that arrives (tab-alert.js checks every 20 s) turns on the Newer arrows:
   // the bar's, the phone ones on the photo and the full-screen viewer's, each pulsing briefly.

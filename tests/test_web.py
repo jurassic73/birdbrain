@@ -40,10 +40,14 @@ def test_home_right_arrow_opens_the_latest_visit(client, add_visit):
 
 def test_visit_escape_goes_home_only_after_arrow_trail(client, add_visit):
     vid = add_visit(species="Dark-eyed Junco")
-    assert 'setItem("bb_arrow_trail"' in client.get("/").text
+    # The trail rides in the URL fragment, not sessionStorage (a prerendered visit page can see a stale copy).
+    home = client.get("/").text
+    assert '"#from-home"' in home and "sessionStorage.setItem" not in home.split('e.key !== "ArrowRight"')[1].split("</script>")[0]
     html = client.get(f"/visit/{vid}").text
-    assert 'getItem("bb_arrow_trail")' in html and 'location.href = "/"' in html
-    assert 'getItem("bb_arrow_trail")' not in client.get(f"/visit/{vid}?embed=1").text
+    assert 'location.hash !== "#from-home"' in html and "history.replaceState" in html
+    assert 'stepVisit("nav-next")' in html and 'a.href.split("#")[0] + "#from-home"' in html  # arrows pass it on
+    assert 'location.href = (window.BB_BASE || "") + "/"' in html and "bb_arrow_trail" not in html
+    assert 'e.key !== "Escape"' not in client.get(f"/visit/{vid}?embed=1").text
 
 
 def test_home_empty_state_hides_filters(client):
