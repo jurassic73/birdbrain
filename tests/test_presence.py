@@ -18,11 +18,6 @@ def vec(animal: bool, rng) -> np.ndarray:
     return v / np.linalg.norm(v)
 
 
-@pytest.fixture(autouse=True)
-def fresh_model(monkeypatch):
-    monkeypatch.setattr(presence, "_model", None)
-
-
 @pytest.fixture
 def yard(conn, add_visit):
     """12 visitors and 40 empty frames with embeddings."""
@@ -56,6 +51,52 @@ def test_it_retrains_when_a_label_changes(conn, yard, add_visit):
     assert second is not first and second["visitors"] == 13
     db.confirm_visits(conn, [empty + 1])
     assert presence.model(conn) is not second  # a confirm retrains too (it counts extra)
+
+
+def test_the_batched_fit_matches_fitting_each_fold_alone(yard, conn):
+    X, y, w, ids = presence.labelled(conn)
+    w = w.copy()
+    w[::7] = presence.CONFIRMED_WEIGHT
+    rows = np.stack([ids % 3 != 0, np.ones(len(y), bool)], axis=1)
+    coef, bias = presence.fit(X, y, w, rows)
+    keep = rows[:, 0]
+    alone, alone_bias = presence.fit(X[keep], y[keep], w[keep], np.ones((keep.sum(), 1), bool))
+    assert np.allclose(coef[:, 0], alone[:, 0], atol=1e-4) and abs(bias[0] - alone_bias[0]) < 1e-4
+    assert not np.allclose(coef[:, 0], coef[:, 1], atol=1e-3)  # the other column trained on more frames
+
+
+def test_a_trigger_never_waits_for_a_retrain(monkeypatch, conn, yard, add_visit):
+    monkeypatch.setattr(presence, "BACKGROUND", True)
+    first = presence.model(conn)  # nothing trained yet in this process: the first call trains right away
+    assert first is not None
+    vid = add_visit()
+    presence.store(conn, vid, vec(True, yard))
+    with presence._train_lock:  # hold any training back: the trigger still gets an answer at once
+        assert presence.model(conn) is first
+        thread = presence._thread
+        assert thread is not None and thread.is_alive()
+        presence.model(conn)
+        assert presence._thread is thread  # one training at a time
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+    second = presence.model(conn)
+    assert second is not first and second["visitors"] == 13
+
+
+def test_the_watchers_loop_picks_up_a_correction_without_a_trigger(monkeypatch, conn, yard):
+    class Stop(Exception):
+        pass
+
+    def stop(seconds):
+        raise Stop
+
+    first = presence.model(conn)
+    empty = conn.execute("SELECT id FROM visits WHERE visitor = 'none' LIMIT 1").fetchone()[0]
+    db.correct_visit(conn, empty, "squirrel", None, None)
+    monkeypatch.setattr(presence.time, "sleep", stop)
+    with pytest.raises(Stop):
+        presence._keep_fresh(60)  # one round of the loop start_background() runs
+    assert presence._model["model"] is not first and presence._model["model"]["visitors"] == 13
 
 
 def test_gate_skips_claude_and_keeps_the_frame_for_review(monkeypatch, conn, yard):

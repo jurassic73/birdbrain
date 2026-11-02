@@ -60,6 +60,16 @@ def fresh_detector_mode(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def synchronous_presence(monkeypatch):
+    """The animal check retrains in a background thread; tests train it right away (no thread outlives a test)
+    and never see another test's model."""
+    from birdbrain import presence
+    monkeypatch.setattr(presence, "BACKGROUND", False)
+    monkeypatch.setattr(presence, "_model", None)
+    monkeypatch.setattr(presence, "_thread", None)
+
+
+@pytest.fixture(autouse=True)
 def fresh_zones():
     """The zones in use are cached for 30 s; tests that change them in config must not see stale ones."""
     from birdbrain import zones

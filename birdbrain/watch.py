@@ -757,6 +757,7 @@ def main() -> None:
         handle_event()
         return
     weather.start_background()  # hourly weather in its own thread and DB connection, never on the frame loop
+    presence.start_background()  # the animal check retrains in its own thread, never on a trigger's path
     Watcher().run()
 
 
