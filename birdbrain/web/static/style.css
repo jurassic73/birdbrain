@@ -631,8 +631,8 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .marks .claude .ring { stroke: rgba(255, 255, 255, .55); }
 .marks .claude .ring-shadow { stroke: rgba(0, 0, 0, .25); }
 .marks .claude .num-bg { fill: #e9edf0; }
-/* The Pi's circle (drawn from the motion on a visit it named itself, Claude not asked): Claude's look, dashed. */
-.marks .pi .ring, .marks .pi .ring-shadow { stroke-dasharray: 10 6; }
+/* The Pi's circle (drawn from the motion on a visit it named itself, Claude not asked) looks like Claude's: a solid,
+   faded white ring, helpful but not distracting (owner, 2026-11-01). The visit page's legend says who drew it. */
 .mark-legend {
   position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); margin: 0; width: max-content; max-width: calc(100% - 124px); text-align: center;
   padding: 3px 10px; border-radius: 6px; background: rgba(0, 0, 0, .6); color: #fff; pointer-events: none;
