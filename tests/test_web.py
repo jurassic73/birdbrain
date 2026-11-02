@@ -866,3 +866,17 @@ def test_visits_archive_load_more_and_filters(client, add_visit):
     more = client.get("/visits/archive-more?offset=24").text
     assert more.count('class="card"') == 7 and "load-more" not in more and "grid-break" not in more
     assert "1 visit matching" in client.get("/visits?kind=mammal").text
+
+
+def test_visit_opened_from_species_page_keeps_the_species_scope(client, add_visit):
+    old = add_visit(captured_at="2026-10-24T09:00:00", species="Bushtit")
+    sparrow = add_visit(captured_at="2026-10-24T10:00:00", species="Song Sparrow")
+    new = add_visit(captured_at="2026-10-24T11:00:00", species="Bushtit")
+    assert f'href="/visit/{new}?species=Bushtit"' in client.get("/species/Bushtit").text
+    html = client.get(f"/visit/{new}?species=Bushtit").text
+    assert f'href="/visit/{old}?species=Bushtit" id="nav-next"' in html
+    assert f'class="photo-arrow next" href="/visit/{old}?species=Bushtit"' in html
+    assert "Browsing: Bushtit" in html
+    plain = client.get(f"/visit/{new}").text
+    assert "Browsing:" not in plain and "species=Bushtit" not in plain
+    assert f'href="/visit/{sparrow}" id="nav-next"' in plain

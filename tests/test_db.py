@@ -375,3 +375,19 @@ def test_species_kinds_name_each_label_with_its_visitor_type(conn, add_visit):
     add_visit(visitor="squirrel", species=None)
     add_visit(visitor="none", species=None)
     assert db.species_kinds(conn) == [("Bushtit", "bird"), ("Eastern Gray Squirrel", "squirrel"), ("Squirrel", "squirrel")]
+
+
+def test_neighbors_with_species_skip_other_species_and_count_also(conn, add_visit):
+    also = '[{"visitor": "bird", "species": "Bushtit", "count": 1}]'
+    old = add_visit(captured_at=at(3), species="Bushtit")
+    add_visit(captured_at=at(2), species="Song Sparrow")
+    mid = add_visit(captured_at=at(1, hour=10), species="Dark-eyed Junco", also=also)
+    add_visit(captured_at=at(1), species="Song Sparrow")
+    relabelled = add_visit(captured_at=at(0, hour=1), species="Bushtit", corrected_species="Song Sparrow")
+    new = add_visit(captured_at=at(0), species="Bushtit")
+    assert db.get_neighbors(conn, new, species="Bushtit") == (None, mid)
+    assert db.get_neighbors(conn, mid, species="Bushtit") == (new, old)
+    assert db.get_neighbors(conn, old, species="Bushtit") == (mid, None)
+    # a visit not in the set still steps by its time
+    assert db.get_neighbors(conn, relabelled, species="Bushtit") == (new, mid)
+    assert db.get_neighbors(conn, mid) != db.get_neighbors(conn, mid, species="Bushtit")

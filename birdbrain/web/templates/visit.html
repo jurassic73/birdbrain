@@ -3,7 +3,7 @@
 {% block title %}{{ 'No animal' if visit.label == 'None' else visit.label }} | Birdbrain{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block head %}
-  {% for id in [prev_id, next_id] if id %}<link rel="prefetch" href="/visit/{{ id }}{{ '?ft=1' if is_ft else '' }}">
+  {% for id in [prev_id, next_id] if id %}<link rel="prefetch" href="/visit/{{ id }}{{ '?ft=1' if is_ft else ('?species=' ~ (scope | urlencode) if scope else '') }}">
   {% endfor %}{% for path in neighbor_images %}<link rel="prefetch" href="/images/{{ path }}" as="image">
   {% endfor %}
 {% endblock %}
@@ -26,12 +26,12 @@
 {% set claude_also = also_of({"also": visit.also}) %}
 {% set embed = request.query_params.get('embed') == '1' %}
 {# In the False triggers pop-up every link keeps embed=1 (and todo=1, unconfirmed only), so the arrows stay inside it. #}
-{% set ft_args = (['ft=1'] if is_ft else []) + (['todo=1'] if todo else []) + (['embed=1'] if embed else []) %}
+{% set ft_args = (['ft=1'] if is_ft else []) + (['todo=1'] if todo else []) + (['embed=1'] if embed else []) + (['species=' ~ (scope | urlencode)] if scope else []) %}
 {% set ft_param = ('?' ~ ft_args | join('&')) if ft_args else '' %}
 {% set settled = not visit.needs_review and visit.confidence == 'high' and not has_correction %}
 <nav class="visit-nav" aria-label="Visit navigation">
   {% if prev_id %}<a class="visit-nav-btn" href="/visit/{{ prev_id }}{{ ft_param }}" id="nav-prev" title="Newer (←)">&#8592;</a>{% else %}<span class="visit-nav-btn disabled">&#8592;</span>{% endif %}
-  {% if not embed %}<a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>{% endif %}
+  {% if not embed %}{% if scope %}<a class="visit-nav-back" href="/species/{{ scope | urlencode }}" data-tip="The arrows only step through {{ scope }} visits. Back to its page.">Browsing: {{ scope }}</a>{% else %}<a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>{% endif %}{% endif %}
   {% if next_id %}<a class="visit-nav-btn" href="/visit/{{ next_id }}{{ ft_param }}" id="nav-next" title="Older (→)">&#8594;</a>{% else %}<span class="visit-nav-btn disabled">&#8594;</span>{% endif %}
   {% if embed %}<p class="embed-keys muted">Keys: <kbd>&#8592;</kbd> newer <kbd>&#8594;</kbd> older{% if request.state.admin %} · <kbd>C</kbd> confirmed no animal, next photo{% endif %} · <kbd>Esc</kbd> close</p>{% endif %}
   {% if embed %}<a class="visit-nav-back embed-close-btn" href="/false-triggers" id="embed-close" title="Close (Esc)">&times; Close</a>{% endif %}
@@ -634,7 +634,7 @@
   // On the newest visit, a visitor that arrives (tab-alert.js checks every 20 s) turns on the Newer arrows:
   // the bar's, the phone ones on the photo and the full-screen viewer's, each pulsing briefly.
   document.addEventListener("birdbrain:visits", async e => {
-    if (document.getElementById("nav-prev") || !e.detail.{{ 'any' if is_ft else 'real' }}) return;
+    if ({{ 'true' if scope else 'false' }} || document.getElementById("nav-prev") || !e.detail.{{ 'any' if is_ft else 'real' }}) return;
     try {
       const r = await fetch(location.pathname + location.search, { cache: "no-store" });
       if (!r.ok) return;

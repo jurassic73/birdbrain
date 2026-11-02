@@ -12,7 +12,7 @@
 {% set fav = fav_label is defined and fav_label and request.state.admin %}
 {% set zoom = zoom_btn_on is defined and zoom_btn_on and not v.photo_deleted_at %}
 {% if fav %}<div class="card-fav">{% elif zoom %}<div class="card-zoom">{% endif %}
-<a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else '' }}" data-id="{{ v.id }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
+<a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
   {{ thumb(v) }}
   <div class="card-body">
     <div class="card-title">{{ sp_name(v.label) }}{% if v.count and v.count > 1 %} <span class="muted">x{{ v.count }}</span>{% endif %}

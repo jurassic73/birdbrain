@@ -364,12 +364,16 @@ def is_false_trigger(conn: sqlite3.Connection, visit_id: int) -> bool:
 
 
 def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool = False,
-                  unchecked: bool = False) -> tuple[int | None, int | None]:
+                  unchecked: bool = False, species: str | None = None) -> tuple[int | None, int | None]:
     """Return (prev_id, next_id) for a visit within the same set (real or false triggers), ordered newest-first.
 
     unchecked: only false triggers nobody has confirmed or corrected yet (the False triggers list as shown).
+    species: only that species' visits, the set its page lists (other animals in the photo count too). The
+    visit itself needn't be in it (relabelled): its position by time is used.
     """
-    where = f"{FALSE_TRIGGER} AND {HAS_PHOTO}" if false_triggers else REAL
+    where, args = (f"{FALSE_TRIGGER} AND {HAS_PHOTO}", []) if false_triggers else (REAL, [])
+    if species and not false_triggers:
+        where, args = _where(species=species)
     if false_triggers and unchecked:
         where += f" AND {UNCHECKED}"
     row = conn.execute("SELECT captured_at FROM visits WHERE id = ?", (visit_id,)).fetchone()
@@ -379,12 +383,12 @@ def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool 
     prev_row = conn.execute(
         f"SELECT id FROM visits WHERE {where} AND (captured_at > ? OR (captured_at = ? AND id > ?)) "
         f"ORDER BY captured_at ASC, id ASC LIMIT 1",
-        (ts, ts, visit_id),
+        (*args, ts, ts, visit_id),
     ).fetchone()
     next_row = conn.execute(
         f"SELECT id FROM visits WHERE {where} AND (captured_at < ? OR (captured_at = ? AND id < ?)) "
         f"ORDER BY captured_at DESC, id DESC LIMIT 1",
-        (ts, ts, visit_id),
+        (*args, ts, ts, visit_id),
     ).fetchone()
     return (prev_row["id"] if prev_row else None), (next_row["id"] if next_row else None)
 
