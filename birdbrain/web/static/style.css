@@ -1587,7 +1587,7 @@ button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 /* Home photo viewer: zoom and pan (home.html). The frame is transformed; touch gestures are ours. */
 #home-viewer { touch-action: none; overscroll-behavior: contain; }
 #home-viewer .photo-viewer-frame { transform-origin: 50% 50%; will-change: transform; }
-#home-viewer img { cursor: zoom-in; }
+#home-viewer img { cursor: zoom-out; }  /* a click closes (zooms back out); a double click zooms in */
 #home-viewer.zoomed img { cursor: grab; }
 #home-viewer.panning img { cursor: grabbing; }
 .viewer-reset { position: fixed; top: 18px; right: 70px; z-index: 2; height: 32px; padding: 0 14px; margin: 0; border-radius: 999px;
