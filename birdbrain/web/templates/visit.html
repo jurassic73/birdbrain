@@ -493,7 +493,8 @@
         const slot = li.querySelector(".ref-photo");
         if (!photo?.url) { slot.classList.add("none"); return; }
         const img = new Image();
-        img.alt = `Reference photo of ${li.dataset.guess}`;        img.onload = () => { slot.append(img); slot.classList.add("loaded"); };
+        img.alt = `Reference photo of ${li.dataset.guess}`;
+        img.onload = () => { slot.append(img); slot.classList.add("loaded"); };
         img.onerror = () => slot.classList.add("none");
         slot.dataset.tip = `Reference photo: ${photo.credit || "iNaturalist"}${photo.license ? ", " + photo.license : ""} (iNaturalist). Tap for the species card.`;
         img.src = photo.url;

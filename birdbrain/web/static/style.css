@@ -633,8 +633,7 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .check-answer p { margin: 0; }
 .check-answer p + p, .check-answer p + ul, .check-answer ul + p { margin-top: 2px; }
 .check-answer.error { color: var(--low); border-left-color: var(--low); }
-.check-guesses { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.check-guesses { gap: 8px; }
+.check-guesses { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .check-guesses li { display: flex; align-items: center; gap: 10px; }
 .check-guesses .guess-text { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
 .check-guesses [data-species]:not(.ref-photo) { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
