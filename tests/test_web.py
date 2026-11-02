@@ -903,7 +903,9 @@ def test_visit_opened_from_species_page_keeps_the_species_scope(client, add_visi
 
 def test_tour_script_and_rerun_buttons(client):
     assert "/static/tour.js" in client.get("/").text
-    assert "data-tour-restart" in client.get("/about").text
+    about = client.get("/about").text
+    assert "data-tour-restart" in about
+    assert 'class="popup-close about-tour-close"' in about and "bb-about-tour-off" in about  # the box can be hidden per browser
     assert "data-tour-restart" in client.get("/settings").text
     assert "data-admin=\"1\"" in client.get("/").text  # no password: everyone is admin
     assert "tour.js" not in client.get("/?embed=1").text
