@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, claude_mark, confirm_badge with context %}
+{% from "_macros.html" import badge, claude_mark, confirm_badge, zoom_out_btn with context %}
 {% block title %}{{ 'No animal' if visit.label == 'None' else visit.label }} | Birdbrain{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block head %}
@@ -67,7 +67,7 @@
   </div>
   </div>
   <dialog class="viewer photo-viewer" id="photo-viewer" aria-label="Full-size photo">
-    <button type="button" class="viewer-close photo-viewer-close" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
+    {{ zoom_out_btn("photo-viewer-close") }}
     {% set zoom_param = (ft_param ~ '&zoom=1') if ft_param else '?zoom=1' %}
     {% if prev_id %}<a class="photo-viewer-arrow prev" id="zoom-prev" href="/visit/{{ prev_id }}{{ zoom_param }}" aria-label="Newer visit" title="Newer (←)">&#8249;</a>{% endif %}
     {% if next_id %}<a class="photo-viewer-arrow next" id="zoom-next" href="/visit/{{ next_id }}{{ zoom_param }}" aria-label="Older visit" title="Older (→)">&#8250;</a>{% endif %}

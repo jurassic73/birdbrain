@@ -896,3 +896,10 @@ def test_tour_script_and_rerun_buttons(client):
     assert "data-tour-restart" in client.get("/settings").text
     assert "data-admin=\"1\"" in client.get("/").text  # no password: everyone is admin
     assert "tour.js" not in client.get("/?embed=1").text
+
+
+def test_every_big_photo_view_closes_with_the_minus_magnifier(client, add_visit):
+    vid = add_visit(image_path="2026/11/01/a.jpg", thumb_path="2026/11/01/a_t.jpg", species="Bushtit")
+    for html in (client.get("/").text, client.get(f"/visit/{vid}").text):
+        assert "viewer-zoom-out photo-viewer-close" in html and "&times;" not in html.split('class="viewer')[1]
+    assert "viewer-zoom-out live-viewer-close" in client.get("/").text
