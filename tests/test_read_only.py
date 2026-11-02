@@ -29,7 +29,8 @@ def test_visitors_browse_but_change_nothing(client, add_visit, conn, locked):
                  f"/visit/{vid}/check-circle/haiku", "/notes/refine", "/settings/alerts", "/settings/zones/manual"):
         assert client.post(path).status_code == 403
     assert db.get_visit(conn, vid) is not None
-    for path in ("/settings", "/notes", "/review", "/false-triggers", "/settings/camera", "/lessons"):
+    for path in ("/settings", "/notes", "/review", "/false-triggers", "/false-triggers/cards?after=0",
+                 "/settings/camera", "/lessons"):
         r = client.get(path, follow_redirects=False)
         assert r.status_code == 303 and r.headers["location"].startswith("/login")
     for path in ("/", "/species", "/stats", "/about"):

@@ -959,3 +959,18 @@ def test_latest_visit_api_has_waiting_counts_and_nav_hooks(client, add_visit):
     assert client.get("/api/latest-visit").json()["waiting"] == {"review": 1, "false": 1}
     nav = _nav(client.get("/").text)
     assert 'data-nav="review"' in nav and 'data-nav="false"' in nav
+
+
+def test_false_trigger_cards_after_returns_only_newer_false_triggers(client, add_visit, conn):
+    old = add_visit(captured_at="2026-10-24T09:00:00", visitor="none", species=None)
+    real = add_visit(captured_at="2026-10-24T10:00:00")
+    new = add_visit(captured_at="2026-10-24T11:00:00", visitor="none", species=None)
+    done = add_visit(captured_at="2026-10-24T12:00:00", visitor="none", species=None)
+    db.confirm_visits(conn, [done])
+    r = client.get(f"/false-triggers/cards?after={old}")
+    assert f'data-id="{new}"' in r.text and f'data-id="{old}"' not in r.text
+    assert f'data-id="{real}"' not in r.text and f'data-id="{done}"' not in r.text
+    assert r.headers["X-Unchecked"] == "2" and r.headers["X-Total"] == "3"
+    shown = client.get(f"/false-triggers/cards?after={old}&show=all").text
+    assert f'data-id="{done}"' in shown and f'data-id="{new}"' in shown
+    assert 'data-id="' not in client.get(f"/false-triggers/cards?after={done}").text

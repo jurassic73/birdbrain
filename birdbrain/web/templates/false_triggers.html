@@ -148,6 +148,75 @@
   });
 })();
 </script>
+<script>
+// New false triggers while the page is open (tab-alert.js checks every 20 s): fetch only the cards newer than
+// the newest one shown, slide them in at the top with a glow. Scrolled down, the view stays put and a pill
+// offers a jump back up.
+(() => {
+  const grid = document.getElementById("ft-grid"), showAll = !!grid && "showAll" in grid.dataset;
+  let busy = false, again = false, pill = null, waiting = 0;
+  const topbar = () => document.querySelector(".topbar");
+  const gridAbove = () => grid.getBoundingClientRect().top < topbar().getBoundingClientRect().bottom;
+  const hidePill = () => { pill?.remove(); pill = null; waiting = 0; };
+  function showPill(n) {
+    waiting += n;
+    if (!pill) {
+      pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "new-visits-pill";
+      pill.addEventListener("click", () => { document.querySelector(".page-head").scrollIntoView({ behavior: "smooth" }); hidePill(); });
+      document.body.append(pill);
+    }
+    pill.style.top = Math.max(8, topbar().getBoundingClientRect().bottom + 8) + "px";
+    pill.textContent = `\u2191 ${waiting} new false trigger${waiting === 1 ? "" : "s"}`;
+  }
+  if (grid) addEventListener("scroll", () => { if (pill && !gridAbove()) hidePill(); }, { passive: true });
+
+  async function update() {
+    if (busy) { again = true; return; }
+    busy = true;
+    try {
+      const ids = grid ? [...grid.querySelectorAll("a.card")].map(c => +c.dataset.id) : [];
+      const r = await fetch(`/false-triggers/cards?after=${ids.length ? Math.max(...ids) : 0}${showAll ? "&show=all" : ""}`, { cache: "no-store" });
+      if (!r.ok) return;
+      const tpl = document.createElement("template");
+      tpl.innerHTML = await r.text();
+      const cards = [...tpl.content.querySelectorAll("a.card")];
+      if (!grid) { if (cards.length) location.reload(); return; }  // the empty page has no grid to add to
+      const have = new Set(ids.map(String));
+      const added = cards.filter(c => !have.has(c.dataset.id));
+      if (!added.length) return;
+      added.forEach(c => c.classList.add("card-new"));
+      const scrolled = gridAbove();
+      const anchor = [...grid.querySelectorAll(".card")].find(c => c.getBoundingClientRect().bottom > 0);
+      const before = anchor?.getBoundingClientRect().top;
+      grid.prepend(...added);
+      const left = r.headers.get("X-Unchecked"), total = r.headers.get("X-Total");
+      const count = document.getElementById("ft-unchecked");
+      if (total !== null) grid.dataset.total = total;
+      if (count) count.textContent = showAll ? total : left;
+      const show = document.getElementById("ft-show");
+      if (show && !showAll && total !== null) {
+        show.textContent = `Show confirmed (${+total - +left})`;
+        show.hidden = +total === +left;
+      }
+      if (scrolled) {
+        const shift = anchor ? anchor.getBoundingClientRect().top - before : 0;  // for browsers without scroll anchoring
+        if (shift) scrollBy(0, shift);
+        showPill(added.length);
+      }
+    } catch (e) { /* atmos unreachable; the next check tries again */ }
+    finally { busy = false; if (again) { again = false; update(); } }
+  }
+  document.addEventListener("birdbrain:visits", e => { if (e.detail?.any) update(); });
+
+  // Cards added at the top shift Load more's offset, so it can repeat a few: drop them.
+  document.addEventListener("htmx:afterSettle", () => {
+    const seen = new Set();
+    grid?.querySelectorAll("a.card").forEach(c => { if (seen.has(c.dataset.id)) c.remove(); else seen.add(c.dataset.id); });
+  });
+})();
+</script>
 <script src="/static/charts.js?v={{ asset_version }}"></script>
 <script>barChart("hourly", hourLabels(), {{ hourly | tojson }});</script>
 {% endblock %}

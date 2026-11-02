@@ -1096,11 +1096,19 @@ def false_triggers(request: Request, cleared: int | None = None, confirmed: int 
 
 
 @app.get("/false-triggers/cards", response_class=HTMLResponse)
-def false_trigger_cards(request: Request, ids: str = "", conn=Depends(get_conn)):
-    """Fresh cards for visits opened in the pop-up: ones that stopped being false triggers are left out."""
-    wanted = [int(i) for i in ids.split(",") if i.strip().isdigit()][:200]
-    resp = page(request, "_cards.html", visits=db.false_trigger_cards(conn, wanted), ft_cards=True)
+def false_trigger_cards(request: Request, ids: str = "", after: int | None = None, show: str = "",
+                        conn=Depends(get_conn)):
+    """Fresh cards for visits opened in the pop-up: ones that stopped being false triggers are left out.
+    ?after=<id>: instead, the false triggers newer than that id, filtered like the page (?show=all keeps
+    confirmed ones), which the open page slides in at the top."""
+    if after is not None:
+        visits = db.false_triggers_after(conn, after, unchecked=show != "all")
+    else:
+        wanted = [int(i) for i in ids.split(",") if i.strip().isdigit()][:200]
+        visits = db.false_trigger_cards(conn, wanted)
+    resp = page(request, "_cards.html", visits=visits, ft_cards=True)
     resp.headers["X-Unchecked"] = str(db.count_unchecked_false_triggers(conn))
+    resp.headers["X-Total"] = str(db.count_visits(conn, false_triggers=True, has_photo=True))
     return resp
 
 

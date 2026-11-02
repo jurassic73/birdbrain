@@ -487,6 +487,15 @@ def false_trigger_cards(conn: sqlite3.Connection, ids: list[int]) -> list[sqlite
             AND {FALSE_TRIGGER} AND {HAS_PHOTO} ORDER BY captured_at DESC, id DESC""", ids).fetchall()
 
 
+def false_triggers_after(conn: sqlite3.Connection, after: int, unchecked: bool = True) -> list[sqlite3.Row]:
+    """False triggers with a photo newer than this id (the newest the page already shows), newest first.
+    unchecked: leave out the confirmed or corrected ones, as the page does without Show confirmed."""
+    where = f"id > ? AND {FALSE_TRIGGER} AND {HAS_PHOTO}" + (f" AND {UNCHECKED}" if unchecked else "")
+    return conn.execute(
+        f"SELECT *, {LABEL} AS label FROM visits WHERE {where} ORDER BY captured_at DESC, id DESC LIMIT 200",
+        (after,)).fetchall()
+
+
 def confirm_visits(conn: sqlite3.Connection, ids: list[int], on: bool = True) -> None:
     """The owner says the stored answer is right (or takes that back): those frames count extra when the
     local animal check retrains."""
