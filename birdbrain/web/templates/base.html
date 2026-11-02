@@ -45,8 +45,8 @@
       <a href="/stats" {% if request.url.path == '/stats' %}aria-current="page"{% endif %}>Stats</a>
       {% if request.state.admin %}
       {% set waiting = nav_waiting(request) %}
-      <a href="/review" {% if request.url.path == '/review' %}aria-current="page"{% endif %}{% if waiting.review %} class="waiting" title="{{ waiting.review }} waiting for review" aria-label="Review, {{ waiting.review }} waiting for review"{% endif %}>Review{% if waiting.review %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.review) }}</span>{% endif %}</a>
-      <a href="/false-triggers" {% if request.url.path == '/false-triggers' %}aria-current="page"{% endif %}{% if waiting.false %} class="waiting" title="{{ waiting.false }} false triggers to check" aria-label="False triggers, {{ waiting.false }} to check"{% endif %}><span class="long">False triggers</span><span class="short">False</span>{% if waiting.false %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.false) }}</span>{% endif %}</a>
+      <a href="/review" data-nav="review" {% if request.url.path == '/review' %}aria-current="page"{% endif %}{% if waiting.review %} class="waiting" title="{{ waiting.review }} waiting for review" aria-label="Review, {{ waiting.review }} waiting for review"{% endif %}>Review{% if waiting.review %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.review) }}</span>{% endif %}</a>
+      <a href="/false-triggers" data-nav="false" {% if request.url.path == '/false-triggers' %}aria-current="page"{% endif %}{% if waiting.false %} class="waiting" title="{{ waiting.false }} false triggers to check" aria-label="False triggers, {{ waiting.false }} to check"{% endif %}><span class="long">False triggers</span><span class="short">False</span>{% if waiting.false %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.false) }}</span>{% endif %}</a>
       <a href="/notes" {% if request.url.path == '/notes' %}aria-current="page"{% endif %}>Claude's<span class="long"> Notes</span></a>
       {% endif %}
     </nav>

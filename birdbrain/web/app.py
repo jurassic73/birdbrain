@@ -1398,14 +1398,15 @@ def identify_prompt_preview(site: dict, lessons: list[str]) -> str:
 
 
 @app.get("/api/latest-visit")
-def latest_visit(conn=Depends(get_conn)):
+def latest_visit(request: Request, conn=Depends(get_conn)):
     """Newest real visitor (not false triggers), plus the newest visit of any kind (`any_id`).
 
     Pages poll this to flag new arrivals in the tab and to pull in new cards, numbers and arrows."""
     row = db.latest_visit(conn)
     newest = {"id": row["id"], "label": row["label"], "captured_at": row["captured_at"]} if row else \
         {"id": 0, "label": None, "captured_at": None}
-    return {**newest, "any_id": db.newest_id(conn)}
+    # Nav bubble counts: zeros for visitors and the public mirror (nav_waiting checks both).
+    return {**newest, "any_id": db.newest_id(conn), "waiting": nav_waiting(request)}
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)

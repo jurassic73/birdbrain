@@ -29,12 +29,48 @@
     if (!document.hidden) clearTimer = setTimeout(clear, SHOW_WHILE_VISIBLE_MS);
   }
 
+  // Keep the nav's Review / False triggers bubbles in step with the server (same wording as base.html).
+  const NAV = {
+    review: { title: n => `${n} waiting for review`, label: n => `Review, ${n} waiting for review` },
+    false: { title: n => `${n} false triggers to check`, label: n => `False triggers, ${n} to check` },
+  };
+  function shown(a) {
+    const t = a.querySelector(".nav-n")?.textContent || "0";
+    return t === "99+" ? 100 : +t || 0;
+  }
+  function syncNav(waiting) {
+    if (!waiting) return;
+    for (const [key, text] of Object.entries(NAV)) {
+      const a = document.querySelector(`nav a[data-nav="${key}"]`);
+      if (!a) continue;
+      const n = waiting[key] || 0, cur = shown(a);
+      if (n === cur || (n > 99 && cur > 99)) continue;  // unchanged: touch nothing
+      let b = a.querySelector(".nav-n");
+      if (!n) {
+        b?.remove();
+        a.classList.remove("waiting");
+        a.removeAttribute("title"); a.removeAttribute("aria-label");
+        continue;
+      }
+      if (!b) {
+        b = document.createElement("span");
+        b.className = "nav-n"; b.setAttribute("aria-hidden", "true");
+        a.appendChild(b);
+      }
+      b.textContent = n > 99 ? "99+" : String(n);
+      a.classList.add("waiting");
+      a.title = text.title(n); a.setAttribute("aria-label", text.label(n));
+      if (n > cur) b.animate([{ transform: "scale(1.4)" }, { transform: "scale(1)" }], { duration: 500, easing: "ease-out" });
+    }
+  }
+
   async function check() {
     if (busy) return;
     busy = true;
     try {
       const r = await fetch("/api/latest-visit", { cache: "no-store" });
       const v = await r.json();
+      syncNav(v.waiting);
       if (lastSeen === null) { lastSeen = v.id; lastAny = v.any_id; return; }
       const real = v.id > lastSeen, any = v.any_id > lastAny;
       if (real) { lastSeen = v.id; flag(v.label); }

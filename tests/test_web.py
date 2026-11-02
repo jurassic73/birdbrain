@@ -405,7 +405,8 @@ def test_pages_render(client, add_visit, path):
 
 
 def test_latest_visit_api_ignores_false_triggers(client, add_visit):
-    assert client.get("/api/latest-visit").json() == {"id": 0, "label": None, "captured_at": None, "any_id": 0}
+    assert client.get("/api/latest-visit").json() == {"id": 0, "label": None, "captured_at": None, "any_id": 0,
+                                                   "waiting": {"review": 0, "false": 0}}
     bird = add_visit(species="Bushtit")
     empty = add_visit(visitor="none", species=None)
     got = client.get("/api/latest-visit").json()
@@ -950,3 +951,11 @@ def test_nav_counts_not_shown_to_visitors(client, add_visit, monkeypatch):
     add_visit(needs_review=1)
     add_visit(visitor="none", species=None)
     assert "nav-n" not in client.get("/").text
+
+
+def test_latest_visit_api_has_waiting_counts_and_nav_hooks(client, add_visit):
+    add_visit(needs_review=1)
+    add_visit(visitor="none", species=None)
+    assert client.get("/api/latest-visit").json()["waiting"] == {"review": 1, "false": 1}
+    nav = _nav(client.get("/").text)
+    assert 'data-nav="review"' in nav and 'data-nav="false"' in nav

@@ -131,3 +131,15 @@ def test_somegeek_home_logo_only_on_public_mirror(client, monkeypatch):
     page = client.get("/").text
     assert 'href="https://somegeek.com/"' in page and 'aria-label="somegeek.com home"' in page
     assert 'src="/birdbrain/static/somegeek-logo.png' in page
+
+
+def test_latest_visit_api_waiting_counts_only_for_admin(client, add_visit, locked, monkeypatch):
+    add_visit(needs_review=1)
+    add_visit(visitor="none", species=None)
+    add_visit(visitor="none", species=None)
+    zero = {"review": 0, "false": 0}
+    assert client.get("/api/latest-visit").json()["waiting"] == zero  # visitor
+    client.post("/login", data={"password": "s3cret!"})
+    assert client.get("/api/latest-visit").json()["waiting"] == {"review": 1, "false": 2}
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")  # the public mirror never shows counts
+    assert client.get("/api/latest-visit").json()["waiting"] == zero
