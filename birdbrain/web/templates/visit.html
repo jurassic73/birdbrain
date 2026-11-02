@@ -147,6 +147,9 @@
             <span class="muted">on the Pi, trained on {{ step.trained_on }} of this yard's frames</span>
           </div>
           <div>{{ step.said | capitalize }} <span class="muted">(score {{ '%.3f' | format(step.score) }}, empty below {{ '%.3f' | format(step.threshold) }})</span></div>
+          {% if step.frames %}
+          <div class="muted step-notes">Sharpest frame {{ '%.3f' | format(step.frames.sharpest) }}, the burst's last frame {{ '%.3f' | format(step.frames.last) }}: the higher one counts{% if step.frame == 'last' and step.said != 'nothing there' %}, so the last frame became the photo{% endif %}.</div>
+          {% endif %}
           {% if step.skipped_claude %}
           <div class="step-why">Judged empty, so Claude wasn't asked. If there is an animal, correct it below: the check learns from it.</div>
           {% endif %}

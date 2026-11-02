@@ -432,6 +432,45 @@ def motion_action(now: float, cooldown_until: float, backoff_until: float, can_p
     return "full"
 
 
+def _scored(jpeg: bytes, crop) -> tuple[np.ndarray | None, dict | None]:
+    emb = classifier.box_embedding(jpeg, crop)
+    with db.session() as conn:
+        return emb, presence.check(conn, emb)
+
+
+def animal_check(frames: list[bytes], ranked: list[bytes], crop) -> tuple[np.ndarray | None, dict | None, list[bytes]]:
+    """(embedding, verdict, ranked frames) from the local animal check, fail-soft (no verdict on any problem).
+
+    It scores the sharpest frame and, when that looks empty and PRESENCE_LAST_FRAME is on, the burst's last frame
+    too: a landing bird is usually in the bowl by then, while sharpness can favour ripples or mulch. The higher
+    score counts (so the verdict is the max of the two), and its embedding is the one stored for training. When
+    only the last frame shows an animal it becomes the photo, so Claude sees what the Pi saw."""
+    try:
+        emb, check = _scored(ranked[0], crop)
+    except Exception:
+        log.exception("local animal check failed; asking Claude")
+        return None, None, ranked
+    last = frames[-1]
+    if (not config.PRESENCE_LAST_FRAME or not check or check.get("score") is None or not check.get("empty")
+            or last is ranked[0]):
+        return emb, check, ranked
+    try:
+        emb2, check2 = _scored(last, crop)
+    except Exception:
+        log.exception("animal check on the burst's last frame failed; going by the sharpest frame")
+        return emb, check, ranked
+    if not check2 or check2.get("score") is None:
+        return emb, check, ranked
+    scores = {"sharpest": check["score"], "last": check2["score"]}
+    if check2["score"] <= check["score"]:
+        return emb, {**check, "frames": scores, "frame": "sharpest"}, ranked
+    if not check2["empty"]:
+        log.info("animal check: only the burst's last frame shows an animal (%.3f vs %.3f); it becomes the photo",
+                 check2["score"], check["score"])
+        ranked = [last, *[f for f in ranked if f is not last]][:len(ranked)]
+    return emb2, {**check2, "frames": scores, "frame": "last"}, ranked
+
+
 def handle_event(motion: float | None = None, probe: bool = False, trigger: str = "rim",
                  scene: Scene | None = None) -> str | None:
     """Capture, identify and store one visit. Returns the visitor type, None if nothing was captured, or
@@ -444,20 +483,15 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     z = zones.current()
     crop = z.ground_crop if trigger == "ground" else z.crop
     ranked = best_frames(frames, crop)
-    best = ranked[0]
-    night = is_night(best)
     # The local animal check: BioCLIP 2's embedding of the crop box, scored by a model trained on this yard's
     # labelled frames. It is the only gate: in gate mode an empty verdict skips Claude (day and night; the
     # owner reviews them), and a rain-backoff probe it calls empty is discarded in any mode but off.
     emb = check = None
     pmode = presence_mode()
     if pmode != "off":
-        try:
-            emb = classifier.box_embedding(best, crop)
-            with db.session() as conn:
-                check = presence.check(conn, emb)
-        except Exception:
-            log.exception("local animal check failed; asking Claude")
+        emb, check, ranked = animal_check(frames, ranked, crop)
+    best = ranked[0]
+    night = is_night(best)
     if probe and not probe_passes(check):
         log.info("probe (%s trigger): animal check found nothing; discarded", trigger)
         with db.session() as conn:
@@ -757,8 +791,11 @@ def main() -> None:
         handle_event()
         return
     weather.start_background()  # hourly weather in its own thread and DB connection, never on the frame loop
-    presence.start_background()  # the animal check retrains in its own thread, never on a trigger's path
-    Watcher().run()
+    watcher = Watcher()
+    # The animal check retrains in its own thread, never on a trigger's path; it also looks through the bursts of
+    # corrected false triggers, pausing while a capture runs.
+    presence.start_background(busy=watcher.busy)
+    watcher.run()
 
 
 if __name__ == "__main__":

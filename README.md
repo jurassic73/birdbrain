@@ -160,6 +160,14 @@ The same model also answers "is anything there?" for every trigger, using a smal
 uv run python -m birdbrain.presence --backfill
 ```
 
+It looks at the sharpest frame of the burst and, when that one looks empty, at the burst's last frame too (a landing bird is usually in the bowl by then, while sharpness can favour ripples or mulch). The higher score counts, and if only the last frame shows an animal it becomes the photo Claude sees. This adds about 6 s on a Pi 4 to empty-looking triggers; `PRESENCE_LAST_FRAME=0` in `.env` turns it off.
+
+A visitor only teaches it "animal" with a frame that shows the animal inside the crop box, because one empty-looking crop labelled as an animal would make every empty frame look possible. When you correct a false trigger to an animal, the watcher looks through its saved burst within a few minutes (one visit a minute, about 36 s each on a Pi 4, never during a capture) and trains on the frame that looks most like an animal. If no burst frame does, it trains on the photo only when your circle is mostly inside the crop box; with no circle, or a circle outside it (a dove whose tail alone dipped into the box), the visit is left out of training. So circle the animal when you correct one. As a backstop, a single visitor that scores far below all the others of its kind (more than 7 times less likely than the next one, with at least 10 of its kind already learned) doesn't set the threshold; a first-of-its-kind visitor, such as the first possum at night, always does. To look through the bursts now instead of waiting:
+
+```bash
+uv run python -m birdbrain.presence --pick
+```
+
 Set `CLASSIFIER=off` in `.env` to skip it. It hasn't been checked on infrared night photos yet.
 
 ### What's in your circle?

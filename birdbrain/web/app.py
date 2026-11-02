@@ -598,6 +598,8 @@ def decision_steps(raw_json: str | None) -> dict:
             "score": pres["score"],
             "threshold": pres.get("threshold"),
             "trained_on": pres.get("trained_on"),
+            "frames": pres.get("frames"),  # the sharpest and the last frame's scores, when it looked at both
+            "frame": pres.get("frame"),
             "skipped_claude": bool(calls.get("skipped_claude") and pres.get("empty")),
         })
     det = calls.get("detector")

@@ -214,6 +214,9 @@ if CLASSIFIER not in ("off", "shadow", "gate"):
 PRESENCE = _env("PRESENCE", "shadow").strip().lower()  # local animal check: off, shadow or gate (Settings wins)
 if PRESENCE not in ("off", "shadow", "gate"):
     raise ValueError(f"PRESENCE must be off, shadow or gate, not {PRESENCE!r}")
+# The animal check also scores the burst's last frame when the sharpest one looks empty (a landing bird is usually in
+# the bowl by then; sharpness can favour ripples or mulch). ~6 s more per empty-looking trigger on a Pi 4.
+PRESENCE_LAST_FRAME = _env("PRESENCE_LAST_FRAME", "1").strip() not in ("0", "false", "off", "no")
 CLASSIFIER_MODEL = Path(_env("CLASSIFIER_MODEL")) if _env("CLASSIFIER_MODEL").strip() else None
 
 

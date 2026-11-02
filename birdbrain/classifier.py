@@ -29,6 +29,7 @@ import json
 import logging
 import re
 import sys
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -307,15 +308,25 @@ class Classifier:
 
 _classifier: Classifier | None = None
 _failed_at = 0.0
+_load_lock = threading.Lock()  # captures and the animal check's background thread may both ask for it first
 
 
 def load() -> Classifier | None:
     """The classifier, downloading the model the first time. None when it's off; raises when it can't be
     had (and doesn't try to download again for RETRY_AFTER)."""
-    global _classifier, _failed_at
     if config.CLASSIFIER == "off":
         return None
-    if _classifier is None:
+    loaded = _classifier  # read once: circle_check may let go of it meanwhile
+    if loaded is None:
+        with _load_lock:
+            return _load()
+    return loaded
+
+
+def _load() -> Classifier:
+    global _classifier, _failed_at
+    loaded = _classifier
+    if loaded is None:
         folder = model_dir()
         if not all((folder / f).exists() for f in MODEL_FILES):
             if time.monotonic() - _failed_at < RETRY_AFTER and _failed_at:
@@ -325,8 +336,8 @@ def load() -> Classifier | None:
             except Exception:
                 _failed_at = time.monotonic()
                 raise
-        _classifier = Classifier(folder)
-    return _classifier
+        _classifier = loaded = Classifier(folder)
+    return loaded
 
 
 def classify(img: np.ndarray, circle: dict | None, box, night: bool, local=None, clf=None) -> dict | None:

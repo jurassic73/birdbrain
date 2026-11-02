@@ -371,6 +371,9 @@
     {% if presence_mode == 'gate' %}Photos it calls empty skip Claude and are marked {{ badge("pi only", "pi-only") }} under False triggers, so you can
     correct any it got wrong (that's how it learns). Confirming the empty ones teaches it too: checked photos
     count 3 times, and deleting their photos later keeps what it learned.{% elif presence_mode == 'shadow' %}For now it only keeps score; Claude still sees everything.{% else %}It's switched off here.{% endif %}
+    It looks at the sharpest photo of the burst{% if cfg.PRESENCE_LAST_FRAME %} and, when that one looks empty, at the last one too, since a landing
+    bird is often only in the bowl by then (if only the last one shows it, that becomes the photo Claude sees){% endif %}.
+    <span data-tip="Correct a false trigger to an animal and the Pi looks through its saved burst for the frame where the animal is inside the crop box. If none shows it, the photo counts only when your circle is mostly inside the box; otherwise that visit is left out, so one photo of a tail can't make every empty frame look possible. Circle the animal when you correct one.">What it learns from your corrections</span>.
     <span data-tip="On the first 683 frames, tested on ones it hadn't trained on, it kept all 55 visitors and caught 616 of 628 empty frames. No night visitors yet.">How well?</span>
     Scorecard on <a href="/stats#presence">Stats</a>.</p>
   <h3 id="classifier">A species guess of its own{% if classifier_mode == 'gate' %} {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %} {{ badge('shadow', 'shadow') }}{% endif %}</h3>

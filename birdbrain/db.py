@@ -60,7 +60,12 @@ CREATE TABLE IF NOT EXISTS calibrations (
 );
 CREATE TABLE IF NOT EXISTS embeddings (  -- BioCLIP 2 embedding of each frame's crop box (birdbrain.presence)
     visit_id INTEGER PRIMARY KEY REFERENCES visits(id) ON DELETE CASCADE,
-    vec BLOB NOT NULL       -- float16
+    vec BLOB NOT NULL,      -- float16
+    -- For a false trigger later corrected to an animal: the saved burst frame whose crop box looks most like one
+    -- (birdbrain.presence.pick_frames). animal_frame is 1-based; 0 = looked, no burst frames to look at.
+    animal_vec BLOB,
+    animal_frame INTEGER,
+    animal_score REAL
 );
 CREATE TABLE IF NOT EXISTS pi_checks (  -- one row per Ask the Pi click; no foreign key, so deleting visits keeps them
     id INTEGER PRIMARY KEY,
@@ -110,6 +115,7 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  # JSON {"at", "files": {photo: score}} pinning the scores they cleared (birdbrain.privacy).
                  "public_ok": "TEXT"}
 HAS_PHOTO = "photo_deleted_at IS NULL"
+EMBEDDING_ADDED_COLUMNS = {"animal_vec": "BLOB", "animal_frame": "INTEGER", "animal_score": "REAL"}
 
 # How many corrections and notes join each identify prompt.
 LESSON_LIMIT = 15
@@ -175,6 +181,10 @@ def init_db(conn: sqlite3.Connection) -> None:
     for col, kind in ADDED_COLUMNS.items():
         if col not in have:
             conn.execute(f"ALTER TABLE visits ADD COLUMN {col} {kind}")
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(embeddings)")}
+    for col, kind in EMBEDDING_ADDED_COLUMNS.items():
+        if col not in have:
+            conn.execute(f"ALTER TABLE embeddings ADD COLUMN {col} {kind}")
     for table, cols in WEATHER_ADDED_COLUMNS.items():
         have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
         for col in cols:
