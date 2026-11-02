@@ -1253,6 +1253,21 @@ def latest_visit(conn=Depends(get_conn)):
     return {**newest, "any_id": db.newest_id(conn)}
 
 
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    """Web app manifest: lets Android use a maskable icon (a full-bleed square it can crop to a circle) when
+    the site is added to the home screen. JSON isn't rewritten by the base_path middleware, so add BASE here."""
+    st = f"{BASE}/static"
+    v = templates.env.globals["asset_version"]
+    icons = [{"src": f"{st}/icon-{n}.png?v={v}", "sizes": f"{n}x{n}", "type": "image/png", "purpose": "any"}
+             for n in (192, 512)]
+    icons += [{"src": f"{st}/icon-maskable-{n}.png?v={v}", "sizes": f"{n}x{n}", "type": "image/png",
+               "purpose": "maskable"} for n in (192, 512)]
+    data = {"name": "Birdbrain", "short_name": "Birdbrain", "start_url": f"{BASE}/", "scope": f"{BASE}/",
+            "display": "standalone", "background_color": "#f6f5f0", "theme_color": "#f6f5f0", "icons": icons}
+    return Response(json.dumps(data), media_type="application/manifest+json")
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     return FileResponse(HERE / "static" / "favicon.ico", media_type="image/x-icon")

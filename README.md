@@ -178,6 +178,8 @@ This copies the code to `/opt/birdbrain`, installs Python packages, copies `.env
 
 Set `ADMIN_PASSWORD` in `.env` and the site becomes read-only for everyone else: they can browse visits, species, stats and the About page, but can't correct, delete, change settings or ask Claude anything. The Admin button at the top logs you in on that device for 30 days. Leave it blank to keep the site fully open (fine on a home LAN). Before putting the site on the internet, put HTTPS in front of it so the password isn't sent in the clear.
 
+On Android, open the site in Chrome and choose Add to Home screen (or Install app on an https site) for a round app icon; on iOS use Share, Add to Home Screen. If you change the icon, remove the old shortcut and add it again.
+
 ## Optional: a public read-only copy
 
 `scripts/push_public.sh` (cron on the Pi, every 5 minutes) sends the database and photos to a server running the same code with `BIRDBRAIN_PUBLIC=1`; set `PUBLIC_DEST` and `PUBLIC_KEY` in `.env`. Photos of people never go: `birdbrain/privacy.py` runs the YOLOX-tiny detector (`scripts/get_model.sh`) over each frame and its four quarters, and a visit with a person in any frame, or not checked yet, is left out of the copy (the Pi's own site still shows it, with a `private` pill). The live frame gets the same check; if it fails, the copy keeps its last clean frame. Scores are cached in `privacy.json` in the data folder. `PRIVACY_MIN_SCORE` (0.25) sets how sure the detector must be; check a photo by hand with `python -m birdbrain.privacy check photo.jpg`.

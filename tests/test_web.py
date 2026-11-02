@@ -828,3 +828,18 @@ def test_home_photos_carry_a_zoom_button_but_other_pages_do_not(client, add_visi
     assert "zoom-btn" not in client.get("/species/Bushtit").text
     add_visit(visitor="none", species=None)
     assert "zoom-btn" not in client.get("/false-triggers").text
+
+
+def test_manifest_has_maskable_icon_and_base_path(client, monkeypatch):
+    from birdbrain.web import app as webapp
+    r = client.get("/manifest.webmanifest")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/manifest+json")
+    m = r.json()
+    assert m["start_url"] == "/" and m["scope"] == "/" and m["display"] == "standalone"
+    assert any(i["purpose"] == "maskable" for i in m["icons"])
+    assert 'rel="manifest"' in client.get("/").text
+    monkeypatch.setattr(webapp, "BASE", "/birdbrain")
+    m = client.get("/manifest.webmanifest").json()
+    assert m["start_url"] == "/birdbrain/" and m["scope"] == "/birdbrain/"
+    assert all(i["src"].startswith("/birdbrain/static/") for i in m["icons"])
+    assert 'href="/birdbrain/manifest.webmanifest' in client.get("/").text
