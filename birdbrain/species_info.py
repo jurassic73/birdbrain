@@ -401,6 +401,49 @@ def get(conn: sqlite3.Connection, name: str, fetch: bool = True) -> dict | None:
     return data
 
 
+def _photo_of(card_photo: dict | None) -> dict | None:
+    return {"url": card_photo["url"], "credit": card_photo.get("credit") or "", "license": card_photo.get("license") or ""} \
+        if card_photo and card_photo.get("url") else None
+
+
+def reference_photo(conn: sqlite3.Connection, name: str, fetch: bool = True) -> dict | None:
+    """A small reference photo ({url, credit, license}) for a species, for comparing with the owner's own.
+    The cached species card's photo if there is one, else a photo-only iNaturalist lookup cached 30 days under
+    settings `refphoto:<name>` (a miss is cached too). Never builds a card or calls Haiku; with fetch=False
+    it only reads caches."""
+    if not has_card(name):
+        return None
+    name = ALIASES.get(name, name)
+    card = db.get_species_info(conn, name)
+    if card and (photo := _photo_of(card[0].get("photo"))):
+        return photo
+    key = f"refphoto:{name}"
+    raw = db.get_value(conn, key)
+    if raw:
+        saved = json.loads(raw)
+        if datetime.now() - datetime.fromisoformat(saved["at"]) < REFRESH_AFTER:
+            return saved["photo"]
+    if not fetch:
+        return None
+    photo = None
+    try:
+        with httpx.Client() as client:
+            taxon = find_taxon(client, name)
+            if taxon:
+                p = open_photo(client, taxon)
+                url = p.get("medium_url") or p.get("url")
+                if url:
+                    photo = {"url": _https(url), "credit": re.sub(r",? ?uploaded by .*$", "", p.get("attribution") or ""),
+                             "license": LICENSES.get(p.get("license_code"), p.get("license_code") or "")}
+    except Exception:
+        log.exception("reference photo lookup failed for %s", name)
+        return None  # network trouble: try again next time
+    conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                 (key, json.dumps({"photo": photo, "at": datetime.now().replace(microsecond=0).isoformat()})))
+    conn.commit()
+    return photo
+
+
 def prefetch(name: str) -> None:
     """Build a new species' card in the background so it's ready when the alert is opened."""
     with _lock:

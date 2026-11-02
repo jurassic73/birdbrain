@@ -670,6 +670,14 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
     return JSONResponse({**entry, "circle_n": number})
 
 
+@app.get("/species-photo")
+async def species_photo(request: Request, name: str = Query(""), conn=Depends(get_conn)):
+    """A reference photo for the Ask-the-Pi guesses. Only admins can make the site look one up; visitors get
+    what is already cached."""
+    photo = await asyncio.to_thread(species_info.reference_photo, conn, name.strip(), bool(request.state.admin))
+    return JSONResponse({"photo": photo})
+
+
 @app.post("/visit/{visit_id}/clear-correction")
 def clear_correction(visit_id: int, conn=Depends(get_conn)):
     db.correct_visit(conn, visit_id, None, None, None)

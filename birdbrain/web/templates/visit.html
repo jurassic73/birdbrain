@@ -474,7 +474,7 @@
       let html = `<p><b>${esc(r.say)}</b> ${where}</p>`;
       if (source === "pi") {
         if (r.top.length) html += `<ul class="check-guesses">${r.top.map(g =>
-          `<li><button type="button" class="link-btn check-use" data-name="${esc(g.name)}" data-label="${esc(g.name)}" data-visitor="${esc(g.visitor)}" aria-label="Use ${esc(g.name)}">Use</button> ${esc(g.name)} <span class="muted">${Math.round(g.score * 100)}%</span></li>`).join("")}</ul>`;
+          `<li data-guess="${esc(g.name)}"><span class="ref-photo" data-species="${esc(g.name)}" role="button" tabindex="0" aria-label="Open the ${esc(g.name)} card"></span><span class="guess-text"><button type="button" class="link-btn check-use" data-name="${esc(g.name)}" data-label="${esc(g.name)}" data-visitor="${esc(g.visitor)}" aria-label="Use ${esc(g.name)}">Use</button> <span data-species="${esc(g.name)}" role="button" tabindex="0">${esc(g.name)}</span> <span class="muted">${Math.round(g.score * 100)}%</span></span></li>`).join("")}</ul>`;
       } else {
         if (r.answer?.notes) html += `<p class="muted">${esc(r.answer.notes)}</p>`;
         if (r.visitor && r.visitor !== "none") html += `<p>${useBtn(r.name || "", r.visitor, r.name || r.visitor[0].toUpperCase() + r.visitor.slice(1))}</p>`;
@@ -485,7 +485,19 @@
         if (r.verdict === "sure") html += `<p><button type="button" class="link-btn check-anyway" data-source="${after}">Not convinced? Ask ${who[after]}</button></p>`;
         else btn(after).hidden = false;
       }
-      add(html);
+      const answer = add(html);
+      // Reference photos fill in after the answer shows, so Ask the Pi stays quick.
+      answer.querySelectorAll("li[data-guess]").forEach(async li => {
+        const {photo} = await fetch(`/species-photo?name=${encodeURIComponent(li.dataset.guess)}`)
+          .then(r => r.json()).catch(() => ({}));
+        const slot = li.querySelector(".ref-photo");
+        if (!photo?.url) { slot.classList.add("none"); return; }
+        const img = new Image();
+        img.alt = `Reference photo of ${li.dataset.guess}`;        img.onload = () => { slot.append(img); slot.classList.add("loaded"); };
+        img.onerror = () => slot.classList.add("none");
+        slot.dataset.tip = `Reference photo: ${photo.credit || "iNaturalist"}${photo.license ? ", " + photo.license : ""} (iNaturalist). Tap for the species card.`;
+        img.src = photo.url;
+      });
     });
   })();
   // "Also in the photo": a row per other kind of animal; + adds an empty one, × removes one.
