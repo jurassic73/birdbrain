@@ -109,6 +109,14 @@ def test_visit_page_and_404(client, add_visit):
     assert client.get("/visit/9999").status_code == 404
 
 
+def test_visit_page_links_to_species_page_only_for_real_visits(client, add_visit):
+    real = add_visit(species="Dark-eyed Junco")
+    page = client.get(f"/visit/{real}").text
+    assert 'id="species-page"' in page and 'href="/species/Dark-eyed%20Junco"' in page
+    false = add_visit(visitor="none", species=None, confidence=None)
+    assert 'id="species-page"' not in client.get(f"/visit/{false}").text
+
+
 def test_every_status_pill_explains_itself(client, add_visit):
     add_visit(visitor="none", species=None, confidence="medium", is_night=1)
     vid = add_visit(confidence="low", needs_review=1)
