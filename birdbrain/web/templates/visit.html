@@ -106,7 +106,8 @@
     {% if burst %}
     <section class="vburst" aria-label="Burst">
       <h2 class="vburst-head">Burst <span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
-        <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame to show it in the big photo.">i</span></h2>
+        <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo.">i</span>
+        <span class="vburst-steps"><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
       <div class="vburst-strip">
         {% for f in burst %}
         <button type="button" class="vburst-frame{% if f.best %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
@@ -658,11 +659,23 @@
     if (!frames.length) return;
     const full = photo.querySelector(".full"), link = photo.querySelector("a");
     const viewerImg = document.querySelector("#photo-viewer .photo-viewer-frame img");
+    const list = [...frames], n = document.getElementById("vburst-n"), section = document.querySelector(".vburst");
+    const shown = () => Math.max(0, list.findIndex(o => o.classList.contains("on")));
     frames.forEach(b => b.addEventListener("click", () => {
       frames.forEach(o => o.classList.toggle("on", o === b));
       full.src = viewerImg.src = link.href = b.dataset.src;
       photo.classList.toggle("other-frame", b.dataset.best !== "1");
+      n.textContent = list.indexOf(b) + 1;
     }));
+    const step = d => list[(shown() + d + list.length) % list.length].click();
+    section.querySelectorAll(".vburst-step").forEach(b => b.addEventListener("click", () => step(+b.dataset.step)));
+    // Inside the burst, the arrow keys step frames (wrapping) and never change visit.
+    section.addEventListener("keydown", e => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault(); e.stopPropagation();
+      step(e.key === "ArrowLeft" ? -1 : 1);
+    });
+    n.textContent = shown() + 1;
   })();
   (() => {
     // Full-size viewer: Esc, the close button or any click closes it.
@@ -716,6 +729,7 @@
   document.addEventListener("keydown", e => {
     if (document.getElementById("photo-viewer").open) return;
     if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable) return;
+    if (e.target.closest?.(".vburst")) return;
     if (e.key === "ArrowLeft") document.getElementById("nav-prev")?.click();
     if (e.key === "ArrowRight") document.getElementById("nav-next")?.click();
   });

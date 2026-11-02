@@ -173,8 +173,14 @@ def test_false_trigger_page_shows_its_burst_in_order_and_delete_removes_it(clien
     html = client.get(f"/visit/{vid}").text
     assert [html.index(p) for p in saved] == sorted(html.index(p) for p in saved)
     assert "+0.25 s" in html and "Claude saw" in html and "frame 2" in html
+    assert 'data-tip="Previous frame (wraps)"' in html and 'data-tip="Next frame (wraps)"' in html and "/ 3" in html
     client.post(f"/visit/{vid}/delete")
     assert images.burst_paths(image_rel) == []
+
+
+def test_burst_arrows_absent_without_a_burst(client, stored_visit):
+    vid = stored_visit(visitor="none", species=None)
+    assert 'class="vburst-step"' not in client.get(f"/visit/{vid}").text
 
 
 def test_marking_no_animal_moves_the_visit_to_false_triggers_and_teaches_claude(client, add_visit, conn):

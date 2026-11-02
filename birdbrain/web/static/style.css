@@ -1416,6 +1416,9 @@ button.se-all { font-weight: 600; }
 /* A false trigger's whole burst, beside its photo: tap a frame to show it big. */
 .vburst { margin: 12px 0; }
 .vburst-head { font-size: 1rem; margin: 0 0 6px; display: flex; align-items: baseline; gap: 8px; }
+.vburst-steps { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.vburst-step { min-width: 36px; min-height: 32px; padding: 0 8px; font-size: 1.2rem; line-height: 1; background: var(--surface); color: var(--accent); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.vburst-count { min-width: 3.2em; text-align: center; white-space: nowrap; }
 .vburst-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
 .vburst-frame { position: relative; padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; overflow: hidden; line-height: 0; cursor: pointer; }
 .vburst-frame img { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
