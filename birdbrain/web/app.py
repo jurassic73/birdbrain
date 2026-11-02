@@ -143,9 +143,27 @@ templates.env.globals["login_on"] = lambda: bool(auth.password()) and not auth.p
 templates.env.globals["asset_version"] = int(max(p.stat().st_mtime for p in (HERE / "static").iterdir()))
 
 
-def get_conn():
+def get_conn(request: Request):
     with db.session() as conn:
+        request.state.conn = conn  # the nav's waiting counts reuse it instead of opening another
         yield conn
+
+
+def nav_waiting(request: Request) -> dict:
+    """Review and False triggers counts for the nav bubbles. Admins only, and only when base.html renders
+    (full pages; the partials never extend it)."""
+    conn = getattr(request.state, "conn", None)
+    if conn is None or not request.state.admin or auth.public():
+        return {"review": 0, "false": 0}
+    return {"review": db.count_visits(conn, review=True), "false": db.count_unchecked_false_triggers(conn)}
+
+
+def count_label(n: int) -> str:
+    return "99+" if n > 99 else str(n)
+
+
+templates.env.globals["nav_waiting"] = nav_waiting
+templates.env.globals["count_label"] = count_label
 
 
 def filters_from(request: Request) -> dict:

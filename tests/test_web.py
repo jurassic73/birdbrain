@@ -903,3 +903,36 @@ def test_every_big_photo_view_closes_with_the_minus_magnifier(client, add_visit)
     for html in (client.get("/").text, client.get(f"/visit/{vid}").text):
         assert "viewer-zoom-out photo-viewer-close" in html and "&times;" not in html.split('class="viewer')[1]
     assert "viewer-zoom-out live-viewer-close" in client.get("/").text
+
+
+def _nav(html: str) -> str:
+    return re.search(r"<nav>.*?</nav>", html, re.S).group(0)
+
+
+def test_nav_shows_waiting_counts_for_admin(client, add_visit):
+    for _ in range(3):
+        add_visit(needs_review=1)
+    for _ in range(2):
+        add_visit(visitor="none", species=None)
+    nav = _nav(client.get("/").text)
+    assert re.search(r'href="/review"[^>]*class="waiting"[^>]*title="3 waiting for review".*?<span class="nav-n"[^>]*>3</span>', nav, re.S)
+    assert re.search(r'href="/false-triggers"[^>]*class="waiting"[^>]*title="2 false triggers to check".*?<span class="nav-n"[^>]*>2</span>', nav, re.S)
+
+
+def test_nav_has_no_bubbles_when_nothing_waits(client, add_visit):
+    add_visit()
+    nav = _nav(client.get("/").text)
+    assert "nav-n" not in nav and "waiting" not in nav
+
+
+def test_nav_caps_the_count_at_99_plus(client, add_visit):
+    for _ in range(100):
+        add_visit(needs_review=1)
+    assert '>99+</span>' in _nav(client.get("/").text)
+
+
+def test_nav_counts_not_shown_to_visitors(client, add_visit, monkeypatch):
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    add_visit(needs_review=1)
+    add_visit(visitor="none", species=None)
+    assert "nav-n" not in client.get("/").text
