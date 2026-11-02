@@ -290,6 +290,18 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
 .thumb .marks .ring-shadow { stroke-width: 3; }
 /* Today's visitors: one line per critter with its sighting count, scrolls on a busy day. */
 .critters ul { list-style: none; margin: 4px 0 0; padding: 0; max-height: 12.5em; overflow-y: auto; }
+/* Scrollable visitor boxes: macOS hides overlay scrollbars until you scroll or hover, so people didn't know the list
+   scrolls. A styled webkit scrollbar is always drawn when the box overflows (and not at all when it doesn't). */
+.critters ul::-webkit-scrollbar, .hero-latest ~ .today::-webkit-scrollbar { width: 8px; height: 8px; }
+.critters ul::-webkit-scrollbar-track, .hero-latest ~ .today::-webkit-scrollbar-track { background: color-mix(in srgb, var(--line) 35%, transparent); border-radius: 4px; }
+.critters ul::-webkit-scrollbar-thumb, .hero-latest ~ .today::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--muted) 55%, transparent); border-radius: 4px; }
+.critters ul::-webkit-scrollbar-thumb:hover, .hero-latest ~ .today::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+@supports not selector(::-webkit-scrollbar) {
+  .critters ul, .hero-latest ~ .today {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted) 55%, transparent) color-mix(in srgb, var(--line) 35%, transparent);
+  }
+}
 .critters li { display: grid; grid-template-columns: 1fr auto 2.2em; align-items: baseline; gap: 10px; padding: 3px 4px; border-bottom: 1px solid var(--line); border-radius: 4px; }
 /* Local status sits right beside the count, so name, status and number read as one row. */
 .critter-status { color: var(--muted); font-size: .8rem; text-align: right; }
