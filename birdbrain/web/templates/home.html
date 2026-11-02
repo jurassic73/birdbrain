@@ -69,6 +69,16 @@
     <div class="tally-box tally-head" data-tip="Birds and animals identified today{% if a.species %}, {{ a.species }} species{% endif %}. The rest of today's numbers (false alarms, Pi checks, Claude calls) are on the Stats page.">
       <span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }} today</span>
     </div>
+  </div>
+  <div class="visits-head">
+    {% if filtered %}<h2 class="visits-count">{{ total }} matching</h2>{% endif %}
+    {% if any_visits %}
+    <nav class="chips" aria-label="Quick filters">
+      {% for name, href, is_active in chips %}
+      <a href="{{ href }}" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
     {% if any_visits %}
     <details class="more-filters" {% if more_filters_open %}open{% endif %}>
       <summary>More filters</summary>
@@ -95,16 +105,6 @@
       {% if filtered %}<a class="clear" href="/">Clear</a>{% endif %}
       </form>
     </details>
-    {% endif %}
-  </div>
-  <div class="visits-head">
-    {% if filtered %}<h2 class="visits-count">{{ total }} matching</h2>{% endif %}
-    {% if any_visits %}
-    <nav class="chips" aria-label="Quick filters">
-      {% for name, href, is_active in chips %}
-      <a href="{{ href }}" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
-      {% endfor %}
-    </nav>
     {% endif %}
   </div>
 

@@ -373,6 +373,12 @@ a.tally-label:hover { color: var(--accent); }
 .more-filters { margin-bottom: 14px; }
 .more-filters summary { cursor: pointer; color: var(--muted); font-size: .9rem; width: max-content; }
 .more-filters .filters { margin: 10px 0 0; }
+/* Home: the summary sits at the right end of the chips row; opened, the boxes take their own line below the chips. */
+.visits-head { position: relative; padding-right: 110px; }
+.visits-head .more-filters { flex: 0 0 100%; margin: -8px 0 0; height: 0; }
+.visits-head .more-filters[open] { height: auto; margin-top: 0; }
+.visits-head .more-filters summary { position: absolute; right: 0; top: 0; height: 32px; display: flex; align-items: center; }
+.visits-head .more-filters .filters { margin: 2px 0 6px; }
 .filters label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .9rem; }
 
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
@@ -1208,7 +1214,10 @@ details.review-fold > summary { display: none; }
   .tally li { overflow: hidden; text-overflow: ellipsis; }
   .hero { gap: 12px; margin-bottom: 16px; }
   .today { padding: 10px 12px; gap: 8px; }
-  .visits-head { flex-wrap: nowrap; }
+  .visits-head { padding-right: 0; }
+  .visits-head .chips { flex: 1 1 0; min-width: 0; }
+  .visits-head .more-filters, .visits-head .more-filters[open] { height: auto; margin-top: 0; }
+  .visits-head .more-filters summary { position: static; height: auto; }
   .visits-head h2 { white-space: nowrap; }
   .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .chips a { white-space: nowrap; }
