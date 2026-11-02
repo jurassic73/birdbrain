@@ -1001,3 +1001,12 @@ def test_false_trigger_cards_after_returns_only_newer_false_triggers(client, add
     shown = client.get(f"/false-triggers/cards?after={old}&show=all").text
     assert f'data-id="{done}"' in shown and f'data-id="{new}"' in shown
     assert 'data-id="' not in client.get(f"/false-triggers/cards?after={done}").text
+
+
+def test_false_trigger_page_moves_on_after_save_but_normal_visits_reload(client, add_visit):
+    vid = add_visit(visitor="none", species=None)
+    bird = add_visit(visitor="bird", species="Bushtit")
+    ft = client.get(f"/visit/{vid}?ft=1").text
+    assert 'location.href = next ? next.href : "/false-triggers"' in ft
+    assert "check-save" in ft
+    assert 'location.href = next ?' not in client.get(f"/visit/{bird}").text

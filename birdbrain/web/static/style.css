@@ -720,7 +720,8 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 @media (max-width: 600px) { .ref-photo { width: 64px; height: 64px; } }
 .check-guesses .check-use { min-width: 2.6em; text-align: left; }
 .review .check-answer button.link-btn { padding: 0; }
-.check-used { color: var(--accent); }
+.check-used { color: var(--accent); display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+.check-used button, .check-note button.check-save { padding: 4px 14px; }
 .badge.owner-check { color: var(--muted); white-space: nowrap; }
 .decision .owner-checks-head { font-size: .95rem; margin: 12px 0 6px; }
 .combo-list li.ebird { color: var(--muted); }

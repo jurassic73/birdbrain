@@ -439,7 +439,7 @@
         const radio = document.querySelector(`input[name="visitor"][value="${r.visitor}"]`);
         if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event("change")); input.value = r.name; }
       }
-      show(`Using <b>${esc(r.name)}</b>. Press Save to keep it.`);
+      show(`Using <b>${esc(r.name)}</b>. <button type="button" class="check-save">Save</button>`);
     });
   });
   // What's in your circle: the Pi looks at the first circle the owner drew (free); if it isn't sure, Haiku, then
@@ -461,6 +461,8 @@
       return p;
     };
     const useBtn = (name, visitor, label = name) => `<button type="button" class="link-btn check-use" data-name="${esc(name)}" data-label="${esc(label)}" data-visitor="${esc(visitor)}">Use ${esc(label)}</button>`;
+    // Bring an element fully into view (the pop-up's iframe scrolls its own document), only if needed.
+    const scrollTo = el => el.scrollIntoView({behavior: "smooth", block: "nearest"});
     const next = {pi: "haiku", haiku: "sonnet"}, who = {haiku: "Haiku", sonnet: "Sonnet"};
     box.addEventListener("click", async e => {
       const use = e.target.closest(".check-use");
@@ -471,7 +473,17 @@
         if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event("change")); }
         if (["bird", "squirrel", "raccoon", "possum"].includes(visitor)) input.value = name || input.value;
         note.querySelectorAll(".check-used").forEach(u => u.remove());
-        use.closest(".check-answer").insertAdjacentHTML("beforeend", `<p class="check-used">Using <b>${esc(use.dataset.label)}</b>. Press Save to keep it.</p>`);
+        use.closest(".check-answer").insertAdjacentHTML("beforeend", `<p class="check-used"><span>Using <b>${esc(use.dataset.label)}</b>.</span> <button type="button" class="check-save">Save</button></p>`);
+        scrollTo(note.querySelector(".check-used"));
+        return;
+      }
+      const save = e.target.closest(".check-save");
+      if (save) {
+        // The same path as the Save button at the bottom: htmx submits form.review (marks are kept current by draw()).
+        const form = document.querySelector("form.review");
+        save.classList.add("sending"); save.disabled = true;
+        form.requestSubmit();
+        setTimeout(() => { save.classList.remove("sending"); save.disabled = false; }, 15000);
         return;
       }
       const anyway = e.target.closest(".check-anyway");
@@ -498,7 +510,7 @@
         else timer.textContent = `took ${Math.round(r.wall_seconds ?? took)} s` + (timer.dataset.avg ? `, usually ~${Math.round(timer.dataset.avg)} s` : "");
         if (r.pi_average?.avg) b.dataset.tip = `The Pi's local model names what's in your first circle. Free; usually about ${Math.round(r.pi_average.avg)} seconds on the Pi (average of ${r.pi_average.n}).`;
       }
-      if (r.error) { add(esc(r.error), true); return; }
+      if (r.error) { scrollTo(add(esc(r.error), true)); return; }
       const where = `<span class="muted">circle ${r.circle_n}${source === "pi" ? `, ${r.seconds} s` : `, ${(r.usd * 100).toFixed(2)}&cent;`}</span>`;
       let html = `<p><b>${esc(r.say)}</b> ${where}</p>`;
       if (source === "pi") {
@@ -516,15 +528,18 @@
       }
       const answer = add(html);
       // Reference photos fill in after the answer shows, so Ask the Pi stays quick.
+      // Scroll to the whole answer once every thumbnail has loaded (or failed, or has no photo), at most 4 s.
+      const loaded = [...answer.querySelectorAll("li[data-guess]")].map(li => new Promise(done => { li._done = done; }));
+      Promise.race([Promise.all(loaded), new Promise(r => setTimeout(r, 4000))]).then(() => scrollTo(answer));
       answer.querySelectorAll("li[data-guess]").forEach(async li => {
         const {photo} = await fetch(`/species-photo?name=${encodeURIComponent(li.dataset.guess)}`)
           .then(r => r.json()).catch(() => ({}));
         const slot = li.querySelector(".ref-photo");
-        if (!photo?.url) { slot.classList.add("none"); return; }
+        if (!photo?.url) { slot.classList.add("none"); li._done(); return; }
         const img = new Image();
         img.alt = `Reference photo of ${li.dataset.guess}`;
-        img.onload = () => { slot.append(img); slot.classList.add("loaded"); };
-        img.onerror = () => slot.classList.add("none");
+        img.onload = () => { slot.append(img); slot.classList.add("loaded"); li._done(); };
+        img.onerror = () => { slot.classList.add("none"); li._done(); };
         slot.dataset.tip = `Reference photo: ${photo.credit || "iNaturalist"}${photo.license ? ", " + photo.license : ""} (iNaturalist). Tap for the species card.`;
         img.src = photo.url;
       });
@@ -824,6 +839,23 @@
     } catch (err) { /* atmos unreachable; the next check tries again */ }
   });
 </script>
+{% if is_ft and not embed and request.state.admin %}
+<script>
+  // A false trigger opened on its own: Save or Confirm moves on to the next one (or the list), like the pop-up does.
+  // preventDefault on beforeOnLoad stops the answer's HX-Refresh from reloading this page first.
+  (() => {
+    let busy = false;
+    document.body.addEventListener("htmx:beforeOnLoad", e => {
+      const el = e.detail.elt;
+      if (e.detail.xhr.status >= 400 || busy) return;
+      if (!(el.matches?.("form.review") || el.id === "confirm-btn")) return;
+      busy = true; e.preventDefault();
+      const next = document.getElementById("nav-next") || document.getElementById("nav-prev");
+      location.href = next ? next.href : "/false-triggers";
+    });
+  })();
+</script>
+{% endif %}
 {% if embed %}
 <script>
   // Inside the False triggers pop-up: Close and Esc tell the page to close it (Esc on the big photo just closes that).
