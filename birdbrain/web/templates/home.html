@@ -437,7 +437,8 @@
     location.href = link.href;
   });
   // Home is never part of a trail: any other way into a visit (a card click) starts without the flag.
-  try { sessionStorage.removeItem("bb_arrow_trail"); } catch (err) {}
+  // pageshow also fires when Back restores home from the cache, where this script doesn't run again.
+  addEventListener("pageshow", () => { try { sessionStorage.removeItem("bb_arrow_trail"); } catch (err) {} });
 </script>
 <script src="/static/photo-reminder.js?v={{ asset_version }}" defer></script>
 <script>
