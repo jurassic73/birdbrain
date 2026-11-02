@@ -81,7 +81,7 @@
     <div class="visit-head">
       {% include "_label.html" %}
       <div class="actions">
-        {% if visit.label and visit.label not in ('None', 'Other') and visit.visitor != 'none' %}
+        {% if visit.label and visit.label not in ('None', 'Other') %}
         <a class="button-link solid" id="species-page" href="/species/{{ visit.label | urlencode }}">All {{ visit.label }} visits</a>
         {% endif %}
         {% if request.state.admin %}{% set ms = mirror_status(visit.image_path) %}{% if ms == "person" %}{{ badge("private", "private") }}{% elif ms == "unchecked" %}{{ badge("not public yet", "private") }}{% endif %}{% endif %}
