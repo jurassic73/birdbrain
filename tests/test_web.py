@@ -1010,3 +1010,14 @@ def test_false_trigger_page_moves_on_after_save_but_normal_visits_reload(client,
     assert 'location.href = next ? next.href : "/false-triggers"' in ft
     assert "check-save" in ft
     assert 'location.href = next ?' not in client.get(f"/visit/{bird}").text
+
+
+def test_c_key_confirms_and_moves_on_for_admin_visit_pages(client, add_visit, monkeypatch):
+    vid = add_visit(visitor="none", species=None)
+    html = client.get(f"/visit/{vid}").text
+    assert "// C: confirm this visit" in html and "Press C to confirm and go to the next older visit." in html
+    assert "// C: confirmed no animal" not in html
+    embed = client.get(f"/visit/{vid}?embed=1").text
+    assert "// C: confirm this visit" not in embed and "// C: confirmed no animal" in embed
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    assert "// C: confirm this visit" not in client.get(f"/visit/{vid}").text
