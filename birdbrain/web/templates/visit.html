@@ -257,7 +257,8 @@
         </div>
         <div class="circle-check-btns">
           <button type="button" class="check-btn" data-source="pi" data-tip="The Pi's local model names what's in your first circle. Free; {% if pi_average.avg %}usually about {{ pi_average.avg|round|int }} seconds on the Pi (average of {{ pi_average.n }}){% else %}takes 5 to 20 seconds on the Pi{% endif %}.">Ask the Pi</button>
-          <span class="check-timer small muted" id="pi-timer" aria-live="off"{% if pi_average.avg %} data-avg="{{ pi_average.avg }}" data-n="{{ pi_average.n }}"{% endif %}>{% if pi_average.avg %}usually ~{{ pi_average.avg|round|int }} s{% endif %}</span>
+          {%- set pi_ref = pi_average.recent_avg or pi_average.avg %}
+          <span class="check-timer small muted" id="pi-timer" aria-live="off"{% if pi_ref %} data-recent="{{ pi_ref }}" data-avg="{{ pi_average.avg }}" data-n="{{ pi_average.n }}" data-tip="Average of the last {{ [pi_average.n, 20]|min }} Ask the Pi checks on this Pi (all-time {{ pi_average.avg|round|int }} s over {{ pi_average.n }} checks)."{% endif %}>{% if pi_ref %}(usually ~{{ pi_ref|round|int }} s){% endif %}</span>
           <button type="button" class="claude-btn check-btn" data-source="haiku" hidden data-tip="Claude Haiku looks at just your circle, with Claude's Notes and your lessons. A fraction of a cent.">{{ claude_mark() }}Ask Haiku</button>
           <button type="button" class="claude-btn check-btn" data-source="sonnet" hidden data-tip="Claude Sonnet takes a closer look at just your circle. About half a cent.">{{ claude_mark() }}Ask Sonnet</button>
         </div>
@@ -460,7 +461,12 @@
     const btn = s => box.querySelector(`.check-btn[data-source="${s}"]`);
     const timer = document.getElementById("pi-timer");
     let tick = null;
-    const piAvg = () => timer.dataset.avg || "";
+    const usuallyTxt = () => timer.dataset.recent ? ` (usually ~${Math.round(timer.dataset.recent)} s)` : "";
+    const setRef = a => {
+      if (!a?.avg) return;
+      timer.dataset.recent = a.recent_avg ?? a.avg; timer.dataset.avg = a.avg; timer.dataset.n = a.n;
+      timer.dataset.tip = `Average of the last ${Math.min(a.n, 20)} Ask the Pi checks on this Pi (all-time ${Math.round(a.avg)} s over ${a.n} checks).`;
+    };
     const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
     const add = (html, err) => {
       const p = document.createElement("div");
@@ -492,10 +498,10 @@
       if (!b || b.disabled) return;
       const source = b.dataset.source;
       buttons.forEach(x => x.disabled = true); b.classList.add("sending");
-      const t0 = Date.now(), usually = piAvg();
+      const t0 = Date.now();
       if (source === "pi") {
         clearInterval(tick);
-        const paint = () => { timer.textContent = `${Math.round((Date.now() - t0) / 1000)} s…`; };
+        const paint = () => { timer.textContent = `${Math.round((Date.now() - t0) / 1000)} s…${usuallyTxt()}`; };
         paint(); tick = setInterval(paint, 1000);
       }
       const r = await fetch(`/visit/{{ visit.id }}/check-circle/${source}`, {method: "POST",
@@ -505,9 +511,9 @@
       if (source === "pi") {
         clearInterval(tick);
         const took = Math.round((Date.now() - t0) / 1000);
-        if (r.pi_average?.avg) { timer.dataset.avg = r.pi_average.avg; timer.dataset.n = r.pi_average.n; }
-        if (r.error) timer.textContent = `failed after ${took} s`;
-        else timer.textContent = `took ${Math.round(r.wall_seconds ?? took)} s` + (timer.dataset.avg ? `, usually ~${Math.round(timer.dataset.avg)} s` : "");
+        setRef(r.pi_average);
+        if (r.error) timer.textContent = `failed after ${took} s${usuallyTxt()}`;
+        else timer.textContent = `took ${Math.round(r.wall_seconds ?? took)} s` + usuallyTxt();
         if (r.pi_average?.avg) b.dataset.tip = `The Pi's local model names what's in your first circle. Free; usually about ${Math.round(r.pi_average.avg)} seconds on the Pi (average of ${r.pi_average.n}).`;
       }
       if (r.error) { scrollTo(add(esc(r.error), true)); return; }

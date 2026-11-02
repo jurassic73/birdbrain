@@ -229,19 +229,42 @@ def test_identify_note_goes_in_the_users_text():
     assert "crop" not in identify.user_content(["x"], datetime(2026, 11, 1, 9, 0))[-1]["text"]
 
 
-def test_pi_check_times_are_averaged_and_survive_deleting_visits(client, conn, photo_visit, fake_pi):
+def test_every_pi_click_is_a_row_and_averages_use_the_good_ones(client, conn, photo_visit, fake_pi):
     assert db.pi_check_average(conn) == {"n": 0, "avg": None, "recent_avg": None}
-    db.record_pi_check(conn, 10)
-    avg = db.record_pi_check(conn, 20)
-    assert avg == {"n": 2, "avg": 15.0, "recent_avg": 15.0}
+    vid = photo_visit()
+    # a click with no model on this machine fails: a row with ok=0, not in the average
+    assert "isn't available" in client.post(f"/visit/{vid}/check-circle/pi", data={"marks": MARKS}).json()["error"]
+    (row,) = conn.execute("SELECT * FROM pi_checks").fetchall()
+    assert row["ok"] == 0 and row["visit_id"] == vid and row["seconds"] >= 0 and row["at"]
+    assert db.pi_check_average(conn)["n"] == 0
+    fake_pi(FakeClassifier(i=0))
+    r = client.post(f"/visit/{vid}/check-circle/pi", data={"marks": MARKS}).json()
+    assert r["wall_seconds"] >= 0 and r["pi_average"]["n"] == 1
+    ok = conn.execute("SELECT * FROM pi_checks WHERE ok = 1").fetchone()
+    assert ok["seconds"] == r["wall_seconds"] and ok["model_seconds"] == r["seconds"]
+    assert conn.execute("SELECT COUNT(*) FROM pi_checks").fetchone()[0] == 2
+    # rows survive deleting the visit
+    db.delete_visit(conn, vid)
+    assert conn.execute("SELECT COUNT(*) FROM pi_checks").fetchone()[0] == 2
+    assert db.pi_check_average(conn)["n"] == 1
+
+
+def test_pi_average_recent_vs_all_time_and_legacy_blob(conn):
+    db.set_value(conn, db.PI_CHECK_TIMES, json.dumps({"n": 10, "total": 100.0, "recent": [10.0] * 10}))
+    assert db.pi_check_average(conn) == {"n": 10, "avg": 10.0, "recent_avg": 10.0}
     for _ in range(db.PI_CHECK_RECENT):
         db.record_pi_check(conn, 30)
     a = db.pi_check_average(conn)
-    assert a["n"] == 52 and a["recent_avg"] == 30.0 and a["avg"] == round((30 + 50 * 30) / 52, 1)
-    # the route times the whole check and returns the updated average
-    fake_pi(FakeClassifier(i=0))
+    assert a["n"] == 10 + 20 and a["avg"] == round((100 + 600) / 30, 1) and a["recent_avg"] == 30.0
+    db.record_pi_check(conn, 99, ok=False)
+    assert db.pi_check_average(conn) == a
+    assert json.loads(db.get_value(conn, db.PI_CHECK_TIMES))["n"] == 10  # the blob is never written again
+
+
+def test_visit_page_shows_the_usual_time_beside_the_timer(client, conn, photo_visit):
     vid = photo_visit()
-    r = client.post(f"/visit/{vid}/check-circle/pi", data={"marks": MARKS}).json()
-    assert r["wall_seconds"] >= 0 and r["pi_average"]["n"] == 53
-    assert checks_of(conn, vid)[0]["wall_seconds"] == r["wall_seconds"]
-    assert f"usually about {round(db.pi_check_average(conn)['avg'])} seconds" in client.get(f"/visit/{vid}?ft=1").text
+    for sec in (10, 20, 30):
+        db.record_pi_check(conn, sec)
+    html = client.get(f"/visit/{vid}?ft=1").text
+    assert "(usually ~20 s)" in html
+    assert "Average of the last 3 Ask the Pi checks on this Pi (all-time 20 s over 3 checks)." in html

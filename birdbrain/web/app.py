@@ -725,13 +725,14 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
                                             datetime.fromisoformat(v["captured_at"]), circle_check.frame_size(jpeg))
     except Exception as e:
         if source == "pi":
+            db.record_pi_check(conn, time.monotonic() - started, ok=False, visit_id=visit_id)
             return JSONResponse({"error": f"The Pi's model isn't available right now ({e})."})
         return JSONResponse({"error": f"Claude couldn't be reached ({type(e).__name__})."})
     extra = {}
     if source == "pi":
-        # What the owner waited: queue, model load and compute. Only successful checks are counted.
+        # What the owner waited: queue, model load and compute. Every click is a row; averages use the good ones.
         entry["wall_seconds"] = round(time.monotonic() - started, 1)
-        extra["pi_average"] = db.record_pi_check(conn, entry["wall_seconds"])
+        extra["pi_average"] = db.record_pi_check(conn, entry["wall_seconds"], True, visit_id, entry.get("seconds"))
     circle_check.record(conn, visit_id, entry, circle)
     return JSONResponse({**entry, "circle_n": number, **extra})
 
