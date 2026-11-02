@@ -24,17 +24,18 @@
   <div class="hero-latest">
   <a class="hero-link" href="/visit/{{ lv.id }}">
     {{ thumb(lv, "thumb hero-photo", lazy=False, full=True) }}
-    {% set kicker = 'Latest visitor' if lv.captured_at[:10] == today.date else 'Last visitor, before today' %}
+  </a>
+  {% set kicker = 'Latest visitor' if lv.captured_at[:10] == today.date else 'Last visitor, before today' %}
     {# One chip at the top-left (the camera burns its date stamp into the bottom-left): kicker, then name and time. #}
+  {# A sibling of the photo link (no nested <a>); clicks on the chip fall through to the photo link except on "Go to visit". #}
     <div class="hero-caption">
-      <span class="hero-kicker">{{ kicker }}</span>
+      <span class="hero-kicker">{{ kicker }} <a class="hero-goto" href="/visit/{{ lv.id }}">Go to visit</a></span>
       <div class="hero-row">
         <span class="hero-name">{{ lv.label }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}
           {%- for a in also_of(lv) %} + {{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}</span>
         <span class="hero-time">{{ lv.captured_at | short_time }}</span>
       </div>
     </div>
-  </a>
   {% if not lv.photo_deleted_at %}{{ zoom_btn(lv) }}{% endif %}
   </div>
   {% else %}
@@ -134,8 +135,9 @@
 </dialog>
 
 <dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
+  <button type="button" class="viewer-reset" id="home-viewer-reset" hidden>Reset view</button>
   <button type="button" class="viewer-close photo-viewer-close" aria-label="Close (Esc)" title="Close (Esc)">&times;</button>
-  <div class="photo-viewer-frame"><img alt=""><svg class="marks" aria-hidden="true"></svg></div>
+  <div class="photo-viewer-frame"><img alt="" draggable="false"><svg class="marks" aria-hidden="true"></svg></div>
 </dialog>
 
 <script>
@@ -143,24 +145,93 @@
   // stretched past its own size, with the same circles. Esc, the x or a click closes it. Phones go full screen.
   (() => {
     const viewer = document.getElementById("home-viewer"), img = viewer.querySelector("img");
+    const frame = viewer.querySelector(".photo-viewer-frame"), resetBtn = document.getElementById("home-viewer-reset");
+    // Zoom and pan: one transform on the frame that holds the photo and its circles. Scale 1 is the fit size (never past
+    // the photo's native size), so zooming only ever grows from what the owner already sees. The frame is centred in the
+    // viewer, so tx,ty are shifts from the centre.
+    const MAX = 6;
+    let k = 1, tx = 0, ty = 0, moved = false;
+    const apply = () => {
+      const mx = Math.max(0, (frame.offsetWidth * k - viewer.clientWidth) / 2);   // keep the photo covering the view
+      const my = Math.max(0, (frame.offsetHeight * k - viewer.clientHeight) / 2);
+      tx = Math.min(mx, Math.max(-mx, tx)); ty = Math.min(my, Math.max(-my, ty));
+      if (k === 1) { tx = 0; ty = 0; }
+      frame.style.transform = k === 1 ? "" : `translate(${tx}px, ${ty}px) scale(${k})`;
+      viewer.classList.toggle("zoomed", k > 1);
+      resetBtn.hidden = k === 1;
+    };
+    const reset = () => { k = 1; tx = 0; ty = 0; apply(); };
+    const zoomAt = (newK, px, py) => {  // keeps the point under (px, py) still
+      newK = Math.min(MAX, Math.max(1, newK));
+      const vx = px - viewer.clientWidth / 2, vy = py - viewer.clientHeight / 2;
+      tx = vx - (vx - tx) * newK / k; ty = vy - (vy - ty) * newK / k;
+      k = newK; apply();
+    };
+    resetBtn.addEventListener("click", e => { e.stopPropagation(); reset(); });
+    viewer.addEventListener("wheel", e => {
+      e.preventDefault();
+      zoomAt(k * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0025)), e.clientX, e.clientY);  // ctrl = trackpad pinch
+    }, { passive: false });
+    // One pointer drags when zoomed; two pinch.
+    const pts = new Map(); let last = null, start = null, pinch = null, lastTap = 0;
+    viewer.addEventListener("pointerdown", e => {
+      if (e.target.closest("button")) return;
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 1) moved = false;
+      if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), k }; moved = true; }
+      last = start = [e.clientX, e.clientY];
+    });
+    viewer.addEventListener("pointermove", e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 2 && pinch) {
+        const [a, b] = [...pts.values()];
+        zoomAt(pinch.k * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+        return;
+      }
+      if (Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 5) moved = true;
+      if (k > 1 && moved) { tx += e.clientX - last[0]; ty += e.clientY - last[1]; apply(); viewer.classList.add("panning"); }
+      last = [e.clientX, e.clientY];
+    });
+    const up = e => {
+      pts.delete(e.pointerId); pinch = null; viewer.classList.remove("panning");
+      if (pts.size === 1) last = [...pts.values()][0];
+    };
+    viewer.addEventListener("pointerup", up); viewer.addEventListener("pointercancel", up);
+    const toggle2x = (x, y) => { if (k > 1) reset(); else zoomAt(2, x, y); };
+    viewer.addEventListener("dblclick", e => { if (!e.target.closest("button")) toggle2x(e.clientX, e.clientY); });
+    viewer.addEventListener("touchend", e => {  // double-tap (touch browsers don't all send dblclick)
+      if (e.touches.length || e.changedTouches.length !== 1 || e.target.closest("button")) return;
+      const t = e.changedTouches[0], now = Date.now();
+      if (now - lastTap < 300 && !moved) { e.preventDefault(); toggle2x(t.clientX, t.clientY); lastTap = 0; }
+      else lastTap = now;
+    });
     document.addEventListener("click", e => {
       const btn = e.target.closest("[data-zoom-photo]");
       if (!btn) return;
       e.preventDefault(); e.stopPropagation();  // never follows a link; keeps tips.js quiet
+      reset();  // every photo opens at fit
       img.removeAttribute("src");  // the last photo doesn't flash while this one loads
       img.src = btn.dataset.zoomPhoto;
       img.alt = btn.dataset.zoomAlt || "";
       const marks = btn.parentElement.querySelector("svg.thumb-marks[viewBox]");
       const none = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       none.setAttribute("class", "marks");
-      viewer.querySelector(".marks").replaceWith(marks ? marks.cloneNode(true) : none);
+      frame.querySelector(".marks").replaceWith(marks ? marks.cloneNode(true) : none);
       viewer.showModal();
       if (matchMedia("(max-width: 640px), (max-height: 500px)").matches && viewer.requestFullscreen) {
         viewer.requestFullscreen().then(() => screen.orientation?.lock?.("landscape")).catch(() => {});
       }
     }, true);
-    viewer.addEventListener("click", () => viewer.close());
-    viewer.addEventListener("close", () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); });
+    // The x, Esc, or a click outside the photo closes. A click on the photo, or the end of a drag, doesn't.
+    viewer.addEventListener("click", e => {
+      if (e.target.closest(".photo-viewer-close")) return viewer.close();
+      if (e.target.closest("button") || e.target.closest(".photo-viewer-frame")) return;
+      if (moved) { moved = false; return; }
+      viewer.close();
+    });
+    viewer.addEventListener("close", () => { reset(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); });
+    addEventListener("resize", () => { if (viewer.open) apply(); });
   })();
 
   // Stale-while-revalidate: the saved frame paints instantly (img src above), then fresh frames are

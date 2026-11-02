@@ -821,6 +821,9 @@ def test_home_photos_carry_a_zoom_button_but_other_pages_do_not(client, add_visi
     card = html[html.index('class="card-zoom"'):]
     assert 'data-zoom-photo="/images/2026/11/01/b.jpg"' in card
     assert html.count('class="card-zoom"') == 1 and "live-zoom-btn" in html and 'id="home-viewer"' in html
+    assert f'<a class="hero-goto" href="/visit/{second}">Go to visit</a>' in hero  # after the kicker, a real link
+    assert hero.index("hero-kicker") < hero.index("hero-goto") < hero.index("hero-name")
+    assert 'id="home-viewer-reset"' in html and "Reset view" in html  # zoom viewer
     # Load more cards get it too
     more = client.get("/visits/more?offset=1").text
     assert f'href="/visit/{first}"' in more and 'data-zoom-photo="/images/2026/11/01/a.jpg"' in more
