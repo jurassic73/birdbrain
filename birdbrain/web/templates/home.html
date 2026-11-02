@@ -35,6 +35,7 @@
           {%- for a in also_of(lv) %} + {{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}</span>
         <span class="hero-time">{{ lv.captured_at | short_time }}</span>
       </div>
+      {% set nc = no_circle_note(lv) %}{% if nc %}<span class="hero-note">{{ nc }}</span>{% endif %}
     </div>
   {% if not lv.photo_deleted_at %}{{ zoom_btn(lv) }}{% endif %}
   </div>

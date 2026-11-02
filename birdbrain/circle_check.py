@@ -57,9 +57,9 @@ def release_if_idle() -> None:
 
 
 def owner_circle(text: str | None) -> tuple[int, dict] | None:
-    """The circle to check, from the page's marks: the first one the owner drew (Claude's own are skipped),
+    """The circle to check, from the page's marks: the first one the owner drew (Claude's and the Pi's are skipped),
     with its number on the photo."""
-    return next(((i, m) for i, m in enumerate(db.parse_marks(text), 1) if not m.get("claude")), None)
+    return next(((i, m) for i, m in enumerate(db.parse_marks(text), 1) if not (m.get("claude") or m.get("pi"))), None)
 
 
 def square(circle: dict, width: int, height: int, margin: float = MARGIN) -> tuple[float, float, float, float]:

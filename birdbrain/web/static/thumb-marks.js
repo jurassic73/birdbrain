@@ -9,7 +9,8 @@
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svg.replaceChildren(...JSON.parse(svg.dataset.marks).map(m => {
       const g = document.createElementNS(NS, "g");
-      if (m.claude) g.setAttribute("class", "claude");
+      // Claude's circle is a faded white ring; the Pi's (drawn from the motion) the same, dashed.
+      if (m.claude || m.pi) g.setAttribute("class", m.pi ? "claude pi" : "claude");
       for (const cls of ["ring-shadow", "ring"]) {
         const c = document.createElementNS(NS, "circle");
         c.setAttribute("cx", m.x * w); c.setAttribute("cy", m.y * h); c.setAttribute("r", markRadius(m.r) * w); c.setAttribute("class", cls);

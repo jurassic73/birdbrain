@@ -380,6 +380,9 @@
     asked; those visits say {{ badge("pi named", "pi-only") }}. Anything less sure, every night photo, and any photo with
     <span data-tip="The Pi compares the photo with the empty scene from just before the motion and counts separate animal-sized changes in the crop box. Changes only on the open water (sky reflections, drifting leaves) don't count. One guess can only name one animal, so groups go to Claude, which counts them and names any other kind.">more than one animal in view</span>
     goes to Claude.
+    The species model says what, not where, so the Pi
+    <span data-tip="It compares the photo with the empty scene from just before the motion (for older photos: the median of nearby photos), ignoring changes that keep the scene's pattern (a patch of sun), and circles the biggest solid patch of change touching the zone that fired. Open water counts only for one small, solid patch (a bathing bird). Two patches of a similar size, or one too big for an animal, give no circle. Free, a fraction of a second.">circles the animal from the motion</span>
+    itself: a dashed ring, or &ldquo;Named on the Pi, no circle&rdquo; when it isn't sure where.
     {% else %}For now it only keeps score and never changes a label.{% endif %}
     {% if classifier.checked %}So far it matched {{ classifier.top1 }} of {{ classifier.checked }} checked visits.{% endif %}
     Scorecard on <a href="/stats#classifier">Stats</a>.</p>

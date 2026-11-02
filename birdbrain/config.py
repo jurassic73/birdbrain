@@ -148,6 +148,13 @@ STAY_LIGHT = float(_env("STAY_LIGHT", "0.4"))   # more of the watched area chang
 STAY_REARM = int(_env("STAY_REARM", "10"))      # seconds after a stay ends before the next trigger
 GROUP_GAP = int(_env("GROUP_GAP", "8"))  # substream px: changes closer than this count as one animal
 
+# Circle from the motion (birdbrain/motion_circle.py): where the animal is in a photo the Pi named itself.
+CIRCLE_FROM_MOTION = _env("CIRCLE_FROM_MOTION", "1").strip() not in ("0", "false", "off", "no")
+CIRCLE_DIFF = int(_env("CIRCLE_DIFF", "25"))  # least brightness change versus the empty view (more on a noisy pair)
+CIRCLE_MIN_BLOB = float(_env("CIRCLE_MIN_BLOB", "0.0005"))  # fraction of the frame: smaller patches are ignored
+CIRCLE_MAX_R = float(_env("CIRCLE_MAX_R", "0.13"))  # of the width: a bigger patch is the light, not an animal
+CIRCLE_AMBIGUOUS = float(_env("CIRCLE_AMBIGUOUS", "0.6"))  # a second patch this big (of the first): no circle
+
 SUB_FPS = int(_env("SUB_FPS", "15"))  # the substream's frame rate; the watcher checks every frame
 TRIGGER_FRAMES = 3  # consecutive substream frames of rim motion needed to count as a visit
 BURST_FRAMES = 6    # main-stream frames captured per visit, at BURST_FPS; the sharpest goes to Claude

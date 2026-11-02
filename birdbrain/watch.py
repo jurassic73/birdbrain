@@ -23,7 +23,8 @@ os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 import cv2  # noqa: E402  (must come after the capture options are set)
 import numpy as np  # noqa: E402
 
-from . import alert, autocal, classifier, config, db, identify, images, presence, retention, species_info, stay, zones  # noqa: E402
+from . import (alert, autocal, classifier, config, db, identify, images, motion_circle, presence,  # noqa: E402
+               retention, species_info, stay, zones)
 
 log = logging.getLogger("birdbrain.watch")
 
@@ -476,6 +477,13 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             crowd, pick = pick[0], None
     if pick:
         result = identify.settled_by_classifier(guess, pick, check)
+        if config.CIRCLE_FROM_MOTION:
+            # BioCLIP says what, not where: circle the biggest patch of change from the empty scene instead.
+            circle, found = motion_circle.live(best, scene.empty if scene else None, z, trigger,
+                                               captured_at.isoformat(), night)
+            result.raw["motion_circle"] = found
+            if circle:
+                result.raw["circle"] = circle
     elif pmode == "gate" and empty:
         result = identify.settled_by_presence(check, None)
     else:

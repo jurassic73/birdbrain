@@ -134,6 +134,7 @@ templates.env.globals["has_card"] = species_info.has_card
 templates.env.globals["season_badge"] = species_info.visit_badge
 templates.env.globals["short_status"] = species_info.short_status
 templates.env.globals["photo_marks"] = lambda visit: start_marks(visit)
+templates.env.globals["no_circle_note"] = lambda visit: no_circle_note(visit)
 templates.env.globals["also_of"] = db.also_of
 templates.env.globals["also_label"] = db.also_label
 # Templates check `request.state.admin` (set by the read_only middleware); this says whether a login exists at all.
@@ -503,7 +504,34 @@ def start_marks(visit) -> list[dict]:
     return db.parse_marks(json.dumps(circles))
 
 
+def no_circle_note(visit) -> str:
+    """"Named on the Pi, no circle" for a visit the Pi named itself where the circle from the motion found nothing
+    sure (birdbrain/motion_circle.py), so the photo doesn't look like the circle just failed to load."""
+    if visit["marks"]:
+        return ""
+    try:
+        calls = (json.loads(visit["raw_json"] or "{}") or {}).get("calls") or {}
+    except (ValueError, AttributeError):
+        return ""
+    if calls.get("settled_by") != "classifier" or calls.get("circle"):
+        return ""
+    return "Named on the Pi, no circle"
+
+
 TRIGGERS = {"rim": "on the rim", "water": "in the water", "ground": "on the ground"}
+
+# Circle from the motion (birdbrain/motion_circle.py, not imported here: the web process stays free of OpenCV).
+CIRCLE_SOURCES = {"empty": "the empty scene from just before the motion",
+                  "stored": "nearby photos of the empty scene",
+                  "reference": "the zone calibration's view of the empty bath"}
+CIRCLE_WHY = {"nothing": "no clear patch of change near the zone that fired",
+              "too big": "the only change was too big for an animal (the light)",
+              "two alike": "two patches of change of a similar size, so it couldn't tell which",
+              "light": "most of the view changed (the light)",
+              "no empty view": "no empty view of the scene to compare with",
+              "unreadable photo": "the photo couldn't be read",
+              "no photo or zones": "the photo or its zones are gone",
+              "error": "something went wrong"}
 
 
 CLASSIFIER_CROPS = {"circle": "around Claude's circle", "box": "on the crop box", "frame": "on the whole frame"}
@@ -565,6 +593,17 @@ def decision_steps(raw_json: str | None) -> dict:
             "seconds": guess.get("seconds"),
             "crop": CLASSIFIER_CROPS.get(guess.get("crop"), ""),
             "night": bool(guess.get("night")),
+        })
+    found = calls.get("motion_circle")
+    if isinstance(found, dict):
+        steps.append({
+            "model": "Circle from the motion",
+            "motion_circle": True,
+            "found": bool(found.get("found") and calls.get("circle")),
+            "said": "circled" if found.get("found") and calls.get("circle") else "no circle",
+            "source": CIRCLE_SOURCES.get(found.get("source"), ""),
+            "why": CIRCLE_WHY.get(found.get("why"), ""),
+            "seconds": found.get("seconds"),
         })
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),
             "owner_checks": owner_checks(calls),

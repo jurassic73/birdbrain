@@ -145,6 +145,13 @@ uv run python -m birdbrain.classifier --backfill --limit 50 # just the newest 50
 
 It knows mammals too (every iNaturalist mammal, limited to your place's), so squirrels get a species.
 
+The species model says what, not where, so on a visit the Pi named itself it also **circles the animal from the motion** (`birdbrain/motion_circle.py`, plain OpenCV, a fraction of a second on a Pi 4): it compares the photo with the empty scene from just before the motion, matches the exposure, ignores changes that keep the scene's pattern (a patch of sun), leaves out the open water (it mirrors the moving sky; one small, solid patch there still counts, for a bathing bird) and circles the biggest solid patch of change that touches the zone that fired. Two patches of a similar size, or one too big for an animal, give no circle. The circle is stored like Claude's (`raw_json.calls.circle`, with `"pi": true`) and drawn dashed; without one the photo says "Named on the Pi, no circle". `CIRCLE_FROM_MOTION=0` turns it off. For visits named before this existed (the empty view is then the median of the nearest stored photos of the same view and light):
+
+```bash
+uv run python -m birdbrain.motion_circle --backfill --dry-run  # say what it would draw
+uv run python -m birdbrain.motion_circle --backfill            # store the circles (--limit N, --redo)
+```
+
 ### Local animal check
 
 The same model also answers "is anything there?" for every trigger, using a small check trained on your own labelled frames (Claude's answers, your corrections, and frames you mark "Confirm: this is correct" or confirm on the False triggers page). It retrains itself whenever labels change. In **gate** mode (Settings > Local animal check) a frame it judges empty skips Claude and is kept as a false trigger marked "pi only" for you to check; correct any with an animal and it learns from that. Deleting false-trigger photos (the Delete button, which takes only photos you confirmed empty, or the storage limit, which takes confirmed ones first) deletes only the image files: the record and what the check learned from it stay. It needs at least 10 visitors and 30 empty frames with embeddings before it judges anything. To embed frames you already have (about 6 s each on a Pi 4):

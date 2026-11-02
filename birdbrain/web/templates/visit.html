@@ -44,6 +44,7 @@
     {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards).">Hide circles</button>{% endif %}
     <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing: drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
     <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
+    {% set nc = no_circle_note(visit) %}{% if nc and not visit.photo_deleted_at %}<span class="photo-note muted small" data-tip="Claude wasn't asked, and the Pi's circle from the motion found nothing it was sure of (see How it was decided), so there's no circle on this photo.">{{ nc }}</span>{% endif %}
   </div>
   <div class="visit-photo" id="photo" data-marks="{{ marks | tojson | forceescape }}">
     {% if visit.photo_deleted_at %}
@@ -148,6 +149,16 @@
           <div>{{ step.said | capitalize }} <span class="muted">(score {{ '%.3f' | format(step.score) }}, empty below {{ '%.3f' | format(step.threshold) }})</span></div>
           {% if step.skipped_claude %}
           <div class="step-why">Judged empty, so Claude wasn't asked. If there is an animal, correct it below: the check learns from it.</div>
+          {% endif %}
+          {% elif step.motion_circle %}
+          <div class="step-head">
+            <strong>Circle from the motion</strong> {{ badge("pi circle", "pi-only") }}
+            <span class="muted">on the Pi{% if step.seconds is not none %}, {{ step.seconds }} s{% endif %}</span>
+          </div>
+          {% if step.found %}
+          <div>Circle drawn on the Pi from the motion: the biggest patch of change against {{ step.source }}.</div>
+          {% else %}
+          <div>No circle: {{ step.why or "nothing sure enough" }}.</div>
           {% endif %}
           {% elif step.local %}
           <div class="step-head">
@@ -537,7 +548,7 @@
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.replaceChildren();
       marks.forEach((m, i) => {
-        const g = el("g", {"data-i": i, class: m.claude ? "mark claude" : "mark"});
+        const g = el("g", {"data-i": i, class: m.pi ? "mark claude pi" : m.claude ? "mark claude" : "mark"});
         const cx = m.x * w, cy = m.y * h, r = (editing ? m.r : markRadius(m.r)) * w, s = w / 60;
         g.append(el("circle", {cx, cy, r, class: "body"}), el("circle", {cx, cy, r, class: "ring-shadow"}), el("circle", {cx, cy, r, class: "ring"}));
         // The × beside the number removes the circle. On touch screens it's sized in screen pixels
@@ -574,8 +585,11 @@
       clear.hidden = !editing || !marks.length;
       hint.hidden = editing || marks.length > 0;
       const ci = marks.flatMap((m, i) => m.claude ? [i] : []);
-      legend.hidden = !ci.length;
-      legend.textContent = ci.length === 1
+      const pi = marks.flatMap((m, i) => m.pi ? [i] : []);
+      legend.hidden = !ci.length && !pi.length;
+      legend.textContent = pi.length
+        ? `Circle ${pi[0] + 1}: where the Pi saw it move (named on the Pi). Remove it if that's wrong.`
+        : ci.length === 1
         ? `Circle ${ci[0] + 1}: where Claude saw the ${marks[ci[0]].label || claudeSaw}. Remove it if that's wrong.`
         : `Where Claude saw them: ${ci.map(i => `${i + 1} ${marks[i].label || claudeSaw}`).join(", ")}. Remove any that's wrong.`;
     };

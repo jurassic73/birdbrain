@@ -508,10 +508,13 @@ def parse_marks(text: str | None) -> list[dict]:
         except (TypeError, KeyError, ValueError):
             continue
         mark = {"x": round(x, 4), "y": round(y, 4), "r": round(max(r, 0.01), 4)}
-        if m.get("claude") is True:  # a circle Claude drew around what it identified, kept by the owner
-            mark["claude"] = True
-            if isinstance(m.get("label"), str) and m["label"].strip():  # which animal, when there are several
-                mark["label"] = m["label"].strip()[:60]
+        # A circle Claude drew around what it identified, or one the Pi drew where it saw the motion of a visit it
+        # named itself (birdbrain/motion_circle.py); either kept by the owner.
+        for by in ("claude", "pi"):
+            if m.get(by) is True:
+                mark[by] = True
+        if (mark.get("claude") or mark.get("pi")) and isinstance(m.get("label"), str) and m["label"].strip():
+            mark["label"] = m["label"].strip()[:60]  # which animal, when there are several
         marks.append(mark)
     return marks[:9]
 
@@ -525,6 +528,8 @@ def describe_marks(marks: list[dict]) -> str:
 
 
 def _drew(mark: dict) -> str:
+    if mark.get("pi"):  # Claude didn't draw it: the Pi did, from the motion, on a visit it named itself
+        return " (drawn on the Pi where it saw motion)"
     if not mark.get("claude"):
         return ""
     return f" (you drew it around the {mark['label']})" if mark.get("label") else " (the one you drew)"
