@@ -82,6 +82,16 @@ def test_filters(conn, add_visit):
     assert db.count_visits(conn, date_from=(TODAY - timedelta(days=2)).isoformat()) == 2
 
 
+def test_multiple_filter_uses_effective_also(conn, add_visit):
+    also = '[{"visitor": "bird", "species": "Song Sparrow", "count": 1}]'
+    a = add_visit(species="Bushtit", also=also, captured_at=at(0, 9))
+    add_visit(species="Bushtit", captured_at=at(0, 10))
+    add_visit(species="Bushtit", also=also, corrected_also="[]", captured_at=at(0, 11))
+    d = add_visit(species="Bushtit", corrected_also=also, captured_at=at(0, 12))
+    ids = {r["id"] for r in db.list_visits(conn, kind="multiple")}
+    assert ids == {a, d}
+
+
 def test_list_order_paging_and_review_queue_oldest_first(conn, add_visit):
     ids = [add_visit(captured_at=at(d), needs_review=1) for d in (2, 0, 1)]
     newest_first = [r["id"] for r in db.list_visits(conn)]

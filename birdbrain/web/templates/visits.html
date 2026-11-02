@@ -17,6 +17,7 @@
           <option value="">Birds and mammals</option>
           <option value="bird" {% if filters.kind == 'bird' %}selected{% endif %}>Birds</option>
           <option value="mammal" {% if filters.kind == 'mammal' %}selected{% endif %}>Mammals</option>
+          <option value="multiple" {% if filters.kind == 'multiple' %}selected{% endif %}>Multiple animals</option>
         </select>
         <select name="tod" aria-label="Day or night">
           <option value="">Day and night</option>

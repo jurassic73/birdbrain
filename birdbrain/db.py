@@ -261,6 +261,8 @@ def _where(
     elif kind == "mammal":
         where.append(f"{VISITOR} IN ({', '.join('?' for _ in MAMMALS)})")
         args.extend(MAMMALS)
+    elif kind == "multiple":
+        where.append(f"json_array_length(COALESCE({ALSO}, '[]')) > 0")
     if tod == "day":
         where.append("is_night = 0")
     elif tod == "night":

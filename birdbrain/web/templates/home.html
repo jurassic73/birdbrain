@@ -74,7 +74,7 @@
     {% endif %}
     {% if any_visits %}
     <button type="button" class="filters-toggle" aria-controls="more-filters" aria-expanded="{{ 'true' if more_filters_open else 'false' }}"
-            data-tip="Filter by species, birds or mammals, day or night, and a date range">
+            data-tip="Filter by species, birds, mammals or photos with several animals, day or night, and a date range">
       <svg class="filters-funnel" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
       More filters
       <svg class="filters-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
@@ -93,6 +93,7 @@
         <option value="">Birds and mammals</option>
         <option value="bird" {% if filters.kind == 'bird' %}selected{% endif %}>Birds</option>
         <option value="mammal" {% if filters.kind == 'mammal' %}selected{% endif %}>Mammals</option>
+        <option value="multiple" {% if filters.kind == 'multiple' %}selected{% endif %}>Multiple animals</option>
       </select>
       <select name="tod" aria-label="Day or night">
         <option value="">Day and night</option>
