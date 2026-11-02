@@ -315,15 +315,16 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 .today-foot { margin-top: auto; font-size: .85rem; }
 /* Desktop, with a latest-visitor photo: the Today panel ends exactly where the photo does. contain: size makes the panel count as
    0 tall when the grid sizes its row, so the photo alone sets the height and the panel stretches to match. The live view keeps its
-   16:9 shape (flex: none) and the visitors list takes what is left and scrolls inside it; it never shrinks below ~3 rows (the
-   panel then clips its bottom on a very short window, instead of the list vanishing). */
+   16:9 shape (flex: none) and the visitors list takes what is left and scrolls inside it. It keeps at least ~2 rows; on a short
+   window (the owner's 1000x680 included) the rest no longer fits, so the panel scrolls rather than hide the review notice or the
+   Last motion line, and its gaps are a little tighter. */
 @media (min-width: 801px) {
-  .hero-latest ~ .today { contain: size; overflow: hidden; min-height: 0; }
+  .hero-latest ~ .today { contain: size; overflow-y: auto; min-height: 0; gap: 10px; }
   .hero-latest ~ .today .live { flex: none; }
   .hero-latest ~ .today .today-rule { flex: none; }
   .hero-latest ~ .today .critters { flex: 1 1 auto; display: flex; flex-direction: column; }
   .hero-latest ~ .today .critters .score-head { flex: none; }
-  .hero-latest ~ .today .critters ul { flex: 1 1 0; min-height: 5.2em; max-height: none; }
+  .hero-latest ~ .today .critters ul { flex: 1 1 0; min-height: 2.6em; max-height: none; }
   .hero-latest ~ .today .notice, .hero-latest ~ .today .today-foot { flex: none; }
 }
 /* Today's visitor count: plain text on the row with More filters; the other numbers live on Stats. */
