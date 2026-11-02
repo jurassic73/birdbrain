@@ -197,6 +197,14 @@ def test_visit_page_arrows_step_through_false_triggers(client, add_visit):
     assert f'href="/visit/{ft_old}?ft=1" id="nav-next"' in html and 'id="nav-prev"' not in html
 
 
+def test_false_trigger_visit_opens_in_drawing_mode_for_admin_only(client, add_visit):
+    ft = add_visit(visitor="none", species=None)
+    real = add_visit(captured_at="2026-10-24T10:00:00")
+    assert "if (true) setEditing(true);" in client.get(f"/visit/{ft}?ft=1").text
+    assert "if (true) setEditing(true);" in client.get(f"/visit/{ft}?ft=1&todo=1&embed=1").text  # the pop-up
+    assert "if (false) setEditing(true);" in client.get(f"/visit/{real}").text
+
+
 def test_false_trigger_popup_skips_confirmed_photos_and_lists_its_keys(client, add_visit, conn):
     old = add_visit(captured_at="2026-10-24T09:00:00", visitor="none", species=None)
     mid = add_visit(captured_at="2026-10-24T10:00:00", visitor="none", species=None)

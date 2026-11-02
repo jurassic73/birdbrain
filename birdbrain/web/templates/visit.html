@@ -42,7 +42,7 @@
   <div class="photo-tools" id="photo-tools">
     {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi's animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
     {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards).">Hide circles</button>{% endif %}
-    <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing: drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
+    <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing (false triggers open with it already on): drag to draw a circle, drag a circle's middle to move it, its × removes it. Pinching with two fingers still zooms.">Edit circles</button>
     <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
     {% set nc = no_circle_note(visit) %}{% if nc and not visit.photo_deleted_at %}<span class="photo-note muted small" data-tip="Claude wasn't asked, and the Pi's circle from the motion found nothing it was sure of (see How it was decided), so there's no circle on this photo.">{{ nc }}</span>{% endif %}
   </div>
@@ -695,14 +695,17 @@
       return {x: Math.min(Math.max((e.clientX - b.left) / b.width, 0), 1), y: Math.min(Math.max((e.clientY - b.top) / b.height, 0), 1), ratio: b.height / b.width};
     };
     clear.addEventListener("click", () => { marks = []; draw(); });
-    edit.addEventListener("click", () => {
-      editing = !editing;
+    const setEditing = on => {
+      editing = on;
       if (editing && !bbOverlays.on("circles")) bbOverlays.set("circles", true);  // can't edit what you can't see
       photo.classList.toggle("editing", editing);
       edit.setAttribute("aria-pressed", editing);
       edit.textContent = editing ? "Done editing" : "Edit circles";
       draw();
-    });
+    };
+    edit.addEventListener("click", () => setEditing(!editing));
+    // A false trigger opens ready to draw (admins only, and only with a photo to draw on).
+    if ({{ 'true' if (is_ft and request.state.admin and not visit.photo_deleted_at) else 'false' }}) setEditing(true);
     // Undo whatever the current drag did: a new circle goes away, a moved one goes back.
     const abandon = () => {
       if (drag && drag.from) Object.assign(drag.mark, drag.from);
