@@ -198,12 +198,15 @@
       if (pts.size === 1) last = [...pts.values()][0];
     };
     viewer.addEventListener("pointerup", up); viewer.addEventListener("pointercancel", up);
-    const toggle2x = (x, y) => { if (k > 1) reset(); else zoomAt(2, x, y); };
+    // A single click closes the viewer, but only after DOUBLE_MS, so a double click (or double tap) can cancel it and zoom.
+    const DOUBLE_MS = 300;
+    let closeTimer = 0;
+    const toggle2x = (x, y) => { clearTimeout(closeTimer); if (k > 1) reset(); else zoomAt(2, x, y); };
     viewer.addEventListener("dblclick", e => { if (!e.target.closest("button")) toggle2x(e.clientX, e.clientY); });
     viewer.addEventListener("touchend", e => {  // double-tap (touch browsers don't all send dblclick)
       if (e.touches.length || e.changedTouches.length !== 1 || e.target.closest("button")) return;
       const t = e.changedTouches[0], now = Date.now();
-      if (now - lastTap < 300 && !moved) { e.preventDefault(); toggle2x(t.clientX, t.clientY); lastTap = 0; }
+      if (now - lastTap < DOUBLE_MS && !moved) { e.preventDefault(); toggle2x(t.clientX, t.clientY); lastTap = 0; }
       else lastTap = now;
     });
     document.addEventListener("click", e => {
@@ -223,14 +226,18 @@
         viewer.requestFullscreen().then(() => screen.orientation?.lock?.("landscape")).catch(() => {});
       }
     }, true);
-    // The x, Esc, or a click outside the photo closes. A click on the photo, or the end of a drag, doesn't.
+    // The x, Esc, or a click anywhere (on the photo too, zoomed or not) closes. The end of a drag or pinch doesn't.
     viewer.addEventListener("click", e => {
       if (e.target.closest(".photo-viewer-close")) return viewer.close();
-      if (e.target.closest("button") || e.target.closest(".photo-viewer-frame")) return;
+      if (e.target.closest("button")) return;
       if (moved) { moved = false; return; }
-      viewer.close();
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => viewer.close(), DOUBLE_MS);
     });
-    viewer.addEventListener("close", () => { reset(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); });
+    viewer.addEventListener("close", () => {
+      clearTimeout(closeTimer); reset();
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    });
     addEventListener("resize", () => { if (viewer.open) apply(); });
   })();
 
@@ -243,7 +250,7 @@
     const img = document.getElementById("live");
     const status = document.getElementById("live-status");
     const age = document.getElementById("live-age");
-    // Click the live view to open it big; it keeps refreshing there. Escape, the x or a click off the photo closes it.
+    // Click the live view to open it big; it keeps refreshing there. Escape, the x or a click anywhere closes it.
     const viewer = document.getElementById("live-viewer");
     const big = document.getElementById("live-big");
     box.querySelectorAll(".live-zoom, .live-zoom-btn").forEach(b => b.addEventListener("click", e => {
@@ -252,7 +259,7 @@
       viewer.showModal();
       refresh();
     }));
-    viewer.addEventListener("click", e => { if (e.target !== big) viewer.close(); });
+    viewer.addEventListener("click", () => viewer.close());
     // Say Offline only after a while with no good frame and repeated failures: one slow camera grab isn't an outage.
     const OFFLINE_AFTER_MS = 15000;
     let frameAge = null, receivedAt = 0, failures = 0, lastOkAt = Date.now(), busy = false;
