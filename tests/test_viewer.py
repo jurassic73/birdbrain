@@ -110,3 +110,48 @@ def test_share_link_key_signs_in(gated, tmp_path, monkeypatch):
 def test_password_still_works_without_a_link(gated):
     r = gated.post("/guest-login", data={"password": "test-password-123"}, headers=ip(30), follow_redirects=False)
     assert r.status_code == 303
+
+
+def test_manifest_is_open_but_only_that_exact_path(gated, monkeypatch):
+    # Browsers fetch the manifest without cookies, so the gate must not bounce it (Android home-screen icon).
+    r = gated.get("/manifest.webmanifest", follow_redirects=False)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/manifest+json")
+    assert r.json()["name"] == "Birdbrain" and any(i["purpose"] == "maskable" for i in r.json()["icons"])
+    assert gated.get("/manifest.webmanifest?v=123", follow_redirects=False).status_code == 200
+    # Everything else, including lookalikes, stays behind the gate.
+    for path in ("/", "/manifest.webmanifest.bak", "/manifest.webmanifestx", "/manifest.webmanifest/",
+                 "/manifest.webmanifest/x", "//manifest.webmanifest", "/x/manifest.webmanifest",
+                 "/Manifest.webmanifest", "/manifest.webmanifest%2f.."):
+        r = gated.get(path, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/guest-login"), path
+    # Nothing else is opened (the open paths are the login page and the manifest; static stays a prefix).
+    assert viewer.OPEN_PATHS == ("/guest-login", "/manifest.webmanifest")
+    # Under the public base path the manifest still answers without a cookie, with prefixed URLs.
+    monkeypatch.setattr(webapp, "BASE", "/birdbrain")
+    m = gated.get("/manifest.webmanifest", follow_redirects=False).json()
+    assert m["start_url"] == "/birdbrain/" and all(i["src"].startswith("/birdbrain/static/") for i in m["icons"])
+
+
+def test_guest_login_page_links_manifest_and_home_screen_icon(gated, monkeypatch):
+    html = gated.get("/guest-login", headers=ip(30)).text
+    assert 'rel="manifest" href="/manifest.webmanifest?v=' in html
+    assert 'rel="apple-touch-icon" href="/static/apple-touch-icon.png?v=' in html
+    assert 'rel="icon" type="image/png" sizes="64x64" href="/static/favicon-64.png' in html
+    monkeypatch.setattr(webapp, "BASE", "/birdbrain")
+    html = gated.get("/guest-login", headers=ip(31)).text
+    assert 'rel="manifest" href="/birdbrain/manifest.webmanifest?v=' in html
+    assert 'rel="apple-touch-icon" href="/birdbrain/static/apple-touch-icon.png?v=' in html
+    assert 'href="/birdbrain/static/favicon-64.png' in html
+
+
+def test_sign_in_under_base_path_returns_to_the_base_home(gated, monkeypatch):
+    # The standalone app opens start_url /birdbrain/ with no cookie; signing in must land back inside /birdbrain/.
+    monkeypatch.setattr(webapp, "BASE", "/birdbrain")
+    r = gated.get("/", follow_redirects=False)  # what nginx hands us for /birdbrain/
+    assert r.status_code == 303 and r.headers["location"] == "/birdbrain/guest-login?next=%2F"
+    page = gated.get("/guest-login?next=%2F", headers=ip(32)).text
+    assert 'action="/birdbrain/guest-login"' in page and 'name="next" value="/"' in page
+    r = gated.post("/guest-login", data={"password": "test-password-123", "next": "/"}, headers=ip(33),
+                   follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/birdbrain/"
+    assert "Path=/birdbrain/" in r.headers["set-cookie"]

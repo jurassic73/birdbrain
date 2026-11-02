@@ -32,7 +32,9 @@ MAX_AGE = 30 * 24 * 3600
 PER_IP_FAILS = 3
 ALL_FAILS = 20
 LOCKOUT = 15 * 60
-OPEN_PATHS = ("/guest-login",)
+# Exact paths only (compared with ==, never a prefix). The manifest holds just the app name, colors and icon URLs,
+# and browsers fetch it without cookies, so behind the gate it would 303 and Android couldn't read it.
+OPEN_PATHS = ("/guest-login", "/manifest.webmanifest")
 OPEN_PREFIXES = ("/static/",)
 _fails: dict[str, list[float]] = {}
 _cache: dict = {}
