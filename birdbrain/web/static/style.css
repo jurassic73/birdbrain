@@ -375,7 +375,8 @@ a.tally-label:hover { color: var(--accent); }
 .visits-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
 .visits-head h2 { margin: 0; }
 /* Today's visitors head the list; opened, today's numbers take the whole row and the chips wrap below. */
-.visits-head .visits-count { font-size: 1rem; font-weight: normal; color: var(--muted); margin-right: auto; }
+/* "N matching" goes to the right end of the row (order + auto margin), so the chips and More filters never move when a filter is applied. */
+.visits-head .visits-count { font-size: 1rem; font-weight: normal; color: var(--muted); order: 1; margin-left: auto; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips a {
   padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line);
