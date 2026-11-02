@@ -29,7 +29,7 @@
     {# One chip at the top-left (the camera burns its date stamp into the bottom-left): kicker, then name and time. #}
   {# A sibling of the photo link (no nested <a>); clicks on the chip fall through to the photo link except on "Go to visit". #}
     <div class="hero-caption">
-      <span class="hero-kicker">{{ kicker }} <a class="hero-goto" href="/visit/{{ lv.id }}">Go to visit</a></span>
+      <span class="hero-kicker">{{ kicker }} <a class="hero-goto" href="/visit/{{ lv.id }}" title="Open this visit (→)">Go to visit</a></span>
       <div class="hero-row">
         <span class="hero-name">{{ lv.label }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}
           {%- for a in also_of(lv) %} + {{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}</span>
@@ -421,6 +421,18 @@
       });
     });
   })();
+  // Right arrow opens the latest visitor's visit (the visit page's Older arrow); Left does nothing here.
+  // The hero is looked up on each press because new visitors swap it in.
+  document.addEventListener("keydown", e => {
+    if (e.key !== "ArrowRight" || e.repeat || e.defaultPrevented) return;
+    if (e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return;
+    if (document.documentElement.dataset.tour) return;
+    const t = e.target;
+    if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    const link = document.querySelector(".hero-link");
+    if (link) location.href = link.href;
+  });
 </script>
 <script src="/static/photo-reminder.js?v={{ asset_version }}" defer></script>
 <script>

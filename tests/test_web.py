@@ -30,6 +30,14 @@ def stored_visit(add_visit):
     return add
 
 
+def test_home_right_arrow_opens_the_latest_visit(client, add_visit):
+    vid = add_visit(species="Dark-eyed Junco")
+    html = client.get("/").text
+    assert f'class="hero-link" href="/visit/{vid}"' in html
+    assert 'e.key !== "ArrowRight"' in html and 'querySelector(".hero-link")' in html
+    assert "ArrowLeft" not in html.split('e.key !== "ArrowRight"')[1].split("</script>")[0]
+
+
 def test_home_empty_state_hides_filters(client):
     html = client.get("/").text
     assert "No visitors yet." in html and 'class="filters-toggle"' not in html and 'id="more-filters"' not in html
@@ -849,7 +857,7 @@ def test_only_the_latest_visitor_and_live_view_carry_a_zoom_button(client, add_v
     assert hero.index("</a>") < hero.index("zoom-btn")  # a sibling of the link, not inside it
     assert html.count('data-zoom-photo="') == 1 and "card-zoom" not in html  # visit cards have none
     assert "live-zoom-btn" in html and 'id="home-viewer"' in html
-    assert f'<a class="hero-goto" href="/visit/{second}">Go to visit</a>' in hero  # after the kicker, a real link
+    assert f'<a class="hero-goto" href="/visit/{second}" title="Open this visit (→)">Go to visit</a>' in hero  # after the kicker, a real link
     assert hero.index("hero-kicker") < hero.index("hero-goto") < hero.index("hero-name")
     assert 'id="home-viewer-reset"' in html and "Reset view" in html  # zoom viewer
     # Load more cards and the other pages have none
