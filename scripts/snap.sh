@@ -2,7 +2,13 @@
 # Grab one frame from the camera. Usage: scripts/snap.sh [main|sub] [out.jpg]
 set -euo pipefail
 cd "$(dirname "$0")/.."
-set -a; . ./.env; set +a
+
+# Read only the keys we need; .env is not shell (values may hold ; # $ ! etc.).
+# SNAP_ENV overrides the file (used by tests).
+while IFS= read -r -d '' kv; do
+  export "$kv"
+done < <(python3 -I scripts/readenv.py "${SNAP_ENV:-.env}" \
+  RTSP_USER RTSP_PASS CAM_HOST RTSP_PORT RTSP_MAIN_PATH RTSP_SUB_PATH)
 : "${RTSP_PASS:?RTSP_PASS is empty in .env}"
 : "${CAM_HOST:?CAM_HOST is empty in .env}"
 
