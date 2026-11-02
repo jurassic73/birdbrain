@@ -1,7 +1,9 @@
 import io
+import os
 from datetime import datetime
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from birdbrain import images
@@ -74,16 +76,25 @@ def test_stamp_reads_like_a_label():
     assert images.stamp_text(datetime(2026, 10, 27, 0, 5)) == "Tue Oct 27  \u00b7  12:05 AM"
 
 
-def test_stamp_text_is_vertically_centred_in_the_pill():
+@pytest.mark.parametrize(
+    "font", ["/no/such/font.ttf"] + [f for f in images.config.STAMP_FONTS if os.path.exists(f)]
+)  # Pillow's own font, plus whichever of the listed fonts this machine has (the Pi's and the Mac's differ)
+def test_stamp_text_and_dot_sit_on_the_middle_of_the_pill(monkeypatch, font):
+    monkeypatch.setattr(images.config, "STAMP_FONTS", [font])
     for size in ((1920, 1080), (960, 540)):
         s = size[1] / 1080
-        out = images.stamp(Image.new("RGB", size, (0, 0, 0)), datetime(2026, 11, 1, 14, 40))
-        px = np.asarray(out).astype(int)
-        x0 = int(36 * s + 56 * s)
-        rows = np.where((px[:, x0 : x0 + int(500 * s)].sum(2) > 500).any(1))[0]  # bright text pixels only
-        y0 = size[1] - 36 * s - 64 * s
-        top_gap, bottom_gap = rows.min() - y0, y0 + 64 * s - (rows.max() + 1)
-        assert abs(top_gap - bottom_gap) <= 1.5
+        # "Sep" and "Aug" have tails below the line; the caps and digits must still be centred, not the tails
+        for when in (datetime(2026, 11, 1, 14, 40), datetime(2026, 9, 6, 17, 35), datetime(2026, 8, 2, 9, 5)):
+            px = np.asarray(images.stamp(Image.new("RGB", size, (60, 60, 60)), when)).astype(int)
+            middle = size[1] - 36 * s - 64 * s / 2
+            # the time ("2:40 PM") is all digits and capitals; measure its ink at the right end of the pill
+            text = px[:, int(82 * s) :].min(2) > 160
+            right = np.where(text.any(0))[0].max()
+            rows = np.where(text[:, right - int(150 * s) : right + 1].any(1))[0]
+            assert abs((rows.min() + rows.max() + 1) / 2 - middle) <= 1, (font, size, when, rows.min(), rows.max())
+            green = (px[:, : int(82 * s), 1] - px[:, : int(82 * s), 0]) > 40
+            dot = np.where(green.any(1))[0]
+            assert abs((dot.min() + dot.max() + 1) / 2 - middle) <= 1
 
 
 def test_stamp_can_be_turned_off(tmp_path, monkeypatch):

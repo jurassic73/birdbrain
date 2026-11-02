@@ -45,9 +45,12 @@ def stamp(img: Image.Image, when: datetime) -> Image.Image:
                         outline=(255, 255, 255, 60), width=max(1, round(2 * s)))
     dot = 7 * s
     d.ellipse((x + 33 * s - dot, y + h / 2 - dot, x + 33 * s + dot, y + h / 2 + dot), fill=(126, 200, 140, 255))
-    # centre the cap height (not the font's ascender/descender line, nor a "p" tail) on the pill's middle
-    top, bottom = d.textbbox((0, 0), "H", font=font, anchor="ls")[1::2]
-    d.text((x + 56 * s, y + h / 2 - (top + bottom) / 2), text, font=font, fill=(245, 245, 240, 255), anchor="ls")
+    # Centre the ink of a capital (the digits share its height) on the pill's middle, measured on the font itself:
+    # ascender/descender metrics differ by font and leave room for tails ("Sep", "Aug") the stamp rarely has.
+    # getbbox and text both use the top-left anchor, so this also works for Pillow's bitmap fallback font.
+    # Rounded to a whole pixel so the tops of the letters stay crisp.
+    top, bottom = font.getbbox("H")[1::2]
+    d.text((x + 56 * s, round(y + h / 2 - (top + bottom) / 2)), text, font=font, fill=(245, 245, 240, 255))
     return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
 
