@@ -422,6 +422,7 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
         vzones=visit_zones(visit, conn),
+        pi_average=db.pi_check_average(conn),
     )
 
 
@@ -712,6 +713,7 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
     if jpeg is None:
         return JSONResponse({"error": "This photo was deleted to save space, so there's nothing to look at."})
     loop = asyncio.get_running_loop()
+    started = time.monotonic()
     try:
         if source == "pi":
             # Its own low-priority thread, one check at a time: ~6 to 22 s of the Pi's cores.
@@ -725,8 +727,13 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
         if source == "pi":
             return JSONResponse({"error": f"The Pi's model isn't available right now ({e})."})
         return JSONResponse({"error": f"Claude couldn't be reached ({type(e).__name__})."})
+    extra = {}
+    if source == "pi":
+        # What the owner waited: queue, model load and compute. Only successful checks are counted.
+        entry["wall_seconds"] = round(time.monotonic() - started, 1)
+        extra["pi_average"] = db.record_pi_check(conn, entry["wall_seconds"])
     circle_check.record(conn, visit_id, entry, circle)
-    return JSONResponse({**entry, "circle_n": number})
+    return JSONResponse({**entry, "circle_n": number, **extra})
 
 
 @app.get("/species-photo")

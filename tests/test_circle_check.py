@@ -227,3 +227,21 @@ def test_identify_note_goes_in_the_users_text():
     content = identify.user_content(["x"], datetime(2026, 11, 1, 9, 0), note="A close crop.")
     assert content[-1]["text"].endswith("A close crop.")
     assert "crop" not in identify.user_content(["x"], datetime(2026, 11, 1, 9, 0))[-1]["text"]
+
+
+def test_pi_check_times_are_averaged_and_survive_deleting_visits(client, conn, photo_visit, fake_pi):
+    assert db.pi_check_average(conn) == {"n": 0, "avg": None, "recent_avg": None}
+    db.record_pi_check(conn, 10)
+    avg = db.record_pi_check(conn, 20)
+    assert avg == {"n": 2, "avg": 15.0, "recent_avg": 15.0}
+    for _ in range(db.PI_CHECK_RECENT):
+        db.record_pi_check(conn, 30)
+    a = db.pi_check_average(conn)
+    assert a["n"] == 52 and a["recent_avg"] == 30.0 and a["avg"] == round((30 + 50 * 30) / 52, 1)
+    # the route times the whole check and returns the updated average
+    fake_pi(FakeClassifier(i=0))
+    vid = photo_visit()
+    r = client.post(f"/visit/{vid}/check-circle/pi", data={"marks": MARKS}).json()
+    assert r["wall_seconds"] >= 0 and r["pi_average"]["n"] == 53
+    assert checks_of(conn, vid)[0]["wall_seconds"] == r["wall_seconds"]
+    assert f"usually about {round(db.pi_check_average(conn)['avg'])} seconds" in client.get(f"/visit/{vid}?ft=1").text

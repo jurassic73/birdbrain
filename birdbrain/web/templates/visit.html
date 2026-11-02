@@ -256,7 +256,8 @@
           <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Circle the animal (Edit circles, then drag on the photo) and ask. The Pi's own model looks at just that part of the photo: free, and 5 to 20 seconds on the Pi. If it isn't sure, ask Haiku, then Sonnet, on the same part. Nothing changes until you press Save; saving the right answer is what teaches the Pi.">i</span>
         </div>
         <div class="circle-check-btns">
-          <button type="button" class="check-btn" data-source="pi" data-tip="The Pi's local model names what's in your first circle. Free; takes 5 to 20 seconds on the Pi.">Ask the Pi</button>
+          <button type="button" class="check-btn" data-source="pi" data-tip="The Pi's local model names what's in your first circle. Free; {% if pi_average.avg %}usually about {{ pi_average.avg|round|int }} seconds on the Pi (average of {{ pi_average.n }}){% else %}takes 5 to 20 seconds on the Pi{% endif %}.">Ask the Pi</button>
+          <span class="check-timer small muted" id="pi-timer" aria-live="off"{% if pi_average.avg %} data-avg="{{ pi_average.avg }}" data-n="{{ pi_average.n }}"{% endif %}>{% if pi_average.avg %}usually ~{{ pi_average.avg|round|int }} s{% endif %}</span>
           <button type="button" class="claude-btn check-btn" data-source="haiku" hidden data-tip="Claude Haiku looks at just your circle, with Claude's Notes and your lessons. A fraction of a cent.">{{ claude_mark() }}Ask Haiku</button>
           <button type="button" class="claude-btn check-btn" data-source="sonnet" hidden data-tip="Claude Sonnet takes a closer look at just your circle. About half a cent.">{{ claude_mark() }}Ask Sonnet</button>
         </div>
@@ -448,6 +449,9 @@
     if (!box) return;
     const note = box.querySelector(".check-note"), buttons = box.querySelectorAll(".check-btn");
     const btn = s => box.querySelector(`.check-btn[data-source="${s}"]`);
+    const timer = document.getElementById("pi-timer");
+    let tick = null;
+    const piAvg = () => timer.dataset.avg || "";
     const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
     const add = (html, err) => {
       const p = document.createElement("div");
@@ -476,10 +480,24 @@
       if (!b || b.disabled) return;
       const source = b.dataset.source;
       buttons.forEach(x => x.disabled = true); b.classList.add("sending");
+      const t0 = Date.now(), usually = piAvg();
+      if (source === "pi") {
+        clearInterval(tick);
+        const paint = () => { timer.textContent = `${Math.round((Date.now() - t0) / 1000)} s…`; };
+        paint(); tick = setInterval(paint, 1000);
+      }
       const r = await fetch(`/visit/{{ visit.id }}/check-circle/${source}`, {method: "POST",
         body: new URLSearchParams({marks: document.getElementById("marks").value || "[]"})})
         .then(r => r.json()).catch(() => ({error: "Couldn't reach the site."}));
       buttons.forEach(x => x.disabled = false); b.classList.remove("sending");
+      if (source === "pi") {
+        clearInterval(tick);
+        const took = Math.round((Date.now() - t0) / 1000);
+        if (r.pi_average?.avg) { timer.dataset.avg = r.pi_average.avg; timer.dataset.n = r.pi_average.n; }
+        if (r.error) timer.textContent = `failed after ${took} s`;
+        else timer.textContent = `took ${Math.round(r.wall_seconds ?? took)} s` + (timer.dataset.avg ? `, usually ~${Math.round(timer.dataset.avg)} s` : "");
+        if (r.pi_average?.avg) b.dataset.tip = `The Pi's local model names what's in your first circle. Free; usually about ${Math.round(r.pi_average.avg)} seconds on the Pi (average of ${r.pi_average.n}).`;
+      }
       if (r.error) { add(esc(r.error), true); return; }
       const where = `<span class="muted">circle ${r.circle_n}${source === "pi" ? `, ${r.seconds} s` : `, ${(r.usd * 100).toFixed(2)}&cent;`}</span>`;
       let html = `<p><b>${esc(r.say)}</b> ${where}</p>`;

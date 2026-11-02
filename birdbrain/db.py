@@ -184,6 +184,36 @@ def set_value(conn: sqlite3.Connection, key: str, value: str) -> None:
     conn.commit()
 
 
+PI_CHECK_TIMES = "pi_check_times"  # settings key: JSON {n, total, recent} of Ask-the-Pi wall times
+PI_CHECK_RECENT = 50
+
+
+def record_pi_check(conn: sqlite3.Connection, seconds: float) -> dict:
+    """Keep a running count and total of how long an Ask-the-Pi check took the owner (queue and model load
+    included), plus the last PI_CHECK_RECENT times. Lives in settings so deleting visits never loses it."""
+    try:
+        d = json.loads(get_value(conn, PI_CHECK_TIMES) or "{}")
+    except ValueError:
+        d = {}
+    seconds = round(float(seconds), 2)
+    recent = [float(x) for x in d.get("recent", [])][-(PI_CHECK_RECENT - 1):] + [seconds]
+    d = {"n": int(d.get("n", 0)) + 1, "total": round(float(d.get("total", 0)) + seconds, 2), "recent": recent}
+    set_value(conn, PI_CHECK_TIMES, json.dumps(d))
+    return pi_check_average(conn)
+
+
+def pi_check_average(conn: sqlite3.Connection) -> dict:
+    """{n, avg, recent_avg} of Ask-the-Pi wall times in seconds; avg is None before the first check."""
+    try:
+        d = json.loads(get_value(conn, PI_CHECK_TIMES) or "{}")
+    except ValueError:
+        d = {}
+    n, recent = int(d.get("n", 0)), d.get("recent", [])
+    if not n:
+        return {"n": 0, "avg": None, "recent_avg": None}
+    return {"n": n, "avg": round(d["total"] / n, 1), "recent_avg": round(sum(recent) / len(recent), 1) if recent else None}
+
+
 def add_calibration(conn: sqlite3.Connection, **fields) -> int:
     cols = ", ".join(fields)
     marks = ", ".join("?" for _ in fields)

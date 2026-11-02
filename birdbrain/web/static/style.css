@@ -699,6 +699,8 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .circle-check-head { display: flex; align-items: center; gap: 6px; }
 .circle-check-head .field-title { font-weight: 600; }
 .circle-check-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.circle-check-btns { align-items: center; }
+.check-timer { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .circle-check-btns .check-btn[hidden] { display: none; }
 .check-note { display: flex; flex-direction: column; gap: 6px; }
 .check-answer { padding: 6px 10px; border-left: 3px solid var(--line); }
