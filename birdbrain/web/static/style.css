@@ -933,6 +933,11 @@ button.danger.sending, button.danger.htmx-request {
 .flow-pill { position: relative; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
 .flow-pill + .flow-pill { margin-left: 20px; }
 .flow-pill + .flow-pill::before { content: "\2192"; position: absolute; left: -16px; color: var(--muted); }
+/* "Detection path" label before the first pill */
+.flow-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); white-space: nowrap; margin-right: 10px; }
+/* The Claude mark inside a Claude pill: text-sized, no tile, so the pill stays one line tall */
+.flow-pill .claude-mark, .tip-label .claude-mark { width: 14px; height: 14px; padding: 0; margin: 0 5px 0 0; background: none; vertical-align: -2px; }
+.tip-label .claude-mark { width: 15px; height: 15px; margin-right: 6px; vertical-align: -3px; }
 .flow-pill.ai { border-color: var(--accent); }
 .flow-pill.review { border-color: var(--medium); }
 .flow-pill.result { font-weight: 600; }
@@ -1326,6 +1331,7 @@ details.review-fold > summary { display: none; }
   .decision-flow .flow-pill { padding: 1px 7px; white-space: nowrap; }
   .decision-flow .flow-pill + .flow-pill { margin-left: 15px; }
   .decision-flow .flow-pill + .flow-pill::before { left: -12px; }
+  .decision-flow .flow-label { font-size: .65rem; margin-right: 8px; }
   .decision-flow .said-same { display: none; }
   /* "All ... visits" on the left, "Not right? Correct it" on the far right; Delete moves to the bottom. */
   .visit-head .actions { flex: 1 1 auto; }

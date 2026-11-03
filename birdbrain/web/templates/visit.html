@@ -11,10 +11,11 @@
 {# The start-to-finish step pills: beside the arrows on wide screens, under the details on phones. #}
 {% macro flow(where) %}
   {% if decision.steps %}
-  <ol class="decision-flow {{ where }}" aria-label="Start to finish">
+  <ol class="decision-flow {{ where }}" aria-label="Detection path">
+    <li class="flow-label" aria-hidden="true">Detection path</li>
     <li class="flow-pill">Motion{% if decision.trigger %} {{ decision.trigger }}{% endif %}</li>
     {% for step in decision.steps %}
-    <li class="flow-pill {{ 'local' if step.local else 'ai' }}"><strong>{{ 'Detector' if step.local else step.model }}</strong> {% if not step.refused and step.said == visit.label %}<span class="said-same">{{ step.said }}</span>{% else %}{{ 'no answer' if step.error else 'declined' if step.refused else step.said }}{% endif %}{% if step.confidence %} <span class="flow-conf">({{ step.confidence }})</span>{% endif %}</li>
+    <li class="flow-pill {{ 'local' if step.local else 'ai' }}">{% if not (step.local or step.presence or step.shadow or step.motion_circle) %}{{ claude_mark() }}{% endif %}<strong>{{ 'Detector' if step.local else step.model }}</strong> {% if not step.refused and step.said == visit.label %}<span class="said-same">{{ step.said }}</span>{% else %}{{ 'no answer' if step.error else 'declined' if step.refused else step.said }}{% endif %}{% if step.confidence %} <span class="flow-conf">({{ step.confidence }})</span>{% endif %}</li>
     {% endfor %}
     {% if visit.needs_review %}<li class="flow-pill review">Your review</li>{% endif %}
     <li class="flow-pill result">{{ 'No animal' if visit.label == 'None' else visit.label }}{% for a in also_of(visit) %} + {{ also_label(a) }}{% endfor %}</li>
@@ -325,7 +326,7 @@
       </div>
       <div class="field">
         <div class="feedback-head">
-          <label for="feedback" class="tip-label">Note for Claude <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake. The Pi's local animal check never reads notes: it learns from the answer you pick above.">i</span></label>
+          <label for="feedback" class="tip-label">{{ claude_mark() }}Note for Claude <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake. The Pi's local animal check never reads notes: it learns from the answer you pick above.">i</span></label>
         </div>
         <input type="hidden" name="marks" id="marks">
         <div class="feedback-row">
