@@ -56,22 +56,24 @@ def test_visitors_cannot_keep_or_see_the_mark(client, conn, add_visit, locked):
     assert db.get_visit(conn, vid)["keep"] == 1
     for path in ("/", f"/visit/{vid}", "/visits"):
         text = client.get(path).text
-        assert "keep-mark" not in text and "Keep this photo" not in text, path
+        assert "fav-star" not in text and "Favorite</button>" not in text, path
 
 
-def test_admin_sees_the_mark_on_cards_and_the_visit_page(client, conn, add_visit):
+def test_admin_sees_the_star_on_cards_and_favorite_on_the_visit_page(client, conn, add_visit):
+    # Cards carry one cycling star (static/star.js); the old separate keep-mark button is gone from cards.
     vid = add_visit()
     for path in ("/", "/visits", "/species/Dark-eyed%20Junco"):
-        assert 'class="keep-mark"' in client.get(path).text, path
+        text = client.get(path).text
+        assert 'class="fav-star"' in text and 'class="keep-mark"' not in text, path
     page = client.get(f"/visit/{vid}").text
-    assert "Keep this photo" in page and 'class="badge keeper"' not in page
+    assert "Favorite</button>" in page and 'class="badge keeper"' not in page
     db.set_keep(conn, vid, True)
     page = client.get(f"/visit/{vid}").text
-    assert 'class="badge keeper"' in page and "Keeper: you marked this photo" in page
-    assert 'aria-pressed="true"' in client.get("/visits").text
+    assert 'class="badge keeper"' in page and "Favorite (blue star): you marked this photo" in page
+    assert 'data-state="favorite"' in client.get("/visits").text
 
 
-def test_admin_login_sees_the_mark_when_locked(client, add_visit, locked):
+def test_admin_login_sees_the_star_when_locked(client, add_visit, locked):
     add_visit()
     client.post("/login", data={"password": "s3cret!"})
-    assert 'class="keep-mark"' in client.get("/").text
+    assert 'class="fav-star"' in client.get("/").text

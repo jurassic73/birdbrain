@@ -129,6 +129,18 @@ LIVE_REFRESH = int(_env("LIVE_REFRESH", "5"))  # seconds between live snapshots 
 # left a note on are always kept, since Claude learns from them.
 FALSE_TRIGGER_MAX_MB = float(_env("FALSE_TRIGGER_MAX_MB", "500"))
 FALSE_TRIGGER_PHOTO = _env("FALSE_TRIGGER_PHOTO", "medium").strip().lower()  # small, medium, large or full
+# The photo budget (birdbrain.retention): every stored photo, thumbnail and false-trigger burst together. Defaults
+# only; the Settings page overrides them. Over the budget, or with less free disk than DISK_FLOOR_MB, space is freed:
+# false triggers first, then older real visits are thinned, then the oldest thinned ones keep only their thumbnail.
+# Keepers, species photos, corrected or annotated visits, first sightings and rare species are never touched.
+PHOTO_BUDGET_MB = float(_env("PHOTO_BUDGET_MB", "5120"))   # 0 = no budget
+PHOTO_THIN = _env("PHOTO_THIN", "1").strip() not in ("0", "false", "off", "no")  # thin real visits after PHOTO_FULL_DAYS
+PHOTO_FULL_DAYS = int(_env("PHOTO_FULL_DAYS", "90"))       # real visits younger than this stay full size
+PHOTO_FULL_PER_DAY = int(_env("PHOTO_FULL_PER_DAY", "2"))  # sharpest photos per species per day that stay full size
+PHOTO_THIN_EDGE = int(_env("PHOTO_THIN_EDGE", "1280"))     # long edge of a thinned photo: 960, 1280 or 1920 (= full)
+PHOTO_WARN_PCT = float(_env("PHOTO_WARN_PCT", "80"))       # one phone alert when photos reach this % of the budget
+RARE_UNDER = int(_env("RARE_UNDER", "10"))                 # every visit of a species seen fewer times stays full size
+DISK_FLOOR_MB = float(_env("DISK_FLOOR_MB", "5120"))       # free space to keep on the data disk (0 = don't watch it)
 
 # Repeated false triggers (rain, wind) double the wait each time, up to this many seconds.
 COOLDOWN_NONE_MAX = int(_env("COOLDOWN_NONE_MAX", "300"))

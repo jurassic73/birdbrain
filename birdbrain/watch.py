@@ -600,6 +600,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         with db.session() as conn:
             if pruned := retention.prune(conn):
                 log.info("false-trigger storage limit: deleted the %d oldest", pruned)
+    # The photo budget: counts this visit and wakes its background check (cheap; any thinning happens there).
+    retention.note_stored(image_rel, thumb_rel)
     if alert_reason:
         with db.session() as conn:
             topic = db.get_value(conn, "ntfy_topic") or ""
@@ -795,6 +797,9 @@ def main() -> None:
     # The animal check retrains in its own thread, never on a trigger's path; it also looks through the bursts of
     # corrected false triggers, pausing while a capture runs.
     presence.start_background(busy=watcher.busy)
+    # The photo budget: thins older visits once a day and frees space when over the budget, in a low-priority thread
+    # that pauses while a capture runs.
+    retention.start_background(busy=watcher.busy)
     watcher.run()
 
 

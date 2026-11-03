@@ -29,7 +29,10 @@ def save_circle(conn, visit_id: int, circle: dict) -> None:
 
 
 def recircle(conn, visit, site: dict | None = None) -> dict | None:
-    jpeg = (config.IMAGES_DIR / visit["image_path"]).read_bytes()
+    path = config.IMAGES_DIR / visit["image_path"]
+    if not path.exists():  # deleted, or only the thumbnail left (birdbrain.retention)
+        return None
+    jpeg = path.read_bytes()
     model = identify.SONNET if visit["model"] == identify.SONNET else identify.HAIKU
     sighting, _ = identify.ask(model, [identify.prepare(jpeg)], datetime.fromisoformat(visit["captured_at"]), site=site)
     if not sighting or sighting.visitor != (visit["corrected_visitor"] or visit["visitor"]):

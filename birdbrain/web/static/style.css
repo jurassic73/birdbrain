@@ -557,6 +557,7 @@ button.keep-btn svg { width: 16px; height: 16px; fill: #4da3ff; stroke: #fff; st
 .badge.shadow { color: var(--muted); white-space: nowrap; }
 .badge.checked { color: var(--accent); white-space: nowrap; }
 .badge.private { white-space: nowrap; }
+.badge.photo-level { white-space: nowrap; }
 .badge.public-ok { color: var(--accent); white-space: nowrap; }
 /* The confirmed pill and its Undo, centered on one line beside the visit's buttons. */
 .confirmed-pair, .confirm-pair { display: inline-flex; align-items: center; gap: 6px; align-self: center; }

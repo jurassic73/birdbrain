@@ -1,4 +1,4 @@
-{% from "_macros.html" import sp_name, badge, thumb, keeper_btn %}
+{% from "_macros.html" import sp_name, badge, thumb %}
 {# Unfiltered home page: a Today heading over the visits since midnight, then Earlier (once, also across Load more pages). #}
 {% set ns = namespace(prev=prev_day | default(none)) %}
 {% set covers = star_covers(request) if request.state.admin else {} %}
@@ -13,9 +13,8 @@
 {% set sp = fav_label if fav_label is defined and fav_label else v.label %}
 {# The star shows for admins on every card with a species (not false triggers, empty shots or "Other"). #}
 {% set fav = request.state.admin and not ft_cards and sp and sp not in ('None', 'Other') %}
-<a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}" data-full="/images/{{ v.image_path }}" data-when="{{ v.captured_at | nice_time }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
+<a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}" data-full="/images/{{ photo_src(v) }}" data-when="{{ v.captured_at | nice_time }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
   {{ thumb(v) }}
-  {% if request.state.admin %}{{ keeper_btn(v) }}{% endif %}
   {% if fav %}{% set st = 'cover' if covers.get(sp) == v.id else ('favorite' if v.keep == 1 else 'unset') %}
   {% set tips = {'unset': 'Tap to use as the species cover.', 'cover': 'Species cover: shows for ' ~ sp ~ ' on the Species page, and never deleted when space is cleared. Tap for favorite.', 'favorite': 'Favorite: never deleted when space is cleared. Tap to unset.'} %}
   {# Star: unset -> yellow species cover -> blue favorite -> unset (static/star.js; the server decides). #}

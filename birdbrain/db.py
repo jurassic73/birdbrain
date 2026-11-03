@@ -117,8 +117,18 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  # JSON {"at", "files": {photo: score}} pinning the scores they cleared (birdbrain.privacy).
                  "public_ok": "TEXT",
                  # The owner's blue keeper mark: 1 = keep this photo forever, never thinned or deleted to save space.
-                 "keep": "INTEGER"}
+                 "keep": "INTEGER",
+                 # Photo budget (birdbrain.retention) for real visits: NULL = the photo as captured, 'thinned' = saved
+                 # once smaller, 'thumb' = only the thumbnail is left. The visit itself always stays listed.
+                 "photo_level": "TEXT",
+                 "photo_thinned_at": "TEXT",
+                 # Laplacian variance of the stored photo inside its crop box, measured before any thinning: picks
+                 # each species' sharpest photos of the day, which stay full size.
+                 "photo_sharpness": "REAL"}
+# The visit's photo files are there (false triggers past the storage limit lose them; see retention.prune).
 HAS_PHOTO = "photo_deleted_at IS NULL"
+# The photo itself is there, full size or thinned, not just the thumbnail: for checks that look at the frame.
+FULL_FRAME = f"({HAS_PHOTO} AND photo_level IS NOT 'thumb')"
 EMBEDDING_ADDED_COLUMNS = {"animal_vec": "BLOB", "animal_frame": "INTEGER", "animal_score": "REAL",
                            "animal_by_owner": "INTEGER"}
 
@@ -643,6 +653,15 @@ def _seen(where: str) -> str:
         FROM (SELECT * FROM visits WHERE {where}) v, json_each(COALESCE(v.corrected_also, v.also)) j"""
 
 
+def photo_rel(visit) -> str:
+    """The biggest photo of a visit still on disk: its photo, or its thumbnail once only that is left."""
+    try:
+        thumb_only = visit["photo_level"] == "thumb"
+    except (IndexError, KeyError):
+        thumb_only = False
+    return visit["thumb_path"] if thumb_only else visit["image_path"]
+
+
 def also_of(visit) -> list[dict]:
     """A visit row's other animals, as ALSO picks them."""
     for col in ("corrected_also", "also"):
@@ -1057,7 +1076,7 @@ def species_without_favorite(conn: sqlite3.Connection, min_photos: int = 2) -> l
     """Species labels with `min_photos`+ visits that still have a photo and no owner pick that is still valid
     (the picked visit must still show the species and still have its photo), most visited first."""
     where, args = _where()
-    rows = conn.execute(f"SELECT label, id FROM ({_seen(where + ' AND ' + HAS_PHOTO)})", [*args, *args]).fetchall()
+    rows = conn.execute(f"SELECT label, id FROM ({_seen(where + ' AND ' + FULL_FRAME)})", [*args, *args]).fetchall()
     ids: dict[str, set[int]] = {}
     for r in rows:
         ids.setdefault(r["label"], set()).add(r["id"])

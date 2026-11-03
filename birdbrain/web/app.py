@@ -178,6 +178,8 @@ templates.env.globals["short_status"] = species_info.short_status
 templates.env.globals["photo_marks"] = lambda visit: [m for m in start_marks(visit) if not db.mark_frame(m)]
 templates.env.globals["no_circle_note"] = lambda visit: no_circle_note(visit)
 templates.env.globals["also_of"] = db.also_of
+# The biggest photo of a visit still on disk (just the thumbnail once the photo budget cut it down).
+templates.env.globals["photo_src"] = db.photo_rel
 templates.env.globals["also_label"] = db.also_label
 # Templates check `request.state.admin` (set by the read_only middleware); this says whether a login exists at all.
 templates.env.globals["public"] = auth.public
@@ -457,7 +459,7 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
     scope = "" if is_ft else species
     prev_id, next_id = db.get_neighbors(conn, visit_id, false_triggers=is_ft, unchecked=todo, species=scope or None)
     # The arrow targets' photos, prefetched so stepping through visits paints without a blank frame.
-    neighbor_images = [v["image_path"] for v in (db.get_visit(conn, i) for i in (prev_id, next_id) if i) if v]
+    neighbor_images = [db.photo_rel(v) for v in (db.get_visit(conn, i) for i in (prev_id, next_id) if i) if v]
     return page(
         request,
         "visit.html",
@@ -734,7 +736,7 @@ async def ask_species(visit_id: int, hint: str = Form(""), conn=Depends(get_conn
         return JSONResponse({"error": "Type a clue first, e.g. red head, finch."})
     if v["photo_deleted_at"]:
         return JSONResponse({"error": "This photo was deleted to save space, so Claude has nothing to look at."})
-    jpeg = (config.IMAGES_DIR / v["image_path"]).read_bytes()
+    jpeg = (config.IMAGES_DIR / db.photo_rel(v)).read_bytes()  # the thumbnail once only that is left
     try:
         result, usage = await asyncio.to_thread(
             names.ask, identify.prepare(jpeg), hint, datetime.fromisoformat(v["captured_at"]),

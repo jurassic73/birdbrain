@@ -226,7 +226,7 @@ def stored_empty(conn, visit_id: int, captured_at: str, night: bool, z: zone_sto
     an animal in one of them is outvoted. None with fewer than 3."""
     rows = conn.execute(
         "SELECT id, captured_at, image_path, raw_json FROM visits WHERE id != ? AND is_night = ? "
-        "AND photo_deleted_at IS NULL AND abs(julianday(captured_at) - julianday(?)) * 24 <= ? "
+        f"AND {db.FULL_FRAME} AND abs(julianday(captured_at) - julianday(?)) * 24 <= ? "
         "ORDER BY abs(julianday(captured_at) - julianday(?)) LIMIT 30",
         (visit_id, int(night), captured_at, NEIGHBOR_HOURS, captured_at)).fetchall()
     frames = []
@@ -279,7 +279,7 @@ def pending(conn, redo: bool = False) -> list:
     """Pi-settled visits with a photo and no circle that haven't been tried; with redo, also those tried before
     (their Pi circle is replaced). Never a visit with Claude's circle."""
     sql = ("SELECT * FROM visits WHERE json_extract(raw_json, '$.calls.settled_by') = 'classifier' "
-           "AND photo_deleted_at IS NULL AND (json_extract(raw_json, '$.calls.circle') IS NULL "
+           f"AND {db.FULL_FRAME} AND (json_extract(raw_json, '$.calls.circle') IS NULL "
            "OR json_extract(raw_json, '$.calls.circle.pi') = 1)")
     if not redo:
         sql += " AND json_extract(raw_json, '$.calls.motion_circle') IS NULL"
