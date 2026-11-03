@@ -98,9 +98,20 @@ CREATE TABLE IF NOT EXISTS weather_days (
     fetched_at TEXT
 );
 """
-# Approximate Claude prices (USD per million tokens) for the cost and savings figures on the home page.
-HAIKU_USD_PER_MTOK = {"input": 0.10, "output": 0.50}
-USD_PER_MTOK = {"haiku": HAIKU_USD_PER_MTOK, "sonnet": {"input": 2.00, "output": 10.00}}
+# Approximate Claude prices (USD per million tokens) for the cost and savings figures on the home page. The system
+# prompt is cached between calls (identify.ask): the API bills those tokens apart from input_tokens, reads at a
+# tenth of the input price and writes (a 5-minute cache) at 1.25 times it, as listed for both models on 2026-11-03.
+HAIKU_USD_PER_MTOK = {"input": 0.10, "output": 0.50, "cache_read": 0.01, "cache_write": 0.125}
+USD_PER_MTOK = {"haiku": HAIKU_USD_PER_MTOK,
+                "sonnet": {"input": 2.00, "output": 10.00, "cache_read": 0.20, "cache_write": 2.50}}
+# The usage field each price applies to, as saved with a visit (raw_json.calls.haiku / .sonnet).
+TOKEN_KEYS = {"input": "input_tokens", "output": "output_tokens",
+              "cache_read": "cache_read_input_tokens", "cache_write": "cache_creation_input_tokens"}
+
+
+def call_usd(price: dict, usage: dict) -> float:
+    """What one call cost, from its token counts (cached ones counted at their own price; missing ones as 0)."""
+    return sum((usage.get(key) or 0) * price[kind] for kind, key in TOKEN_KEYS.items()) / 1e6
 # Owner-editable settings (Settings page). Stored in the database so they live with the data, not the code.
 SETTINGS = {
     "location": "",      # e.g. "Vancouver, Washington, USA (Clark County, Pacific Northwest lowlands)"
@@ -135,6 +146,7 @@ EMBEDDING_ADDED_COLUMNS = {"animal_vec": "BLOB", "animal_frame": "INTEGER", "ani
 
 # How many corrections and notes join each identify prompt.
 LESSON_LIMIT = 15
+NOTE_LIMIT = 300  # characters of the owner's free-text note that go into a lesson line
 
 VISITORS = ("bird", "squirrel", "raccoon", "possum", "other", "none")
 MAMMALS = ("squirrel", "raccoon", "possum")
@@ -675,7 +687,9 @@ def _where(
     has_photo: bool = False,
     unchecked: bool = False,
 ) -> tuple[str, list]:
-    where = [FALSE_TRIGGER if false_triggers else REAL]
+    # The review queue holds every visit waiting for the owner, false triggers included: "no animal" at low
+    # confidence means something might have been one.
+    where = [FALSE_TRIGGER] if false_triggers else ([] if review else [REAL])
     args: list = []
     if has_photo:
         where.append(HAS_PHOTO)
@@ -1078,7 +1092,10 @@ def all_lessons(conn: sqlite3.Connection) -> list[dict]:
             line += (f" The owner says also there: \"{_spoken_also(owner_also)}\"." if owner_also
                      else " The owner says no other animal was there.")
         if r["feedback"]:
-            line += " Owner's note: " + re.sub(r"\s+", " ", r["feedback"]).strip()
+            note = re.sub(r"\s+", " ", r["feedback"]).strip()
+            if len(note) > NOTE_LIMIT:  # a long note is cut for the prompt; the visit keeps all of it
+                note = note[:NOTE_LIMIT - 1].rstrip() + "…"
+            line += " Owner's note: " + note
         if marks := parse_marks(r["marks"]):
             line += f" The owner circled spots on the full frame: {describe_marks(marks)}."
         in_use = not r["lesson_off"] and used < LESSON_LIMIT
@@ -1297,17 +1314,18 @@ def bump(conn: sqlite3.Connection, name: str, day: str | None = None) -> None:
 
 def avg_haiku_call_usd(conn: sqlite3.Connection, sample: int = 200) -> float:
     """Average cost of one Haiku call, from the token counts saved with recent visits."""
+    cols = ", ".join(f"AVG(COALESCE(json_extract(raw_json, '$.calls.haiku.{key}'), 0)) AS {kind}"
+                     for kind, key in TOKEN_KEYS.items())
     row = conn.execute(
-        """SELECT AVG(json_extract(raw_json, '$.calls.haiku.input_tokens')) AS i,
-                  AVG(json_extract(raw_json, '$.calls.haiku.output_tokens')) AS o
-           FROM (SELECT raw_json FROM visits
-                 WHERE json_extract(raw_json, '$.calls.haiku.input_tokens') IS NOT NULL
-                 ORDER BY id DESC LIMIT ?)""",
+        f"""SELECT {cols}
+            FROM (SELECT raw_json FROM visits
+                  WHERE json_extract(raw_json, '$.calls.haiku.input_tokens') IS NOT NULL
+                  ORDER BY id DESC LIMIT ?)""",
         (sample,),
     ).fetchone()
-    if row["i"] is None:
+    if row["input"] is None:
         return 0.0
-    return (row["i"] * HAIKU_USD_PER_MTOK["input"] + row["o"] * HAIKU_USD_PER_MTOK["output"]) / 1_000_000
+    return call_usd(HAIKU_USD_PER_MTOK, {key: row[kind] for kind, key in TOKEN_KEYS.items()})
 
 
 def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
@@ -1339,8 +1357,7 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
     for raw in conn.execute(f"SELECT raw_json FROM visits WHERE {day_where} AND model LIKE 'claude%'", day_args):
         calls = (json.loads(raw[0] or "{}") or {}).get("calls") or {}
         for model, price in USD_PER_MTOK.items():
-            c = calls.get(model) or {}
-            spend += (c.get("input_tokens", 0) * price["input"] + c.get("output_tokens", 0) * price["output"]) / 1e6
+            spend += call_usd(price, calls.get(model) or {})
     n = lambda k: r[k] or 0
     return {
         "visitors": n("visitors"),
@@ -1356,8 +1373,8 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
 
 def _spend_sql(model: str) -> str:
     price = USD_PER_MTOK[model]
-    return (f"COALESCE(SUM(json_extract(raw_json, '$.calls.{model}.input_tokens')), 0) * {price['input']} + "
-            f"COALESCE(SUM(json_extract(raw_json, '$.calls.{model}.output_tokens')), 0) * {price['output']}")
+    return " + ".join(f"COALESCE(SUM(json_extract(raw_json, '$.calls.{model}.{key}')), 0) * {price[kind]}"
+                      for kind, key in TOKEN_KEYS.items())
 
 
 TOTALS_TTL = 60  # seconds the About page's all-time figures are reused: they read every visit's raw_json

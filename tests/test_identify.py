@@ -37,7 +37,28 @@ def test_system_prompt_appends_lessons_only_when_there_are_some():
     assert identify.system_prompt(None) == identify.SYSTEM
     assert identify.system_prompt([]) == identify.SYSTEM
     prompt = identify.system_prompt(["- lesson one", "- lesson two"])
-    assert prompt.startswith(identify.SYSTEM) and prompt.endswith("- lesson one\n- lesson two")
+    assert prompt.startswith(identify.SYSTEM) and prompt.endswith("- lesson one\n- lesson two\n</corrections>")
+
+
+def test_owner_notes_and_lessons_sit_inside_their_tags_after_one_line_about_them():
+    site = {"location": "Vancouver, Washington, USA", "scene_notes": "Rocks in the water.", "target_notes": "Juncos.",
+            "ignore_notes": "A cord."}
+    prompt = identify.system_prompt(["- a lesson"], site)
+    notes = prompt.split("<yard_notes>\n")[1].split("\n</yard_notes>")[0]
+    assert all(s in notes for s in ("The camera is in Vancouver", "Rocks in the water.", "Juncos.", "A cord."))
+    lessons = prompt.split("<corrections>\n")[1].split("\n</corrections>")[0]
+    assert lessons.endswith("- a lesson") and "newest first" in lessons
+    intro = prompt.index(identify.OWNER_INTRO)
+    assert prompt.index(identify.SYSTEM) < intro < prompt.index("<yard_notes>") < prompt.index("<corrections>")
+    assert "never change" in identify.OWNER_INTRO and "answer format" in identify.OWNER_INTRO
+    # Only the parts the owner filled in get a tag.
+    assert "<yard_notes>" not in identify.system_prompt(["- a lesson"]) and "<corrections>" in identify.system_prompt(["- a lesson"])
+    assert "<corrections>" not in identify.system_prompt(None, site) and "<yard_notes>" in identify.system_prompt(None, site)
+
+
+def test_the_prompt_defines_confidence_for_an_empty_photo():
+    bullet = next(l for l in identify.SYSTEM.splitlines() if l.startswith("- confidence:"))
+    assert 'For "none"' in bullet and "clearly empty" in bullet and "might be an animal" in bullet
 
 
 def test_generic_instructions_name_no_particular_place():
@@ -57,28 +78,33 @@ def test_system_prompt_includes_the_owners_settings_in_order():
 def test_identify_passes_settings_to_every_model(monkeypatch):
     seen = []
 
-    def ask(model, images_b64, captured_at, lessons=None, site=None):
-        seen.append(site)
+    def ask(model, images_b64, captured_at, lessons=None, site=None, night=False):
+        seen.append((site, night))
         return (sighting(confidence="low") if model == HAIKU else sighting()), {"model": model}
 
     monkeypatch.setattr(identify, "ask", ask)
-    identify.identify(jpeg(), WHEN, site={"location": "Here"})
-    assert seen == [{"location": "Here"}, {"location": "Here"}]
+    identify.identify(jpeg(), WHEN, site={"location": "Here"}, night=True)
+    assert seen == [({"location": "Here"}, True), ({"location": "Here"}, True)]
 
 
-def sighting(visitor="bird", species="Dark-eyed Junco", confidence="high") -> Sighting:
-    return Sighting(visitor=visitor, species=species, count=1, confidence=confidence, notes="")
+def sighting(visitor="bird", species="Dark-eyed Junco", confidence="high", notes="", also=()) -> Sighting:
+    return Sighting(visitor=visitor, species=species, count=1, confidence=confidence, notes=notes, circle=None,
+                    also=list(also))
 
 
 @pytest.fixture
 def fake_ask(monkeypatch):
-    """Replace the API call with scripted answers per model; records which models were asked."""
+    """Replace the API call with scripted answers per model; records which models were asked. An answer can be a
+    (sighting, meta) pair when the test needs to script the call details too."""
     calls = []
 
     def install(answers: dict):
-        def ask(model, images_b64, captured_at, lessons=None, site=None):
+        def ask(model, images_b64, captured_at, lessons=None, site=None, night=False):
             calls.append((model, lessons, len(images_b64)))
-            return answers[model], {"model": model}
+            answer = answers[model]
+            if isinstance(answer, tuple):
+                return answer
+            return answer, {"model": model}
         monkeypatch.setattr(identify, "ask", ask)
         return calls
 
@@ -136,10 +162,103 @@ def test_still_low_after_escalation_goes_to_review(fake_ask):
     assert identify.identify(jpeg(), WHEN).needs_review is True
 
 
-def test_low_confidence_empty_frame_does_not_escalate(fake_ask):
-    calls = fake_ask({HAIKU: sighting(visitor="none", species=None, confidence="low")})
+@pytest.mark.parametrize("confidence", ["high", "medium"])
+def test_a_confident_empty_frame_does_not_escalate(fake_ask, confidence):
+    calls = fake_ask({HAIKU: sighting(visitor="none", species=None, confidence=confidence)})
     r = identify.identify(jpeg(), WHEN)
     assert (r.model, r.needs_review) == (HAIKU, False) and len(calls) == 1
+
+
+def test_a_doubtful_empty_frame_gets_sonnets_look_and_waits_for_review_if_still_doubtful(fake_ask):
+    doubt = sighting(visitor="none", species=None, confidence="low")
+    calls = fake_ask({HAIKU: doubt, SONNET: doubt})
+    r = identify.identify(jpeg(), WHEN, extra_frames=[jpeg(), jpeg()])
+    assert [(m, n) for m, _, n in calls] == [(HAIKU, 1), (SONNET, 3)]
+    assert (r.sighting.visitor, r.model, r.escalated, r.needs_review) == ("none", SONNET, True, True)
+
+
+def test_sonnet_settling_a_doubtful_empty_frame_either_way_needs_no_review(fake_ask):
+    fake_ask({HAIKU: sighting(visitor="none", species=None, confidence="low"), SONNET: sighting()})
+    r = identify.identify(jpeg(), WHEN)
+    assert (r.sighting.species, r.needs_review) == ("Dark-eyed Junco", False)
+    fake_ask({HAIKU: sighting(visitor="none", species=None, confidence="low"),
+              SONNET: sighting(visitor="none", species=None, confidence="high")})
+    r = identify.identify(jpeg(), WHEN)
+    assert (r.sighting.visitor, r.needs_review) == ("none", False)
+
+
+def test_sonnet_failing_on_a_doubtful_empty_frame_leaves_it_in_review(fake_ask):
+    fake_ask({HAIKU: sighting(visitor="none", species=None, confidence="low"), SONNET: None})
+    r = identify.identify(jpeg(), WHEN)
+    assert (r.sighting.visitor, r.model, r.needs_review) == ("none", HAIKU, True)
+
+
+# --- species names ---
+
+@pytest.mark.parametrize("said, official", [
+    ("black-capped chickadee", "Black-capped Chickadee"),
+    ("Steller’s Jay", "Steller's Jay"),      # curly apostrophe
+    ("Stellers Jay", "Steller's Jay"),
+    ("Dark eyed Junco", "Dark-eyed Junco"),
+    ("House Finch ", "House Finch"),
+])
+def test_bird_names_are_stored_in_their_official_spelling(fake_ask, said, official):
+    fake_ask({HAIKU: sighting(species=said)})
+    r = identify.identify(jpeg(), WHEN, confirmed={"Steller's Jay"})
+    assert r.sighting.species == official and r.raw["haiku"]["answer"]["species"] == official
+
+
+def test_a_race_in_parentheses_moves_to_the_notes(fake_ask):
+    fake_ask({HAIKU: sighting(species="Dark-eyed Junco (Oregon)", notes="Bathing.")})
+    r = identify.identify(jpeg(), WHEN)
+    assert (r.sighting.species, r.sighting.notes) == ("Dark-eyed Junco", "Bathing. (Oregon)")
+
+
+def test_an_unknown_bird_name_is_kept_as_said(fake_ask):
+    fake_ask({HAIKU: sighting(species="Mystery Warbler (eastern)")})
+    assert identify.identify(jpeg(), WHEN).sighting.species == "Mystery Warbler (eastern)"
+
+
+def test_other_animals_get_official_names_too_and_mammals_are_left_alone(fake_ask):
+    from birdbrain.identify import Also
+    s = sighting(also=[Also(visitor="bird", species="bushtit", count=2, confidence="high", circle=None),
+                       Also(visitor="squirrel", species="douglas squirrel", count=1, confidence="high", circle=None)])
+    fake_ask({HAIKU: s})
+    r = identify.identify(jpeg(), WHEN)
+    assert [a["species"] for a in r.raw["also"]] == ["Bushtit", "douglas squirrel"]
+
+
+def test_official_spelling_counts_as_the_confirmed_species_so_sonnet_is_skipped(fake_ask):
+    calls = fake_ask({HAIKU: sighting(species="dark-eyed junco", confidence="medium"), SONNET: sighting()})
+    r = identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"})
+    assert [m for m, _, _ in calls] == [HAIKU] and r.sighting.species == "Dark-eyed Junco"
+
+
+def test_sonnets_answer_is_canonical_as_well(fake_ask):
+    fake_ask({HAIKU: sighting(confidence="low"), SONNET: sighting(species="house finch")})
+    assert identify.identify(jpeg(), WHEN).sighting.species == "House Finch"
+
+
+def test_names_are_never_downloaded_while_identifying(fake_ask, monkeypatch, tmp_path):
+    from birdbrain import config, names
+    monkeypatch.setattr(names, "_names", None)       # nothing loaded...
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)  # ...and no list on disk (a download would trip no_network)
+    fake_ask({HAIKU: sighting(species="black-capped chickadee")})
+    r = identify.identify(jpeg(), WHEN, confirmed={"Black-capped Chickadee"})
+    assert r.sighting.species == "Black-capped Chickadee"      # the yard's own names still work
+    fake_ask({HAIKU: sighting(species="black-capped chickadee")})  # a fresh answer: the last one was renamed in place
+    assert identify.identify(jpeg(), WHEN).sighting.species == "black-capped chickadee"
+    assert names._names is None and names.canonical("house finch", fetch=False) is None
+
+
+# --- the model that answered ---
+
+def test_the_visit_records_the_model_that_actually_answered(fake_ask):
+    fake_ask({HAIKU: sighting(confidence="low"), SONNET: (sighting(), {"model": "claude-opus-4-8"})})
+    r = identify.identify(jpeg(), WHEN)
+    assert (r.model, r.escalated) == ("claude-opus-4-8", True) and r.raw["sonnet"]["model"] == "claude-opus-4-8"
+    fake_ask({HAIKU: (sighting(), {"model": "claude-haiku-5-5-20270101"})})
+    assert identify.identify(jpeg(), WHEN).model == "claude-haiku-5-5-20270101"
 
 
 def test_haiku_refusal_falls_back_to_sonnet(fake_ask):
@@ -166,7 +285,7 @@ def test_sonnet_refusal_after_a_medium_answer_goes_to_review(fake_ask):
 
 
 def test_sonnet_error_keeps_the_haiku_answer_for_review(monkeypatch):
-    def ask(model, images_b64, captured_at, lessons=None, site=None):
+    def ask(model, images_b64, captured_at, lessons=None, site=None, night=False):
         if model == SONNET:
             raise anthropic.APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
         return sighting(confidence="medium"), {"model": model}
@@ -179,23 +298,73 @@ def test_sonnet_error_keeps_the_haiku_answer_for_review(monkeypatch):
 
 
 class FakeClient:
-    """client() stand-in whose parse() returns a scripted response or raises."""
+    """client() stand-in whose parse() returns a scripted response or raises; keeps the request it got."""
 
     def __init__(self, response=None, raises=None):
         self.beta = self
         self.messages = self
         self.response, self.raises = response, raises
+        self.request = None
 
     def parse(self, **kwargs):
+        self.request = kwargs
         if self.raises:
             raise self.raises
         return self.response
 
 
 class FakeResponse:
-    def __init__(self, stop_reason, parsed_output=None):
-        self.model, self.stop_reason, self.parsed_output = HAIKU, stop_reason, parsed_output
-        self.usage = type("Usage", (), {"input_tokens": 1200, "output_tokens": 40})()
+    def __init__(self, stop_reason, parsed_output=None, model=HAIKU, **usage):
+        self.model, self.stop_reason, self.parsed_output = model, stop_reason, parsed_output
+        self.usage = type("Usage", (), {"input_tokens": 1200, "output_tokens": 40, **usage})()
+
+
+def request_of(monkeypatch, model, night=False) -> dict:
+    """The keyword arguments ask() sends to messages.parse for one call."""
+    fake = FakeClient(FakeResponse("end_turn", sighting()))
+    monkeypatch.setattr(identify, "client", lambda: fake)
+    identify.ask(model, ["abc"], WHEN, ["- a lesson"], {"location": "Here"}, night=night)
+    return fake.request
+
+
+def test_fallbacks_are_only_sent_for_sonnet(monkeypatch):
+    haiku = request_of(monkeypatch, HAIKU)
+    assert "fallbacks" not in haiku and "betas" not in haiku
+    sonnet = request_of(monkeypatch, SONNET)
+    assert sonnet["fallbacks"] == "default" and sonnet["betas"] == ["server-side-fallback-2026-07-01"]
+
+
+def test_the_system_prompt_is_sent_as_one_cached_block(monkeypatch):
+    for model in (HAIKU, SONNET):
+        system = request_of(monkeypatch, model)["system"]
+        assert len(system) == 1 and system[0]["cache_control"] == {"type": "ephemeral"}
+        assert system[0]["text"] == identify.system_prompt(["- a lesson"], {"location": "Here"})
+
+
+def test_night_frames_say_so_in_the_user_text(monkeypatch):
+    text = request_of(monkeypatch, HAIKU, night=True)["messages"][0]["content"][-1]["text"]
+    assert "This is a night infrared frame: grayscale, no color." in text
+    assert "infrared" not in request_of(monkeypatch, HAIKU)["messages"][0]["content"][-1]["text"]
+    three = identify.user_content(["a", "b", "c"], WHEN, night=True)[-1]["text"]
+    assert "These are night infrared frames" in three and "same visit" in three
+
+
+def test_the_schema_requires_the_circle_and_the_other_animals():
+    from anthropic.lib._parse._transform import to_json_output_format
+    schema = to_json_output_format(Sighting)["schema"]
+    assert set(schema["required"]) == {"visitor", "species", "count", "confidence", "notes", "circle", "also"}
+    assert set(schema["$defs"]["Also"]["required"]) == {"visitor", "species", "count", "confidence", "circle"}
+
+
+def test_ask_records_the_served_model_and_cached_tokens(monkeypatch):
+    fake = FakeClient(FakeResponse("end_turn", sighting(), model="claude-opus-4-8",
+                                   cache_read_input_tokens=900, cache_creation_input_tokens=0))
+    monkeypatch.setattr(identify, "client", lambda: fake)
+    answer, meta = identify.ask(SONNET, ["abc"], WHEN)
+    assert answer is not None and meta == {"model": "claude-opus-4-8", "input_tokens": 1200, "output_tokens": 40,
+                                           "cache_read_input_tokens": 900, "cache_creation_input_tokens": 0}
+    monkeypatch.setattr(identify, "client", lambda: FakeClient(FakeResponse("end_turn", sighting())))
+    assert "cache_read_input_tokens" not in identify.ask(HAIKU, ["abc"], WHEN)[1]  # an SDK without the fields
 
 
 def truncated_output_error() -> pydantic.ValidationError:

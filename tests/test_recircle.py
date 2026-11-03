@@ -23,7 +23,7 @@ def test_recircle_adds_circles_only_where_the_answer_agrees_and_never_changes_la
         asked.append(model)
         visitor = "bird" if model == identify.HAIKU else "possum"  # the squirrel answer disagrees
         return Sighting(visitor=visitor, species="Bushtit", count=1, confidence="high", notes="",
-                        circle=Circle(x=0.5, y=0.5, r=0.1)), {}
+                        circle=Circle(x=0.5, y=0.5, r=0.1), also=[]), {}
 
     monkeypatch.setattr(identify, "ask", ask)
     assert [v["id"] for v in recircle.pending(conn, day)] == [junco, squirrel]

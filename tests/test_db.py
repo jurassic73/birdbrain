@@ -455,6 +455,45 @@ def test_switched_off_lessons_leave_the_prompt_and_the_next_newest_moves_up(conn
     assert "new note" in db.recent_lessons(conn)[0]
 
 
+def test_a_long_owner_note_is_cut_for_the_prompt_but_kept_on_the_visit(conn, add_visit):
+    note = "word " * 100  # 500 characters
+    vid = add_visit(feedback=note, captured_at=at(0))
+    line = db.recent_lessons(conn)[0]
+    sent = line.split("Owner's note: ")[1]
+    assert len(sent) == db.NOTE_LIMIT and sent.endswith("…") and sent.startswith("word word")
+    assert db.get_visit(conn, vid)["feedback"] == note
+    assert db.all_lessons(conn)[0]["feedback"] == note  # the edit form shows all of it
+    add_visit(feedback="short", captured_at=at(0))
+    assert db.recent_lessons(conn)[0].endswith("Owner's note: short")
+
+
+def test_the_review_queue_includes_a_doubtful_empty_frame(conn, add_visit):
+    doubt = add_visit(visitor="none", species=None, confidence="low", needs_review=1)
+    add_visit(visitor="none", species=None, confidence="high")
+    bird = add_visit(confidence="low", needs_review=1)
+    assert [r["id"] for r in db.list_visits(conn, review=True)] == [doubt, bird]
+    assert db.count_visits(conn, review=True) == 2
+    assert db.count_visits(conn) == 1 and db.count_visits(conn, false_triggers=True) == 2  # still a false trigger
+    db.mark_reviewed(conn, doubt)
+    assert db.count_visits(conn, review=True) == 1
+
+
+def test_cached_prompt_tokens_cost_their_own_price(conn, add_visit):
+    import json
+
+    haiku = {"input_tokens": 1000, "output_tokens": 100, "cache_read_input_tokens": 2000, "cache_creation_input_tokens": 0}
+    sonnet = {"input_tokens": 4000, "output_tokens": 300, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 2000}
+    add_visit(raw_json=json.dumps({"calls": {"haiku": haiku, "sonnet": sonnet}}), escalated=1, model="claude-sonnet-5-5")
+    expect_haiku = (1000 * 0.10 + 100 * 0.50 + 2000 * 0.01) / 1e6
+    expect_sonnet = (4000 * 2.00 + 300 * 10.00 + 2000 * 2.50) / 1e6
+    assert db.call_usd(db.USD_PER_MTOK["haiku"], haiku) == pytest.approx(expect_haiku)
+    assert db.totals(conn)["claude_usd"] == pytest.approx(expect_haiku + expect_sonnet)
+    assert db.activity(conn)["claude_usd"] == pytest.approx(expect_haiku + expect_sonnet)
+    assert db.avg_haiku_call_usd(conn) == pytest.approx(expect_haiku)
+    for price in db.USD_PER_MTOK.values():  # reads are cheaper than fresh input, writes dearer
+        assert price["cache_read"] < price["input"] < price["cache_write"]
+
+
 def test_prompt_site_is_claudes_notes_only(conn):
     # an old Claude outline left in the settings table is no longer described to Claude: zones live on Settings
     db.set_value(conn, "scene", json.dumps({"objects": [{"name": "rock", "kind": "distraction", "note": ""}]}))

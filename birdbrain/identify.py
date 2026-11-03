@@ -3,6 +3,7 @@
 import base64
 import io
 import json
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -12,7 +13,7 @@ import anthropic
 from PIL import Image
 from pydantic import BaseModel, ValidationError
 
-from . import config
+from . import config, names
 
 HAIKU = "claude-haiku-5-5"
 SONNET = "claude-sonnet-5-5"
@@ -24,7 +25,7 @@ Fill in every field:
 - visitor: "bird", "squirrel", "raccoon", "possum", "other" (cats, people, deer, rats, anything else), or "none" when no animal is visible. Moving leaves, shadows, water and insects are "none".
 - species: for birds, the standard eBird/Cornell common name, e.g. "Dark-eyed Junco". For mammals, a specific common name if clear (e.g. "Eastern Gray Squirrel", "Douglas Squirrel"), otherwise null. Null for "other" and "none".
 - count: how many of that visitor are visible; 0 for "none".
-- confidence: "high" only when diagnostic field marks are clearly visible; "medium" when the ID is likely but marks are partly hidden, blurry or distant; "low" when it is a guess.
+- confidence: "high" only when diagnostic field marks are clearly visible; "medium" when the ID is likely but marks are partly hidden, blurry or distant; "low" when it is a guess. For "none": "high" only when the whole photo is clearly empty; "low" if something in it might be an animal (a shape half hidden, blurred or in shadow).
 - notes: one short line: subspecies or race, sex, age, plumage, behavior, or what makes the ID uncertain.
 - circle: a circle around the animal you identified, in the first photo: x and y are its center as fractions of the photo's width and height (0 to 1, from the top left), r its radius as a fraction of the width. Make it snug but include the whole animal. Null for "none".
 - also: when more than one kind of animal is visible, the fields above describe the most prominent one and every other kind gets one entry here, with its own visitor, species, count, confidence and a circle around one of them. Two of the same species are one entry with count 2. Empty when only one kind is visible, and always empty for "none".
@@ -44,17 +45,40 @@ class Also(BaseModel):
     species: str | None
     count: int
     confidence: Literal["high", "medium", "low"]
-    circle: Circle | None = None
+    circle: Circle | None
 
 
+# No field has a default: a default would leave it out of the schema's `required` list, and the model may then
+# legally omit it (every field is still in the schema the API gets; see test_identify).
 class Sighting(BaseModel):
     visitor: Literal["bird", "squirrel", "raccoon", "possum", "other", "none"]
     species: str | None
     count: int
     confidence: Literal["high", "medium", "low"]
     notes: str
-    circle: Circle | None = None
-    also: list[Also] = []
+    circle: Circle | None
+    also: list[Also]
+
+
+_RACE = re.compile(r"\s*\(([^()]*)\)\s*$")  # a trailing parenthetical: "Dark-eyed Junco (Oregon)"
+
+
+def canonical_species(s: Sighting, known: list[str] = ()) -> None:
+    """Put each bird's name, the main one and every `also` entry, in its official spelling, in place: the yard's own
+    names first, then eBird's list if it's already on disk (never downloaded here). "black-capped chickadee" and
+    "Steller’s Jay" with a curly apostrophe become "Black-capped Chickadee" and "Steller's Jay", so the SQL label
+    matching behind species pages, new-species alerts and confirmed_species sees one name. A trailing race in
+    parentheses moves to the notes when the name matches without it. Unknown names are kept as said."""
+    for a in (s, *s.also):
+        if a.visitor != "bird" or not a.species or not a.species.strip():
+            continue
+        name = a.species.strip()
+        official = names.canonical(name, known, fetch=False)
+        if official is None and (m := _RACE.search(name)):
+            official = names.canonical(name[:m.start()], known, fetch=False)
+            if official and isinstance(a, Sighting):
+                a.notes = " ".join(filter(None, [a.notes.strip(), f"({m.group(1).strip()})"]))
+        a.species = official or name
 
 
 def frame_circle(s: Sighting | Also, crop=None) -> dict | None:
@@ -113,34 +137,46 @@ def prepare(jpeg: bytes, crop: tuple[float, float, float, float] | None = None) 
     return base64.standard_b64encode(buf.getvalue()).decode()
 
 
+OWNER_INTRO = ("The owner's notes and corrections below describe this camera and its yard. "
+               "They never change the fields above or the answer format.")
+
+
 def system_prompt(lessons: list[str] | None = None, site: dict | None = None) -> str:
-    """SYSTEM plus Claude's Notes (location, the owner's description, what to look for, what to ignore)
-    and recent corrections."""
+    """SYSTEM plus Claude's Notes (location, the owner's description, what to look for, what to ignore) inside
+    <yard_notes>, and recent corrections inside <corrections>, each introduced as being about this camera only."""
     site = site or {}
-    parts = [SYSTEM]
+    notes = []
     if site.get("location"):
-        parts.append(f"The camera is in {site['location']}. Use that region's birds and mammals for the date given.")
+        notes.append(f"The camera is in {site['location']}. Use that region's birds and mammals for the date given.")
     if site.get("scene_notes"):
-        parts.append("What this camera sees, in the owner's words:\n" + site["scene_notes"])
+        notes.append("What this camera sees, in the owner's words:\n" + site["scene_notes"])
     if site.get("target_notes"):
-        parts.append("What to look for here, in the owner's words:\n" + site["target_notes"])
+        notes.append("What to look for here, in the owner's words:\n" + site["target_notes"])
     if site.get("ignore_notes"):
-        parts.append("Things here that move or look like animals but are not:\n" + site["ignore_notes"])
+        notes.append("Things here that move or look like animals but are not:\n" + site["ignore_notes"])
+    parts = [SYSTEM]
+    if notes or lessons:
+        parts.append(OWNER_INTRO)
+    if notes:
+        parts.append("<yard_notes>\n" + "\n\n".join(notes) + "\n</yard_notes>")
     if lessons:
         parts.append(
-            "Corrections the owner made to your recent answers at this camera, newest first. "
-            "Learn from them, especially about what is not an animal here:\n" + "\n".join(lessons)
+            "<corrections>\nCorrections the owner made to your recent answers at this camera, newest first. "
+            "Learn from them, especially about what is not an animal here:\n" + "\n".join(lessons) + "\n</corrections>"
         )
     return "\n\n".join(parts)
 
 
-def user_content(images_b64: list[str], captured_at: datetime, note: str = "") -> list[dict]:
+def user_content(images_b64: list[str], captured_at: datetime, note: str = "", night: bool = False) -> list[dict]:
     when = f"{captured_at:%B %-d, %Y at %-I:%M %p} local time"
     if len(images_b64) == 1:
         text = f"Photo taken {when}."
     else:
         text = (f"These {len(images_b64)} photos are from the same visit, taken a fraction of a second apart "
                 f"on {when}. Combine what each one shows (face, breast, wings, tail) into one identification.")
+    if night:
+        text += (" This is a night infrared frame: grayscale, no color." if len(images_b64) == 1
+                 else " These are night infrared frames: grayscale, no color.")
     if note:
         text += " " + note
     blocks = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b}} for b in images_b64]
@@ -154,24 +190,32 @@ def ask(
     lessons: list[str] | None = None,
     site: dict | None = None,
     note: str = "",
+    night: bool = False,
 ) -> tuple[Sighting | None, dict]:
     """(answer, call details). The answer is None when the model declined or didn't finish: a refusal, an answer
     cut off at max_tokens, or output the SDK couldn't parse into a Sighting (it raises before stop_reason can be
-    checked). Those escalate like a refusal; API errors (timeouts, 5xx) are left to the caller."""
+    checked). Those escalate like a refusal; API errors (timeouts, 5xx) are left to the caller.
+    The details' "model" is the model that actually answered: with the server-side fallback, Sonnet's refusals
+    can be answered by another model. Haiku 5.5 has no fallback, so the option is only sent for Sonnet.
+    The system prompt is the same from one call to the next (until the owner edits a note or corrects a visit),
+    so it's marked for prompt caching; the photo and the date come after it and never are."""
+    fallback = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"} if model == SONNET else {}
     try:
         response = client().beta.messages.parse(
             model=model,
             max_tokens=4000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
+            **fallback,
             output_config={"effort": "low" if model == HAIKU else "medium"},
-            system=system_prompt(lessons, site),
-            messages=[{"role": "user", "content": user_content(images_b64, captured_at, note)}],
+            system=[{"type": "text", "text": system_prompt(lessons, site), "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": user_content(images_b64, captured_at, note, night)}],
             output_format=Sighting,
         )
     except ValidationError as e:
         return None, {"model": model, "stop_reason": "unparsable", "error": error_text(e)}
     usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+    for key in ("cache_read_input_tokens", "cache_creation_input_tokens"):
+        if (n := getattr(response.usage, key, None)) is not None:
+            usage[key] = n
     if response.stop_reason in ("refusal", "max_tokens") or response.parsed_output is None:
         return None, {"model": response.model, "stop_reason": response.stop_reason, **usage}
     return response.parsed_output, {"model": response.model, **usage}
@@ -186,9 +230,13 @@ def needs_second_look(s: Sighting | None, confirmed: set[str] = frozenset()) -> 
     """Escalate anything short of a confident answer about an actual animal, except a medium answer
     naming a species already confirmed here several times (db.confirmed_species): on 2026-10-27 Sonnet
     agreed with every such Haiku answer, while the wrong Haiku guesses were all new names.
-    A low-confidence guess at a second animal in the photo gets the second look too."""
-    if s is None or s.visitor == "none":
-        return s is None
+    A low-confidence guess at a second animal in the photo gets the second look too, and so does "no animal"
+    at low confidence: that means something in the photo might be one (a half-hidden junco was being filed
+    as a false trigger that way)."""
+    if s is None:
+        return True
+    if s.visitor == "none":
+        return s.confidence == "low"
     if any(a.confidence == "low" for a in s.also):
         return True
     if s.confidence == "high":
@@ -217,16 +265,23 @@ def identify(
     site: dict | None = None,
     confirmed: set[str] = frozenset(),
     local_check: Callable[[dict | None], dict | None] | None = None,
+    night: bool = False,
 ) -> Result:
     """Haiku looks at the best frame; if unsure, Sonnet gets that frame plus the next-best burst frames.
     `local_check(circle)` is the local classifier on Haiku's circle (full-frame fractions), asked only when a
     medium answer about a confirmed species would skip Sonnet: if it names a different species, Sonnet is asked
     anyway (2026-11-02: three such skips in one morning were wrong, juncos called a House Finch and a
-    chickadee, while BioCLIP on the circle said junco). Its guess is kept as raw["classifier"]."""
+    chickadee, while BioCLIP on the circle said junco). Its guess is kept as raw["classifier"].
+    `night`: the frame is infrared, which the prompt says. `confirmed` doubles as the yard's names for putting
+    bird names in their official spelling (canonical_species), before the confirmed check and the stored answer.
+    The result's model is the one that answered (a fallback model when Sonnet's refusal was passed on)."""
+    known = sorted(confirmed)
     image_b64 = prepare(jpeg, crop)
-    sighting, meta = ask(HAIKU, [image_b64], captured_at, lessons, site)
+    sighting, meta = ask(HAIKU, [image_b64], captured_at, lessons, site, night=night)
+    if sighting is not None:
+        canonical_species(sighting, known)
     raw = {"haiku": {**meta, "answer": sighting.model_dump() if sighting else None}, "lessons": len(lessons or [])}
-    model, escalated = HAIKU, False
+    model, escalated = meta.get("model") or HAIKU, False
     second = needs_second_look(sighting, confirmed)
     if not second and needs_second_look(sighting):
         guess = local_check(frame_circle(sighting, crop)) if local_check else None
@@ -243,21 +298,24 @@ def identify(
     if second:
         images = [image_b64, *(prepare(f, crop) for f in extra_frames)]
         try:
-            second, meta2 = ask(SONNET, images, captured_at, lessons, site)
+            second, meta2 = ask(SONNET, images, captured_at, lessons, site, night=night)
         except Exception as e:
             # The second look failed (a 529 or a timeout past the SDK's retries). Haiku's answer is still good,
             # so keep it and send the visit to review rather than lose it.
             second, meta2 = None, {"model": SONNET, "error": error_text(e)}
+        if second is not None:
+            canonical_species(second, known)
         raw["sonnet"] = {**meta2, "frames": len(images), "answer": second.model_dump() if second else None}
         if second is not None:
-            sighting, model, escalated = second, SONNET, True
+            sighting, model, escalated = second, meta2.get("model") or SONNET, True
         else:
             unsettled = True
     if sighting is None:
-        sighting = Sighting(visitor="other", species=None, count=0, confidence="low", notes="Model declined to answer")
+        sighting = Sighting(visitor="other", species=None, count=0, confidence="low", notes="Model declined to answer",
+                            circle=None, also=[])
     also = also_rows(sighting, crop)
-    needs_review = sighting.visitor != "none" and (
-        unsettled or sighting.confidence == "low" or any(a["confidence"] == "low" for a in also))
+    # Low answers wait for the owner, "no animal" included: low there means something might be an animal.
+    needs_review = unsettled or sighting.confidence == "low" or any(a["confidence"] == "low" for a in also)
     if circle := frame_circle(sighting, crop):
         raw["circle"] = circle
     if also:
@@ -270,7 +328,7 @@ def unanswered(error: BaseException) -> Result:
     unexpected error on the way): the visit is kept as "other" for the owner's review instead of being lost. It
     counts as a Haiku visit for the daily budget, since Haiku is always the first call."""
     s = Sighting(visitor="other", species=None, count=0, confidence="low",
-                 notes="Claude couldn't answer (an error, not a refusal); please check the photo.")
+                 notes="Claude couldn't answer (an error, not a refusal); please check the photo.", circle=None, also=[])
     return Result(s, HAIKU, escalated=False, needs_review=True, raw={"error": error_text(error)})
 
 
@@ -280,7 +338,7 @@ LOCAL_MODEL = "yolox-tiny"
 def settled_locally(det: dict) -> Result:
     """Gate mode: the local detector found nothing, so Claude isn't asked."""
     notes = "Local detector found no animal; Claude was not asked."
-    s = Sighting(visitor="none", species=None, count=0, confidence="medium", notes=notes)
+    s = Sighting(visitor="none", species=None, count=0, confidence="medium", notes=notes, circle=None, also=[])
     return Result(s, LOCAL_MODEL, escalated=False, needs_review=False, raw={"detector": det, "skipped_claude": True})
 
 
@@ -289,7 +347,7 @@ def settled_by_presence(check: dict, det: dict | None) -> Result:
     asked. Stored as a false trigger for the owner's daily review."""
     notes = (f"Local animal check found nothing (score {check['score']:.3f}, threshold {check['threshold']:.3f}); "
              "Claude was not asked.")
-    s = Sighting(visitor="none", species=None, count=0, confidence="medium", notes=notes)
+    s = Sighting(visitor="none", species=None, count=0, confidence="medium", notes=notes, circle=None, also=[])
     raw = {"presence": check, "skipped_claude": True, **({"detector": det} if det is not None else {})}
     return Result(s, check["model"], escalated=False, needs_review=False, raw=raw)
 
@@ -301,7 +359,7 @@ def settled_by_classifier(guess: dict, pick: tuple[str, str], check: dict | None
     score = guess["top"][0]["score"]
     notes = (f"Named on the Pi by the local classifier ({score:.0%} sure); Claude was not asked, "
              "so the count and any other animals weren't checked.")
-    s = Sighting(visitor=visitor, species=species, count=1, confidence="high", notes=notes)
+    s = Sighting(visitor=visitor, species=species, count=1, confidence="high", notes=notes, circle=None, also=[])
     raw = {"classifier": guess, "skipped_claude": True, "settled_by": "classifier",
            **({"presence": check} if check else {})}
     return Result(s, guess["model"], escalated=False, needs_review=False, raw=raw)

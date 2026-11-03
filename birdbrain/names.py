@@ -24,16 +24,18 @@ def _key(name: str) -> str:
     return re.sub(r"[^a-z]", "", name.lower())
 
 
-def bird_names() -> list[str]:
+def bird_names(fetch: bool = True) -> list[str]:
     """Every eBird species name, downloaded on first use (~1 MB). Empty if it can't be fetched; a failed download
-    is retried at most hourly (every search keystroke would otherwise wait on a 30 s request)."""
+    is retried at most hourly (every search keystroke would otherwise wait on a 30 s request).
+    With fetch=False the list is only read from memory or disk, never downloaded: the watcher mustn't wait on
+    the network in the middle of a visit."""
     global _names, _failed_at
     if _names is None:
         from . import species_info
         path = config.DATA_DIR / "ebird_names.json"
         names = species_info.read_json(path)  # a truncated or garbled file counts as missing
         if not isinstance(names, list):
-            if _failed_at and time.monotonic() - _failed_at < species_info.RETRY_AFTER:
+            if not fetch or (_failed_at and time.monotonic() - _failed_at < species_info.RETRY_AFTER):
                 return []
             try:
                 import httpx
@@ -50,12 +52,13 @@ def bird_names() -> list[str]:
     return _names
 
 
-def canonical(name: str, known: list[str] | None = None) -> str | None:
-    """The official spelling of a name (yard names first, then eBird), or None if it isn't a known species."""
+def canonical(name: str, known: list[str] | None = None, fetch: bool = True) -> str | None:
+    """The official spelling of a name (yard names first, then eBird), or None if it isn't a known species.
+    fetch=False never downloads the eBird list (bird_names)."""
     k = _key(name)
     if not k:
         return None
-    for n in [*(known or []), *bird_names()]:
+    for n in [*(known or []), *bird_names(fetch)]:
         if _key(n) == k:
             return n
     return None

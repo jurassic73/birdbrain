@@ -201,9 +201,9 @@ def test_ask_haiku_then_sonnet_on_just_the_circle(client, conn, photo_visit, mon
         seen.append((model, Image.open(io.BytesIO(base64.b64decode(images_b64[0]))).size, note))
         if model == identify.HAIKU:
             return identify.Sighting(visitor="bird", species="house finch", count=1, confidence="medium",
-                                     notes="Red wash on the head."), \
+                                     notes="Red wash on the head.", circle=None, also=[]), \
                 {"model": model, "input_tokens": 1500, "output_tokens": 100}
-        return identify.Sighting(visitor="none", species=None, count=0, confidence="high", notes="A leaf."), \
+        return identify.Sighting(visitor="none", species=None, count=0, confidence="high", notes="A leaf.", circle=None, also=[]), \
             {"model": model, "input_tokens": 1500, "output_tokens": 100}
     monkeypatch.setattr(identify, "ask", ask)
     r = client.post(f"/visit/{vid}/check-circle/haiku", data={"marks": MARKS}).json()

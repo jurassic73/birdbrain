@@ -166,7 +166,7 @@ def pipeline(monkeypatch, conn):
     def fake_identify(*args, **kwargs):
         from birdbrain.identify import Result, Sighting
         asked.append(1)
-        return Result(Sighting(visitor="bird", species="Bushtit", count=1, confidence="high", notes=""),
+        return Result(Sighting(visitor="bird", species="Bushtit", count=1, confidence="high", notes="", circle=None, also=[]),
                       "claude-haiku-5-5", False, False, {})
 
     monkeypatch.setattr(watch.identify, "identify", fake_identify)
@@ -203,12 +203,48 @@ def test_false_trigger_keeps_its_whole_burst(pipeline, monkeypatch):
     set_detector(True)
     from birdbrain.identify import Result, Sighting
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
-        Sighting(visitor="none", species="", count=0, confidence="high", notes=""), "claude-haiku-5-5", False, False, {}))
+        Sighting(visitor="none", species="", count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
     assert watch.handle_event() == "none"
     visit = watch.db.latest_visit(conn, real_only=False)
     raw = watch.json.loads(visit["raw_json"])
     assert raw["burst"]["count"] == 3 and raw["burst"]["best"] == 0 and len(raw["burst"]["sharpness"]) == 3
     assert len(watch.images.burst_paths(visit["image_path"])) == 3
+
+
+def test_claude_is_told_whether_the_frame_is_infrared(pipeline, monkeypatch):
+    conn, asked, set_detector = pipeline
+    set_detector(True)
+    from birdbrain.identify import Result, Sighting
+    seen = []
+
+    def identify(jpeg, *a, **k):
+        seen.append(k.get("night"))
+        return Result(Sighting(visitor="bird", species="Bushtit", count=1, confidence="high", notes="", circle=None,
+                               also=[]), "claude-haiku-5-5", False, False, {})
+
+    monkeypatch.setattr(watch.identify, "identify", identify)
+    for night in (True, False):
+        monkeypatch.setattr(watch, "is_night", lambda jpeg, night=night: night)
+        watch.handle_event()
+    assert seen == [True, False]
+
+
+def test_alerts_get_claudes_confidence_and_the_review_flag(pipeline, monkeypatch):
+    conn, asked, set_detector = pipeline
+    set_detector(True)
+    from birdbrain.identify import Result, Sighting
+    also = [{"visitor": "bird", "species": "Bushtit", "count": 2, "confidence": "medium", "circle": None}]
+    monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
+        Sighting(visitor="bird", species="Varied Thrush", count=1, confidence="low", notes="", circle=None, also=[]),
+        "claude-sonnet-5-5", True, True, {"also": also}))
+    watch.db.set_value(conn, "ntfy_topic", "t")
+    sent, reasons = [], []
+    monkeypatch.setattr(watch.alert, "send", lambda topic, title, *a: sent.append(title))
+    real_reason = watch.alert.reason
+    monkeypatch.setattr(watch.alert, "reason", lambda *a: reasons.append(a[1:]) or real_reason(*a))
+    assert watch.handle_event() == "bird"
+    assert reasons[0][:2] == ("bird", "Varied Thrush") and reasons[0][3:] == ("low", True)
+    assert sent == ["Possible new species: Varied Thrush (needs your check)"]
 
 
 def test_real_visit_keeps_only_the_best_frame(pipeline):
@@ -266,7 +302,7 @@ def test_false_triggers_are_saved_at_the_photo_size_from_settings(pipeline, monk
     set_detector(False)
     from birdbrain.identify import Result, Sighting
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
-        Sighting(visitor="none", species=None, count=0, confidence="high", notes=""), "claude-haiku-5-5", False, False, {}))
+        Sighting(visitor="none", species=None, count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
     saved = []
     monkeypatch.setattr(watch.images, "store_frame", lambda jpeg, when, **kw: saved.append(kw) or ("a.jpg", "a_t.jpg"))
     watch.retention.save_options(conn, limit=0, photo="small")
@@ -501,7 +537,7 @@ def test_rain_without_a_verdict_costs_no_more_than_the_doubling_backoff(pipeline
                                                                          "empty": False})
     from birdbrain.identify import Result, Sighting
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: asked.append(1) or Result(
-        Sighting(visitor="none", species=None, count=0, confidence="high", notes=""), "claude-haiku-5-5", False, False, {}))
+        Sighting(visitor="none", species=None, count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
     clock = [1000.0]
     monkeypatch.setattr(watch.time, "monotonic", lambda: clock[0])
     w = watch.Watcher()
@@ -702,7 +738,7 @@ def test_an_error_after_the_save_still_returns_the_stored_visitor(pipeline, monk
     if effect == "prune":
         from birdbrain.identify import Result, Sighting
         monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
-            Sighting(visitor="none", species=None, count=0, confidence="high", notes=""), "claude-haiku-5-5", False, False, {}))
+            Sighting(visitor="none", species=None, count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
         monkeypatch.setattr(watch.retention, "prune", raise_locked)
         expected = "none"
     elif effect == "note_stored":

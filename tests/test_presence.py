@@ -136,7 +136,7 @@ def test_shadow_records_the_score_and_still_asks_claude(monkeypatch, conn, yard)
     monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
     monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: vec(False, yard))
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
-        Sighting(visitor="none", species=None, count=0, confidence="high", notes=""), "claude-haiku-5-5", False, False, {}))
+        Sighting(visitor="none", species=None, count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
     assert watch.handle_event() == "none"
     raw = json.loads(db.latest_visit(conn, real_only=False)["raw_json"])
     assert raw["calls"]["presence"]["empty"] and "skipped_claude" not in raw["calls"]
@@ -484,7 +484,7 @@ def test_gate_asks_claude_about_the_last_frame_when_only_it_shows_a_bird(monkeyp
 
     def identify(jpeg, *a, **k):
         seen.append(jpeg)
-        return Result(Sighting(visitor="bird", species="Bushtit", count=1, confidence="high", notes=""),
+        return Result(Sighting(visitor="bird", species="Bushtit", count=1, confidence="high", notes="", circle=None, also=[]),
                       "claude-haiku-5-5", False, False, {})
 
     monkeypatch.setattr(watch.identify, "identify", identify)
