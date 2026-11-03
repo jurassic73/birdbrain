@@ -230,9 +230,12 @@ if PRESENCE not in ("off", "shadow", "gate"):
 # the bowl by then; sharpness can favour ripples or mulch). ~6 s more per empty-looking trigger on a Pi 4.
 PRESENCE_LAST_FRAME = _env("PRESENCE_LAST_FRAME", "1").strip() not in ("0", "false", "off", "no")
 CLASSIFIER_MODEL = Path(_env("CLASSIFIER_MODEL")) if _env("CLASSIFIER_MODEL").strip() else None
+# Folder URL of the BioCLIP 2 model release assets; only used for the first download. Blank: no download.
+_release = _env("CLASSIFIER_RELEASE_URL").strip()
+CLASSIFIER_RELEASE_URL = _release if not _release or _release.endswith("/") else _release + "/"
 
 
-SITE_URL = _env("SITE_URL").rstrip("/")  # e.g. http://192.168.1.205:8000; used in ntfy alert links
+SITE_URL = _env("SITE_URL").rstrip("/")  # e.g. http://192.168.1.20:8000; used in ntfy alert links
 # iNaturalist place for local seasonality on species cards (e.g. a county); unset hides that chart.
 INAT_PLACE_ID = _env("INAT_PLACE_ID").strip()
 # Where the bath is, for local sunrise and sunset (Settings > Zones); city-level precision is plenty

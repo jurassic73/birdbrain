@@ -368,3 +368,10 @@ def test_visit_page_says_the_pi_named_it(client, add_visit):
         "classifier": guess("Dark-eyed Junco"), "skipped_claude": True, "settled_by": "classifier"}}))
     html = client.get(f"/visit/{vid}").text
     assert "Claude wasn't asked" in html and 'data-tip="Pi named:' in html
+
+
+def test_missing_model_without_release_url_fails_soft(monkeypatch, tmp_path):
+    monkeypatch.undo()  # drop the suite's no-network stub to reach the real download_model
+    assert not config.CLASSIFIER_RELEASE_URL
+    with pytest.raises(RuntimeError, match="CLASSIFIER_RELEASE_URL"):
+        classifier.download_model(tmp_path)
