@@ -1,0 +1,11 @@
+<div class="storage-preview">
+  {% if lines %}
+  <p><strong>Right now it would:</strong></p>
+  <ul>{% for l in lines %}<li>{{ l }}</li>{% endfor %}</ul>
+  <p class="muted small">Photos {{ plan.used_before | mb }} to about {{ plan.used_after | mb }}. Nothing has changed yet.</p>
+  {% else %}
+  <p>Nothing to do right now: the photos fit the budget and nothing is old enough to thin. Nothing has changed.</p>
+  {% endif %}
+  {% if plan.still_over %}<p class="notice">Protected photos alone are over the budget by {{ plan.short_bytes | mb }}. Raise the budget or unmark some favorites.</p>{% endif %}
+  {% if plan.unmeasured %}<p class="muted small">{{ plan.unmeasured }} visit{{ 's' if plan.unmeasured != 1 }} not measured for sharpness yet; the daily run measures them first.</p>{% endif %}
+</div>

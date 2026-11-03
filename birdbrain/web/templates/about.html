@@ -19,7 +19,7 @@
   <nav class="chips about-toc" aria-label="On this page">
     <a href="#flow">How it works</a><a href="#network">Network path</a>{% if totals.events or rate.photos %}<a href="#numbers">Numbers</a>{% endif %}<a href="#zones">Zones</a><a href="#rules">Detection rules</a><a href="#burst">Photos</a>
     <a href="#local">Local model</a><a href="#claude">Claude</a><a href="#learning">Learning</a>
-    <a href="#sources">Outside sources</a><a href="#seasons">Seasons and alerts</a><a href="#stack">Under the hood</a>
+    <a href="#sources">Outside sources</a><a href="#storage">Storage</a><a href="#seasons">Seasons and alerts</a><a href="#stack">Under the hood</a>
   </nav>
 </header>
 
@@ -524,6 +524,29 @@
   </div>
 </section>
 
+{# ---------- Storage ---------- #}
+{% set so = bd.options %}
+<section class="about-section" id="storage">
+  <h2>Storage</h2>
+  <p>Birdbrain never deletes a visit. Counts, first-seen dates, lessons, the Pi's learning and every thumbnail stay forever.
+    Only photo files get smaller, and only when they need to. All photos share one budget{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% endif %}:</p>
+  <div class="sbar-wrap">
+    <div class="sbar{{ ' over' if bar.over }}" role="img" aria-label="Photo use by kind">
+      {% for s in bar.segments %}<span class="sbar-seg sb-{{ s.key }}" style="width: {{ s.pct }}%" data-tip="{{ s.tip }}"></span>{% endfor %}
+    </div>
+    <ul class="sbar-legend">
+      {% for s in bar.legend %}<li data-tip="{{ s.tip }}"><i class="sw sb-{{ s.key }}"></i>{{ s.label }}</li>{% endfor %}
+    </ul>
+  </div>
+  <ul class="stack">
+    <li><strong>Thinning</strong>{% if so.thin_on and so.thin_edge < 1920 %} After {{ so.full_days }} days, older real visits are saved once at {{ so.thin_edge }} px, except each species' {{ so.full_per_day }} sharpest photos of each day (sharpness inside the crop box, then confidence).{% else %} Off: photos stay full size unless the budget runs short.{% endif %}</li>
+    <li><strong>Never thinned</strong> Favorites (blue star), species covers (yellow star), visits you corrected or wrote a note on, the first sighting of each species, and every visit of a species seen fewer than {{ so.rare_under }} times. The star on a photo card cycles: unset, yellow cover, blue favorite.</li>
+    <li><strong>When space runs short</strong> Over the budget{% if so.disk_floor_mb %}, or with less than {{ (so.disk_floor_mb * 1000000) | mb }} of disk free,{% endif %} the oldest false-trigger photos go first, then more visits are thinned, then the oldest keep only their thumbnail.</li>
+    <li><strong>Alerts</strong> {% if so.warn_pct %}A phone alert goes out at {{ '%g' | format(so.warn_pct) }}% of the budget, and another if protected photos alone fill it.{% else %}Warnings are off; set a percentage in Settings to get a phone alert as the budget fills.{% endif %}</li>
+    <li><strong>False triggers</strong> Also capped on their own (oldest first, confirmed-empty ones before the rest); ones you corrected are lessons and stay.</li>
+  </ul>
+</section>
+
 {# ---------- 10. Under the hood ---------- #}
 <section class="about-section" id="stack">
   <h2>Under the hood</h2>
@@ -534,7 +557,7 @@
     <li><strong>Privacy</strong> Photos and records stay on the Pi. Only the photos Claude is asked about leave the house (plus alert photos to ntfy,
       and species names to the info sources). A public copy, if set up, never gets a photo where the Pi's person check fires,
       unless you've looked, seen no one and pressed Public anyway on that visit.</li>
-    <li><strong>Storage</strong> Every real visit is kept. False alarms are kept up to a size limit (oldest first), except ones you've corrected, which are lessons.</li>
+    <li><strong>Storage</strong> Every visit is kept; older photos may be thinned to fit the budget. See <a href="#storage">Storage</a>.</li>
   </ul>
 </section>
 

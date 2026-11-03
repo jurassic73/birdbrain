@@ -3,12 +3,13 @@ import json
 import math
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -1114,6 +1115,7 @@ def about(request: Request, conn=Depends(get_conn)):
         nearby_km=species_info.NEARBY_KM,
         min_hours=db.MIN_HOURS,
         min_like_today=db.MIN_LIKE_TODAY,
+        **storage_context(conn),
     )
 
 
@@ -1214,6 +1216,48 @@ def lesson_switch(visit_id: int, state: str, conn=Depends(get_conn)):
     return Response(headers=REFRESH)
 
 
+_TIPS = {
+    "species_photos": "Species covers (yellow star): the photo shown for each species. Never thinned or deleted.",
+    "keepers": "Favorites (blue star): photos you chose to keep. Never thinned or deleted.",
+    "training": "Corrected or annotated visits: Claude learns from them, so they are never thinned or deleted.",
+    "recent": "Recent real visits: kept full size for {full_days} days, then thinned, except each species' best {full_per_day} per day.",
+    "older": "Older real visits: thinned once to save space. If the budget runs short, the oldest keep only their thumbnail.",
+    "false_triggers": "False-trigger photos and their bursts: the oldest go first when space runs short, and they have their own cap too.",
+    "thumbs": "Thumbnails: every visit keeps one, always.",
+}
+
+
+def storage_bar(bd: dict) -> dict:
+    """The photo budget as bar segments (widths in % of the bar), a legend, and where the ticks go."""
+    o = bd["options"]
+    budget, used = bd["budget_bytes"], bd["used_bytes"]
+    over = bool(budget) and used > budget
+    scale = max(used, budget) or 1
+    tips = {k: v.format(**o) for k, v in _TIPS.items()}
+    rows = [{**c, "tip": f"{tips[c['key']]} {c['count']} photo{'s' if c['count'] != 1 else ''}, {mb(c['bytes'])}."}
+            for c in bd["categories"]]
+    rows.append({"key": "thumbs", "label": "Thumbnails", **bd["thumbs"],
+                 "tip": f"{tips['thumbs']} {bd['thumbs']['count']} thumbnails, {mb(bd['thumbs']['bytes'])}."})
+    legend = [r for r in rows if r["bytes"]]
+    segments = [{**r, "pct": round(100 * r["bytes"] / scale, 3)} for r in legend]
+    free = max(budget - used, 0) if budget else 0
+    return {
+        "segments": segments,
+        "legend": legend,
+        "over": over,
+        "free_bytes": free,
+        "free_pct": round(100 * free / scale, 3) if free else 0,
+        "free_tip": f"Room left in the budget: {mb(free)}.",
+        "warn_at": round(100 * budget * bd["warn_pct"] / 100 / scale, 2) if budget and bd["warn_pct"] and not over else None,
+        "budget_at": round(100 * budget / scale, 2) if over else None,
+    }
+
+
+def storage_context(conn) -> dict:
+    bd = retention.breakdown(conn)
+    return {"bd": bd, "bar": storage_bar(bd)}
+
+
 @app.get("/false-triggers", response_class=HTMLResponse)
 def false_triggers(request: Request, cleared: int | None = None, confirmed: int | None = None, show: str = "",
                    conn=Depends(get_conn)):
@@ -1229,6 +1273,7 @@ def false_triggers(request: Request, cleared: int | None = None, confirmed: int 
         hourly=db.hourly_counts(conn, false_triggers=True),
         total=db.count_visits(conn, false_triggers=True, has_photo=True),
         storage=retention.usage(conn),
+        **storage_context(conn),
         cleared=cleared,
         confirmed=confirmed,
         unchecked=db.count_unchecked_false_triggers(conn),
@@ -1272,7 +1317,7 @@ def clean_false_triggers(conn=Depends(get_conn)):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request, pruned: int | None = None,
+def settings_page(request: Request, pruned: int | None = None, limits_error: str = "", limits_saved: bool = False,
                   alerts_saved: bool = False, alerts_test: str = "", zones_saved: bool = False, presence_saved: bool = False,
                   conn=Depends(get_conn)):
     storage = retention.usage(conn)
@@ -1288,6 +1333,11 @@ def settings_page(request: Request, pruned: int | None = None,
         alerts_test=alerts_test,
         alerts=alert.get_settings(conn),
         storage=storage,
+        **storage_context(conn),
+        limits_error=limits_error,
+        limits_saved=limits_saved,
+        thin_choices=retention.THIN_EDGE_CHOICES,
+        budget_choices=BUDGET_CHOICES_GB,
         on_settings=True,
         activity=db.activity(conn),
         classifier=db.classifier_report(conn),
@@ -1347,6 +1397,69 @@ def save_storage(limit_mb: float = Form(...), photo: str = Form(...), conn=Depen
     except ValueError:
         raise HTTPException(400, "Unknown storage setting")
     return RedirectResponse(f"/settings?pruned={pruned}#storage", status_code=303)
+
+
+BUDGET_CHOICES_GB = (2, 5, 10, 20, 50)
+_run_state = {"running": False, "result": None, "error": ""}
+_run_lock = threading.Lock()
+
+
+def _step_lines(plan: dict) -> list[str]:
+    lines = []
+    for st in plan["steps"]:
+        if st["count"]:
+            lines.append(f"{st['label']}: {st['count']} photo{'s' if st['count'] != 1 else ''}, frees {mb(st['bytes'])}"
+                         + (f" ({st['failed']} would fail)" if st.get("failed") else ""))
+    return lines
+
+
+@app.post("/settings/storage/limits")
+def save_storage_limits(budget_gb: str = Form(...), budget_custom: str = Form(""), full_days: str = Form(...),
+                        full_per_day: str = Form(...), thin_edge: str = Form(...), warn_pct: str = Form(...),
+                        rare_under: str = Form(...), disk_floor_gb: str = Form(...),
+                        thin_on: str | None = Form(None), conn=Depends(get_conn)):
+    try:
+        gb = budget_custom.strip() if budget_gb == "custom" else budget_gb
+        values = {"budget_mb": float(gb) * 1024 if gb not in ("", "none") else 0,
+                  "disk_floor_mb": float(disk_floor_gb) * 1024, "full_days": full_days, "full_per_day": full_per_day,
+                  "thin_edge": thin_edge, "warn_pct": warn_pct, "rare_under": rare_under,
+                  "thin_on": thin_on is not None}
+        retention.save_photo_options(conn, **values)
+    except ValueError as e:
+        return RedirectResponse(f"/settings?limits_error={quote(str(e))}#storage", status_code=303)
+    return RedirectResponse("/settings?limits_saved=1#storage", status_code=303)
+
+
+@app.get("/settings/storage/preview", response_class=HTMLResponse)
+def storage_preview(request: Request, conn=Depends(get_conn)):
+    p = retention.plan(conn)
+    return page(request, "_storage_preview.html", plan=p, lines=_step_lines(p))
+
+
+@app.post("/settings/storage/run", response_class=HTMLResponse)
+def storage_run(request: Request):
+    """Thin and free space now, in a background thread so the request returns at once."""
+    def work():
+        try:
+            with db.session() as c:
+                result = retention.daily(c)
+            _run_state.update(result=result, error="")
+        except Exception as e:  # shown on the card, not raised into a dead thread
+            _run_state.update(result=None, error=str(e) or type(e).__name__)
+        finally:
+            retention.forget()
+            _run_state["running"] = False
+
+    with _run_lock:
+        if not _run_state["running"]:
+            _run_state.update(running=True, result=None, error="")
+            threading.Thread(target=work, daemon=True).start()
+    return page(request, "_storage_run.html", state=_run_state)
+
+
+@app.get("/settings/storage/run", response_class=HTMLResponse)
+def storage_run_status(request: Request):
+    return page(request, "_storage_run.html", state=_run_state)
 
 
 def zones_context(conn) -> dict:

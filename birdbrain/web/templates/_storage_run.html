@@ -1,0 +1,6 @@
+<div class="storage-run"{% if state.running %} hx-get="/settings/storage/run" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  {% if state.running %}<p class="muted">Thinning and freeing space in the background. This can take a few minutes on the Pi.</p>
+  {% elif state.error %}<p class="notice error">It stopped with an error: {{ state.error }}</p>
+  {% elif state.result %}<p class="notice saved">Done.{% for st in state.result.steps if st.count %} {{ st.label }}: {{ st.count }} photo{{ 's' if st.count != 1 }}, freed {{ st.bytes | mb }}.{% else %} Nothing needed doing.{% endfor %} Reload the page to see the new bar.</p>
+  {% endif %}
+</div>

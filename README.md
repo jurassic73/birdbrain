@@ -184,6 +184,12 @@ With `GROUND_ZONE` set, the ground around the bath is watched for animals walkin
 
 Tuning (all optional, fractions of the frame): `GROUND_MIN_BLOB` (day, 0.003), `GROUND_MIN_BLOB_NIGHT` (0.006), `GROUND_DIFF` (20), `GROUND_PERSIST_FRAMES` (8). The visit page says which zone saw the motion and draws it, with the crop box, on the photo.
 
+## Photo budget and thinning
+
+All photos (real visits, false triggers and their bursts, thumbnails) share one budget. Visits are never deleted: only photo files shrink, and every visit keeps its thumbnail. Each day after 3 AM the watcher thins real visits older than `PHOTO_FULL_DAYS` to `PHOTO_THIN_EDGE` px, except each species' sharpest `PHOTO_FULL_PER_DAY` photos of the day. Over the budget, or below the disk floor, it frees space in this order: oldest false triggers, more thinning, then the oldest keep only a thumbnail. Favorites (blue star), species covers (yellow star), corrected or annotated visits, first sightings and species seen fewer than `RARE_UNDER` times are never touched.
+
+`.env` keys (all optional; defaults in `.env.example`): `PHOTO_BUDGET_MB` (10240, 0 = none), `PHOTO_THIN` (1), `PHOTO_FULL_DAYS` (90), `PHOTO_FULL_PER_DAY` (2), `PHOTO_THIN_EDGE` (960, 1280 or 1920 = don't thin), `PHOTO_WARN_PCT` (80, phone alert), `RARE_UNDER` (10), `DISK_FLOOR_MB` (5120, 0 = off). **Settings > Storage** shows a usage bar and overrides all of them (the watcher picks changes up within about 10 minutes); its Preview button lists what thinning would do and Run now does it. From a shell: `python -m birdbrain.retention --thin [--dry-run]`.
+
 ## Run it on a Raspberry Pi
 
 Set `DEPLOY_HOST` and `DEPLOY_USER` in `.env`, make sure you can `ssh` to the Pi with a key, then:
