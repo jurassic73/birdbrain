@@ -1776,7 +1776,7 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
   --st-recent: var(--accent);
   --st-older: color-mix(in srgb, var(--accent) 55%, var(--surface));
   --st-false: color-mix(in srgb, var(--muted) 70%, var(--surface));
-  --st-thumbs: color-mix(in srgb, var(--muted) 35%, var(--surface));
+  --st-thumbs: color-mix(in srgb, var(--muted) 55%, var(--surface));
   --st-free: color-mix(in srgb, var(--line) 60%, transparent);
   --st-over: var(--low);
 }

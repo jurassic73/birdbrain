@@ -85,7 +85,7 @@ def test_options_come_from_settings_then_env_then_built_in(conn, monkeypatch):
     monkeypatch.setattr(config, "PHOTO_THIN_EDGE", 777)  # not a choice: the built-in 1280 is used
     o = retention.options(conn)
     assert (o["budget_mb"], o["thin_edge"], o["full_days"], o["full_per_day"]) == (2048.0, 1280, 90, 2)
-    assert (o["warn_pct"], o["rare_under"], o["disk_floor_mb"], o["thin_on"]) == (80.0, 10, 5120.0, True)
+    assert (o["warn_pct"], o["rare_under"], o["disk_floor_mb"], o["thin_on"]) == (80.0, 10, 5000.0, True)
     o = retention.save_photo_options(conn, budget_mb="3000", thin_edge=960, thin_on="off", full_per_day=3)
     assert (o["budget_mb"], o["thin_edge"], o["thin_on"], o["full_per_day"]) == (3000.0, 960, False, 3)
     assert db.get_value(conn, "retention.thin_on") == "0"

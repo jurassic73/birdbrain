@@ -46,7 +46,7 @@ def test_save_limits_and_validation_error(client, conn):
                                                       "thin_edge": "960"}, follow_redirects=False)
     assert r.status_code == 303 and "limits_saved=1" in r.headers["location"]
     o = retention.options(conn)
-    assert o["budget_mb"] == 7680 and o["thin_edge"] == 960
+    assert o["budget_mb"] == 7500 and o["thin_edge"] == 960
     r = client.post("/settings/storage/limits", data={**FORM, "warn_pct": "250"}, follow_redirects=False)
     assert "limits_error=" in r.headers["location"]
     assert retention.options(conn)["warn_pct"] == 80  # nothing stored

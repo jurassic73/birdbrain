@@ -131,7 +131,7 @@
     <h3>Photo budget</h3>
     <fieldset class="field">
       <legend>Budget for all photos</legend>
-      {% set gb = (o.budget_mb / 1024) if o.budget_mb else 0 %}
+      {% set gb = (o.budget_mb / 1000) if o.budget_mb else 0 %}
       <div class="choices">
         {% for g in budget_choices %}
         <label class="choice"><input type="radio" name="budget_gb" value="{{ g }}" {% if gb == g %}checked{% endif %}><span>{{ g }} GB</span></label>
@@ -165,7 +165,7 @@
       <legend>Warnings</legend>
       <div class="limit-grid">
         <label>Alert my phone at (% of budget, 0 = off)<input type="number" name="warn_pct" min="0" max="100" step="1" value="{{ '%g' | format(o.warn_pct) }}"></label>
-        <label>Keep this much disk free (GB, 0 = off)<input type="number" name="disk_floor_gb" min="0" step="any" value="{{ '%g' | format(o.disk_floor_mb / 1024) }}"></label>
+        <label>Keep this much disk free (GB, 0 = off)<input type="number" name="disk_floor_gb" min="0" step="any" value="{{ '%g' | format(o.disk_floor_mb / 1000) }}"></label>
       </div>
       <small class="muted" data-tip="Below the disk floor, space is freed the same way as over the budget: oldest false triggers first, then more thinning, then the oldest keep only a thumbnail.">Below the disk floor, space is freed the same way as when over budget.</small>
     </fieldset>

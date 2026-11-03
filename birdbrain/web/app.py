@@ -1420,8 +1420,8 @@ def save_storage_limits(budget_gb: str = Form(...), budget_custom: str = Form(""
                         thin_on: str | None = Form(None), conn=Depends(get_conn)):
     try:
         gb = budget_custom.strip() if budget_gb == "custom" else budget_gb
-        values = {"budget_mb": float(gb) * 1024 if gb not in ("", "none") else 0,
-                  "disk_floor_mb": float(disk_floor_gb) * 1024, "full_days": full_days, "full_per_day": full_per_day,
+        values = {"budget_mb": float(gb) * 1000 if gb not in ("", "none") else 0,
+                  "disk_floor_mb": float(disk_floor_gb) * 1000, "full_days": full_days, "full_per_day": full_per_day,
                   "thin_edge": thin_edge, "warn_pct": warn_pct, "rare_under": rare_under,
                   "thin_on": thin_on is not None}
         retention.save_photo_options(conn, **values)

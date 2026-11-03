@@ -144,8 +144,8 @@ def clear(conn: sqlite3.Connection) -> int:
 THIN_EDGE_CHOICES = (960, 1280, 1920)  # long edge in px; 1920 is the camera's own size, so it means "don't thin"
 FULL_EDGE = max(THIN_EDGE_CHOICES)
 OPTIONS = ("budget_mb", "thin_on", "full_days", "full_per_day", "thin_edge", "warn_pct", "rare_under", "disk_floor_mb")
-FALLBACK = {"budget_mb": 10240.0, "thin_on": True, "full_days": 90, "full_per_day": 2, "thin_edge": 1280,
-            "warn_pct": 80.0, "rare_under": 10, "disk_floor_mb": 5120.0}
+FALLBACK = {"budget_mb": 10000.0, "thin_on": True, "full_days": 90, "full_per_day": 2, "thin_edge": 1280,
+            "warn_pct": 80.0, "rare_under": 10, "disk_floor_mb": 5000.0}
 # Integer options and their allowed ranges; the MB and percent ones are floats.
 _INT_RANGES = {"full_days": (0, 3650), "full_per_day": (0, 100), "rare_under": (0, 100_000)}
 _FLOAT_RANGES = {"budget_mb": (0, 100_000_000), "disk_floor_mb": (0, 100_000_000), "warn_pct": (0, 100)}
