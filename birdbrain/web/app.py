@@ -759,7 +759,7 @@ def decision_steps(raw_json: str | None) -> dict:
             "local_disagreed": calls.get("local_disagreed"), "local_agreed": bool(calls.get("local_agreed"))}
 
 
-CHECK_BY = {"pi": "The Pi", "haiku": "Haiku", "sonnet": "Sonnet"}
+CHECK_BY = {"pi": "BioCLIP 2", "haiku": "Haiku", "sonnet": "Sonnet"}  # the visit page's Ask buttons
 
 
 def owner_checks(calls: dict) -> list[dict]:

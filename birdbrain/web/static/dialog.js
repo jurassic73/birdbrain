@@ -3,6 +3,8 @@
 //
 //   birdbrain.ask({ title, message, ok: "Delete", cancel: "Cancel", danger: true }) -> Promise<boolean>
 //     message: blank lines start a new paragraph. Escape, Cancel or a click on the dimmed page answer no.
+//     alt: "Discard" adds a third, red answer between Cancel and OK that resolves "alt" (Save / Discard / Keep
+//     editing questions). cancel: "" leaves out the Cancel button (a notice with one answer).
 //   hx-confirm="..."      on any htmx element goes through it (data-confirm-title / data-confirm-ok optional;
 //                         a button.danger gets a red OK).
 //   <form data-confirm="..."> the same for plain forms (title/ok attributes as above).
@@ -14,9 +16,11 @@
   dlg.setAttribute("aria-labelledby", "popup-ask-title");
   dlg.innerHTML = '<h2 class="popup-title" id="popup-ask-title"></h2><div class="popup-msg"></div>'
     + '<div class="popup-actions"><button type="button" class="popup-cancel"></button>'
+    + '<button type="button" class="popup-alt danger" hidden></button>'
     + '<button type="button" class="popup-ok"></button></div>';
   const title = dlg.querySelector(".popup-title"), msg = dlg.querySelector(".popup-msg");
   const okBtn = dlg.querySelector(".popup-ok"), cancelBtn = dlg.querySelector(".popup-cancel");
+  const altBtn = dlg.querySelector(".popup-alt");
   let answer = null;  // the open question's resolve
 
   const done = (yes) => {
@@ -27,10 +31,11 @@
   };
   okBtn.addEventListener("click", () => done(true));
   cancelBtn.addEventListener("click", () => done(false));
+  altBtn.addEventListener("click", () => done("alt"));
   dlg.addEventListener("close", () => { if (!dlg.open) done(false); });  // Escape (not a newer question reopening it)
   dlg.addEventListener("click", (e) => { if (e.target === dlg) done(false); });  // the dimmed page
 
-  function ask({ title: t = "", message = "", ok = "OK", cancel = "Cancel", danger = false } = {}) {
+  function ask({ title: t = "", message = "", ok = "OK", cancel = "Cancel", alt = "", danger = false } = {}) {
     if (answer) done(false);  // one question at a time
     if (!dlg.isConnected) document.body.append(dlg);
     title.textContent = t;
@@ -46,6 +51,9 @@
     okBtn.textContent = ok;
     okBtn.classList.toggle("danger", danger);
     cancelBtn.textContent = cancel;
+    cancelBtn.hidden = !cancel;
+    altBtn.textContent = alt;
+    altBtn.hidden = !alt;
     return new Promise((resolve) => {
       answer = resolve;
       dlg.showModal();
