@@ -697,6 +697,16 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .visit-head .label-block { min-width: 0; }
 .visit-head .actions { font-size: .7rem; margin-top: 6px; gap: 6px; }
 .visit-head .actions button, .visit-head .actions .button-link { font-size: inherit; padding: 5px 9px; }
+/* Desktop: the title and buttons always share row 1 (the title wraps to make room, the buttons wrap among themselves); the status lines (also, corrected, note, season, review) span a full row 2. */
+@media (min-width: 641px) {
+  .visit-head { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(0, max-content); row-gap: 0; }
+  .visit-head .label-block { display: contents; }
+  .visit-head .label-block > * { grid-column: 1 / -1; }
+  /* Grid items' margins don't collapse like block margins did, so the status lines get small explicit ones. */
+  .visit-head .label-block > :not(h1) { margin: 4px 0 0; }
+  .visit-head .label-block > h1 { grid-column: 1; grid-row: 1; }
+  .visit-head .actions { grid-column: 2; grid-row: 1; justify-content: flex-end; }
+}
 .visit-info dl { margin: 8px 0; }
 @media (max-width: 800px) {
   .visit { grid-template-columns: 1fr; }
