@@ -349,9 +349,6 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 .tally-box { margin: 0; }
 .tally-box.tally-head { font-size: 1rem; white-space: nowrap; }
 .visits-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; margin-bottom: 8px; }
-.visits-bar .more-filters { margin: 0; }
-.visits-bar .more-filters[open] { flex-basis: 100%; }
-.visits-bar .more-filters summary { margin-left: auto; }
 .today-motion { margin: 0 0 18px; }
 .today-motion h2 { margin: 0 0 8px; font-size: 1.1rem; }
 .tally-facts { margin: 8px 0 0; padding: 0 0 0 18px; color: var(--muted); font-size: .85rem; }
@@ -389,9 +386,6 @@ a.tally-label:hover { color: var(--accent); }
 }
 .chips a:hover { border-color: var(--accent); }
 .chips a[aria-current] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.more-filters { margin-bottom: 14px; }
-.more-filters summary { cursor: pointer; color: var(--muted); font-size: .9rem; width: max-content; }
-.more-filters .filters { margin: 10px 0 0; }
 /* Home: More filters is a toggle right after the quick-filter chips, styled apart from them (funnel, accent text, chevron),
    and the filter boxes it opens get their own line under the row. */
 .visits-head { justify-content: flex-start; }
@@ -1631,8 +1625,6 @@ button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 @media (pointer: coarse) { button.zoom-btn::before { inset: -6px; } }
 
 /* Visits archive page */
-.visits-archive .visits-bar .visits-count { font-size: 1.1rem; margin: 0; }
-.visits-archive .archive-intro { margin: 0 0 12px; font-size: .9rem; }
 
 /* Home photo viewer: zoom and pan (home.html). The frame is transformed; touch gestures are ours. */
 #home-viewer { touch-action: none; overscroll-behavior: contain; }

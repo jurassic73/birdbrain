@@ -52,7 +52,7 @@ def test_visitors_cannot_keep_or_see_the_mark(client, conn, add_visit, locked):
     db.set_keep(conn, vid, True)
     assert client.post(f"/visit/{vid}/keep", data={"on": 0}).status_code == 403
     assert db.get_visit(conn, vid)["keep"] == 1
-    for path in ("/", f"/visit/{vid}", "/visits"):
+    for path in ("/", f"/visit/{vid}"):
         text = client.get(path).text
         assert "fav-star" not in text and "Favorite</button>" not in text, path
 
@@ -60,7 +60,7 @@ def test_visitors_cannot_keep_or_see_the_mark(client, conn, add_visit, locked):
 def test_admin_sees_the_star_on_cards_and_the_visit_photo(client, conn, add_visit):
     # Cards carry one cycling star (static/star.js); the old separate keep-mark button is gone from cards.
     vid = add_visit()
-    for path in ("/", "/visits", "/species/Dark-eyed%20Junco"):
+    for path in ("/", "/species/Dark-eyed%20Junco"):
         text = client.get(path).text
         assert 'class="fav-star"' in text and 'class="keep-mark"' not in text, path
     page = client.get(f"/visit/{vid}").text
@@ -69,7 +69,7 @@ def test_admin_sees_the_star_on_cards_and_the_visit_photo(client, conn, add_visi
     db.set_keep(conn, vid, True)
     page = client.get(f"/visit/{vid}").text
     assert 'class="fav-star" data-state="favorite"' in page and 'class="badge keeper"' not in page
-    assert 'data-state="favorite"' in client.get("/visits").text
+    assert 'data-state="favorite"' in client.get("/").text
 
 
 def test_admin_login_sees_the_star_when_locked(client, add_visit, locked):
