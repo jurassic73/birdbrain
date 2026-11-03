@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import badge, claude_mark, confirm_badge, zoom_out_btn with context %}
+{% from "_macros.html" import badge, claude_mark, confirm_badge, zoom_out_btn, fav_star with context %}
 {% block title %}{{ 'No animal' if visit.label == 'None' else visit.label }} | Birdbrain{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block head %}
@@ -60,6 +60,8 @@
     </svg>
     {% endif %}
     <svg class="marks" aria-hidden="true"></svg>
+    {# The same star as on the cards (admins): blue favorite, yellow species cover. No species: favorite only. #}
+    {% if request.state.admin and not visit.photo_deleted_at %}{{ fav_star(visit, visit.label if visit.label and visit.label not in ('None', 'Other') else None, star_covers(request)) }}{% endif %}
     {# Phones: newer/older in the bottom corners, so a thumb on them never covers the photo. #}
     {% if prev_id %}<a class="photo-arrow prev" href="/visit/{{ prev_id }}{{ ft_param }}" aria-label="Newer visit">&#8249;</a>{% endif %}
     {% if next_id %}<a class="photo-arrow next" href="/visit/{{ next_id }}{{ ft_param }}" aria-label="Older visit">&#8250;</a>{% endif %}
@@ -105,11 +107,6 @@
         {% if visit.photo_level == "thinned" %}{{ badge("thinned", "photo-level") }}{% elif visit.photo_level == "thumb" %}{{ badge("thumbnail only", "photo-level") }}{% endif %}
         {% if request.state.admin %}{% set ms = mirror_status(visit.image_path, visit.public_ok) %}{% if ms == "person" %}<span class="confirm-pair">{{ badge("private", "private") }}<button class="link-btn" id="public-anyway" hx-post="/visit/{{ visit.id }}/public" hx-confirm="Only press this if the photo and every burst frame show no person. The next push to the public mirror then includes this visit." data-confirm-title="No person in this visit?" data-confirm-ok="Public anyway" data-tip="The Pi's person check flagged this visit, so the public mirror leaves it out. If you've looked and there's no person, this lets it go public. Undo puts it back.">Public anyway</button></span>{% elif ms == "unchecked" %}{{ badge("not public yet", "private") }}{% elif ms == "cleared" %}<span class="confirmed-pair">{{ badge("public (checked)", "public-ok") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/private">Undo</button></span>{% endif %}{% endif %}
         {% if request.state.admin %}
-        {% if visit.keep %}
-        <span class="confirmed-pair">{{ badge("favorite", "keeper") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/keep" hx-vals='{"on": 0, "where": "visit"}'>Undo</button></span>
-        {% else %}
-        <button type="button" class="keep-btn" hx-post="/visit/{{ visit.id }}/keep" hx-vals='{"on": 1, "where": "visit"}' data-tip="Favorite (blue star): this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg>Favorite</button>
-        {% endif %}
         {% if visit.confirmed_at %}
         <span class="confirmed-pair">{{ badge("Confirmed No Animal" if visit.label == 'None' else "confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button></span>
         {% elif not (visit.corrected_species or visit.corrected_visitor) %}

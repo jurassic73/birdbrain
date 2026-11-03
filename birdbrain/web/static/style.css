@@ -528,8 +528,8 @@ button.fav-star[data-pending] { background: conic-gradient(rgba(255, 211, 77, .5
 .fav-pill[data-state="cover"] { background: #ffd34d; color: #3a2c00; }
 .fav-pill[data-state="favorite"] { background: #4da3ff; color: #fff; }
 @media (hover: hover) and (pointer: fine) {
-  :is(.card, .hero-latest) button.fav-star[data-state="unset"] { opacity: 0; transition: opacity .15s; }
-  :is(.card, .hero-latest):hover button.fav-star, :is(.card, .hero-latest) button.fav-star:focus-visible { opacity: 1; }
+  :is(.card, .hero-latest, .visit-photo) button.fav-star[data-state="unset"] { opacity: 0; transition: opacity .15s; }
+  :is(.card, .hero-latest, .visit-photo):hover button.fav-star, :is(.card, .hero-latest, .visit-photo) button.fav-star:focus-visible { opacity: 1; }
 }
 /* On the big latest-visitor photo the star sits just left of the magnifier (34px at 8px from the edge, centers
    lined up), its pill left of it, and the caption chip stops short of both. */
@@ -552,9 +552,6 @@ button.keep-mark[aria-pressed="true"] svg { fill: currentColor; }
   .card:hover button.keep-mark, .card button.keep-mark:focus-visible { opacity: 1; }
 }
 .card-fav button.keep-mark { right: 48px; top: 3px; }
-/* On the visit page: the button, and the pill once it's on. */
-button.keep-btn { display: inline-flex; align-items: center; gap: 6px; }
-button.keep-btn svg { width: 16px; height: 16px; fill: #4da3ff; stroke: #fff; stroke-width: 1.6; stroke-linejoin: round; }
 .badge.keeper { color: var(--keeper); white-space: nowrap; }
 /* A visitor that arrived while the page was open: glows for a few seconds after it slides in. */
 .card.card-new { animation: card-new 6s ease-out; }

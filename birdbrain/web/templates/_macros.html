@@ -6,17 +6,18 @@
 </span>
 {%- endmacro %}
 
-{# The star on a photo (admins, visits with a species): unset -> blue favorite -> yellow species cover -> unset
-   (static/star.js; yellow waits 2 s and asks before replacing another cover). Used on the photo cards and the home page's big latest-visitor photo.
-   covers is star_covers(request). #}
+{# The star on a photo (admins): unset -> blue favorite -> yellow species cover -> unset
+   (static/star.js; yellow waits 2 s and asks before replacing another cover). Used on the photo cards, the home page's big latest-visitor
+   photo and the visit page's big photo. covers is star_covers(request). sp is None for a visit with no species (None/Other):
+   no cover then, the star only toggles blue favorite on and off. #}
 {% macro fav_star(v, sp, covers) -%}
-{% set st = 'cover' if covers.get(sp) == v.id else ('favorite' if v.keep == 1 else 'unset') %}
-  {% set tips = {'unset': 'Tap to make it a favorite.', 'favorite': 'Favorite: never deleted when space is cleared. Tap again to use it as the species cover.', 'cover': 'Species cover: shows for ' ~ sp ~ ' on the Species page, and never deleted when space is cleared. Tap to unset.'} %}
+{% set st = 'cover' if sp and covers.get(sp) == v.id else ('favorite' if v.keep == 1 else 'unset') %}
+  {% set tips = {'unset': 'Tap to make it a favorite.', 'favorite': ('Favorite: never deleted when space is cleared. Tap again to use it as the species cover.' if sp else 'Favorite: never deleted when space is cleared. Tap again to unset.'), 'cover': 'Species cover: shows for ' ~ sp ~ ' on the Species page, and never deleted when space is cleared. Tap to unset.'} %}
   <button type="button" class="fav-star" data-state="{{ st }}" data-keep="{{ 1 if v.keep == 1 else 0 }}" aria-pressed="{{ 'false' if st == 'unset' else 'true' }}"
-    aria-label="{{ tips[st] }}" data-id="{{ v.id }}" data-star-species="{{ sp }}"
-    data-tip-unset="{{ tips['unset'] }}" data-tip-cover="{{ tips['cover'] }}" data-tip-favorite="{{ tips['favorite'] }}"
+    aria-label="{{ tips[st] }}" data-id="{{ v.id }}"{% if sp %} data-star-species="{{ sp }}"{% endif %}
+    data-tip-unset="{{ tips['unset'] }}" {% if sp %}data-tip-cover="{{ tips['cover'] }}"{% endif %} data-tip-favorite="{{ tips['favorite'] }}"
     data-tip="{{ tips[st] }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg></button>
-  <span class="fav-pill" hidden data-tip="Just set: species cover (yellow, shows on the Species page, never deleted when space is cleared), favorite (blue, never deleted when space is cleared) or unset."></span>
+  <span class="fav-pill" hidden data-tip="Just set: {% if sp %}species cover (yellow, shows on the Species page, never deleted when space is cleared), {% endif %}favorite (blue, never deleted when space is cleared) or unset."></span>
 {%- endmacro %}
 
 {% macro sp_name(label, text=None) -%}

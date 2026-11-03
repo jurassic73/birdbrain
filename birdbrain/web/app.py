@@ -829,14 +829,12 @@ def unconfirm(visit_id: int, conn=Depends(get_conn)):
 
 
 @app.post("/visit/{visit_id}/keep")
-def keep(request: Request, visit_id: int, on: int = Form(...), where: str = Form("card"), conn=Depends(get_conn)):
-    """The blue keeper mark. On a card it answers with the updated button; on the visit page it reloads."""
+def keep(request: Request, visit_id: int, on: int = Form(...), conn=Depends(get_conn)):
+    """The blue keeper mark: answers with the updated button (static/star.js calls it for a visit with no species)."""
     visit = db.get_visit(conn, visit_id)
     if visit is None:
         raise HTTPException(404)
     db.set_keep(conn, visit_id, bool(on))
-    if where == "visit":
-        return Response(headers=REFRESH)
     return page(request, "_keeper_btn.html", v=db.get_visit(conn, visit_id))
 
 

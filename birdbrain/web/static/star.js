@@ -1,15 +1,16 @@
-// The star on each photo card and on the home page's big latest-visitor photo (admins):
+// The star on each photo card, the home page's big latest-visitor photo and the visit page's big photo (admins):
 // unset -> favorite (blue, kept) -> species cover (yellow) -> unset.
 // Yellow is held for HOLD ms first, so tapping on through to unset never touches the cover. Once it settles, a
 // species that already has another cover asks first, with the two photos side by side, each cropped around the
 // animal's circle; "Keep current" puts the star back to blue. The server sets the state it's sent and says which
 // visit is the species' cover now, so only one star per species is yellow; blue follows each visit's keep flag.
+// A visit with no species (no data-star-species) has no cover: its star only toggles favorite, via /visit/<id>/keep.
 // A small pill beside the star says what it just became.
 // Delegated and in the capture phase, so cards slid in later by the home page work too and the click never
 // reaches the card's link or the lightbox.
 (() => {
   const PILL = {unset: "unset", cover: "species cover", favorite: "favorite"};
-  const BOX = ".card, .hero-latest";  // what a star sits in
+  const BOX = ".card, .hero-latest, .visit-photo";  // what a star sits in
   const HOLD = 2000;
   const holds = new Map();  // visit id -> timer while its star sits on a not-yet-saved yellow
 
@@ -55,6 +56,13 @@
     const id = star.dataset.id;
     starsOf(id).forEach((b) => { b.disabled = true; });
     try {
+      if (!star.dataset.starSpecies) {  // no species: favorite on/off only
+        const body = new FormData();
+        body.append("on", state === "favorite" ? "1" : "0");
+        const res = await fetch("/visit/" + id + "/keep", {method: "POST", body});
+        if (res.ok) starsOf(id).forEach((b) => { b.dataset.keep = state === "favorite" ? "1" : "0"; paint(b, null); flash(star, state); });
+        return;
+      }
       const body = new FormData();
       body.append("visit_id", id);
       body.append("state", state);
@@ -178,7 +186,7 @@
       save(star, "unset");
     } else if (star.dataset.state === "unset") {
       save(star, "favorite");
-    } else if (star.dataset.state === "favorite") {
+    } else if (star.dataset.state === "favorite" && star.dataset.starSpecies) {
       hold(star);
     } else {
       save(star, "unset");
