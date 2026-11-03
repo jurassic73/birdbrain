@@ -195,6 +195,10 @@ def init_db(conn: sqlite3.Connection) -> None:
         for col in cols:
             if col not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
+    # A species cover (yellow star) is always kept; covers picked before that rule get their keep mark here.
+    picks = list(species_photos(conn).values())
+    if picks:
+        conn.execute(f"UPDATE visits SET keep = 1 WHERE keep IS NOT 1 AND id IN ({','.join('?' * len(picks))})", picks)
     conn.commit()
 
 

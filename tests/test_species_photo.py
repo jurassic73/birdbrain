@@ -169,3 +169,13 @@ def test_photo_reminder_is_admin_only(client, add_visit, monkeypatch):
     assert client.get("/api/photo-reminder").json() == {"species": ["Bushtit"]}  # no password: everyone is admin
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
     assert client.get("/api/photo-reminder").json() == {"species": []}
+
+
+def test_covers_picked_before_the_keep_rule_get_kept_at_startup(conn, add_visit):
+    old = add_visit(species="Bushtit", thumb_path="old_t.jpg")
+    db.set_species_photo(conn, "Bushtit", old)  # picked the old way: cover only, no keep mark
+    assert not db.get_visit(conn, old)["keep"]
+    db.init_db(conn)
+    assert db.get_visit(conn, old)["keep"] == 1
+    db.init_db(conn)  # runs every start; harmless the second time
+    assert db.get_visit(conn, old)["keep"] == 1
