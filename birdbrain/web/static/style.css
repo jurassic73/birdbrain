@@ -598,9 +598,7 @@ button.keep-btn svg { width: 16px; height: 16px; fill: #4da3ff; stroke: #fff; st
 .conf-low { color: var(--low); }
 .night { color: var(--night); }
 .corrected { color: var(--accent); }
-/* Any element with data-tip (all status pills) explains itself on hover; static/tips.js places the tip. */
-/* The photo-card star keeps its normal pointer; its tip still shows. */
-[data-tip]:not(.fav-star) { cursor: help; }
+/* Any element with data-tip (all status pills) explains itself on hover; static/tips.js places the tip. Tips use the normal cursor. */
 .tip {
   position: fixed; z-index: 60; max-width: 260px; padding: 6px 9px; pointer-events: none;
   font-size: .8rem; line-height: 1.35; font-weight: normal;
@@ -1298,7 +1296,7 @@ button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.1em; height: 1.1em; margin-left: .3em; vertical-align: middle;
   border: 1.5px solid currentColor; border-radius: 50%;
-  font: italic 600 .55em/1 Georgia, serif; opacity: .55; cursor: help;
+  font: italic 600 .55em/1 Georgia, serif; opacity: .55; cursor: default;
 }
 .info-tip:hover, .info-tip:focus { opacity: 1; }
 
