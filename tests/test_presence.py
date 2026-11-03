@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import FROZEN_NOW
 from birdbrain import classifier, db, presence, watch
 from birdbrain.web import app as webapp
 
@@ -265,7 +266,7 @@ def burst_visit(conn, add_visit, brightness):
     from birdbrain import images
 
     frames = [cv2.imencode(".jpg", np.full((90, 160, 3), b, np.uint8))[1].tobytes() for b in brightness]
-    image_rel, thumb_rel = images.store_frame(frames[0], watch.datetime.now())
+    image_rel, thumb_rel = images.store_frame(frames[0], FROZEN_NOW)
     images.store_burst(frames, image_rel)
     vid = add_visit(visitor="none", species=None, model=presence.MODEL_NAME, image_path=image_rel,
                     thumb_path=thumb_rel, raw_json=json.dumps({"zones": {"crop": list(CROP)}, "burst": {"best": 0}}))

@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from datetime import date, datetime, timedelta
 
@@ -111,12 +112,12 @@ def test_skipped_runs_also_count_so_a_dark_slot_isnt_retried_every_minute(conn):
     assert zones.due(conn, datetime(2026, 10, 26, 14, 50)) is None
 
 
-def test_asking_runs_it_even_when_automatic_checks_are_off(conn):
+def test_asking_runs_it_even_when_automatic_checks_are_off(conn, now):
     zones.save_schedule(conn, False, ["10:30"])
     assert zones.due(conn, datetime(2026, 10, 26, 10, 31)) is None
     zones.request(conn)
-    assert zones.pending(conn) and zones.due(conn, datetime.now()) == "manual"
-    run_at(conn, datetime.now().replace(microsecond=0).isoformat())
+    assert zones.pending(conn) and zones.due(conn, now) == "manual"
+    run_at(conn, (now + timedelta(seconds=1)).isoformat())  # the run finishes after the request, as it does for real
     assert not zones.pending(conn)
 
 
@@ -264,12 +265,12 @@ def test_settings_shows_the_zones_section_with_its_schedule(client):
     assert "Recalibrate now" in html and "No recalibrations yet" in html
 
 
-def test_recalibrate_now_shows_progress_that_polls_until_done(client, conn):
+def test_recalibrate_now_shows_progress_that_polls_until_done(client, conn, now):
     assert client.post("/settings/zones/now", follow_redirects=False).status_code == 303
     panel = client.get("/settings/zones").text
     assert "Looking at the bath" in panel and 'id="recal-timer"' in panel and "hx-trigger" not in panel
     assert client.get("/settings/zones/status").json()["pending"] is True
-    run_at(conn, datetime.now().replace(microsecond=0).isoformat())
+    run_at(conn, (now + timedelta(seconds=1)).isoformat())
     assert "recal-timer" not in client.get("/settings/zones").text
     assert client.get("/settings/zones/status").json()["pending"] is False
 
@@ -323,13 +324,16 @@ def test_about_draws_the_recalibrated_zones(client, conn, env_zones):
 
 @pytest.fixture
 def vancouver(monkeypatch):
+    old_tz = os.environ.get("TZ")
     monkeypatch.setattr(config, "SITE_LAT", 45.64)
     monkeypatch.setattr(config, "SITE_LON", -122.66)
     monkeypatch.setenv("TZ", "America/Los_Angeles")
     time.tzset()
     yield
-    monkeypatch.undo()
-    time.tzset()
+    monkeypatch.delenv("TZ", raising=False)  # restore TZ (monkeypatch would only do it after we're done) ...
+    if old_tz is not None:
+        monkeypatch.setenv("TZ", old_tz)
+    time.tzset()  # ... and tell libc, which only re-reads it here
 
 
 def test_sun_times_follow_the_seasons(vancouver):

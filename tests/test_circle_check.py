@@ -1,5 +1,6 @@
 import io
 import json
+import time
 from datetime import datetime
 
 import numpy as np
@@ -7,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from conftest import FROZEN_NOW
 from birdbrain import circle_check, classifier, db, identify, images
 from birdbrain.web import app as webapp
 
@@ -44,7 +46,7 @@ def photo_visit(add_visit):
     def add(**fields) -> int:
         buf = io.BytesIO()
         Image.new("RGB", (640, 360), (90, 120, 200)).save(buf, "JPEG")
-        image_rel, thumb_rel = images.store_frame(buf.getvalue(), datetime.now())
+        image_rel, thumb_rel = images.store_frame(buf.getvalue(), FROZEN_NOW)
         row = {"visitor": "none", "species": None, "model": "bioclip-presence", "confidence": "medium"}
         return add_visit(image_path=image_rel, thumb_path=thumb_rel, **{**row, **fields})
     return add
@@ -257,11 +259,11 @@ def test_visit_page_offers_the_circle_check(client, photo_visit):
 
 def test_release_frees_the_model_only_when_idle(monkeypatch):
     monkeypatch.setattr(classifier, "_classifier", object())
-    monkeypatch.setattr(circle_check, "_last_used", 0.0)
+    # monotonic() counts from boot, so "0.0" is only long ago on a machine that's been up for IDLE seconds
+    monkeypatch.setattr(circle_check, "_last_used", time.monotonic() - circle_check.IDLE - 1)
     circle_check.release_if_idle()
     assert classifier._classifier is None
     monkeypatch.setattr(classifier, "_classifier", object())
-    import time
     monkeypatch.setattr(circle_check, "_last_used", time.monotonic())
     circle_check.release_if_idle()
     assert classifier._classifier is not None

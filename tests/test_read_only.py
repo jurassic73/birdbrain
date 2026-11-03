@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import FROZEN_NOW
 from birdbrain import db, species_info
 from birdbrain.web import app as webapp
 from birdbrain.web import auth
@@ -90,7 +91,7 @@ def test_public_mirror_has_no_admin_and_never_touches_camera(client, add_visit, 
         assert client.get(path, follow_redirects=False).status_code == 404
     for path in ("/", "/species", "/stats", "/about"):
         assert client.get(path).status_code == 200
-    client.get("/live.jpg")  # 503 without a synced frame; must not reach the camera either way
+    assert client.get("/live.jpg").status_code == 503  # no synced frame; must not reach the camera either way
     assert db.get_visit(conn, vid) is not None
 
 
@@ -102,7 +103,7 @@ def test_base_path_prefixes_links_redirects_and_fetch(client, add_visit, monkeyp
     assert 'src="/birdbrain/static/' in page and 'src="/static/' not in page
     assert "window.BB_BASE=\"/birdbrain\"" in page
     r = client.post("/logout", follow_redirects=False)
-    assert r.headers["location"] == "/birdbrain/"
+    assert r.status_code == 303 and r.headers["location"] == "/birdbrain/"
 
 
 def test_mirror_today_follows_site_timezone(client, add_visit, conn, monkeypatch):
@@ -110,17 +111,20 @@ def test_mirror_today_follows_site_timezone(client, add_visit, conn, monkeypatch
     from zoneinfo import ZoneInfo
     from birdbrain import clock
     # A zone whose date differs from this machine's for most of the day, so "today" visibly moves.
-    zone = "Pacific/Kiritimati" if datetime.now(ZoneInfo("Pacific/Kiritimati")).date() != datetime.now().date() else "Etc/GMT+12"
-    there = datetime.now(ZoneInfo(zone)).replace(tzinfo=None)
+    def in_zone(name):  # the frozen "now" as the wall clock in that zone
+        return FROZEN_NOW.astimezone().astimezone(ZoneInfo(name)).replace(tzinfo=None)
+    zone = "Pacific/Kiritimati" if in_zone("Pacific/Kiritimati").date() != FROZEN_NOW.date() else "Etc/GMT+12"
+    there = in_zone(zone)
+    assert there.date() != FROZEN_NOW.date()
     try:
         db.set_value(conn, clock.KEY, zone)
         clock.set_zone(None); clock._zone["checked"] = 0.0  # make the next request read the setting
-        client.get("/")
+        assert client.get("/").status_code == 200
         assert clock.today() == there.date()
         db.set_value(conn, clock.KEY, "")
         clock._zone["checked"] = 0.0
-        client.get("/")
-        assert clock.today() == datetime.now().date()
+        assert client.get("/").status_code == 200
+        assert clock.today() == FROZEN_NOW.date()
     finally:
         clock.set_zone(None); clock._zone["checked"] = 0.0
 

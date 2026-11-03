@@ -1,6 +1,9 @@
 import os
+import socket
+import sys
 import tempfile
-from datetime import datetime
+from datetime import date as _real_date, datetime as _real_datetime
+from pathlib import Path
 
 # Before birdbrain is imported: never read the real .env (camera password, API key), and keep images in a temp dir.
 os.environ["BIRDBRAIN_NO_DOTENV"] = "1"
@@ -11,6 +14,101 @@ os.environ["RTSP_PASS"] = "p@ss#word!"
 import pytest  # noqa: E402
 
 from birdbrain import config, db  # noqa: E402
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# "Now" for every test: midday on the day the run started, so a run that crosses midnight (or starts just past it)
+# sees one fixed day. Tests that need a time relative to now use the `now` fixture or `from conftest import FROZEN_NOW`.
+FROZEN_NOW = _real_datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+
+
+class _Meta(type):
+    def __instancecheck__(cls, obj):
+        return isinstance(obj, cls.__mro__[1])
+
+
+class FrozenDatetime(_real_datetime, metaclass=_Meta):
+    @classmethod
+    def now(cls, tz=None):
+        if tz is None:
+            return FROZEN_NOW
+        return FROZEN_NOW.astimezone().astimezone(tz)
+
+    @classmethod
+    def today(cls):
+        return FROZEN_NOW
+
+
+class FrozenDate(_real_date, metaclass=_Meta):
+    @classmethod
+    def today(cls):
+        return FROZEN_NOW.date()
+
+
+@pytest.fixture(autouse=True)
+def frozen_clock(monkeypatch):
+    """Freeze "now" at FROZEN_NOW in every birdbrain module that imported datetime/date by name.
+    (time.time()/monotonic() are left alone: they only drive cache ages and staleness.)"""
+    import birdbrain.web.app  # noqa: F401  (make sure every module is loaded)
+    for name, mod in list(sys.modules.items()):
+        if not name.startswith("birdbrain"):
+            continue
+        if getattr(mod, "datetime", None) is _real_datetime:
+            monkeypatch.setattr(mod, "datetime", FrozenDatetime)
+        if getattr(mod, "date", None) is _real_date:
+            monkeypatch.setattr(mod, "date", FrozenDate)
+
+
+def image_size(path) -> tuple[int, int]:
+    """An image file's (width, height), closing the file again."""
+    from PIL import Image
+    with Image.open(path) as im:
+        return im.size
+
+
+@pytest.fixture
+def now():
+    return FROZEN_NOW
+
+
+@pytest.fixture(scope="session", autouse=True)
+def repo_root_untouched():
+    """Fail the run if any test leaves files in the repo root (images/, birdbrain.db, ...)."""
+    def listing():
+        skip = {".git", ".venv", ".pytest_cache", "__pycache__", ".ruff_cache"}
+        return {p.name for p in REPO_ROOT.iterdir() if p.name not in skip}
+    before = listing()
+    yield
+    created = sorted(listing() - before)
+    assert not created, f"tests created files in the repo root: {created}"
+
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "testserver", ""}
+
+
+@pytest.fixture(autouse=True)
+def no_network(monkeypatch):
+    """A test that reaches for a real host fails loudly instead of going out; localhost stays open."""
+    real_connect, real_connect_ex = socket.socket.connect, socket.socket.connect_ex
+
+    def check(address):
+        if isinstance(address, (tuple, list)) and address:
+            host = address[0]
+            if isinstance(host, bytes):
+                host = host.decode()
+            if host not in _LOCAL_HOSTS and not str(host).startswith("127."):
+                raise RuntimeError(f"tests must not touch the network (tried to connect to {address!r})")
+
+    def connect(self, address):
+        check(address)
+        return real_connect(self, address)
+
+    def connect_ex(self, address):
+        check(address)
+        return real_connect_ex(self, address)
+
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
 
 
 @pytest.fixture
@@ -26,7 +124,7 @@ def conn(tmp_path, monkeypatch):
 def add_visit(conn):
     def add(**fields) -> int:
         row = {
-            "captured_at": datetime.now().replace(microsecond=0).isoformat(),
+            "captured_at": FROZEN_NOW.isoformat(),
             "image_path": "img.jpg",
             "thumb_path": "img_t.jpg",
             "visitor": "bird",

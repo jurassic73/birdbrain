@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from conftest import FROZEN_NOW
 from birdbrain import alert, db, identify
 from birdbrain.identify import HAIKU, SONNET, Also, Circle, Sighting
 from birdbrain.web import app as webapp
@@ -96,7 +97,7 @@ def test_the_prompt_asks_for_every_kind():
 def test_other_animals_count_for_their_species_everywhere(conn, add_visit):
     vid = add_visit(also=json.dumps(BUSHTITS))
     add_visit(species="Bushtit")
-    today = date.today().isoformat()
+    today = FROZEN_NOW.date().isoformat()
     assert [r["id"] for r in db.list_visits(conn, species="Bushtit")][-1] == vid
     assert db.count_visits(conn, species="Bushtit") == 2 and db.count_visits(conn) == 2
     rows = {r["label"]: r for r in db.species_summary(conn)}
@@ -111,7 +112,7 @@ def test_other_animals_count_for_their_species_everywhere(conn, add_visit):
 
 
 def test_species_photo_prefers_visits_where_it_was_the_main_animal(conn, add_visit):
-    add_visit(also=json.dumps(BUSHTITS), thumb_path="mixed_t.jpg", captured_at=datetime.now().isoformat())
+    add_visit(also=json.dumps(BUSHTITS), thumb_path="mixed_t.jpg", captured_at=FROZEN_NOW.isoformat())
     add_visit(species="Bushtit", confidence="medium", thumb_path="own_t.jpg", captured_at="2026-01-01T09:00:00")
     assert db.species_row(conn, "Bushtit")["thumb_path"] == "own_t.jpg"
 

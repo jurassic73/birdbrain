@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from conftest import FROZEN_NOW
 from birdbrain import classifier, config, db, images, watch
 from birdbrain.classifier import fetch_place_species as real_fetch_place_species
 from birdbrain.web import app as webapp
@@ -188,7 +189,7 @@ def test_backfill_scores_stored_visits(conn, add_visit):
     def stored(**fields):
         buf = io.BytesIO()
         Image.new("RGB", (1920, 1080), (90, 120, 200)).save(buf, "JPEG")
-        image_rel, thumb_rel = images.store_frame(buf.getvalue(), datetime.now())
+        image_rel, thumb_rel = images.store_frame(buf.getvalue(), FROZEN_NOW)
         return add_visit(image_path=image_rel, thumb_path=thumb_rel, **fields)
 
     old = stored(raw_json=json.dumps({"calls": {"circle": {"x": 0.5, "y": 0.5, "r": 0.02}}}))

@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from conftest import FROZEN_NOW, image_size
 from birdbrain import config, db, images, retention
 from birdbrain.web import app as webapp
 
@@ -75,7 +76,7 @@ def level(conn, vid: int) -> str | None:
 
 
 def size_of(vid: int, conn) -> tuple[int, int]:
-    return Image.open(config.IMAGES_DIR / db.get_visit(conn, vid)["image_path"]).size
+    return image_size(config.IMAGES_DIR / db.get_visit(conn, vid)["image_path"])
 
 
 # --- options ---
@@ -398,7 +399,7 @@ def test_breakdown_counts_each_photo_once_in_order(conn, photo):
     db.set_species_photo(conn, "Dark-eyed Junco", pick)
     photo("2026-11-02T08:00:00", keep=1)
     photo("2026-11-03T08:00:00", feedback="note")
-    recent = datetime.now().replace(microsecond=0).isoformat()
+    recent = FROZEN_NOW.replace(microsecond=0).isoformat()
     photo(recent)
     photo("2026-01-04T08:00:00", photo_level="thinned")  # older than 90 days
     false_trigger(photo, "2026-11-04T09:00:00")

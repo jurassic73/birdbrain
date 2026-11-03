@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from conftest import image_size
 from birdbrain import config, db, images, presence, retention
 
 
@@ -126,6 +127,6 @@ def test_false_triggers_are_saved_smaller(tmp_path):
     big.save(buf, "JPEG", quality=97)
     full_rel, _ = images.store_frame(buf.getvalue(), datetime(2026, 10, 25), tmp_path)
     small_rel, _ = images.store_frame(buf.getvalue(), datetime(2026, 10, 25), tmp_path, max_edge=960, quality=80)
-    assert Image.open(tmp_path / full_rel).size == (1920, 1080)
-    assert Image.open(tmp_path / small_rel).size == (960, 540)
+    assert image_size(tmp_path / full_rel) == (1920, 1080)
+    assert image_size(tmp_path / small_rel) == (960, 540)
     assert (tmp_path / small_rel).stat().st_size < (tmp_path / full_rel).stat().st_size / 2
