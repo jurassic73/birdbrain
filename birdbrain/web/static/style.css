@@ -404,6 +404,10 @@ button.filters-toggle[aria-expanded="true"] { background: color-mix(in srgb, var
 .filters label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .9rem; }
 
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 16px; }
+/* Alignment rule for every new button, pill, chip or badge: centre the label both ways and match
+   the neighbours' height. A label without descenders (Admin) sits high in a plain line box, so use
+   inline-flex with align-items and justify-content: center, plus text-box: trim-both cap alphabetic
+   and an @supports-not padding fallback (see .topbar-actions .admin-btn). Measure it on a screenshot. */
 select, input, button {
   font: inherit; color: var(--text); background: var(--surface);
   border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
