@@ -420,22 +420,17 @@ def scoreboard(request: Request, range: str = "today", conn=Depends(get_conn)):
     return page(request, "_scoreboard.html", **scoreboard_ctx(conn, range))
 
 
-@app.get("/visits", response_class=HTMLResponse)
-def visits_archive(request: Request, conn=Depends(get_conn)):
-    """The plain archive: every real visit, newest first, one grid with the home page's filters."""
-    filters = filters_from(request)
-    active = {k: v for k, v in filters.items() if v}
-    visits = db.list_visits(conn, **filters, limit=PAGE_SIZE)
-    return page(
-        request,
-        "visits.html",
-        visits=visits,
-        filters=filters,
-        filtered=bool(active),
-        total=db.count_visits(conn, **filters),
-        species_names=db.species_names(conn),
-        next_url=more_url("/visits/archive-more", visits, PAGE_SIZE, filters),
-    )
+def _with_query(path: str, request: Request) -> str:
+    """`path` plus the request's query string, so a redirect keeps its filters."""
+    q = request.url.query
+    return f"{path}?{q}" if q else path
+
+
+@app.get("/visits")
+def visits_archive(request: Request):
+    """The old Visits archive (removed 2026-11-03: the home page is the Visits tab now). Old links and bookmarks
+    land on the home page with the same filters, which use the same names (see filters_from)."""
+    return RedirectResponse(_with_query("/", request), status_code=307)
 
 
 def keyset(visit) -> str:
@@ -464,12 +459,10 @@ def more_url(path: str, visits: list, limit: int, filters: dict | None = None, *
     return f"{path}?{query_string(filters or {}, before=keyset(visits[-1]), **extra)}"
 
 
-@app.get("/visits/archive-more", response_class=HTMLResponse)
-def visits_archive_more(request: Request, before: str = "", conn=Depends(get_conn)):
-    filters = filters_from(request)
-    visits = visits_before(conn, before, limit=PAGE_SIZE, **filters)
-    return page(request, "_cards.html", visits=visits,
-                next_url=more_url("/visits/archive-more", visits, PAGE_SIZE, filters))
+@app.get("/visits/archive-more")
+def visits_archive_more(request: Request):
+    """The archive's Load more: a page still open from before the archive went keeps paging through the home list."""
+    return RedirectResponse(_with_query("/visits/more", request), status_code=307)
 
 
 @app.get("/visits/more", response_class=HTMLResponse)

@@ -119,7 +119,6 @@ def test_multiple_chip_follows_mammals_and_filters(client, add_visit):
     assert 'aria-current="page">Multiple<' in html and "2 matching</h2>" in html
     assert html.index(">Mammals<") < html.index(">Multiple<") < html.index(">Night<")
     assert '<option value="multiple" selected>' in html
-    assert "2 visits matching" in client.get("/visits?kind=multiple").text
 
 
 def more_link(html: str) -> str:
@@ -957,7 +956,6 @@ def test_only_the_latest_visitor_and_live_view_carry_a_zoom_button(client, add_v
     # Load more cards and the other pages have none
     more = client.get(more_link(html)).text
     assert f'href="/visit/{first}"' in more and "zoom-btn" not in more
-    assert "zoom-btn" not in client.get("/visits").text
     assert "zoom-btn" not in client.get("/species/Bushtit").text
     add_visit(visitor="none", species=None)
     assert "zoom-btn" not in client.get("/false-triggers").text
@@ -978,27 +976,43 @@ def test_manifest_has_maskable_icon_and_base_path(client, monkeypatch):
     assert 'href="/birdbrain/manifest.webmanifest' in client.get("/").text
 
 
-def test_visits_archive_lists_real_visits_only(client, add_visit):
+def test_home_lists_real_visits_only(client, add_visit):
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None)
-    html = client.get("/visits").text
-    assert html.count('class="card"') == 1 and "Bushtit" in html and "1 visit<" in html
-    assert 'href="/visits" aria-current="page"' in html
+    html = client.get("/").text
+    assert html.count('class="card"') == 1 and "Bushtit" in html
 
 
-def test_nav_has_visits_link(client):
-    assert 'href="/visits"' in client.get("/").text
+def nav_of(html: str) -> str:
+    return html[html.index("<nav>"):html.index("</nav>")]
 
 
-def test_visits_archive_load_more_and_filters(client, add_visit):
-    for _ in range(30):
+def test_nav_visits_tab_is_the_home_page(client, add_visit):
+    # The old Visits archive is gone (2026-11-03); the home page is the Visits tab.
+    nav = nav_of(client.get("/").text)
+    assert '<a href="/" aria-current="page">Visits</a>' in nav
+    assert 'href="/visits"' not in nav and ">Latest<" not in nav
+    vid = add_visit()
+    nav = nav_of(client.get(f"/visit/{vid}").text)
+    assert '<a href="/" aria-current="page">Visits</a>' in nav and 'href="/visits"' not in nav
+    nav = nav_of(client.get("/species").text)
+    assert '<a href="/" >Visits</a>' in nav and nav.count('aria-current="page"') == 1
+
+
+def test_old_visits_archive_links_redirect_home_with_their_filters(client, add_visit):
+    for _ in range(3):
         add_visit(species="Bushtit")
-    add_visit(visitor="raccoon", species=None)
-    first = client.get("/visits").text
-    assert first.count('class="card"') == 24 and "/visits/archive-more?before=" in first and "31 visits" in first
-    more = client.get(more_link(first)).text
-    assert more.count('class="card"') == 7 and "load-more" not in more and "grid-break" not in more
-    assert "1 visit matching" in client.get("/visits?kind=mammal").text
+    mammal = add_visit(visitor="raccoon", species=None)
+    r = client.get("/visits", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/"
+    r = client.get("/visits?kind=mammal&tod=day", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/?kind=mammal&tod=day"
+    html = client.get("/visits?kind=mammal").text  # followed: the filtered home page
+    assert html.count('class="card"') == 1 and f'href="/visit/{mammal}"' in html and "1 matching</h2>" in html
+    # the archive's Load more keeps paging through the home list
+    r = client.get("/visits/archive-more?kind=bird&before=2026-11-01T10:00:00,5", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/visits/more?kind=bird&before=2026-11-01T10:00:00,5"
+    assert client.get("/visits/archive-more?before=junk").text.count('class="card"') == 4
 
 
 def test_visit_opened_from_species_page_keeps_the_species_scope(client, add_visit):
@@ -1112,8 +1126,8 @@ def test_c_key_confirms_and_moves_on_for_admin_visit_pages(client, add_visit, mo
 def test_visit_page_keeps_visits_nav_highlighted(client, add_visit):
     vid = add_visit(visitor="bird", species="Dark-eyed Junco")
     page = client.get(f"/visit/{vid}").text
-    assert re.search(r'<a href="/visits" aria-current="page">Visits</a>', page)
-    assert not re.search(r'<a href="/" aria-current="page">Latest</a>', page)
+    assert re.search(r'<a href="/" aria-current="page">Visits</a>', page)
+    assert 'href="/visits"' not in page
 
 
 def card_ids(html: str) -> list[int]:
@@ -1141,11 +1155,11 @@ def test_false_trigger_paging_survives_confirming_between_pages(client, add_visi
 def test_visits_paging_ties_and_bad_cursor(client, add_visit, monkeypatch):
     monkeypatch.setattr(webapp, "PAGE_SIZE", 2)
     ids = [add_visit(captured_at="2026-11-01T10:00:00") for _ in range(5)]  # the same second: the id breaks ties
-    first = client.get("/visits").text
+    first = client.get("/").text
     second = client.get(more_link(first)).text
     third = client.get(more_link(second)).text
     assert card_ids(first) + card_ids(second) + card_ids(third) == ids[::-1] and "load-more" not in third
-    assert card_ids(client.get("/visits/archive-more?before=junk").text) == ids[::-1][:2]
+    assert card_ids(client.get("/visits/more?before=junk").text) == ids[::-1][:2]
 
 
 def test_species_page_without_a_card_has_title_facts_and_charts(client, add_visit):

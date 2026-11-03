@@ -196,7 +196,7 @@ def test_star_shows_on_other_pages_with_the_cover_yellow(client, conn, add_visit
     plain = add_visit(species="Dark-eyed Junco")
     nothing = add_visit(visitor="none", species=None, confidence=None)
     db.set_species_photo(conn, "Bushtit", cover)
-    for path in ("/", "/visits"):
+    for path in ("/",):
         text = client.get(path).text
         assert "class=\"fav-star\" data-state=\"cover\"" in text, path
         assert f'data-id="{cover}" data-star-species="Bushtit"' in text and f'data-id="{plain}" data-star-species="Dark-eyed Junco"' in text
