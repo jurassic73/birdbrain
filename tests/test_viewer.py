@@ -276,3 +276,9 @@ def test_sign_in_under_base_path_returns_to_the_base_home(gated, monkeypatch):
                    follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/birdbrain/"
     assert "Path=/birdbrain/" in r.headers["set-cookie"]
+
+
+def test_viewer_files_never_resolve_under_etc_in_tests():
+    """Guard: the autouse fixture keeps the gate off the host's real /etc/birdbrain files."""
+    for p in (viewer.password_file(), viewer.invite_file()):
+        assert not str(p).startswith("/etc"), p
