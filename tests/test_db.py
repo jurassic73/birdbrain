@@ -309,6 +309,62 @@ def test_recent_lessons_wording_order_and_limit(conn, add_visit):
     assert len(db.recent_lessons(conn, limit=2)) == 2
 
 
+def _skipped(by: str = "presence") -> str:
+    """raw_json of a visit the Pi settled without asking Claude (identify.settled_*)."""
+    calls = {"skipped_claude": True, "detector": {"best": None}}
+    if by == "presence":
+        calls["presence"] = {"score": 0.01, "threshold": 0.1, "empty": True}
+    if by == "classifier":
+        calls["settled_by"] = "classifier"
+    return json.dumps({"calls": calls})
+
+
+def test_a_lesson_on_a_visit_claude_never_saw_says_so(conn, add_visit):
+    empty = {"visitor": "none", "species": None, "captured_at": at(0)}
+    add_visit(**empty, raw_json=_skipped(), feedback="Wind ripples on the rim.")
+    add_visit(**empty, raw_json=_skipped(), corrected_visitor="bird", corrected_species="Bushtit", is_night=1)
+    add_visit(**empty, raw_json=_skipped("detector"), feedback="Leaf shadow.")
+    add_visit(species="Bushtit", raw_json=_skipped("classifier"), corrected_species="Lesser Goldfinch", captured_at=at(0))
+    add_visit(**empty, raw_json="{not json", feedback="Bad trail.")  # unreadable: treated as Claude's answer
+    bad, classifier, detector, bushtit, ripples = db.recent_lessons(conn)
+    day = at(0)[:10]
+    assert ripples == (f"- {day}, day: the Pi's animal check judged this frame empty, so you weren't asked; the owner "
+                       "confirmed no animal was there. Owner's note: Wind ripples on the rim.")
+    assert bushtit == (f"- {day}, night (IR): the Pi's animal check judged this frame empty, so you weren't asked; "
+                       'the owner says it was "Bushtit".')
+    assert detector.endswith("day: the Pi's local detector found no animal, so you weren't asked; the owner confirmed "
+                             "no animal was there. Owner's note: Leaf shadow.")
+    assert classifier.endswith('the Pi\'s species classifier named it "Bushtit", so you weren\'t asked; the owner says '
+                               'it was "Lesser Goldfinch".')
+    assert bad.endswith('day: you said "no animal" and the owner confirmed it. Owner\'s note: Bad trail.')
+    rows = db.all_lessons(conn)
+    assert [r["said_by"] for r in rows] == ["Claude", "the Pi", "the Pi", "the Pi", "the Pi"]
+
+
+def test_agreeing_with_the_pi_and_saying_nothing_more_is_not_a_lesson(conn, add_visit):
+    empty = {"visitor": "none", "species": None, "captured_at": at(0)}
+    # Older rows could store the owner's "no animal" even when it matched: nothing for Claude to learn.
+    add_visit(**empty, raw_json=_skipped(), corrected_visitor="none")
+    add_visit(**empty, raw_json=_skipped(), corrected_visitor="none", corrected_also="[]")
+    circled = add_visit(**empty, raw_json=_skipped(), corrected_visitor="none",
+                        marks=json.dumps([{"x": 0.5, "y": 0.5, "r": 0.1}]))
+    claude = add_visit(**empty, corrected_visitor="none")  # Claude's own answer confirmed: still a lesson
+    assert [r["visit_id"] for r in db.all_lessons(conn)] == [claude, circled]
+    assert "The owner circled spots" in db.recent_lessons(conn)[1]
+
+
+def test_the_prompt_preview_shows_a_skipped_visits_lesson(conn, add_visit):
+    from fastapi.testclient import TestClient
+    from birdbrain.web import app as webapp
+
+    add_visit(visitor="none", species=None, raw_json=_skipped(), feedback="Wind ripples.", captured_at=at(0))
+    with TestClient(webapp.app) as client:
+        page = client.get("/notes").text
+    assert "the Pi&#39;s animal check judged this frame empty, so you weren&#39;t asked" in page
+    assert "or the Pi&#39;s where a line says you weren&#39;t asked" in page  # the corrections intro
+    assert "the Pi said &#34;no animal&#34;" in page or 'the Pi said "no animal"' in page
+
+
 def test_settings_default_empty_save_trim_and_overwrite(conn):
     assert db.get_settings(conn) == {"location": "", "scene_notes": "", "target_notes": "", "ignore_notes": ""}
     db.save_settings(conn, location="  Vancouver, WA  ", ignore_notes="branch on the right")

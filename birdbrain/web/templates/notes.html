@@ -65,7 +65,7 @@
       <details class="lesson-edit">
         <summary hidden>Edit</summary>
         <form hx-post="/lessons/{{ l.visit_id }}/edit">
-          <p class="muted">Fixed: {{ l.captured_at[:10] }}, {{ l.when }}, Claude said "{{ l.said }}"{% if l.circles %}, {{ l.circles }} circle{{ 's' if l.circles != 1 }} (change them <a href="/visit/{{ l.visit_id }}">on the visit</a>){% endif %}.</p>
+          <p class="muted">Fixed: {{ l.captured_at[:10] }}, {{ l.when }}, {{ l.said_by }} said "{{ l.said }}"{% if l.circles %}, {{ l.circles }} circle{{ 's' if l.circles != 1 }} (change them <a href="/visit/{{ l.visit_id }}">on the visit</a>){% endif %}.</p>
           <label>It was
             <select name="visitor">
               {% for v in visitors %}<option value="{{ v }}"{{ ' selected' if v == l.visitor }}>{{ 'no animal' if v == 'none' else v }}</option>{% endfor %}
@@ -73,7 +73,7 @@
           </label>
           <label>Species <input name="species" value="{{ l.species }}" placeholder="e.g. Dark-eyed Junco"></label>
           <label class="lesson-note">Note <textarea name="feedback" rows="2">{{ l.feedback }}</textarea></label>
-          <p class="muted">Matching Claude's answer with an empty note removes the lesson.</p>
+          <p class="muted">Matching {{ l.said_by }}'s answer with an empty note removes the lesson.</p>
           <button type="submit">Save</button>
         </form>
       </details>

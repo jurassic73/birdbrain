@@ -513,3 +513,13 @@ def test_init_db_adds_the_burst_pick_columns_to_old_databases(tmp_path):
     db.init_db(old)
     cols = {r["name"] for r in old.execute("PRAGMA table_info(embeddings)")}
     assert {"animal_vec", "animal_frame", "animal_score", "animal_by_owner"} <= cols
+
+
+def test_the_note_box_says_claude_wasnt_asked_on_a_skipped_visit(client, add_visit):
+    skipped = add_visit(visitor="none", species=None, count=0, model=presence.MODEL_NAME, raw_json=json.dumps(
+        {"calls": {"skipped_claude": True, "presence": {"score": 0.01, "threshold": 0.1, "empty": True, "trained_on": 700}}}))
+    page = client.get(f"/visit/{skipped}").text
+    assert "Claude didn't look at this one. Optional: what set off the motion?" in page
+    assert "Claude wasn't asked about this visit" in page and "What did Claude get wrong?" not in page
+    asked = client.get(f"/visit/{add_visit(visitor='none', species=None, count=0)}").text
+    assert "What did Claude get wrong?" in asked and "Claude wasn't asked about this visit" not in asked
