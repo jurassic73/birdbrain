@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import math
 import os
 import re
@@ -20,6 +21,7 @@ from . import auth, viewer
 from .. import alert, camera, circle_check, clock, config, db, identify, images, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
+log = logging.getLogger("birdbrain.web")
 PAGE_SIZE = 24
 REVIEW_SHOWN = 200  # the review queue is oldest first and short; it shows this many and says so
 SPECIES_PAGE = 48  # a species page loads this many at a time (a common bird has thousands)
@@ -47,7 +49,13 @@ async def read_only(request: Request, call_next):
         # Another site's page can't change anything here with the browser's cookies (or, with no password,
         # with nothing at all): every change is a POST, and the browser tells us where a POST came from.
         return Response("Cross-site requests aren't accepted.", status_code=403)
-    if viewer.enabled() and not viewer.is_open(request.url.path) and not viewer.signed_in(request):
+    try:
+        gated = viewer.enabled() and not viewer.is_open(request.url.path) and not viewer.signed_in(request)
+    except viewer.Unreadable as e:
+        # The gate's file is there but can't be read: shut, not open, until someone fixes the permissions.
+        log.error("friends & family gate can't be read, refusing everyone: %s", e)
+        return Response("Birdbrain is closed for a moment: its sign-in settings can't be read.", status_code=503)
+    if gated:
         # Friends & family gate: nothing past this point for anyone without the guest cookie.
         if request.method in ("GET", "HEAD"):
             return RedirectResponse("/guest-login?" + urlencode({"next": request.url.path}), status_code=303)
@@ -278,12 +286,18 @@ def guest_login_page(request: Request, next: str = "/"):
 
 @app.post("/guest-login")
 def guest_login(request: Request, password: str = Form(""), key: str = Form(""), next: str = Form("/")):
-    if not viewer.enabled():
+    if not viewer.enabled() or viewer.signed_in(request):  # already in: no need to check, or to throttle
         return _guest_reply(request, True, next)
     ip = viewer.client_ip(request)
     if wait := viewer.locked(ip):
         return _guest_reply(request, False, next, _wait_text(wait), wait, 429)
-    if not (viewer.check_invite(key) if key else viewer.check_password(password)):
+    if key:
+        ok = viewer.check_invite(key)  # a share link is unguessable, so it's never slowed down
+    else:
+        if delay := viewer.slow_down():  # everyone together has been guessing a lot: each try waits a little
+            time.sleep(delay)
+        ok = viewer.check_password(password)
+    if not ok:
         viewer.failed(ip)
         wait = viewer.locked(ip)
         return _guest_reply(request, False, next, _wait_text(wait) if wait else
@@ -877,7 +891,7 @@ def public_anyway(visit_id: int, conn=Depends(get_conn)):
     visit = db.get_visit(conn, visit_id)
     if visit is None:
         raise HTTPException(404)
-    override = privacy.make_override(visit["image_path"], privacy.load_cache())
+    override = privacy.make_override(visit["image_path"], privacy.load_cache(), visit["thumb_path"])
     if override is None:
         raise HTTPException(409, "Nothing to clear: this visit isn't held back for a person, or isn't fully checked yet.")
     db.set_public_ok(conn, visit_id, override)

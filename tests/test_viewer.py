@@ -1,5 +1,10 @@
+import os
+import time
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from birdbrain.web import app as webapp
 from birdbrain.web import viewer
@@ -13,7 +18,8 @@ def gated(tmp_path, monkeypatch, conn):
     monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
     viewer._fails.clear()
     viewer._cache.clear()
-    with TestClient(webapp.app) as c:
+    # Requests arrive from the local proxy, so the Cloudflare header names the visitor (as on the droplet).
+    with TestClient(webapp.app, client=("127.0.0.1", 50000)) as c:
         yield c
     viewer._fails.clear()
     viewer._cache.clear()
@@ -62,17 +68,105 @@ def test_three_wrong_tries_lock_that_address_out(gated):
                       follow_redirects=False).status_code == 303
 
 
-def test_many_addresses_guessing_lock_everyone(gated):
+def test_many_addresses_guessing_slow_everyone_down_but_lock_nobody_out(gated, monkeypatch):
+    slept = []
+    monkeypatch.setattr(webapp.time, "sleep", slept.append)
     for n in range(viewer.ALL_FAILS):
         gated.post("/guest-login", data={"password": "wrong"}, headers=ip(100 + n % 100))
-    assert gated.post("/guest-login", data={"password": "test-password-123"}, headers=ip(250),
-                      follow_redirects=False).status_code == 429
+    assert not slept and viewer.slow_down() == viewer.SLOW_DELAY
+    # Every try now waits a little, wrong or right, and a fresh address with the right password still gets in.
+    assert gated.post("/guest-login", data={"password": "wrong"}, headers=ip(251)).status_code == 401
+    assert slept == [viewer.SLOW_DELAY]
+    r = gated.post("/guest-login", data={"password": "test-password-123"}, headers=ip(250), follow_redirects=False)
+    assert r.status_code == 303 and slept == [viewer.SLOW_DELAY] * 2
+    # Whoever is already signed in isn't held up at all (the cookie from the login above).
+    assert gated.get("/", follow_redirects=False).status_code == 200
+    assert gated.post("/guest-login", data={"password": "whatever"}, headers=ip(252),
+                      follow_redirects=False).status_code == 303
+    assert slept == [viewer.SLOW_DELAY] * 2
+
+
+def test_share_link_is_not_slowed_by_everyone_else_guessing(gated, tmp_path, monkeypatch):
+    monkeypatch.setenv("VIEWER_INVITE_FILE", str(tmp_path / "viewer.invite"))
+    key = viewer.make_link("https://somegeek.com/birdbrain").split("#k=")[1]
+    slept = []
+    monkeypatch.setattr(webapp.time, "sleep", slept.append)
+    for n in range(viewer.ALL_FAILS):
+        viewer.failed(f"198.51.100.{n}")
+    r = gated.post("/guest-login", data={"key": key, "next": "/"}, headers=ip(60), follow_redirects=False)
+    assert r.status_code == 303 and viewer.COOKIE in r.headers["set-cookie"] and not slept
+
+
+def test_a_look_at_the_login_page_never_adds_a_throttle_entry(gated):
+    for n in range(50):
+        assert gated.get("/guest-login", headers=ip(n)).status_code == 200
+        gated.get("/", headers=ip(n), follow_redirects=False)
+    assert viewer._fails == {}
+    assert viewer.locked("203.0.113.1") == 0 and viewer._fails == {}
+
+
+def test_old_tries_are_forgotten_and_the_table_stays_small(monkeypatch):
+    viewer._fails.clear()
+    monkeypatch.setattr(viewer, "MAX_TRACKED", 5)
+    now = time.time()
+    viewer._fails["stale"] = [now - viewer.LOCKOUT - 1]
+    viewer._fails["mixed"] = [now - viewer.LOCKOUT - 1, now - 1]
+    viewer.failed("fresh")
+    assert "stale" not in viewer._fails and viewer._fails["mixed"] == [pytest.approx(now - 1)]
+    assert viewer.locked("stale") == 0
+    for n in range(20):
+        viewer.failed(f"10.0.0.{n}")
+    assert len(viewer._fails) <= 6 and "*" in viewer._fails  # MAX_TRACKED addresses plus everyone's count
+    assert len(viewer._fails["*"]) <= viewer.ALL_FAILS
+    for _ in range(10):
+        viewer.failed("10.0.0.1")
+    assert len(viewer._fails["10.0.0.1"]) == viewer.PER_IP_FAILS and viewer.locked("10.0.0.1") > 0
+    viewer._fails.clear()
+
+
+def test_cloudflare_header_is_only_believed_from_the_local_proxy(tmp_path, monkeypatch, conn):
+    pw = tmp_path / "viewer.pw"
+    pw.write_text(viewer.make_hash("test-password-123") + "\n")
+    monkeypatch.setenv("VIEWER_PASSWORD_FILE", str(pw))
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    viewer._fails.clear()
+    viewer._cache.clear()
+    try:
+        with TestClient(webapp.app, client=("198.51.100.7", 4000)) as direct:
+            # A visitor sending the header can't make their tries count against someone else.
+            for n in range(viewer.PER_IP_FAILS):
+                direct.post("/guest-login", data={"password": "wrong"}, headers=ip(n))
+            assert set(viewer._fails) == {"198.51.100.7", "*"}
+            assert direct.post("/guest-login", data={"password": "test-password-123"}, headers=ip(99),
+                               follow_redirects=False).status_code == 429
+        monkeypatch.setenv("VIEWER_TRUSTED_PROXIES", "198.51.100.7, 10.0.0.1")
+        assert "198.51.100.7" in viewer.trusted_proxies() and "10.0.0.1" in viewer.trusted_proxies()
+        with TestClient(webapp.app, client=("198.51.100.7", 4000)) as proxied:
+            assert proxied.post("/guest-login", data={"password": "test-password-123"}, headers=ip(99),
+                                follow_redirects=False).status_code == 303
+    finally:
+        viewer._fails.clear()
+        viewer._cache.clear()
+
+
+def test_a_bad_cookie_means_not_signed_in(gated):
+    def request_with(cookie: bytes) -> Request:
+        return Request({"type": "http", "method": "GET", "path": "/", "headers": [(b"cookie", cookie)],
+                        "query_string": b"", "client": ("127.0.0.1", 1)})
+
+    far = str(int(time.time()) + 100)
+    for cookie in (b"bb_guest=" + far.encode() + b".\xe9\xff", b"bb_guest=\xb2.abc", b"bb_guest=" + far.encode(),
+                   b"bb_guest=.", b"bb_guest=abc.def", "bb_guest=١٢٣.abc".encode("utf-8")):
+        assert viewer.signed_in(request_with(cookie)) is False, cookie
+    for value in ("123", ".", "abc.def", f"{far}.notahexdigest", f"{far}.", "%E9%FF.%E9"):
+        r = gated.get("/", headers={"cookie": f"bb_guest={value}"}, follow_redirects=False)
+        assert r.status_code == 303, value
+    assert viewer.signed_in(request_with(b"bb_guest=" + viewer.make_cookie().encode())) is True
 
 
 def test_new_password_signs_everyone_out(gated, tmp_path):
     gated.post("/guest-login", data={"password": "test-password-123"}, headers=ip(6))
     assert gated.get("/", follow_redirects=False).status_code == 200
-    import os, time
     pw = tmp_path / "viewer.pw"
     pw.write_text(viewer.make_hash("somethingElse9") + "\n")
     os.utime(pw, (time.time() + 5, time.time() + 5))
@@ -82,8 +176,36 @@ def test_new_password_signs_everyone_out(gated, tmp_path):
 def test_no_password_file_means_no_gate(conn, monkeypatch, tmp_path):
     monkeypatch.setenv("VIEWER_PASSWORD_FILE", str(tmp_path / "missing"))
     viewer._cache.clear()
+    assert viewer._read(tmp_path / "missing") == "" and not viewer.enabled()
     with TestClient(webapp.app) as c:
         assert c.get("/", follow_redirects=False).status_code == 200
+
+
+def test_an_unreadable_password_file_shuts_the_site(gated, tmp_path, monkeypatch, caplog):
+    pw = tmp_path / "viewer.pw"
+    real_stat = Path.stat
+
+    def denied(self, *args, **kwargs):
+        if self == pw:
+            raise PermissionError(13, "Permission denied")
+        return real_stat(self, *args, **kwargs)
+
+    # Signed in first: even a valid cookie doesn't get past a gate that can't be checked.
+    gated.post("/guest-login", data={"password": "test-password-123"}, headers=ip(7))
+    monkeypatch.setattr(Path, "stat", denied)
+    viewer._cache.clear()
+    with pytest.raises(viewer.Unreadable):
+        viewer.enabled()
+    for path in ("/", "/guest-login", "/manifest.webmanifest", "/static/style.css"):
+        r = gated.get(path, follow_redirects=False)
+        assert r.status_code == 503 and "closed for a moment" in r.text, path
+    assert gated.post("/guest-login", data={"password": "test-password-123"}, headers=ip(8)).status_code == 503
+    assert "can't be read" in caplog.text
+    # A directory in the file's place is just as unreadable; a missing file is still "no gate".
+    monkeypatch.setattr(Path, "stat", real_stat)
+    viewer._cache.clear()
+    monkeypatch.setenv("VIEWER_PASSWORD_FILE", str(tmp_path))
+    assert gated.get("/", follow_redirects=False).status_code == 503
 
 
 def test_share_link_key_signs_in(gated, tmp_path, monkeypatch):
@@ -99,7 +221,6 @@ def test_share_link_key_signs_in(gated, tmp_path, monkeypatch):
     assert r.status_code == 303 and viewer.COOKIE in r.headers["set-cookie"]
     assert gated.get("/", follow_redirects=False).status_code == 200
     # A new link retires the old key and signs everyone out.
-    import os, time
     viewer.make_link("https://somegeek.com/birdbrain")
     inv = tmp_path / "viewer.invite"
     os.utime(inv, (time.time() + 5, time.time() + 5))
