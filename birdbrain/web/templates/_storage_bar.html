@@ -1,20 +1,20 @@
 {# The photo budget: a headline, the bar with a scale above it, and a table of kinds. Needs `bd` (retention.breakdown) and `bar` (app.storage_bar). #}
-<div class="sbar-wrap" id="storage-bar">
+<div class="sbar-wrap{{ ' two' if bar.warn_low }}" id="storage-bar">
   <p class="sbar-line">
     <strong>Photos {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% else %}, no budget{% endif %}</strong>{% if bar.over %} <span class="sbar-over">over by {{ (bd.used_bytes - bd.budget_bytes) | mb }}</span>{% endif %}
   </p>
+  {% if show_forecast is not defined or show_forecast %}{% include "_storage_forecast.html" %}{% endif %}
   <div class="sbar-scale{{ ' two' if bar.warn_low }}">
     <span class="sc sc-zero">0</span>
     {% if bar.warn_at is not none %}<span class="sc sc-alert{{ ' low low-' + bar.warn_side if bar.warn_low }}" style="left: {{ bar.warn_at }}%" data-tip="{{ bar.warn_tip }}">{{ '%g' | format(bd.warn_pct) }}% alert</span>{% endif %}
     {% if bar.limit_label %}<span class="sc sc-limit{{ ' at' if bar.over }}"{% if bar.over %} style="--at: {{ bar.budget_at }}%"{% endif %}>{{ bar.limit_label }}</span>{% endif %}
-    {% if bar.use_label %}<span class="sc sc-use{{ ' end' if bar.over }}"{% if not bar.over %} style="--at: {{ bar.use_at }}%"{% endif %}>{{ bar.use_label }}</span>
-    <i class="sc-caret" style="left: {{ bar.use_at }}%"></i>{% endif %}
   </div>
   <div class="sbar{{ ' over' if bar.over }}{{ ' empty' if not bar.segments }}" role="img"
        aria-label="Photos use {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of a {{ bd.budget_bytes | mb }} budget{% endif %}{{ ', over the budget' if bar.over }}">
     {% for s in bar.segments %}
     <span class="sbar-seg sb-{{ s.key }}" style="width: {{ s.pct }}%" data-tip="{{ s.tip }}"></span>
     {% endfor %}
+    {% if bar.use_label %}<i class="sbar-end{{ ' end' if bar.over }}" style="--at: {{ bar.use_at }}"><span class="sc-use">{{ bar.use_label }}</span></i>{% endif %}
     {% if bar.free_pct %}<span class="sbar-seg sb-free" style="width: {{ bar.free_pct }}%" data-tip="{{ bar.free_tip }}"></span>{% endif %}
     {% if bar.warn_at is not none %}<i class="sbar-tick warn" style="left: {{ bar.warn_at }}%" data-tip="{{ bar.warn_tip }}"></i>{% endif %}
     {% if bar.over %}<i class="sbar-tick budget" style="left: {{ bar.budget_at }}%" data-tip="The budget ends here. The part after it is the overage."></i>{% endif %}

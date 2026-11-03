@@ -408,6 +408,7 @@ def forget() -> None:
     with _lock:
         _usage.update(bytes=None, at=0.0)
         _breakdown.update(at=0.0, value=None)
+        _forecast.update(at=0.0, value=None)
 
 
 def disk_free() -> int:
@@ -534,6 +535,119 @@ def breakdown(conn: sqlite3.Connection, max_age: float = BREAKDOWN_TTL) -> dict:
     with _lock:
         _breakdown.update(at=time.monotonic(), value=value)
     return value
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Forecast: when the photos reach the budget and the disk floor
+
+FORECAST_MIN_DAYS = 7      # less history than this is too little to extrapolate
+FORECAST_WINDOW_DAYS = 60  # the pace is measured over this many recent days at most
+FORECAST_HORIZON_DAYS = 30 * 366
+_forecast: dict = {"at": 0.0, "value": None}
+
+
+def thin_ratio(edge: int) -> float:
+    """A photo's size after thinning to `edge`, as a share of the 1920 px original."""
+    return THIN_SIZE_EST.get(edge) or (edge / FULL_EDGE) ** 1.3
+
+
+def forecast(conn: sqlite3.Connection, now: datetime | None = None, max_age: float = BREAKDOWN_TTL) -> dict:
+    """When the photos reach the budget and the disk its floor, at the recent pace.
+
+    The pace is the bytes of every photo file (photo, thumbnail, burst, as stored now) of visits captured in the
+    last `window_days` (the days since the first visit, at most 60), per day; it needs at least 7 days of history.
+    With thinning on, the same days tell how much of that pace is thinnable (real visits that aren't protected or
+    a species' best of the day, `thin_share`); once a photo is `full_days` old it shrinks to `thin_ratio` of its
+    size, so the pace after `full_days` is lower, and the photos already stored shrink as they come of age.
+    `thin_days` walks that day by day. The disk line counts photo growth only, at the raw pace.
+
+    Returns {ok, reason ("not_enough_data" or None), history_days, window_days, visits_per_day, bytes_per_day,
+    budget_days/budget_date, thin (applies?), thin_days/thin_date, thin_ratio, thin_share, disk_days/disk_date,
+    disk_floor (bool), at_budget}. A days value is None when it never happens within 30 years (or growth is ~0);
+    dates are ISO strings.
+    """
+    cached = now is None
+    if cached:
+        with _lock:
+            if _forecast["value"] is not None and time.monotonic() - _forecast["at"] < max_age:
+                return _forecast["value"]
+    now = now or datetime.now()
+    opts = options(conn)
+    first = conn.execute("SELECT MIN(captured_at) FROM visits").fetchone()[0]
+    history = (now - datetime.fromisoformat(first)).total_seconds() / 86400 if first else 0.0
+    out: dict = {"ok": False, "reason": "not_enough_data", "history_days": round(history, 1)}
+    if history >= FORECAST_MIN_DAYS:
+        out = _forecast_from(conn, opts, now, history)
+    if cached:
+        with _lock:
+            _forecast.update(at=time.monotonic(), value=out)
+    return out
+
+
+def _forecast_from(conn: sqlite3.Connection, opts: dict, now: datetime, history: float) -> dict:
+    window = max(FORECAST_MIN_DAYS, min(FORECAST_WINDOW_DAYS, int(history)))
+    since = (now - timedelta(days=window)).isoformat(timespec="seconds")
+    photos = _photos(conn)
+    recent = [p for p in photos.values() if p.captured_at >= since]
+    per_day = sum(p.total for p in recent) / window
+    visits = conn.execute(f"SELECT COUNT(*) FROM visits WHERE captured_at >= ? AND {db.REAL}", (since,)).fetchone()[0]
+    budget = int(opts["budget_mb"] * 1e6)
+    used = sum(p.total for p in photos.values())
+    floor = int(opts["disk_floor_mb"] * 1e6)
+    spare = disk_free() - floor
+    thin = bool(opts["thin_on"]) and opts["thin_edge"] < FULL_EDGE
+    ratio = thin_ratio(opts["thin_edge"]) if thin else 1.0
+    no_growth = per_day < 1000  # under a KB a day is no growth
+
+    def date(days):
+        return None if days is None else (now + timedelta(days=days)).date().isoformat()
+
+    budget_days = disk_days = thin_days = None
+    share = 0.0
+    if not no_growth:
+        if budget and used < budget:
+            budget_days = (budget - used) / per_day
+        if spare > 0:
+            disk_days = spare / per_day
+        if thin and budget and used < budget:
+            thin_days, share = _thin_days(conn, opts, photos, recent, per_day, budget - used, ratio, now)
+    return {
+        "ok": True, "reason": None, "history_days": round(history, 1), "window_days": window,
+        "visits_per_day": round(visits / window, 1), "bytes_per_day": int(per_day), "no_growth": no_growth,
+        "budget": bool(budget), "at_budget": bool(budget) and used >= budget,
+        "budget_days": budget_days, "budget_date": date(budget_days),
+        "thin": thin, "thin_ratio": ratio, "thin_share": round(share, 3), "full_days": opts["full_days"],
+        "thin_days": thin_days, "thin_date": date(thin_days),
+        "disk_days": disk_days, "disk_date": date(disk_days), "disk_floor": floor > 0, "disk_spare": max(spare, 0),
+    }
+
+
+def _thin_days(conn: sqlite3.Connection, opts: dict, photos: dict, recent: list, per_day: float, room: int,
+               ratio: float, now: datetime) -> tuple[float | None, float]:
+    """Days until `room` more bytes are used when old photos shrink to `ratio`, and the thinnable share of the pace.
+    Photos already stored shrink on the day they turn `full_days` old; new ones do the same, at the share of the
+    pace that is thinnable. None if that doesn't happen within 30 years."""
+    prot = protected(conn, opts)
+    best = best_of_day(photos, _seen_rows(conn), opts["full_per_day"])
+
+    def thinnable(p: Photo) -> bool:
+        return p.real and p.level not in ("thinned", "thumb") and p.photo > 0 and p.id not in prot and p.id not in best
+
+    total = sum(p.total for p in recent)
+    share = sum(p.photo for p in recent if thinnable(p)) / total if total else 0.0
+    full_days = opts["full_days"]
+    saved_on: dict[int, float] = defaultdict(float)  # day from now -> bytes saved by photos already stored
+    for p in photos.values():
+        if thinnable(p):
+            age = (now - datetime.fromisoformat(p.captured_at)).total_seconds() / 86400
+            saved_on[max(0, int(full_days - age))] += p.photo * (1 - ratio)
+    future = per_day * share * (1 - ratio)  # saved per day once the first new photos come of age
+    grown = -saved_on.pop(0, 0.0)  # photos already old enough shrink at the next daily run
+    for day in range(1, FORECAST_HORIZON_DAYS + 1):
+        grown += per_day - saved_on.get(day, 0.0) - (future if day > full_days else 0.0)
+        if grown >= room:
+            return day - (grown - room) / per_day, share
+    return None, share
 
 
 # ---------------------------------------------------------------------------------------------------------------

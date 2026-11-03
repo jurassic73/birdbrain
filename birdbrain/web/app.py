@@ -1306,9 +1306,80 @@ def storage_bar(bd: dict) -> dict:
     }
 
 
+def _span(days: float) -> str:
+    """A length of time to round words: days under 60, months under 24, else years (halves)."""
+    if days < 60:
+        n = max(1, round(days))
+        return f"{n} day{'s' if n != 1 else ''}"
+    if days < 24 * 30.44:
+        n = round(days / 30.44)
+        return f"{n} months"
+    if days >= 30 * 365.25:
+        return "more than 30 years"
+    years = round(days / 365.25 * 2) / 2
+    return f"{years:g} years"
+
+
+def _about(days: float) -> str:
+    span = _span(days)
+    return span if span.startswith("more") else f"about {span}"
+
+
+def _when(days: float, now: datetime) -> str:
+    d = now + timedelta(days=days)
+    return d.strftime("%B %-d") if days < 60 else d.strftime("%B %Y")
+
+
+def forecast_blurb(fc: dict, bd: dict, now: datetime | None = None) -> dict:
+    """The storage forecast as one sentence group (`text`) and the method for its tip (`tip`)."""
+    now = now or datetime.now()
+    if not fc["ok"]:
+        return {"text": "Not enough history yet for a forecast.",
+                "tip": f"A forecast needs at least {retention.FORECAST_MIN_DAYS} days of visits; there are "
+                       f"{fc['history_days']:g}."}
+    o = bd["options"]
+    w = fc["window_days"]
+    rate = f"{fc['bytes_per_day'] / 1e6:.1f} MB" if fc["bytes_per_day"] < 1e7 else mb(fc["bytes_per_day"])
+    n = fc["visits_per_day"]
+    pace = f"At the last {w} days' pace (about {rate} a day, {n:g} visit{'s' if n != 1 else ''} a day)"
+    if fc["no_growth"]:
+        text = f"Photos haven't grown over the last {w} days, so there is nothing to forecast."
+    elif fc["at_budget"]:
+        text = f"{pace}, photos are already at the budget; thinning and trimming keep them there."
+    elif not fc["budget"]:
+        text = f"{pace}, no budget is set."
+    else:
+        text = f"{pace}, photos reach the {_short(bd['budget_bytes'])} budget in {_about(fc['budget_days'])} " \
+               f"(around {_when(fc['budget_days'], now)})"
+        if fc["thin"]:
+            td = fc["thin_days"]
+            if td is None:
+                text += f"; with thinning after {o['full_days']} days, not within 30 years"
+            elif _when(td, now) != _when(fc["budget_days"], now):
+                text += f"; with thinning after {o['full_days']} days, {_about(td)} ({_when(td, now)})"
+        text += "."
+    if not fc["no_growth"]:
+        label = "Disk floor" if fc["disk_floor"] else "Disk full"
+        if fc["disk_days"] is not None:
+            text += f" {label}: {_about(fc['disk_days'])}."
+        else:
+            text += f" {label}: already reached."
+    if fc["history_days"] < 30:
+        text = "Early estimate: " + text
+    tip = (f"Pace: the bytes of every photo file (photo, thumbnail, burst) of visits captured in the last {w} days "
+           f"(the days since the first visit, at most 60), divided by {w}. ")
+    if fc["thin"]:
+        tip += (f"Thinning: photos older than {o['full_days']} days shrink to about {round(fc['thin_ratio'] * 100)}% "
+                f"({o['thin_edge']} px), except protected photos and each species' best {o['full_per_day']} a day; "
+                f"{round(fc['thin_share'] * 100)}% of the recent bytes would shrink, and photos already stored shrink as "
+                f"they age. ")
+    tip += "The disk line counts photo growth only, at the full pace, down to the floor; nothing else on the disk."
+    return {"text": text, "tip": tip}
+
+
 def storage_context(conn) -> dict:
     bd = retention.breakdown(conn)
-    return {"bd": bd, "bar": storage_bar(bd)}
+    return {"bd": bd, "bar": storage_bar(bd), "forecast": forecast_blurb(retention.forecast(conn), bd)}
 
 
 @app.get("/false-triggers", response_class=HTMLResponse)

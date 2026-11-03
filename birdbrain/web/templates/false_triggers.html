@@ -30,6 +30,7 @@
 {% if cleared is not none %}<p class="notice saved">Deleted {{ cleared }} photo{{ 's' if cleared != 1 }}. The Pi keeps what it learned from them.</p>{% endif %}
 <details class="m-fold" id="ft-storage">
   <summary>Storage and triggers by hour</summary>
+  {% set show_forecast = false %}
   {% include "_storage_bar.html" %}
   {% include "_storage.html" %}
   <div class="charts single">

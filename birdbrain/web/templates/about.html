@@ -540,6 +540,7 @@
     <ul class="sbar-key">
       {% for s in bar.legend %}<li data-tip="{{ s.tip }}"><i class="sw sb-{{ s.key }}"></i>{{ s.label }}</li>{% endfor %}
     </ul>
+    {% include "_storage_forecast.html" %}
   </div>
   <ul class="stack">
     <li><strong>Thinning</strong>{% if so.thin_on and so.thin_edge < 1920 %} After {{ so.full_days }} days, older real visits are saved once at {{ so.thin_edge }} px, except each species' {{ so.full_per_day }} sharpest photos of each day (sharpness inside the crop box, then confidence).{% else %} Off: photos stay full size unless the budget runs short.{% endif %}</li>
