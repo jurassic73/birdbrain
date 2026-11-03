@@ -31,12 +31,18 @@ def components() -> list[dict]:
     return [
         {"n": 1, "name": MOTION, "question": "Did something move in the zones?",
          "pill": ("can't be trained", "step-muted"), "next": "motion found",
-         "short": f"The {MOTION} takes a burst of photos when enough pixels change inside the zones for {frames} frames in a row.",
+         "short": f"The {MOTION}, a few plain Python modules, takes a burst of photos when enough pixels change inside the zones "
+                  f"for {frames} frames in a row.",
          "does": f"<p>The {MOTION} watches the live video inside the zones (rim, rocks, water, ground). When enough pixels change "
                  f"for {frames} frames in a row, the {MOTION} takes a burst of photos. The open water and the ground have stricter "
                  f"rules of their own (see Zones and Detection rules below).</p>",
-         "train": f"<p>The {MOTION} cannot be trained. It compares one video frame with the next (OpenCV frame differencing) and "
-                  f"has no learning step.</p>",
+         "train": f"<p>The {MOTION} cannot be trained. It is plain code with OpenCV, not a trained model, and has no learning "
+                  f"step. Its modules:</p><ul>"
+                  f"<li><code>watch.py</code> watches the substream and takes the burst, using frame differencing per zone "
+                  f"(rim and rocks, open water, ground).</li>"
+                  f"<li><code>zones.py</code> and <code>autocal.py</code>: the zones in use, and their automatic recalibration.</li>"
+                  f"<li><code>stay.py</code>: one visit per stay, holding new triggers while the visitor is still there.</li>"
+                  f"<li><code>motion_circle.py</code>: the circle from the motion, when the Pi names a visit itself.</li></ul>",
          "control": "<p>The zones (Settings &gt; Zones) and the thresholds.</p>"},
         {"n": 2, "name": PI, "question": "Is an animal in the dashed box?",
          "pill": ("trains on your answers", "step-accent"), "next": "animal found",
