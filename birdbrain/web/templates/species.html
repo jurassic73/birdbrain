@@ -48,16 +48,5 @@
   }
   drawSpeciesCharts();
   document.addEventListener("htmx:afterSwap", drawSpeciesCharts);
-  // The star on each card: the server says which visit is the species photo now (or none), so only one is filled.
-  document.addEventListener("htmx:afterRequest", (e) => {
-    const btn = e.detail.elt;
-    if (!btn.classList || !btn.classList.contains("fav-star") || !e.detail.successful) return;
-    const picked = JSON.parse(e.detail.xhr.responseText).visit_id;
-    document.querySelectorAll(".fav-star").forEach((b) => {
-      const on = Number(b.dataset.id) === picked;
-      b.setAttribute("aria-pressed", on ? "true" : "false");
-      b.dataset.tip = on ? b.dataset.tipOn : b.dataset.tipOff;
-    });
-  });
 </script>
 {% endblock %}

@@ -27,6 +27,7 @@
   <script src="/static/species-card.js?v={{ asset_version }}" defer></script>
   <script src="/static/tips.js?v={{ asset_version }}" defer></script>
   <script src="/static/thumb-marks.js?v={{ asset_version }}" defer></script>
+  {% if request.state.admin %}<script src="/static/star.js?v={{ asset_version }}" defer></script>{% endif %}
   <script src="/static/dialog.js?v={{ asset_version }}" defer></script>
   <script src="/static/save-feedback.js?v={{ asset_version }}" defer></script>
   <script src="/static/scene-edit.js?v={{ asset_version }}" defer></script>

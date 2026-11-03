@@ -493,20 +493,26 @@ dialog.popup[open] { animation: popup-in .14s ease-out; }
 .card-body { padding: 8px 10px 10px; }
 .card-title { font-weight: 600; }
 .card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); font-size: .85rem; }
-/* Species page (admin): a star in the photo's top corner picks the species photo. It's drawn over the photo,
+/* Cards (admin): a star in the photo's top corner: species cover, favorite or unset. It's drawn over the photo,
    so its colors are fixed; small, so it doesn't hide the animal, but a 40px tap target. */
-.card-fav { position: relative; display: flex; }
-.card-fav > .card { flex: 1; min-width: 0; }
-button.fav-star { position: absolute; top: 4px; right: 4px; width: 40px; height: 40px; padding: 0; margin: 0;
+button.fav-star { position: absolute; top: 4px; right: 4px; width: 40px; height: 40px; padding: 0; margin: 0; z-index: 1;
   display: grid; place-items: center; border-radius: 50%; border: 0; background: rgba(0,0,0,.4); color: #fff; }
 button.fav-star svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
 button.fav-star:hover { background: rgba(0,0,0,.6); }
 button.fav-star:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
-button.fav-star[aria-pressed="true"] { color: #ffd34d; background: rgba(0,0,0,.55); }
-button.fav-star[aria-pressed="true"] svg { fill: currentColor; }
+button.fav-star[data-state="cover"] { color: #ffd34d; background: rgba(0,0,0,.55); }
+button.fav-star[data-state="favorite"] { color: #4da3ff; background: rgba(0,0,0,.55); }  /* same blue as the keeper mark */
+button.fav-star[data-state="cover"] svg, button.fav-star[data-state="favorite"] svg { fill: currentColor; }
+/* The few-second pill beside the star after a click: says what the star was set to. Stays inside the card. */
+.fav-pill { position: absolute; top: 12px; right: 50px; max-width: calc(100% - 100px); padding: 3px 9px; border-radius: 999px;
+  font-size: .8rem; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: #e5e5e5; color: #222; opacity: 0; transition: opacity .4s; pointer-events: none; z-index: 2; }
+.fav-pill.show { opacity: 1; }
+.fav-pill[data-state="cover"] { background: #ffd34d; color: #3a2c00; }
+.fav-pill[data-state="favorite"] { background: #4da3ff; color: #fff; }
 @media (hover: hover) and (pointer: fine) {
-  .card-fav button.fav-star[aria-pressed="false"] { opacity: 0; transition: opacity .15s; }
-  .card-fav:hover button.fav-star, .card-fav button.fav-star:focus-visible { opacity: 1; }
+  .card button.fav-star[data-state="unset"] { opacity: 0; transition: opacity .15s; }
+  .card:hover button.fav-star, .card button.fav-star:focus-visible { opacity: 1; }
 }
 /* The blue keeper mark (a bookmark, so it differs from the yellow star by shape too): top-left of every photo
    card for the admin. It sits inside the card's link; drawn over the photo, so its colors are fixed. */
