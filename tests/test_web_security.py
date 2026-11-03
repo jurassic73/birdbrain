@@ -159,7 +159,7 @@ def test_same_origin_under_a_base_path(client, add_visit, monkeypatch):
 def test_https_origin_behind_the_proxy():
     """nginx passes Host without the port; the browser's Origin for an https page has none either."""
     assert auth._host_port("somegeek.com", "https") == auth._host_port("somegeek.com:443", "https") == "somegeek.com"
-    assert auth._host_port("192.168.1.205:8000", "http") == "192.168.1.205:8000"
+    assert auth._host_port("192.168.1.20:8000", "http") == "192.168.1.20:8000"
 
 
 # --- The admin cookie ----------------------------------------------------------------------------------------

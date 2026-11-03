@@ -41,7 +41,6 @@ from . import config, db, zones
 log = logging.getLogger("birdbrain.classifier")
 
 MODEL_NAME = "bioclip-2"
-RELEASE_URL = "https://github.com/jurassic73/birdbrain/releases/download/bioclip2-v1/"
 MODEL_FILES = {  # file: SHA-256
     "bioclip2_int8.onnx": "18cc1f73af2ce3fa3dd34a3b7a104cb2c5d9d45d95f2613cc9624368b514dfae",
     "bioclip2_ebird_text.npy": "a7fe1e93a5bb0994009adc3076fe8521f530c37a85339ced3c5e52e237d6339b",
@@ -83,12 +82,16 @@ def download_model(folder: Path) -> None:
     from .species_info import HEADERS
 
     folder.mkdir(parents=True, exist_ok=True)
+    base = config.CLASSIFIER_RELEASE_URL
+    if not base and any(not (folder / n).exists() for n in MODEL_FILES):
+        raise RuntimeError(f"classifier model files are missing from {folder} and CLASSIFIER_RELEASE_URL is not "
+                           "set in .env, so they can't be downloaded; set it or copy the files there")
     for name, sha in MODEL_FILES.items():
         path = folder / name
         if path.exists():
             continue
         tmp, digest = path.with_suffix(".part"), hashlib.sha256()
-        with httpx.stream("GET", RELEASE_URL + name, headers=HEADERS, timeout=60, follow_redirects=True) as r:
+        with httpx.stream("GET", base + name, headers=HEADERS, timeout=60, follow_redirects=True) as r:
             r.raise_for_status()
             with tmp.open("wb") as f:
                 for chunk in r.iter_bytes(1 << 20):
