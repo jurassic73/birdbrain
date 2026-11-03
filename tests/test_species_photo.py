@@ -3,7 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from birdbrain import db
+from birdbrain import config, db
 from birdbrain.web import app as webapp
 from birdbrain.web import auth
 
@@ -120,6 +120,46 @@ def test_only_one_cover_and_the_old_one_stays_kept(client, conn, add_visit):
     assert text.count('class="fav-star" data-state="cover"') == 1 and text.count('class="fav-star" data-state="favorite"') == 1
     assert click(client, a)["state"] == "cover"  # blue -> yellow takes the cover back
     assert db.species_photos(conn) == {"Bushtit": a} and db.get_visit(conn, b)["keep"] == 1
+
+
+def test_unstarring_one_species_keeps_a_visit_that_still_covers_another(client, conn, add_visit):
+    both = add_visit(species="Dark-eyed Junco", thumb_path="both_t.jpg",
+                     also=json.dumps([{"visitor": "bird", "species": "Bushtit", "count": 2, "confidence": "high"}]))
+    assert click(client, both, "Bushtit", state="cover")["cover_id"] == both
+    assert click(client, both, "Dark-eyed Junco", state="cover")["cover_id"] == both
+    assert db.species_photos(conn) == {"Bushtit": both, "Dark-eyed Junco": both}
+    r = click(client, both, "Bushtit", state="unset")
+    assert (r["state"], r["cover_id"]) == ("unset", None)
+    assert db.species_photos(conn) == {"Dark-eyed Junco": both}
+    assert db.get_visit(conn, both)["keep"] == 1  # still the junco's cover: never thinned or deleted
+    assert click(client, both, "Dark-eyed Junco", state="unset")["cover_id"] is None
+    assert not db.get_visit(conn, both)["keep"] and db.species_photos(conn) == {}
+
+
+def test_a_pick_is_one_transaction(conn, add_visit, monkeypatch):
+    """Two quick stars (two requests, or the watcher's keep-the-covers at startup) read the picks and write them
+    back: the write lock is taken before the read, so neither loses the other's cover."""
+    import sqlite3
+
+    vid = add_visit(species="Bushtit")
+    other = sqlite3.connect(config.DB_PATH, timeout=0.2)
+    with pytest.raises(ValueError, match="star state"):
+        db.set_star(conn, "Bushtit", vid, "gold")
+    assert not conn.in_transaction
+    save, saved = db._save_species_photos, []
+
+    def save_while_the_other_waits(c, photos):
+        with pytest.raises(sqlite3.OperationalError, match="locked"):  # it can't get in between read and write
+            other.execute("BEGIN IMMEDIATE")
+        save(c, photos)
+        saved.append(photos)
+
+    monkeypatch.setattr(db, "_save_species_photos", save_while_the_other_waits)
+    assert db.set_star(conn, "Bushtit", vid, "cover") == ("cover", vid)
+    db.set_species_photo(conn, "Bushtit", None)
+    assert saved == [{"Bushtit": vid}, {}] and not conn.in_transaction
+    assert db.species_photos(conn) == {} and db.get_visit(conn, vid)["keep"] == 1
+    other.close()
 
 
 def test_cover_that_is_not_kept_unsets_on_the_next_click(client, conn, add_visit):

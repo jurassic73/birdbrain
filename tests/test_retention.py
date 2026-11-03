@@ -120,12 +120,64 @@ def test_clear_deletes_only_photos_the_owner_confirmed_empty(conn, stored):
     assert retention.usage(conn)["count"] == 1
 
 
+def has_photo(conn, vid: int) -> bool:
+    row = db.get_visit(conn, vid)
+    return row["photo_deleted_at"] is None and (config.IMAGES_DIR / row["image_path"]).exists()
+
+
+@pytest.mark.parametrize("delete", [lambda conn: retention.prune(conn, limit_bytes=1), retention.clear])
+def test_protected_false_triggers_are_never_deleted(conn, stored, delete):
+    confirmed = {"confirmed_at": "2026-10-31T09:00:00"}  # clear() only takes confirmed ones: confirm them all
+    plain = [stored(0, **confirmed), stored(1, **confirmed)]
+    protected = {
+        "keeper": stored(2, keep=1, **confirmed),
+        "marks": stored(3, marks='[{"x": 0.5, "y": 0.5, "r": 0.1}]', **confirmed),
+        "corrected_species": stored(4, corrected_species="Bushtit", **confirmed),
+        "corrected_also": stored(5, corrected_visitor="none", corrected_also="[]", **confirmed),
+        "feedback": stored(6, feedback="a leaf", **confirmed),
+        "cover": stored(7, visitor="none", **confirmed),
+    }
+    db.set_species_photo(conn, "Bushtit", protected["cover"])  # a cover picked without the keep mark (old data)
+    assert delete(conn) == 2
+    assert not any(has_photo(conn, v) for v in plain)
+    assert {name: has_photo(conn, v) for name, v in protected.items()} == dict.fromkeys(protected, True)
+
+
+def test_a_photo_protected_during_the_size_scan_survives(conn, stored, monkeypatch):
+    """prune picks its rows, then sizes them (a slow walk over the folders) and deletes them: a row the owner
+    starred, or picked as a cover, in between is checked again at the delete and stays."""
+    starred, covered, plain = stored(0), stored(1), stored(2)
+    scan = images.frames_bytes
+
+    def scan_and_protect(visits, images_dir=None):
+        if not db.get_visit(conn, starred)["keep"]:  # the first scan only (the delete sizes what went)
+            db.set_keep(conn, starred, True)
+            db.set_species_photo(conn, "Bushtit", covered)
+        return scan(visits, images_dir)
+
+    monkeypatch.setattr(retention.images, "frames_bytes", scan_and_protect)
+    assert retention.prune(conn, limit_bytes=1) == 1
+    assert has_photo(conn, starred) and has_photo(conn, covered) and not has_photo(conn, plain)
+
+
+def test_deleted_photos_leave_the_cached_usage(conn, stored):
+    retention.forget()
+    for m in range(3):
+        stored(m)
+    before = retention.photo_usage(conn)
+    freed = retention.usage(conn)["bytes"]
+    assert before >= freed > 0
+    assert retention.prune(conn, limit_bytes=1) == 3
+    assert retention._usage["bytes"] == before - freed
+    retention.forget()
+
+
 def test_false_triggers_are_saved_smaller(tmp_path):
     big = Image.effect_noise((1920, 1080), 60).convert("RGB")
     buf = io.BytesIO()
     big.save(buf, "JPEG", quality=97)
     full_rel, _ = images.store_frame(buf.getvalue(), datetime(2026, 10, 25), tmp_path)
     small_rel, _ = images.store_frame(buf.getvalue(), datetime(2026, 10, 25), tmp_path, max_edge=960, quality=80)
-    assert Image.open(tmp_path / full_rel).size == (1920, 1080)
-    assert Image.open(tmp_path / small_rel).size == (960, 540)
+    with Image.open(tmp_path / full_rel) as full, Image.open(tmp_path / small_rel) as small:
+        assert full.size == (1920, 1080) and small.size == (960, 540)
     assert (tmp_path / small_rel).stat().st_size < (tmp_path / full_rel).stat().st_size / 2

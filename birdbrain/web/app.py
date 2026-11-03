@@ -913,7 +913,7 @@ def species_page(request: Request, name: str, conn=Depends(get_conn)):
     )
 
 
-STAR_STATES = ("unset", "favorite", "cover")
+STAR_STATES = db.STAR_STATES
 
 
 @app.post("/species/{name}/photo")
@@ -921,22 +921,13 @@ def species_photo(name: str, visit_id: int = Form(...), state: str = Form(""), c
     """The star on a photo: unset -> favorite (blue, kept) -> species cover (yellow, one per species, also kept)
     -> unset (no longer kept). `state` sets one outright (static/star.js always sends it: it holds yellow for a
     moment and may ask before replacing a cover); without it the click moves one step along. A new cover leaves
-    the old one as a kept favorite. Answers with the visit's new state and the species' cover now."""
+    the old one as a kept favorite (db.set_star, in one transaction). Answers with the visit's new state and the
+    species' cover now."""
     if not db.shows_species(conn, visit_id, name):
         raise HTTPException(404)
-    cover = db.species_photos(conn).get(name)
-    if state not in STAR_STATES:
-        if state:
-            raise HTTPException(400)
-        now = "cover" if cover == visit_id else "favorite" if db.get_visit(conn, visit_id)["keep"] else "unset"
-        state = STAR_STATES[(STAR_STATES.index(now) + 1) % 3]
-    if state == "cover":
-        db.set_species_photo(conn, name, visit_id)
-        cover = visit_id
-    elif cover == visit_id:
-        db.set_species_photo(conn, name, None)
-        cover = None
-    db.set_keep(conn, visit_id, state != "unset")
+    if state and state not in STAR_STATES:
+        raise HTTPException(400)
+    state, cover = db.set_star(conn, name, visit_id, state or None)
     return {"visit_id": visit_id, "species": name, "state": state, "cover_id": cover}
 
 

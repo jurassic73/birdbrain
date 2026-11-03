@@ -91,11 +91,12 @@ def backfill() -> None:
         verdict = detector.run(cv2.imencode(".jpg", img)[1].tobytes(), crop)
         if verdict is None:
             raise SystemExit("the local detector is off or its model is missing")
-        det = calls.get("detector") or {}
-        det["objects"] = verdict["objects"]
-        calls["detector"] = det if det else verdict
+        # Only the entry that changed: the row may have gained a stay end or an owner check since it was read.
         with db.session() as conn:
-            db.set_raw_json(conn, r["id"], raw)
+            if calls.get("detector"):
+                db.set_raw_entry(conn, r["id"], "$.calls.detector.objects", verdict["objects"])
+            else:
+                db.set_raw_entry(conn, r["id"], "$.calls.detector", verdict)
         added += 1
     print(f"objects added to {added} visits")
     scored = 0
@@ -107,8 +108,7 @@ def backfill() -> None:
                 continue
             result = check(conn, det, raw.get("trigger") == "ground", bool(r["is_night"]), exclude=r["id"])
             if result:
-                det["scenery"] = {**result, "backfilled": True}
-                db.set_raw_json(conn, r["id"], raw)
+                db.set_raw_entry(conn, r["id"], "$.calls.detector.scenery", {**result, "backfilled": True})
                 scored += 1
     print(f"scenery check scored on {scored} visits")
 

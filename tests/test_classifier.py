@@ -208,6 +208,25 @@ def test_backfill_scores_stored_visits(conn, add_visit):
     assert classifier.backfill(redo=True, clf=fake, local=LOCAL) == 3
 
 
+def test_backfill_keeps_an_owner_check_stored_while_it_ran(conn, add_visit, monkeypatch):
+    buf = io.BytesIO()
+    Image.new("RGB", (1920, 1080), (90, 120, 200)).save(buf, "JPEG")
+    image_rel, thumb_rel = images.store_frame(buf.getvalue(), datetime.now())
+    vid = add_visit(image_path=image_rel, thumb_path=thumb_rel, raw_json=json.dumps({"trigger": "rim"}))
+
+    def slow_classify(*args, **kwargs):  # the owner asks the Pi about the visit while the backfill is on it
+        with db.session() as other:
+            db.set_raw_entry(other, vid, "$.calls.owner_checks", [{"source": "pi", "verdict": "sure"}])
+            db.end_stay(other, vid, "2026-11-01T09:05:00", "left")
+        return {"crop": "box", "top": []}
+
+    monkeypatch.setattr(classifier, "classify", slow_classify)
+    assert classifier.backfill(clf=object(), local=LOCAL) == 1
+    raw = json.loads(db.get_visit(conn, vid)["raw_json"])
+    assert raw["calls"]["classifier"]["backfilled"] and raw["calls"]["classifier"]["crop"] == "box"
+    assert raw["calls"]["owner_checks"][0]["verdict"] == "sure" and raw["stay_end"] == "left" and raw["trigger"] == "rim"
+
+
 def test_a_circle_is_classified_at_each_margin_and_averaged(monkeypatch):
     monkeypatch.setattr(classifier, "CIRCLE_MARGINS", (1.5, 3.0))
     img = np.zeros((1080, 1920, 3), np.uint8)

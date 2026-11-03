@@ -159,20 +159,20 @@ def ask_claude(conn, source: str, jpeg: bytes, circle: dict, captured_at: dateti
 
 
 def record(conn, visit_id: int, entry: dict, circle: dict) -> dict:
-    """Keep the check with the visit (raw_json.calls.owner_checks, the newest KEEP). Returns what was stored."""
-    row = conn.execute("SELECT raw_json FROM visits WHERE id = ?", (visit_id,)).fetchone()
-    try:
-        raw = json.loads(row["raw_json"] or "{}") or {}
-    except ValueError:
-        raw = {}
-    if not isinstance(raw, dict):
-        raw = {}
-    calls = raw.setdefault("calls", {})
+    """Keep the check with the visit (raw_json.calls.owner_checks, the newest KEEP). Returns what was stored.
+    Only that entry is written, under the write lock, so a stay end or circle the watcher stores meanwhile stays."""
     stored = {**entry, "circle": {k: circle[k] for k in ("x", "y", "r")},
               **({"frame": circle["frame"]} if circle.get("frame") else {}),
               "at": datetime.now().replace(microsecond=0).isoformat()}
-    calls["owner_checks"] = [*(calls.get("owner_checks") or []), stored][-KEEP:]
-    db.set_raw_json(conn, visit_id, raw)
+    with db.writing(conn):
+        row = conn.execute("SELECT raw_json FROM visits WHERE id = ?", (visit_id,)).fetchone()
+        try:
+            raw = json.loads(row["raw_json"] or "{}") or {}
+        except ValueError:
+            raw = {}
+        calls = (raw.get("calls") if isinstance(raw, dict) else None) or {}
+        checks = [*(calls.get("owner_checks") or []), stored][-KEEP:]
+        conn.execute(db.SET_RAW_ENTRY, ("$.calls.owner_checks", json.dumps(checks), visit_id))
     return stored
 
 

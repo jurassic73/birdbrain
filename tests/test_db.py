@@ -37,6 +37,75 @@ def test_init_db_adds_new_columns_to_an_old_database(tmp_path):
         assert db.count_visits(conn) == 1
 
 
+def test_init_db_survives_a_column_the_other_process_added_first(tmp_path, monkeypatch):
+    """After a deploy the watcher and the web app both start and migrate: one's look at the table is stale by the
+    time it ALTERs."""
+    path = tmp_path / "race.db"
+    with db.session(path) as conn:
+        db.init_db(conn)  # the other process got there first: every column is there now
+        monkeypatch.setattr(db, "_columns", lambda c, table: set())  # ... but this one looked before that
+        db.init_db(conn)
+    monkeypatch.undo()
+    import threading
+
+    path = tmp_path / "together.db"
+    with db.session(path):
+        pass  # the file exists and is in WAL mode: it's the migration that races, not the first open
+    start, errors = threading.Barrier(2), []
+
+    def migrate():
+        try:
+            start.wait(timeout=10)
+            with db.session(path) as c:
+                db.init_db(c)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=migrate) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    with db.session(path) as conn:
+        assert set(db.ADDED_COLUMNS) <= {r["name"] for r in conn.execute("PRAGMA table_info(visits)")}
+
+
+def test_set_raw_entry_keeps_what_landed_meanwhile(conn, add_visit):
+    """A backfill reads the row, runs a slow model, then writes: only its own entry, so what the watcher and the
+    owner stored in between stays."""
+    vid = add_visit(raw_json=json.dumps({"trigger": "rim", "calls": {"circle": {"x": 0.5, "y": 0.5, "r": 0.1}}}))
+    raw = json.loads(db.get_visit(conn, vid)["raw_json"])  # the backfill's read
+    with db.session() as other:  # the watcher's and the web app's connections, while the model runs
+        db.end_stay(other, vid, "2026-11-01T09:05:00", "left")
+        db.set_raw_entry(other, vid, "$.calls.owner_checks", [{"source": "pi", "verdict": "sure"}])
+    db.set_raw_entry(conn, vid, "$.calls.classifier", {"top": [], "backfilled": True})
+    after = json.loads(db.get_visit(conn, vid)["raw_json"])
+    assert after["stay_end"] == "left" and after["calls"]["owner_checks"][0]["verdict"] == "sure"
+    assert after["calls"]["classifier"]["backfilled"] and after["calls"]["circle"] == raw["calls"]["circle"]
+    assert after["trigger"] == "rim"
+    for broken in ("not json", "[1, 2]", None):
+        conn.execute("UPDATE visits SET raw_json = ? WHERE id = ?", (broken, vid))
+        conn.commit()
+        db.set_raw_entry(conn, vid, "$.calls.classifier", {"top": []})
+        assert json.loads(db.get_visit(conn, vid)["raw_json"]) == {"calls": {"classifier": {"top": []}}}
+
+
+def test_writing_takes_the_write_lock_before_reading(conn, add_visit):
+    other = sqlite3.connect(config.DB_PATH, timeout=0.2)
+    with db.writing(conn):
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            other.execute("BEGIN IMMEDIATE")
+    other.execute("BEGIN IMMEDIATE")  # free again once the block ends
+    other.rollback()
+    with pytest.raises(ValueError):
+        with db.writing(conn):
+            conn.execute("INSERT INTO settings (key, value) VALUES ('x', '1')")
+            raise ValueError("rolled back")
+    assert db.get_value(conn, "x") is None and not conn.in_transaction
+    other.close()
+
+
 def test_public_ok_is_stored_and_taken_back(conn, add_visit):
     vid, other = add_visit(), add_visit()
     db.set_public_ok(conn, vid, {"at": "2026-11-02T09:00:00", "files": {"img.jpg": 0.278}})

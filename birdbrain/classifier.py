@@ -466,9 +466,8 @@ def backfill(limit: int | None = None, redo: bool = False, clf=None, local=None)
             continue
         box = config.GROUND_CROP if raw.get("trigger") == "ground" else config.CROP_ROI
         result = classify(img, visit_circle(r["marks"], raw), box, bool(r["is_night"]), local=local, clf=clf)
-        calls["classifier"] = {**result, "backfilled": True}
-        with db.session() as conn:
-            db.set_raw_json(conn, r["id"], raw)
+        with db.session() as conn:  # only this entry: the row may have gained a stay end or an owner check since
+            db.set_raw_entry(conn, r["id"], "$.calls.classifier", {**result, "backfilled": True})
         done += 1
     return done
 
