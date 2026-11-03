@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import sp_name, thumb, zoom_btn, zoom_out_btn %}
+{% from "_macros.html" import sp_name, thumb, zoom_btn, zoom_out_btn, fav_star %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
 {# Hovering a visit card prerenders its page, so the click shows it finished instead of building it out.
@@ -40,6 +40,8 @@
       {% set nc = no_circle_note(lv) %}{% if nc %}<span class="hero-note">{{ nc }}</span>{% endif %}
     </div>
   {% if not lv.photo_deleted_at %}{{ zoom_btn(lv) }}{% endif %}
+  {# The same star as on the cards (admins), just left of the magnifier. #}
+  {% if request.state.admin and lv.label and lv.label not in ('None', 'Other') %}{{ fav_star(lv, lv.label, star_covers(request)) }}{% endif %}
   </div>
   {% else %}
   {{ live_box() }}

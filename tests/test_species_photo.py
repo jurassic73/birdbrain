@@ -131,6 +131,17 @@ def test_star_shows_on_other_pages_with_the_cover_yellow(client, conn, add_visit
     assert click(client, plain, "Dark-eyed Junco")["state"] == "cover"
 
 
+def test_big_latest_photo_has_the_star_too(client, conn, add_visit):
+    add_visit(species="Bushtit")
+    latest = add_visit(species="Dark-eyed Junco")
+    db.set_species_photo(conn, "Dark-eyed Junco", latest)
+    text = client.get("/").text
+    hero = text[text.index('class="hero-latest"'):text.index('<aside class="today">')]
+    assert f'class="fav-star" data-state="cover"' in hero and f'data-id="{latest}" data-star-species="Dark-eyed Junco"' in hero
+    # the first card is the same visit and carries its own star
+    assert text.count(f'data-id="{latest}" data-star-species="Dark-eyed Junco"') == 2
+
+
 def test_visitors_get_no_star_and_cannot_pick(client, conn, add_visit, monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
     auth._fails.clear()

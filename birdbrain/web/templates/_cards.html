@@ -1,4 +1,4 @@
-{% from "_macros.html" import sp_name, badge, thumb %}
+{% from "_macros.html" import sp_name, badge, thumb, fav_star %}
 {# Unfiltered home page: a Today heading over the visits since midnight, then Earlier (once, also across Load more pages). #}
 {% set ns = namespace(prev=prev_day | default(none)) %}
 {% set covers = star_covers(request) if request.state.admin else {} %}
@@ -15,15 +15,7 @@
 {% set fav = request.state.admin and not ft_cards and sp and sp not in ('None', 'Other') %}
 <a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}" data-full="/images/{{ photo_src(v) }}" data-when="{{ v.captured_at | nice_time }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
   {{ thumb(v) }}
-  {% if fav %}{% set st = 'cover' if covers.get(sp) == v.id else ('favorite' if v.keep == 1 else 'unset') %}
-  {% set tips = {'unset': 'Tap to use as the species cover.', 'cover': 'Species cover: shows for ' ~ sp ~ ' on the Species page, and never deleted when space is cleared. Tap for favorite.', 'favorite': 'Favorite: never deleted when space is cleared. Tap to unset.'} %}
-  {# Star: unset -> yellow species cover -> blue favorite -> unset (static/star.js; the server decides). #}
-  <button type="button" class="fav-star" data-state="{{ st }}" data-keep="{{ 1 if v.keep == 1 else 0 }}" aria-pressed="{{ 'false' if st == 'unset' else 'true' }}"
-    aria-label="{{ tips[st] }}" data-id="{{ v.id }}" data-star-species="{{ sp }}"
-    data-tip-unset="{{ tips['unset'] }}" data-tip-cover="{{ tips['cover'] }}" data-tip-favorite="{{ tips['favorite'] }}"
-    data-tip="{{ tips[st] }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg></button>
-  <span class="fav-pill" hidden data-tip="Just set: species cover (yellow, shows on the Species page, never deleted when space is cleared), favorite (blue, never deleted when space is cleared) or unset."></span>
-  {% endif %}
+  {% if fav %}{{ fav_star(v, sp, covers) }}{% endif %}
   <div class="card-body">
     <div class="card-title">{{ sp_name(v.label) }}{% if v.count and v.count > 1 %} <span class="muted">x{{ v.count }}</span>{% endif %}
       {%- for a in also_of(v) %} <span class="also-name">+ {{ sp_name(also_label(a)) }}{% if a.count and a.count > 1 %} <span class="muted">x{{ a.count }}</span>{% endif %}</span>{% endfor %}</div>

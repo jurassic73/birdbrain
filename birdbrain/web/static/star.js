@@ -1,10 +1,11 @@
-// The star on each photo card (admins): unset -> species cover (yellow) -> favorite (blue, kept) -> unset.
+// The star on each photo card and on the home page's big latest-visitor photo (admins): unset -> species cover (yellow) -> favorite (blue, kept) -> unset.
 // The server decides the new state and says which visit is the species' cover now, so only one star per species
 // is yellow; blue follows each visit's keep flag. A small pill beside the star says what it just became.
 // Delegated and in the capture phase, so cards slid in later by the home page work too and the click never
 // reaches the card's link or the lightbox.
 (() => {
   const PILL = {unset: "unset", cover: "species cover", favorite: "favorite"};
+  const BOX = ".card, .hero-latest";  // what a star sits in
 
   function paint(star, cover) {
     const st = Number(star.dataset.id) === cover ? "cover" : star.dataset.keep === "1" ? "favorite" : "unset";
@@ -13,7 +14,7 @@
     star.dataset.tip = star.dataset["tip" + st[0].toUpperCase() + st.slice(1)];
     star.setAttribute("aria-label", star.dataset.tip);
     // the bookmark on the same card follows keep
-    const mark = star.closest(".card").querySelector(".keep-mark");
+    const mark = star.closest(BOX).querySelector(".keep-mark");
     if (mark) {
       const on = star.dataset.keep === "1";
       mark.setAttribute("aria-pressed", on ? "true" : "false");
@@ -27,7 +28,7 @@
   }
 
   function flash(star, state) {
-    const pill = star.closest(".card").querySelector(".fav-pill");
+    const pill = star.closest(BOX).querySelector(".fav-pill");
     if (!pill) return;
     pill.textContent = PILL[state];
     pill.dataset.state = state;
@@ -53,7 +54,9 @@
       const res = await fetch("/species/" + encodeURIComponent(star.dataset.starSpecies) + "/photo", {method: "POST", body});
       if (!res.ok) return;
       const r = await res.json();
-      star.dataset.keep = r.state === "unset" ? "0" : "1";
+      // The latest visit has two stars (big photo and first card): both follow.
+      const keep = r.state === "unset" ? "0" : "1";
+      document.querySelectorAll('.fav-star[data-id="' + star.dataset.id + '"]').forEach((b) => { b.dataset.keep = keep; });
       document.querySelectorAll(".fav-star").forEach((b) => {
         if (b.dataset.starSpecies === r.species) paint(b, r.cover_id);
       });
@@ -68,10 +71,11 @@
     const btn = e.detail.elt;
     if (!btn.classList || !btn.classList.contains("keep-mark") || !e.detail.successful) return;
     const id = (btn.getAttribute("hx-post").match(/visit\/(\d+)/) || [])[1];
-    const star = document.querySelector('.fav-star[data-id="' + id + '"]');
-    if (!star) return;
-    star.dataset.keep = JSON.parse(btn.getAttribute("hx-vals")).on ? "1" : "0";
-    paint(star, coverOf(star.dataset.starSpecies));
+    const keep = JSON.parse(btn.getAttribute("hx-vals")).on ? "1" : "0";
+    document.querySelectorAll('.fav-star[data-id="' + id + '"]').forEach((star) => {
+      star.dataset.keep = keep;
+      paint(star, coverOf(star.dataset.starSpecies));
+    });
   });
 
   // Cards slid in by the home page aren't known to htmx yet.

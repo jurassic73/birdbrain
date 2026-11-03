@@ -511,9 +511,14 @@ button.fav-star[data-state="cover"] svg, button.fav-star[data-state="favorite"] 
 .fav-pill[data-state="cover"] { background: #ffd34d; color: #3a2c00; }
 .fav-pill[data-state="favorite"] { background: #4da3ff; color: #fff; }
 @media (hover: hover) and (pointer: fine) {
-  .card button.fav-star[data-state="unset"] { opacity: 0; transition: opacity .15s; }
-  .card:hover button.fav-star, .card button.fav-star:focus-visible { opacity: 1; }
+  :is(.card, .hero-latest) button.fav-star[data-state="unset"] { opacity: 0; transition: opacity .15s; }
+  :is(.card, .hero-latest):hover button.fav-star, :is(.card, .hero-latest) button.fav-star:focus-visible { opacity: 1; }
 }
+/* On the big latest-visitor photo the star sits just left of the magnifier (34px at 8px from the edge, centers
+   lined up), its pill left of it, and the caption chip stops short of both. */
+.hero-latest button.fav-star { top: 5px; right: 50px; z-index: 2; }
+.hero-latest .fav-pill { top: 15px; right: 98px; z-index: 3; max-width: calc(100% - 120px); }
+.hero-latest:has(.fav-star) .hero-caption { max-width: calc(100% - 110px); }
 /* The blue keeper mark (the same star as the yellow species-photo star, in blue): top-right of every photo
    card for the admin. It sits inside the card's link; drawn over the photo, so its colors are fixed. On species
    pages the yellow star holds the corner, so the keeper sits just left of it (40px star + 4px edge + 4px gap; top and right trimmed by the card's 1px border so the two line up). */
