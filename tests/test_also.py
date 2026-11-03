@@ -45,7 +45,7 @@ def fake_ask(monkeypatch):
     calls = []
 
     def install(answers):
-        def ask(model, images_b64, captured_at, lessons=None, site=None):
+        def ask(model, images_b64, captured_at, lessons=None, site=None, night=False):
             calls.append(model)
             return answers[model], {"model": model}
         monkeypatch.setattr(identify, "ask", ask)
@@ -73,7 +73,7 @@ def test_also_drops_repeats_of_the_main_animal_and_of_each_other():
     s = junco(also=[bushtit(), bushtit(count=1), bushtit(species="dark-eyed junco")])
     assert [a["species"] for a in identify.also_rows(s)] == ["Bushtit"]
     assert identify.also_rows(Sighting(visitor="none", species=None, count=0, confidence="high", notes="",
-                                       also=[bushtit()])) == []
+                                       circle=None, also=[bushtit()])) == []
 
 
 def test_a_low_guess_at_the_second_animal_gets_sonnets_look(fake_ask):

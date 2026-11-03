@@ -557,7 +557,7 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         local_check = None if night else (lambda circle: classifier.run(best, circle, crop, night))
         try:
             result = identify.identify(best, captured_at, crop, lessons, extra_frames=ranked[1:], site=site,
-                                       confirmed=confirmed, local_check=local_check)
+                                       confirmed=confirmed, local_check=local_check, night=night)
         except Exception as e:
             # The API down, unreachable or timing out past the SDK's retries: a real bird may be in the photo, so
             # keep it as a visit for the review queue instead of losing it (and its burst) as a false trigger.
@@ -593,16 +593,17 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             log.exception("saving the burst failed")
     alert_reason = None
     also = result.raw.get("also") or []
-    # Every kind of animal in the photo: the main one first, then the others Claude listed (nothing when Claude
-    # couldn't answer: "other" is a placeholder there, not a sighting to alert about).
-    seen = [] if false_trigger or unanswered else [(s.visitor, s.species or s.visitor.capitalize()),
-                                                   *((a["visitor"], db.also_label(a)) for a in also)]
+    # Every kind of animal in the photo with Claude's confidence in it: the main one first, then the others Claude
+    # listed (nothing when Claude couldn't answer: "other" is a placeholder there, not a sighting to alert about).
+    seen = [] if false_trigger or unanswered else [
+        (s.visitor, s.species or s.visitor.capitalize(), s.confidence),
+        *((a["visitor"], db.also_label(a), a.get("confidence") or "low") for a in also)]
     global last_visit_id
     with db.session() as conn:
         # Check BEFORE inserting so the new-species count doesn't include this visit yet.
-        for visitor, label in seen:
+        for visitor, label, confidence in seen:
             try:
-                alert_reason = alert.reason(conn, visitor, label, captured_at)
+                alert_reason = alert.reason(conn, visitor, label, captured_at, confidence, result.needs_review)
             except Exception:
                 log.exception("alert check failed")
             if alert_reason:
@@ -641,7 +642,7 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         fail_soft("sending the alert", send_alert, visit_id, alert_reason, best)
     if not false_trigger:
         fail_soft("pushing to the public mirror", push_public)
-    for _, label in seen:
+    for _, label, _ in seen:
         fail_soft("prefetching the species card", species_info.prefetch, label)  # no-op once the card is cached
     det_note = "" if not check or check.get("score") is None else f", animal check {check['score']:.2f}"
     log.info("visit %d: %s %s (%s, %s%s%s)", visit_id, s.visitor, s.species or "", s.confidence,

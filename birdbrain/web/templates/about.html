@@ -399,7 +399,7 @@
     <ol class="tree" aria-label="How an answer is decided">
       <li class="node cloud"><strong>Haiku</strong> looks at the sharpest photo{{ ', cropped' if zones.crop }}</li>
       <li class="q" data-down="Yes"><span class="diamond">Saw an animal?</span>
-        <span class="side"><span class="tag">No</span> <span><a href="/false-triggers">False triggers</a>, hidden from the gallery</span></span></li>
+        <span class="side"><span class="tag">No</span> <span><a href="/false-triggers">False triggers</a>, hidden from the gallery. If it only thinks the photo is empty (something might be an animal), Sonnet looks too, and one still in doubt waits in the <a href="/review">review queue</a> instead of being quietly filed away</span></span></li>
       <li class="q" data-down="No, or it declined"><span class="diamond" data-tip="Every animal in the photo counts: a guess at a second one also gets Sonnet's look.">Sure of every animal?</span>
         <span class="side"><span class="tag">Yes</span> <span><a href="/">Gallery</a> and alerts. Also when fairly sure of a species already confirmed here {{ confirmed_min }}+ times (the Confirmed pill on <a href="/species">Species</a>), as long as the Pi's own classifier, looking at Claude's circle by day, names the same species</span></span></li>
       <li class="node cloud"><strong>Sonnet</strong> looks at the 3 sharpest photos together, combining angles</li>
@@ -410,11 +410,14 @@
     <div class="prompt-stack">
       <h3>What Claude is told</h3>
       <ol class="layers">
-        <li>Instructions: the animal types, how to name species, how sure to be, that night photos are infrared</li>
+        <li>Instructions: the animal types, how to name species, how sure to be (for an empty photo, "sure" means nothing in it could be an animal), that night photos are infrared</li>
         <li class="{{ '' if site.location or site.scene_notes else 'unset' }}">Your yard from <a href="/notes#camera">Claude's Notes</a>: what the camera sees, what to look for, what to ignore{% if site.location %}, in {{ site.location }}{% elif not site.scene_notes %} (not filled in yet){% endif %}</li>
-        <li class="{{ '' if lessons else 'unset' }}">Lessons from your corrections: {{ lessons or 'none yet' }}{{ ' in use' if lessons }}</li>
-        <li>The photo (or photos) and the date and time, so it knows what's in season</li>
+        <li class="{{ '' if lessons else 'unset' }}">Lessons from your corrections: {{ lessons or 'none yet' }}{{ ' in use' if lessons }} (a long note is cut to its first {{ note_limit }} characters)</li>
+        <li>The photo (or photos), the date and time, so it knows what's in season, and whether it's a night infrared photo</li>
       </ol>
+      <p class="small">Your notes and lessons are marked as being about this camera, so nothing in them can change the
+        answer format. The instructions and notes are the same from one visit to the next, so Anthropic keeps them cached
+        between calls and charges a fraction of the usual price for that part; the photo itself is never cached.</p>
       <p class="small">It must answer in a fixed format. When more than one kind of animal is in the photo, the most prominent
         is the main answer and each other kind goes under "also":</p>
 <pre class="json">{"visitor": "bird",
@@ -425,8 +428,11 @@
    "species": "Bushtit", "count": 3,
    "confidence": "medium"}]}</pre>
       <p class="muted small">Each of those counts as a visit of its own species on the species pages, stats and first-seen
-        dates, and a first sighting among them still sends the new-species alert.</p>
-      <p class="muted small">Models: {{ haiku }} and {{ sonnet }}.
+        dates, and a first sighting among them still sends the new-species alert. Bird names are put in eBird's
+        spelling before they're saved ("black-capped chickadee" becomes "Black-capped Chickadee", and a race in
+        parentheses moves to the notes), so one species never gets two pages or two first sightings.</p>
+      <p class="muted small">Models: {{ haiku }} and {{ sonnet }}. If Sonnet declines a photo, Anthropic's fallback model answers
+        instead, and the visit records which model did.
         {% if avg_call >= 0.001 %}A Haiku look costs about {{ avg_call | usd }}{% else %}A Haiku look costs well under a cent{% endif %}{% if totals.sent_to_claude %}, and Haiku settled {{ (100 * totals.haiku_only / totals.sent_to_claude) | round | int }}% of {{ '{:,}'.format(totals.sent_to_claude) }} visits on its own{% endif %}.
         Every visit page shows these steps under "How it was decided".</p>
     </div>
@@ -518,11 +524,13 @@
         {{ badge('Unusual this time of year', 'out-of-season') }}.</p>
       <h3>Phone alerts</h3>
       <ul class="alert-list">
-        <li>{{ badge('on', 'conf-high') if alerts.new_species else badge('off', 'muted') }} A species seen here for the first time</li>
+        <li>{{ badge('on', 'conf-high') if alerts.new_species else badge('off', 'muted') }} A species seen here for the first time (a bird Claude couldn't name never counts)</li>
         <li>{{ badge('on', 'conf-high') if alerts.mammals else badge('off', 'muted') }} Any raccoon or possum</li>
         <li>{{ badge('on', 'conf-high') if alerts.unusual else badge('off', 'muted') }} Early, late or unusual for the season</li>
       </ul>
-      <p class="muted small">{% if alerts.quiet_start and alerts.quiet_end %}Quiet from {{ alerts.quiet_start }} to {{ alerts.quiet_end }}. {% endif %}{% if not alerts.topic %}Alerts aren't set up yet. {% endif %}Common repeat visitors never buzz your phone. Change these in <a href="/settings#alerts">Settings</a>.</p>
+      <p class="muted small">{% if alerts.quiet_start and alerts.quiet_end %}Quiet from {{ alerts.quiet_start }} to {{ alerts.quiet_end }}. {% endif %}{% if not alerts.topic %}Alerts aren't set up yet. {% endif %}Common repeat visitors never buzz your phone.
+        When Claude was only guessing, or the visit is waiting in the <a href="/review">review queue</a>, a new-species or raccoon alert
+        says "Possible … (needs your check)" instead, and season alerts wait for a sure answer. Change these in <a href="/settings#alerts">Settings</a>.</p>
     </div>
   </div>
 </section>

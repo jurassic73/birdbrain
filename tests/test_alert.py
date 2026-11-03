@@ -110,6 +110,35 @@ def test_reason_no_alert_for_none_visitor(conn):
     assert alert.reason(conn, "none", "None", NOW) is None
 
 
+@pytest.mark.parametrize("label", ["Bird", "bird", "Unknown bird", "unidentified sparrow", ""])
+def test_a_bird_with_no_species_name_is_never_a_new_species(conn, label):
+    _set_ntfy(conn)
+    assert alert.reason(conn, "bird", label, NOW) is None
+
+
+def test_a_guess_at_a_new_species_is_worded_as_possible(conn):
+    _set_ntfy(conn)
+    assert alert.reason(conn, "bird", "Anna's Hummingbird", NOW, "low") == \
+        "Possible new species: Anna's Hummingbird (needs your check)"
+    assert alert.reason(conn, "bird", "Anna's Hummingbird", NOW, "medium", needs_review=True) == \
+        "Possible new species: Anna's Hummingbird (needs your check)"
+    assert alert.reason(conn, "bird", "Anna's Hummingbird", NOW, "medium") == "New species: Anna's Hummingbird!"
+
+
+def test_a_guess_at_a_mammal_is_worded_as_possible(conn):
+    _set_ntfy(conn)
+    assert alert.reason(conn, "raccoon", "Raccoon", NOW, "low") == "Possible raccoon at the birdbath (needs your check)"
+    assert alert.reason(conn, "possum", "Possum", NOW, "high", needs_review=True) == \
+        "Possible possum at the birdbath (needs your check)"
+    assert alert.reason(conn, "raccoon", "Raccoon", NOW, "high") == "Raccoon at the birdbath!"
+
+
+def test_the_switches_still_silence_tentative_alerts(conn):
+    _set_ntfy(conn, new_species="0", mammals="0")
+    assert alert.reason(conn, "bird", "Anna's Hummingbird", NOW, "low") is None
+    assert alert.reason(conn, "raccoon", "Raccoon", NOW, "low") is None
+
+
 # --- get_settings / save_settings ---
 
 def test_get_settings_defaults(conn):
@@ -145,6 +174,15 @@ def test_reason_out_of_season(conn, add_visit):
     assert alert.reason(conn, "bird", "Rufous Hummingbird", march) == "Early arrival: Rufous Hummingbird"
     july = datetime(2027, 7, 20, 9, 0)
     assert alert.reason(conn, "bird", "Rufous Hummingbird", july) is None
+
+
+def test_out_of_season_needs_a_sure_answer(conn, add_visit):
+    _set_ntfy(conn)
+    add_visit(species="Rufous Hummingbird")
+    _card(conn, "Rufous Hummingbird", [4, 5, 6, 7, 8])
+    march = datetime(2027, 3, 20, 9, 0)
+    assert alert.reason(conn, "bird", "Rufous Hummingbird", march, "low") is None
+    assert alert.reason(conn, "bird", "Rufous Hummingbird", march, "high", needs_review=True) is None
 
 
 def test_reason_out_of_season_toggle_off(conn, add_visit):

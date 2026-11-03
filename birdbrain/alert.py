@@ -5,6 +5,12 @@ Fires when:
   - A raccoon or possum visits
   - A visitor shows up outside its usual local months ("Early arrival: Rufous Hummingbird")
 
+When Claude was only guessing (low confidence, or the visit is waiting in the review queue), the first two are
+worded "Possible new species: X (needs your check)" / "Possible raccoon at the birdbath (needs your check)" rather
+than held: the on/off switches on the Settings page mean "tell me", so the owner still hears about a rare bird or
+a night prowler, with the doubt spelled out and the review queue having the final say. Out-of-season alerts
+need a sure answer, since they're about which species it was. A bird with no species name never alerts.
+
 Settings live in the database (ntfy_topic, ntfy_new_species, ntfy_mammals,
 ntfy_quiet_start, ntfy_quiet_end) and are edited on the Settings page.
 """
@@ -35,10 +41,22 @@ def _in_quiet(t: dtime, start: str, end: str) -> bool:
     return t >= qs or t < qe
 
 
-def reason(conn: sqlite3.Connection, visitor: str, label: str, captured_at: datetime) -> str | None:
+GENERIC = ("unknown", "unidentified", "unspecified", "unsure", "unclear")
+
+
+def generic(label: str, visitor: str) -> bool:
+    """True when the label names no species: the visitor type itself ("Bird", what watch uses for a bird with no
+    species), or an "unknown bird". Such a label is nothing to announce as a new species."""
+    k = label.strip().casefold()
+    return not k or k == visitor or k in ("bird", "none") or any(w in k for w in GENERIC)
+
+
+def reason(conn: sqlite3.Connection, visitor: str, label: str, captured_at: datetime,
+           confidence: str = "high", needs_review: bool = False) -> str | None:
     """Return an alert reason for this visit, or None.
 
-    Call BEFORE inserting the visit so the new-species check is accurate.
+    Call BEFORE inserting the visit so the new-species check is accurate. `confidence` is Claude's for this
+    animal and `needs_review` whether the visit waits in the review queue: either makes the alert tentative.
     """
     topic = db.get_value(conn, "ntfy_topic") or ""
     if not topic.strip():
@@ -49,17 +67,22 @@ def reason(conn: sqlite3.Connection, visitor: str, label: str, captured_at: date
     if qs and qe and _in_quiet(captured_at.time(), qs, qe):
         return None
 
+    unsure = confidence == "low" or needs_review
     if visitor in ("raccoon", "possum"):
         if db.get_value(conn, "ntfy_mammals") != "0":
+            if unsure:
+                return f"Possible {visitor} at the birdbath (needs your check)"
             return f"{visitor.capitalize()} at the birdbath!"
 
-    if visitor == "bird" and label:
+    if visitor == "bird" and label and not generic(label, visitor):
         if db.get_value(conn, "ntfy_new_species") != "0":
             # Seen before as the main animal or as another one in a photo.
             if db.count_visits(conn, species=label) == 0:
+                if unsure:
+                    return f"Possible new species: {label} (needs your check)"
                 return f"New species: {label}!"
 
-    if visitor != "none" and db.get_value(conn, "ntfy_unusual") != "0":
+    if visitor != "none" and not unsure and db.get_value(conn, "ntfy_unusual") != "0":
         from . import species_info  # lazy: avoids a circular import at module load
 
         cached = db.get_species_info(conn, label) if species_info.has_card(label) else None

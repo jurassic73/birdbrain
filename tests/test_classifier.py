@@ -99,7 +99,7 @@ def test_watcher_stores_the_guess_without_changing_claudes_label(monkeypatch, co
 
     def fake_identify(*args, **kwargs):
         from birdbrain.identify import Result, Sighting
-        return Result(Sighting(visitor="bird", species="Bushtit", count=1, confidence="high", notes=""),
+        return Result(Sighting(visitor="bird", species="Bushtit", count=1, confidence="high", notes="", circle=None, also=[]),
                       "claude-haiku-5-5", False, False, {"circle": {"x": 0.5, "y": 0.5, "r": 0.03, "claude": True}})
 
     monkeypatch.setattr(watch.identify, "identify", fake_identify)
@@ -306,7 +306,7 @@ def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit
     def fake_identify(*args, **kwargs):
         from birdbrain.identify import Result, Sighting
         asked.append(1)
-        return Result(Sighting(visitor="bird", species="Bushtit", count=2, confidence="high", notes=""),
+        return Result(Sighting(visitor="bird", species="Bushtit", count=2, confidence="high", notes="", circle=None, also=[]),
                       "claude-haiku-5-5", False, False, {})
 
     monkeypatch.setattr(watch.identify, "identify", fake_identify)

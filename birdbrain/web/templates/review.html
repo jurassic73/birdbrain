@@ -2,7 +2,7 @@
 {% block title %}Review | Birdbrain{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Review queue <span class="muted">{{ visits | length }}</span></h1></div>
-<p class="muted">Low-confidence identifications, oldest first. Open one to confirm or correct it.</p>
+<p class="muted">Visits Claude was unsure about, oldest first, including photos it couldn't call empty with any confidence. Open one to confirm or correct it.</p>
 {% if visits %}
 <div class="grid">
   {% include "_cards.html" %}

@@ -1144,6 +1144,7 @@ def about(request: Request, conn=Depends(get_conn)):
         haiku=identify.HAIKU,
         sonnet=identify.SONNET,
         lessons=len(db.recent_lessons(conn)),
+        note_limit=db.NOTE_LIMIT,
         confirmed_min=db.CONFIRMED_MIN,
         site=db.prompt_site(conn),
         avg_call=db.avg_haiku_call_usd(conn),
