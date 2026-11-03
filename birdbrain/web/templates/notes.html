@@ -49,16 +49,22 @@
   </div>
 </details>
 
+<details class="settings-card" id="summary" open>
+  <summary><h2>Lessons summary</h2><span class="summary-hint">{% if summary.draft %}Draft to review{% elif summary.text %}In every prompt{% else %}None yet{% endif %}</span></summary>
+  {% include "_lessons_summary.html" %}
+</details>
+
 <details class="settings-card" id="lessons" open>
-  <summary><h2>Lessons</h2><span class="summary-hint">{{ in_use }} in use</span></summary>
+  <summary><h2>Lessons</h2><span class="summary-hint">{{ in_use }} in prompt word for word</span></summary>
   <div class="settings-body">
-  <p class="muted">Each correction or note you save on a visit becomes one line in every prompt, exactly as shown. The newest {{ limit }} that aren't switched off are sent.</p>
+  <p class="muted">Each correction or note you save on a visit becomes one line, exactly as shown. The newest {{ limit }} that aren't switched off go into every prompt word for word (<strong>in prompt</strong>). Every line that isn't switched off, old ones too, is folded into the Lessons summary above when it's next distilled.</p>
   {% if lessons %}
   <ul class="lessons">
     {% for l in lessons %}
     <li class="lesson{{ ' lesson-out' if not l.in_use }}">
       <div class="lesson-meta">
         {% if l.in_use %}{{ badge("in prompt", "high") }}{% elif l.off %}{{ badge("switched off", "low") }}{% else %}{{ badge("too old", "medium") }}{% endif %}
+        {% if l.visit_id in in_summary %}{{ badge("in summary", "high") }}{% elif not l.off %}{{ badge("not in summary yet", "medium") }}{% endif %}
         <a href="/visit/{{ l.visit_id }}">{{ l.captured_at | nice_time }}</a>
       </div>
       <code class="lesson-line">{{ l.line[2:] }}</code>
@@ -102,7 +108,7 @@
 <details class="settings-card prompt-preview" id="prompt">
   <summary><h2>The whole prompt</h2><span class="summary-hint">Exactly what Claude reads</span></summary>
   <div class="settings-body">
-    <p class="muted small">The rules first, then your yard, and the lessons in prompt.</p>
+    <p class="muted small">The rules first, then your yard, the Lessons summary, and the lessons in prompt.</p>
     <pre>{{ prompt_preview }}</pre>
   </div>
 </details>

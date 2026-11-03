@@ -419,7 +419,8 @@
       <ol class="layers">
         <li>Instructions: the animal types, how to name species, how sure to be (for an empty photo, "sure" means nothing in it could be an animal), that night photos are infrared</li>
         <li class="{{ '' if site.location or site.scene_notes else 'unset' }}">Your yard from <a href="/notes#camera">Claude's Notes</a>: what the camera sees, what to look for, what to ignore{% if site.location %}, in {{ site.location }}{% elif not site.scene_notes %} (not filled in yet){% endif %}</li>
-        <li class="{{ '' if lessons else 'unset' }}">Lessons from your corrections: {{ lessons or 'none yet' }}{{ ' in use' if lessons }} (a long note is cut to its first {{ note_limit }} characters)</li>
+        <li class="{{ '' if site.lessons_summary else 'unset' }}">The <a href="/notes#summary">Lessons summary</a>: every correction and note you've made, distilled by Claude into short points and accepted by you{{ '' if site.lessons_summary else ' (none accepted yet)' }}</li>
+        <li class="{{ '' if lessons else 'unset' }}">The newest lessons from your corrections, word for word: {{ lessons or 'none yet' }}{{ ' in use' if lessons }} (a long note is cut to its first {{ note_limit }} characters)</li>
         <li>The photo (or photos), the date and time, so it knows what's in season, and whether it's a night infrared photo</li>
       </ol>
       <p class="small">Your notes and lessons are marked as being about this camera, so nothing in them can change the
@@ -452,10 +453,10 @@
   <ol class="loop">
     <li><strong>Claude answers</strong><small>"Dark-eyed Junco, bathing"</small></li>
     <li><strong>You correct it</strong><small>"No animal: those are the rock tips after a refill"</small></li>
-    <li><strong>It becomes a lesson</strong><small>The latest 15 corrections join every prompt</small></li>
+    <li><strong>It becomes a lesson</strong><small>The latest {{ lesson_limit }} join every prompt in full; all of them feed the Lessons summary</small></li>
     <li><strong>Next photo</strong><small>Claude gets it right, starting with the very next visit</small></li>
   </ol>
-  <p>Claude doesn't get retrained; it simply reads your latest corrections every time. The Pi's animal check does retrain on them, in the background within about a minute.
+  <p>Claude doesn't get retrained; it simply reads your latest corrections every time (in-context learning, not fine-tuning). Older ones aren't lost: after every {{ auto_every }} new notes, Claude distills all of them into a short <a href="/notes#summary">Lessons summary</a>, which you check and accept on Claude's Notes and which then goes with every photo{% if totals.distills %} ({{ totals.distills }} summar{{ 'y' if totals.distills == 1 else 'ies' }} drafted so far, counted in the spend above){% endif %}. The Pi's animal check does retrain on them, in the background within about a minute.
     You can circle things on the photo, fix the other animals in the shot, or press Ask to have Claude suggest a name
     <span data-tip="Ask costs about a cent. Species boxes suggest eBird names so one bird never gets two spellings. Claude's Notes lists every lesson exactly as Claude reads it; switch off any that don't help.">(more)</span>.
     {% if totals.corrected %}You've corrected or annotated {{ totals.corrected }} visit{{ 's' if totals.corrected != 1 }} so far.{% endif %}</p>

@@ -143,8 +143,12 @@ OWNER_INTRO = ("The owner's notes and corrections below describe this camera and
 
 def system_prompt(lessons: list[str] | None = None, site: dict | None = None) -> str:
     """SYSTEM plus Claude's Notes (location, the owner's description, what to look for, what to ignore) inside
-    <yard_notes>, and recent corrections inside <corrections>, each introduced as being about this camera only."""
+    <yard_notes>, the accepted Lessons summary (site["lessons_summary"], birdbrain.lessons: every correction and
+    note distilled) inside <lessons_summary>, and the newest corrections word for word inside <corrections>, each
+    introduced as being about this camera only. The summary changes only when the owner accepts a new one and the
+    lessons only when they correct a visit, so the whole prompt stays cacheable between photos."""
     site = site or {}
+    summary = (site.get("lessons_summary") or "").strip()
     notes = []
     if site.get("location"):
         notes.append(f"The camera is in {site['location']}. Use that region's birds and mammals for the date given.")
@@ -155,10 +159,15 @@ def system_prompt(lessons: list[str] | None = None, site: dict | None = None) ->
     if site.get("ignore_notes"):
         notes.append("Things here that move or look like animals but are not:\n" + site["ignore_notes"])
     parts = [SYSTEM]
-    if notes or lessons:
+    if notes or lessons or summary:
         parts.append(OWNER_INTRO)
     if notes:
         parts.append("<yard_notes>\n" + "\n\n".join(notes) + "\n</yard_notes>")
+    if summary:
+        parts.append(
+            "<lessons_summary>\nWhat the owner's corrections and notes at this camera have taught so far, distilled "
+            "into points (the newest corrections follow in full):\n" + summary + "\n</lessons_summary>"
+        )
     if lessons:
         parts.append(
             "<corrections>\nCorrections the owner made to recent answers at this camera, newest first: yours, or the "

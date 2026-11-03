@@ -1069,6 +1069,35 @@ def test_visit_page_says_notes_are_for_claude_only(client, add_visit):
     assert "The answer you pick trains the Pi's local animal check" in html
 
 
+def _flows(html):
+    return re.findall(r'<ol class="decision-flow.*?</ol>', html, re.S)
+
+
+def test_detection_path_strip_is_labelled_and_marks_claude_pills(client, add_visit):
+    flows = _flows(client.get(f"/visit/{add_visit(species='Song Sparrow', model='claude-sonnet-5-5', escalated=1, raw_json=ESCALATED)}").text)
+    assert len(flows) == 2  # the nav bar and the phone copy
+    for f in flows:
+        assert 'aria-label="Detection path"' in f and ">Detection path</li>" in f
+        pills = re.findall(r'<li class="flow-pill[^"]*">(.*?)</li>', f, re.S)
+        for name in ("Haiku", "Sonnet"):
+            assert all("claude-mark" in p for p in pills if f"<strong>{name}</strong>" in p)
+            assert any(f"<strong>{name}</strong>" in p for p in pills)
+        assert "claude-mark" not in next(p for p in pills if p.startswith("Motion"))
+        assert "claude-mark" not in pills[-1]
+
+
+def test_local_only_steps_get_no_claude_mark(client, add_visit):
+    raw = json.dumps({"calls": {"presence": {"empty": True, "score": 0.02, "threshold": 0.5, "trained_on": 40}, "skipped_claude": True}})
+    html = client.get(f"/visit/{add_visit(visitor='none', species=None, model='presence', raw_json=raw)}").text
+    flows = _flows(html)
+    assert flows and all("Detection path" in f and "Local animal check" in f and "claude-mark" not in f for f in flows)
+
+
+def test_note_for_claude_label_has_the_mark(client, add_visit):
+    html = client.get(f"/visit/{add_visit()}").text
+    assert re.search(r'<label for="feedback" class="tip-label"><svg class="claude-mark".*?</svg>Note for Claude', html, re.S)
+
+
 def test_popups_use_the_site_dialog_not_the_browsers(client):
     # confirm()/alert()/prompt() can't be styled; questions go through static/dialog.js (birdbrain.ask,
     # hx-confirm, form[data-confirm]) and look like the rest of the site (the Pop-ups section of style.css).

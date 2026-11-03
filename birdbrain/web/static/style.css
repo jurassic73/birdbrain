@@ -611,7 +611,7 @@ main.wide { max-width: 1600px; }
 .visit .full { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; border-radius: var(--radius); }
 .visit-photo { position: relative; min-width: 0; }
 .visit-photo .marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; border-radius: var(--radius); }
-/* Two fingers always pinch-zoom; one finger scrolls, or draws once Edit circles is on. */
+/* Two fingers always pinch-zoom; one finger scrolls, or draws once Add circles is on. */
 .visit-photo { touch-action: pan-x pan-y pinch-zoom; cursor: zoom-in; }
 .visit-photo.editing { touch-action: pinch-zoom; cursor: crosshair; }
 .visit-photo .mark { pointer-events: auto; }
@@ -933,6 +933,11 @@ button.danger.sending, button.danger.htmx-request {
 .flow-pill { position: relative; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
 .flow-pill + .flow-pill { margin-left: 20px; }
 .flow-pill + .flow-pill::before { content: "\2192"; position: absolute; left: -16px; color: var(--muted); }
+/* "Detection path" label before the first pill */
+.flow-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); white-space: nowrap; margin-right: 10px; }
+/* The Claude mark inside a Claude pill: text-sized, no tile, so the pill stays one line tall */
+.flow-pill .claude-mark, .tip-label .claude-mark { width: 14px; height: 14px; padding: 0; margin: 0 5px 0 0; background: none; vertical-align: -2px; }
+.tip-label .claude-mark { width: 15px; height: 15px; margin-right: 6px; vertical-align: -3px; }
 .flow-pill.ai { border-color: var(--accent); }
 .flow-pill.review { border-color: var(--medium); }
 .flow-pill.result { font-weight: 600; }
@@ -1326,6 +1331,7 @@ details.review-fold > summary { display: none; }
   .decision-flow .flow-pill { padding: 1px 7px; white-space: nowrap; }
   .decision-flow .flow-pill + .flow-pill { margin-left: 15px; }
   .decision-flow .flow-pill + .flow-pill::before { left: -12px; }
+  .decision-flow .flow-label { font-size: .65rem; margin-right: 8px; }
   .decision-flow .said-same { display: none; }
   /* "All ... visits" on the left, "Not right? Correct it" on the far right; Delete moves to the bottom. */
   .visit-head .actions { flex: 1 1 auto; }
@@ -1380,7 +1386,8 @@ button.save-flash { animation: save-flash 1s ease-out; }
 .lessons { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 10px; }
 .lesson { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: center;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
-.lesson-meta { display: flex; align-items: center; gap: 10px; font-size: .85rem; grid-column: 1; }
+.lesson-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: .85rem; grid-column: 1; }
+.lesson-meta .badge, .lesson-meta a { white-space: nowrap; }  /* two pills and a date: wrap between them, never inside */
 .lesson-line { grid-column: 1; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .88rem; line-height: 1.45; }
 .lesson-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 8px; }
 .lesson-out .lesson-line { color: var(--muted); }
@@ -1428,6 +1435,17 @@ button.save-flash { animation: save-flash 1s ease-out; }
 .scene-distraction { color: #ff6b6b; }
 .htmx-indicator { display: none; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
+
+/* Claude's Notes > Lessons summary (_lessons_summary.html): the accepted points, and a draft with a textarea */
+.summary-head { margin: 18px 0 6px; font-size: 1rem; }
+.summary-text { margin: 0 0 6px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
+.summary-draft { margin: 12px 0 4px; padding: 12px; border: 1px solid var(--medium); border-radius: var(--radius); background: var(--surface); }
+.summary-draft .notice { margin: 0 0 10px; border-style: dashed; }
+.summary-draft form { margin: 0; }
+.summary-draft label { display: block; margin-bottom: 4px; }
+.summary-draft textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88rem; line-height: 1.45; }
+.summary-draft .actions { margin-top: 10px; align-items: center; }
+.summary-hint-new { align-self: center; }
 
 /* Buttons that ask Claude: a small spark before the label */
 .claude-btn { display: inline-flex; align-items: center; gap: 6px; }
