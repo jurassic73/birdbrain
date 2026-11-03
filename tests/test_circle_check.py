@@ -243,6 +243,19 @@ def test_checks_kept_per_visit_are_capped(conn, photo_visit):
     assert len(checks) == circle_check.KEEP and checks[-1]["say"] == str(circle_check.KEEP + 4)
 
 
+def test_record_writes_only_the_checks_and_keeps_the_rest(conn, photo_visit):
+    vid = photo_visit(raw_json=json.dumps({"trigger": "rim", "calls": {"circle": {"x": 0.5, "y": 0.5, "r": 0.1}}}))
+    db.end_stay(conn, vid, "2026-11-01T09:05:00", "left")  # what the watcher writes to the same row
+    circle_check.record(conn, vid, {"source": "pi", "say": "a bird"}, {"x": 0.5, "y": 0.5, "r": 0.1, "frame": 2})
+    raw = json.loads(db.get_visit(conn, vid)["raw_json"])
+    assert raw["trigger"] == "rim" and raw["stay_end"] == "left" and raw["calls"]["circle"]["r"] == 0.1
+    assert checks_of(conn, vid)[0]["frame"] == 2 and not conn.in_transaction
+    conn.execute("UPDATE visits SET raw_json = 'not json' WHERE id = ?", (vid,))
+    conn.commit()
+    circle_check.record(conn, vid, {"source": "pi", "say": "again"}, {"x": 0.5, "y": 0.5, "r": 0.1})
+    assert [c["say"] for c in checks_of(conn, vid)] == ["again"]
+
+
 def test_owner_check_spend_skips_bad_raw_json(conn, add_visit):
     vid = add_visit()
     conn.execute("UPDATE visits SET raw_json = 'not json' WHERE id = ?", (vid,))

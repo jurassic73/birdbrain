@@ -72,6 +72,21 @@ def test_preview_and_run_now(client, conn, add_visit):
     assert "Done." in client.get("/settings/storage/run").text
 
 
+def test_run_now_says_so_when_the_watcher_is_already_running(client, conn, add_visit):
+    import fcntl
+
+    add_visit()
+    with open(retention.config.DATA_DIR / retention.LOCK_FILE, "a") as watcher:  # the watcher's daily run, mid-way
+        fcntl.flock(watcher, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        client.post("/settings/storage/run")
+        for _ in range(50):
+            if not webapp._run_state["running"]:
+                break
+            time.sleep(0.1)
+    assert "already running" in webapp._run_state["error"]
+    assert "already running" in client.get("/settings/storage/run").text
+
+
 def test_run_now_is_post_and_admin_only(client, monkeypatch):
     assert client.get("/settings/storage/limits").status_code == 405
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")

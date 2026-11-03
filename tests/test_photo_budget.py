@@ -202,6 +202,59 @@ def test_measure_new_scores_the_stored_photo_in_its_crop(conn, photo, monkeypatc
     assert retention.measure_new(conn) == 0  # measured once
 
 
+def test_measure_new_never_waits_while_holding_the_write_lock(conn, photo, monkeypatch):
+    """While it waits for a capture to finish, the capture's own INSERT must get through: nothing it wrote
+    before may still be in an open transaction."""
+    import sqlite3
+    import threading
+
+    for hour in (9, 10, 11):
+        photo(f"2026-11-05T{hour:02d}:00:00")
+    capture = sqlite3.connect(config.DB_PATH, timeout=1)  # the watcher's connection, with a short patience
+    stored = []
+
+    def wait_idle(busy):
+        assert busy.is_set()
+        capture.execute("INSERT INTO visits (captured_at, image_path, thumb_path, visitor) VALUES (?, 'c.jpg', 'c_t.jpg', 'bird')",
+                        (f"2026-11-06T0{len(stored)}:00:00",))
+        capture.commit()
+        stored.append(1)
+
+    monkeypatch.setattr(retention, "_wait_idle", wait_idle)
+    busy = threading.Event()
+    busy.set()
+    assert retention.measure_new(conn, busy=busy) == 3
+    assert len(stored) == 3 and db.count_visits(conn) == 6
+    capture.close()
+
+
+def hold_lock():
+    """What the other process does: hold the retention lock (its own open file, as flock counts it)."""
+    import fcntl
+
+    f = open(config.DATA_DIR / retention.LOCK_FILE, "a")
+    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return f
+
+
+def test_only_one_process_thins_or_prunes_at_a_time(conn, photo):
+    vid = false_trigger(photo, "2026-11-01T10:00:00")
+    other = hold_lock()
+    try:
+        with pytest.raises(retention.AlreadyRunning, match="already running"):
+            retention.daily(conn, now=NOW)
+        with pytest.raises(retention.AlreadyRunning):
+            retention.enforce(conn)
+        assert retention.prune(conn, limit_bytes=1) == 0
+        assert db.get_visit(conn, vid)["photo_deleted_at"] is None
+        assert retention.tick(conn, datetime(2027, 3, 1, 4, 0)) is None  # the watcher just waits for its next check
+        assert db.get_value(conn, retention.DAILY_KEY) is None
+    finally:
+        other.close()  # closing releases the lock
+    assert retention.tick(conn, datetime(2027, 3, 1, 4, 0)) == "daily"
+    assert retention.prune(conn, limit_bytes=1) == 1
+
+
 # --- the daily run ---
 
 def test_daily_thins_old_unprotected_photos_once_and_spares_the_best(conn, photo):
@@ -344,6 +397,21 @@ def test_no_topic_no_alert_and_it_waits_for_one(conn, photo, quiet):
     db.set_value(conn, "ntfy_topic", "test-topic")
     retention.tick(conn, datetime(2027, 3, 1, 2, 0))
     assert quiet == ["Birdbrain photos are filling up"]
+
+
+def test_photos_deleted_elsewhere_never_bring_a_false_filling_up_alert(conn, photo, quiet):
+    """The cached usage only grows between counts; before warning, the check counts afresh."""
+    db.set_value(conn, "ntfy_topic", "test-topic")
+    vids = [photo(f"2027-02-2{d}T09:00:00") for d in (1, 2, 3)]
+    budget_at(conn, retention.photo_usage(conn) / 0.86)  # the three photos are 86% of it (setting it forgets)
+    cached = retention.photo_usage(conn)
+    for vid in vids[:2]:  # deleted on the visit page, in the web process: the watcher's cache doesn't see it
+        row = db.delete_visit(conn, vid)
+        images.delete_frame(row["image_path"], row["thumb_path"])
+    assert retention.photo_usage(conn) == cached  # the stale figure says 86%, the truth is under a third
+    assert retention.tick(conn, datetime(2027, 3, 1, 2, 0)) is None
+    assert quiet == [] and db.get_value(conn, retention.WARNED) is None
+    assert retention.photo_usage(conn) < cached / 2  # the fresh count stays
 
 
 def test_stored_visits_add_to_the_cached_usage(conn, photo):

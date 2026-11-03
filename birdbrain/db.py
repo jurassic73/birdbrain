@@ -190,21 +190,50 @@ def session(path: Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+@contextmanager
+def writing(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """One short read-then-write transaction that takes the write lock first (BEGIN IMMEDIATE), so two processes
+    that read the same row or setting and write it back can't lose each other's change. Commits at the end, rolls
+    back on an error. Nothing slow belongs inside: a capture waits for the lock (and gives up after 10 s)."""
+    if not conn.in_transaction:  # else a write of this connection is pending: it holds the lock, and commits here
+        conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+
+
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _add_column(conn: sqlite3.Connection, table: str, col: str, kind: str) -> None:
+    """ALTER TABLE ADD COLUMN, unless another process (the watcher and the web app start together after a
+    deploy) added it between our look at the table and now."""
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {kind}")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e):
+            raise
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
-    have = {r["name"] for r in conn.execute("PRAGMA table_info(visits)")}
+    have = _columns(conn, "visits")
     for col, kind in ADDED_COLUMNS.items():
         if col not in have:
-            conn.execute(f"ALTER TABLE visits ADD COLUMN {col} {kind}")
-    have = {r["name"] for r in conn.execute("PRAGMA table_info(embeddings)")}
+            _add_column(conn, "visits", col, kind)
+    have = _columns(conn, "embeddings")
     for col, kind in EMBEDDING_ADDED_COLUMNS.items():
         if col not in have:
-            conn.execute(f"ALTER TABLE embeddings ADD COLUMN {col} {kind}")
+            _add_column(conn, "embeddings", col, kind)
     for table, cols in WEATHER_ADDED_COLUMNS.items():
-        have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        have = _columns(conn, table)
         for col in cols:
             if col not in have:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
+                _add_column(conn, table, col, "REAL")
     # A species cover (yellow star) is always kept; covers picked before that rule get their keep mark here.
     picks = list(species_photos(conn).values())
     if picks:
@@ -1032,11 +1061,11 @@ def mark_reviewed(conn: sqlite3.Connection, visit_id: int) -> None:
 def delete_visit(conn: sqlite3.Connection, visit_id: int) -> sqlite3.Row | None:
     row = get_visit(conn, visit_id)
     if row:
-        conn.execute("DELETE FROM visits WHERE id = ?", (visit_id,))
-        photos = species_photos(conn)
-        if visit_id in photos.values():  # a later visit could get the same id
-            _save_species_photos(conn, {k: v for k, v in photos.items() if v != visit_id})
-        conn.commit()
+        with writing(conn):
+            conn.execute("DELETE FROM visits WHERE id = ?", (visit_id,))
+            photos = species_photos(conn)
+            if visit_id in photos.values():  # a later visit could get the same id
+                _save_species_photos(conn, {k: v for k, v in photos.items() if v != visit_id})
     return row
 
 
@@ -1052,7 +1081,12 @@ def species_photos(conn: sqlite3.Connection) -> dict[str, int]:
 
 
 def _save_species_photos(conn: sqlite3.Connection, photos: dict[str, int]) -> None:
-    set_value(conn, SPECIES_PHOTO, json.dumps(photos, sort_keys=True))
+    """Writes the picks without committing: call it inside writing(), after species_photos() read them there, so a
+    pick made in the other process meanwhile isn't written over."""
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (SPECIES_PHOTO, json.dumps(photos, sort_keys=True)),
+    )
 
 
 def shows_species(conn: sqlite3.Connection, visit_id: int, label: str) -> bool:
@@ -1064,12 +1098,40 @@ def shows_species(conn: sqlite3.Connection, visit_id: int, label: str) -> bool:
 def set_species_photo(conn: sqlite3.Connection, label: str, visit_id: int | None) -> None:
     """Use a visit's photo for its species (None: back to the automatic pick). If the visit is later deleted or
     relabelled, species_summary falls back to the automatic pick on its own."""
-    photos = species_photos(conn)
-    if visit_id is None:
-        photos.pop(label, None)
-    else:
-        photos[label] = int(visit_id)
-    _save_species_photos(conn, photos)
+    with writing(conn):
+        photos = species_photos(conn)
+        if visit_id is None:
+            photos.pop(label, None)
+        else:
+            photos[label] = int(visit_id)
+        _save_species_photos(conn, photos)
+
+
+STAR_STATES = ("unset", "favorite", "cover")
+
+
+def set_star(conn: sqlite3.Connection, label: str, visit_id: int, state: str | None) -> tuple[str, int | None]:
+    """The star on a photo: unset -> favorite (blue, kept) -> species cover (yellow, one per species, also kept)
+    -> unset (no longer kept). `state` sets one outright; None moves one step along. A new cover leaves the old
+    one as a kept favorite. One transaction, so two quick clicks (or the other process) can't lose a cover; and
+    the keep mark only goes when the visit is no cover of any species any more. Returns (the state set, the
+    species' cover now)."""
+    if state is not None and state not in STAR_STATES:
+        raise ValueError(f"unknown star state {state!r}")
+    with writing(conn):
+        photos = species_photos(conn)
+        if state is None:
+            kept = conn.execute("SELECT keep IS 1 FROM visits WHERE id = ?", (visit_id,)).fetchone()
+            now = "cover" if photos.get(label) == visit_id else "favorite" if kept and kept[0] else "unset"
+            state = STAR_STATES[(STAR_STATES.index(now) + 1) % len(STAR_STATES)]
+        if state == "cover":
+            photos[label] = int(visit_id)
+        elif photos.get(label) == visit_id:
+            photos.pop(label)
+        _save_species_photos(conn, photos)
+        keep = state != "unset" or visit_id in photos.values()
+        conn.execute("UPDATE visits SET keep = ? WHERE id = ?", (1 if keep else None, visit_id))
+    return state, photos.get(label)
 
 
 def species_without_favorite(conn: sqlite3.Connection, min_photos: int = 2) -> list[str]:
@@ -1374,7 +1436,21 @@ def empty_objects(conn: sqlite3.Connection, ground: bool, night: bool, limit: in
 
 
 def set_raw_json(conn: sqlite3.Connection, visit_id: int, raw: dict) -> None:
+    """Replace a visit's whole raw_json. Only for a value built just now, in one go: a backfill that read the row,
+    ran a model and writes the dict back wipes what landed in between (set_raw_entry is for that)."""
     conn.execute("UPDATE visits SET raw_json = ? WHERE id = ?", (json.dumps(raw), visit_id))
+    conn.commit()
+
+
+# Parameters: (path, JSON text, visit id). raw_json that isn't a JSON object (NULL, or damaged) starts over.
+SET_RAW_ENTRY = ("UPDATE visits SET raw_json = json_set(CASE WHEN json_valid(raw_json) AND json_type(raw_json) = 'object'"
+                 " THEN raw_json ELSE '{}' END, ?, json(?)) WHERE id = ?")
+
+
+def set_raw_entry(conn: sqlite3.Connection, visit_id: int, path: str, value) -> None:
+    """Write one entry of a visit's raw_json ('$.calls.classifier', say) and leave the rest as it is now, so the
+    watcher's stay end or the owner's check stored since the row was read stays."""
+    conn.execute(SET_RAW_ENTRY, (path, json.dumps(value), visit_id))
     conn.commit()
 
 

@@ -28,14 +28,54 @@ import sys
 import threading
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import alert, config, db, images
 
+try:
+    import fcntl
+except ImportError:  # not Linux: the watcher and the web app don't share a machine there
+    fcntl = None
+
 log = logging.getLogger("birdbrain.retention")
+
+# Thinning and pruning run in the watcher's retention thread, from the web app's Run now button and from the CLI,
+# each in its own process. A thin and a drop of the same photo must never interleave (the photo would be left on
+# disk with its row saying 'thumb'), so one run holds this file lock and the others say "already running".
+LOCK_FILE = "retention.lock"
+
+
+class AlreadyRunning(RuntimeError):
+    """Another process is thinning or pruning photos right now."""
+
+    def __init__(self) -> None:
+        super().__init__("Photo cleanup is already running in another process; try again in a few minutes.")
+
+
+@contextmanager
+def _exclusive() -> Iterator[bool]:
+    """Hold DATA_DIR/retention.lock for the block (flock, never waiting). Yields False when another process, or
+    another thread of this one, has it."""
+    if fcntl is None:
+        yield True
+        return
+    path = config.DATA_DIR / LOCK_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
 
 # The owner's own work on a photo: corrections, notes, circles. These are lessons and training, never deleted.
 KEEPS_LESSON = ("(corrected_visitor IS NOT NULL OR corrected_species IS NOT NULL OR corrected_also IS NOT NULL"
@@ -108,34 +148,53 @@ def usage(conn: sqlite3.Connection) -> dict:
     }
 
 
-def _delete(conn: sqlite3.Connection, rows: list) -> int:
-    """Delete these false triggers' photo files; keep their rows and embeddings for training."""
+def _delete(conn: sqlite3.Connection, rows: list) -> list:
+    """Delete these false triggers' photo files; keep their rows and embeddings for training. Each row is checked
+    again as it's marked, under the write lock: one the owner kept, corrected, wrote on or picked as a species
+    cover since the rows were chosen (the size scan between is slow) stays, and so does one the other process
+    already deleted. Returns the rows whose photos went."""
+    if not rows:
+        return []
     now = datetime.now().isoformat(timespec="seconds")
-    conn.executemany("UPDATE visits SET photo_deleted_at = ? WHERE id = ?", [(now, r["id"]) for r in rows])
-    conn.commit()
-    for r in rows:
+    gone = []
+    with db.writing(conn):
+        covers = set(db.species_photos(conn).values())
+        for r in rows:
+            if r["id"] in covers:
+                continue
+            cur = conn.execute(f"UPDATE visits SET photo_deleted_at = ? WHERE id = ? AND NOT {KEPT} AND {db.HAS_PHOTO}",
+                               (now, r["id"]))
+            if cur.rowcount == 1:
+                gone.append(r)
+    if gone:
+        _note_freed(sum(images.frames_bytes([(r["image_path"], r["thumb_path"]) for r in gone])))
+    for r in gone:
         images.delete_frame(r["image_path"], r["thumb_path"])
-    return len(rows)
+    return gone
 
 
 def prune(conn: sqlite3.Connection, limit_bytes: int | None = None) -> int:
     """Delete photos until the rest fit under the limit: ones the owner confirmed empty first, then the oldest.
-    Returns how many went."""
+    Returns how many went (0 when another process is thinning or pruning right now: it prunes too)."""
     limit = int(limit_mb(conn) * 1_000_000) if limit_bytes is None else limit_bytes
     if limit <= 0:
         return 0  # 0 means no limit
-    rows = _rows(conn, lessons=False)
-    sizes = images.frames_bytes([(r["image_path"], r["thumb_path"]) for r in rows])
-    total, cut = sum(sizes), 0
-    while total > limit and cut < len(rows):
-        total -= sizes[cut]
-        cut += 1
-    return _delete(conn, rows[:cut])
+    with _exclusive() as mine:
+        if not mine:
+            log.info("false-trigger prune skipped: %s", AlreadyRunning())
+            return 0
+        rows = _rows(conn, lessons=False)
+        sizes = images.frames_bytes([(r["image_path"], r["thumb_path"]) for r in rows])
+        total, cut = sum(sizes), 0
+        while total > limit and cut < len(rows):
+            total -= sizes[cut]
+            cut += 1
+        return len(_delete(conn, rows[:cut]))
 
 
 def clear(conn: sqlite3.Connection) -> int:
     """The Delete button: photos the owner confirmed empty. Unchecked ones stay so they can still be looked at."""
-    return _delete(conn, _rows(conn, lessons=False, confirmed_only=True))
+    return len(_delete(conn, _rows(conn, lessons=False, confirmed_only=True)))
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -377,19 +436,19 @@ def measure_new(conn: sqlite3.Connection, busy: threading.Event | None = None,
         f"""SELECT id, image_path, raw_json FROM visits WHERE {db.REAL} AND {db.HAS_PHOTO}
             AND photo_level IS NULL AND photo_sharpness IS NULL ORDER BY id""").fetchall()
     progress = Progress(len(rows), "measured", say) if say and len(rows) > 50 else None
-    for i, r in enumerate(rows, 1):
+    for r in rows:
         _wait_idle(busy)
         try:
             s = measure_sharpness(r["image_path"], r["raw_json"])
         except Exception:
             log.exception("measuring sharpness of visit %d failed", r["id"])
             s = None
+        # One short write each (cheap in WAL mode): the lock is never held while the next photo is read or while
+        # waiting for a capture, which would otherwise find the database locked and lose its visit.
         conn.execute("UPDATE visits SET photo_sharpness = ? WHERE id = ?", (-1.0 if s is None else s, r["id"]))
-        if i % 50 == 0:
-            conn.commit()
+        conn.commit()
         if progress:
             progress.step(failed=s is None)
-    conn.commit()
     return len(rows)
 
 
@@ -443,6 +502,13 @@ def note_stored(image_rel: str, thumb_rel: str) -> None:
         if _usage["bytes"] is not None:
             _usage["bytes"] += size
     _wake.set()
+
+
+def _note_freed(size: int) -> None:
+    """Photo files were just deleted: take them off the cached usage, so it doesn't drift up between counts."""
+    with _lock:
+        if _usage["bytes"] is not None:
+            _usage["bytes"] = max(0, _usage["bytes"] - size)
 
 
 def _tree_bytes(path: Path) -> int:
@@ -737,10 +803,10 @@ def _run(conn: sqlite3.Connection, *, apply: bool, age: bool = True, now: dateti
     def thin(p: Photo, step: dict, progress: Progress | None) -> int:
         if not apply:
             after, failed = _estimate_thin(p, edge), False
-        elif not _still_unprotected(conn, p.id):
-            return 0
         else:
-            _wait_idle(busy)
+            _wait_idle(busy)  # before the check, so what it saw is still true when the photo changes
+            if not _still_unprotected(conn, p.id):
+                return 0
             try:
                 _, after = images.thin_photo(p.image_path, edge)
                 conn.execute("UPDATE visits SET photo_level = 'thinned', photo_thinned_at = ? WHERE id = ?",
@@ -771,18 +837,19 @@ def _run(conn: sqlite3.Connection, *, apply: bool, age: bool = True, now: dateti
     need = _need(used, free, opts)
     # 2. False triggers: the owner's confirmed-empty ones first, then the oldest (as prune does).
     if need > 0:
-        chosen = []
+        chosen, planned = [], need
         for r in _rows(conn, lessons=False):
-            if need <= 0:
+            if planned <= 0:
                 break
+            chosen.append(r)
+            planned -= photos[r["id"]].total if r["id"] in photos else 0
+        # Applied, only the ones still unprotected go (_delete checks again); the rest count as not freed.
+        for r in _delete(conn, chosen) if apply and chosen else chosen:
             p = photos.get(r["id"])
             size = p.total if p else 0
-            chosen.append(r)
             need, used, free = need - size, used - size, free + size
             steps["false_triggers"]["count"] += 1
             steps["false_triggers"]["bytes"] += size
-        if apply and chosen:
-            _delete(conn, chosen)
     # 3. Thin more, oldest first, each species' best of the day last.
     if need > 0 and thinning:
         more = sorted((p for p in real if p.level is None), key=lambda p: (p.id in best, p.captured_at, p.id))
@@ -852,17 +919,25 @@ def plan(conn: sqlite3.Connection, now: datetime | None = None, free: int | None
 
 def enforce(conn: sqlite3.Connection, busy: threading.Event | None = None,
             say: Callable[[str], None] | None = None) -> dict:
-    """Bring the photos under the budget and the disk above its floor (no age rule). Returns what it did."""
-    return _run(conn, apply=True, age=False, busy=busy, say=say)
+    """Bring the photos under the budget and the disk above its floor (no age rule). Returns what it did.
+    Raises AlreadyRunning when another process is at it."""
+    with _exclusive() as mine:
+        if not mine:
+            raise AlreadyRunning()
+        return _run(conn, apply=True, age=False, busy=busy, say=say)
 
 
 def daily(conn: sqlite3.Connection, now: datetime | None = None, busy: threading.Event | None = None,
           say: Callable[[str], None] | None = None) -> dict:
-    """The once-a-day run: measure new photos' sharpness, thin by age, then enforce the budget."""
+    """The once-a-day run: measure new photos' sharpness, thin by age, then enforce the budget.
+    Raises AlreadyRunning when another process is at it (the watcher's own run, or the web app's Run now)."""
     now = now or datetime.now()
-    measure_new(conn, busy, say)
-    result = _run(conn, apply=True, now=now, busy=busy, say=say)
-    db.set_value(conn, DAILY_KEY, now.date().isoformat())
+    with _exclusive() as mine:
+        if not mine:
+            raise AlreadyRunning()
+        measure_new(conn, busy, say)
+        result = _run(conn, apply=True, now=now, busy=busy, say=say)
+        db.set_value(conn, DAILY_KEY, now.date().isoformat())
     return result
 
 
@@ -934,21 +1009,28 @@ def daily_due(conn: sqlite3.Connection, now: datetime | None = None) -> bool:
 def tick(conn: sqlite3.Connection, now: datetime | None = None, busy: threading.Event | None = None) -> str | None:
     """One check: the daily run when it's due, else free space only if the cached usage or the disk says so.
     Returns "daily", "enforce" or None."""
-    if daily_due(conn, now):
-        r = daily(conn, now, busy, log.info)
-        log.info("photo budget: daily run freed %.0f MB (%s); photos %.0f MB of %.0f MB",
-                 r["freed_bytes"] / 1e6, ", ".join(f"{s['key']} {s['count']}" for s in r["steps"] if s["count"]) or
-                 "nothing to do", r["used_after"] / 1e6, r["budget_bytes"] / 1e6)
-        return "daily"
-    opts = options(conn)
-    used = photo_usage(conn)
-    if _need(used, disk_free(), opts) > 0:
-        r = enforce(conn, busy, log.info)
-        log.info("photo budget: freed %.0f MB; photos %.0f MB of %.0f MB%s", r["freed_bytes"] / 1e6,
-                 r["used_after"] / 1e6, r["budget_bytes"] / 1e6, " (still over: only protected photos left)"
-                 if r["still_over"] else "")
-        return "enforce"
-    _alerts(conn, {"options": opts, "used_after": used, "budget_bytes": int(opts["budget_mb"] * 1e6),
+    try:
+        if daily_due(conn, now):
+            r = daily(conn, now, busy, log.info)
+            log.info("photo budget: daily run freed %.0f MB (%s); photos %.0f MB of %.0f MB",
+                     r["freed_bytes"] / 1e6, ", ".join(f"{s['key']} {s['count']}" for s in r["steps"] if s["count"])
+                     or "nothing to do", r["used_after"] / 1e6, r["budget_bytes"] / 1e6)
+            return "daily"
+        opts = options(conn)
+        used = photo_usage(conn)
+        if _need(used, disk_free(), opts) > 0:
+            r = enforce(conn, busy, log.info)
+            log.info("photo budget: freed %.0f MB; photos %.0f MB of %.0f MB%s", r["freed_bytes"] / 1e6,
+                     r["used_after"] / 1e6, r["budget_bytes"] / 1e6, " (still over: only protected photos left)"
+                     if r["still_over"] else "")
+            return "enforce"
+    except AlreadyRunning as e:
+        log.info("photo budget check skipped: %s", e)  # the web app's Run now; the next check carries on
+        return None
+    budget = int(opts["budget_mb"] * 1e6)
+    if budget and opts["warn_pct"] > 0 and used >= budget * opts["warn_pct"] / 100 and not db.get_value(conn, WARNED):
+        used = photo_usage(conn, max_age=0)  # a fresh count before warning: photos deleted elsewhere left it high
+    _alerts(conn, {"options": opts, "used_after": used, "budget_bytes": budget,
                    "still_over": False, "free_after": disk_free(), "floor_bytes": int(opts["disk_floor_mb"] * 1e6)})
     return None
 
@@ -999,7 +1081,10 @@ def main() -> None:
             r = plan(conn)
             print("dry run: nothing is changed")
         else:
-            r = daily(conn, say=print)
+            try:
+                r = daily(conn, say=print)
+            except AlreadyRunning as e:
+                sys.exit(str(e))
         o = r["options"]
         print(f"budget {mb(r['budget_bytes']) if r['budget_bytes'] else 'none'}, photos {mb(r['used_before'])}, "
               f"disk free {mb(r['free_before'])} (floor {mb(r['floor_bytes'])}); full size for {o['full_days']} days, "
