@@ -23,7 +23,7 @@
     if (!img || busy || document.hidden || (card && !card.open)) return;
     busy = true;
     try {
-      const r = await fetch("/live.jpg?t=" + Date.now(), { cache: "no-store" });
+      const r = await fetch("/live.jpg?t=" + Date.now(), { cache: "no-store", signal: AbortSignal.timeout(10000) });
       if (!r.ok) throw new Error("down");
       const takenAt = Date.now() / 1000 - parseFloat(r.headers.get("X-Frame-Age") || "0");
       const url = URL.createObjectURL(await r.blob());

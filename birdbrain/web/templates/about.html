@@ -518,9 +518,9 @@
         {{ badge('Unusual this time of year', 'out-of-season') }}.</p>
       <h3>Phone alerts</h3>
       <ul class="alert-list">
-        <li>{{ badge('on', 'conf-high') if alerts.new_species else badge('off', 'muted') }} A species seen here for the first time</li>
-        <li>{{ badge('on', 'conf-high') if alerts.mammals else badge('off', 'muted') }} Any raccoon or possum</li>
-        <li>{{ badge('on', 'conf-high') if alerts.unusual else badge('off', 'muted') }} Early, late or unusual for the season</li>
+        <li>{{ badge('on', 'conf-high', key='alert on') if alerts.new_species else badge('off', 'muted', key='alert off') }} A species seen here for the first time</li>
+        <li>{{ badge('on', 'conf-high', key='alert on') if alerts.mammals else badge('off', 'muted', key='alert off') }} Any raccoon or possum</li>
+        <li>{{ badge('on', 'conf-high', key='alert on') if alerts.unusual else badge('off', 'muted', key='alert off') }} Early, late or unusual for the season</li>
       </ul>
       <p class="muted small">{% if alerts.quiet_start and alerts.quiet_end %}Quiet from {{ alerts.quiet_start }} to {{ alerts.quiet_end }}. {% endif %}{% if not alerts.topic %}Alerts aren't set up yet. {% endif %}Common repeat visitors never buzz your phone. Change these in <a href="/settings#alerts">Settings</a>.</p>
     </div>

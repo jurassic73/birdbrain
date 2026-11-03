@@ -38,13 +38,12 @@ def test_set_keep_toggles(conn, add_visit):
     assert not db.get_visit(conn, vid)["keep"]
 
 
-def test_keep_route_returns_the_updated_button(client, conn, add_visit):
+def test_keep_route_sets_and_clears_the_mark(client, conn, add_visit):
     vid = add_visit()
-    r = client.post(f"/visit/{vid}/keep", data={"on": 1})
-    assert r.status_code == 200 and 'aria-pressed="true"' in r.text and '"on": 0' in r.text
+    assert client.post(f"/visit/{vid}/keep", data={"on": 1}).status_code == 204
     assert db.get_visit(conn, vid)["keep"] == 1
-    r = client.post(f"/visit/{vid}/keep", data={"on": 0})
-    assert 'aria-pressed="false"' in r.text and not db.get_visit(conn, vid)["keep"]
+    assert client.post(f"/visit/{vid}/keep", data={"on": 0}).status_code == 204
+    assert not db.get_visit(conn, vid)["keep"]
     assert client.post("/visit/9999/keep", data={"on": 1}).status_code == 404
 
 

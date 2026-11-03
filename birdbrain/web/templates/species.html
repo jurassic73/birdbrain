@@ -3,30 +3,28 @@
 {% block title %}{{ sp.label }} | Birdbrain{% endblock %}
 {% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
 {% block content %}
-{% if not (info or has_card(sp.label)) %}
-<div class="page-head">
-  <h1>{{ sp.label }}</h1>
-</div>
-{% endif %}
-{% if not has_card(sp.label) %}
-<div class="facts">
-  <div><span class="big">{{ sp.visits }}</span> visits</div>
-  <div>First seen <strong>{{ sp.first_seen | nice_date }}</strong></div>
-  <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong></div>
-  <div>{{ confirm_badge(sp.label) }}</div>
+{# Title, facts and charts are the fallback when there is no card; a card that loads (htmx) replaces them, and one that comes back empty leaves them. #}
+{% if not info %}
+<div id="sp-fallback">
+  <div class="page-head">
+    <h1>{{ sp.label }}</h1>
+  </div>
+  <div class="facts">
+    <div><span class="big">{{ sp.visits }}</span> visits</div>
+    <div>First seen <strong>{{ sp.first_seen | nice_date }}</strong></div>
+    <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong></div>
+    <div>{{ confirm_badge(sp.label) }}</div>
+  </div>
+  <div class="charts">
+    <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
+    <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
+  </div>
 </div>
 {% endif %}
 {% if info %}
 <div class="sp-inline">{% set fold = true %}{% include "_species_card.html" %}</div>
 {% elif has_card(sp.label) %}
 <div class="sp-inline" hx-get="/species-info/{{ sp.label | urlencode }}?fold=1" hx-trigger="load" hx-swap="innerHTML">
-  <p class="muted">Loading species info…</p>
-</div>
-{% endif %}
-{% if not (info or has_card(sp.label)) %}
-<div class="charts">
-  <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
-  <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
 </div>
 {% endif %}
 <div class="grid-tools">
@@ -40,6 +38,8 @@
 <script>
   // The charts sit in the card's fold when there is a card, which may arrive over htmx after the page.
   function drawSpeciesCharts() {
+    // A card that arrived has its own title, facts and charts: drop the fallback ones (and their canvases).
+    if (document.querySelector(".sp-inline .sp-card")) document.getElementById("sp-fallback")?.remove();
     const el = document.getElementById("daily");
     if (!el || el.dataset.drawn) return;
     el.dataset.drawn = "1";

@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Review | Birdbrain{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Review queue <span class="muted">{{ visits | length }}</span></h1></div>
-<p class="muted">Low-confidence identifications, oldest first. Open one to confirm or correct it.</p>
+<div class="page-head"><h1>Review queue <span class="muted">{{ total }}</span></h1></div>
+<p class="muted">Low-confidence identifications, oldest first. Open one to confirm or correct it.{% if total > visits | length %} Showing the oldest {{ visits | length }} of {{ total }}; the rest follow as you review these.{% endif %}</p>
 {% if visits %}
 <div class="grid">
   {% include "_cards.html" %}

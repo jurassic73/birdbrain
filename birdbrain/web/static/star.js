@@ -23,13 +23,6 @@
     star.setAttribute("aria-pressed", st === "unset" ? "false" : "true");
     star.dataset.tip = star.dataset["tip" + st[0].toUpperCase() + st.slice(1)];
     star.setAttribute("aria-label", star.dataset.tip);
-    // the bookmark on the same card follows keep
-    const mark = star.closest(BOX).querySelector(".keep-mark");
-    if (mark) {
-      const on = star.dataset.keep === "1";
-      mark.setAttribute("aria-pressed", on ? "true" : "false");
-      mark.setAttribute("hx-vals", JSON.stringify({on: on ? 0 : 1}));
-    }
   }
 
   function coverOf(species) {
@@ -192,19 +185,6 @@
       save(star, "unset");
     }
   }, true);
-
-  // The bookmark was clicked: its old copy still holds the value it sent, so the star on that card follows it.
-  document.addEventListener("htmx:afterRequest", (e) => {
-    const btn = e.detail.elt;
-    if (!btn.classList || !btn.classList.contains("keep-mark") || !e.detail.successful) return;
-    const id = (btn.getAttribute("hx-post").match(/visit\/(\d+)/) || [])[1];
-    const keep = JSON.parse(btn.getAttribute("hx-vals")).on ? "1" : "0";
-    release(id);
-    starsOf(id).forEach((star) => {
-      star.dataset.keep = keep;
-      paint(star, coverOf(star.dataset.starSpecies));
-    });
-  });
 
   // Cards slid in by the home page aren't known to htmx yet.
   document.addEventListener("birdbrain:cards", (e) => { if (window.htmx) htmx.process(e.target); });

@@ -21,6 +21,8 @@ from .. import alert, camera, circle_check, clock, config, db, identify, images,
 
 HERE = Path(__file__).parent
 PAGE_SIZE = 24
+REVIEW_SHOWN = 200  # the review queue is oldest first and short; it shows this many and says so
+SPECIES_PAGE = 48  # a species page loads this many at a time (a common bird has thousands)
 FT_PAGE = 48  # false triggers come in pages too, so a rainy week isn't one 20,000 px scroll on a phone
 
 
@@ -320,7 +322,7 @@ def login(request: Request, password: str = Form(""), next: str = Form("/")):
         return page(request, "login.html", 401, next=safe_next(next), error="That password isn't right.")
     resp = RedirectResponse(safe_next(next), status_code=303)
     resp.set_cookie(auth.COOKIE, auth.make_cookie(), max_age=auth.MAX_AGE, httponly=True, samesite="lax",
-                    secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https")
+                    secure=https(request))
     return resp
 
 
@@ -390,7 +392,7 @@ def home(request: Request, conn=Depends(get_conn)):
         presence_mode=presence.mode(conn),
         activity=db.activity(conn),
         species_names=db.species_names(conn),
-        next_url=f"/visits/more?{query_string(filters, offset=PAGE_SIZE)}" if len(visits) == PAGE_SIZE else None,
+        next_url=more_url("/visits/more", visits, PAGE_SIZE, filters),
         split_day=None if active else clock.today().isoformat(),
         live_refresh=config.LIVE_REFRESH,
         live_stale=LIVE_STALE,
@@ -418,37 +420,55 @@ def visits_archive(request: Request, conn=Depends(get_conn)):
         filtered=bool(active),
         total=db.count_visits(conn, **filters),
         species_names=db.species_names(conn),
-        next_url=f"/visits/archive-more?{query_string(filters, offset=PAGE_SIZE)}" if len(visits) == PAGE_SIZE else None,
+        next_url=more_url("/visits/archive-more", visits, PAGE_SIZE, filters),
     )
+
+
+def keyset(visit) -> str:
+    """The `before` cursor for the page after this card: its time and id, which fix its place in the newest-first order."""
+    return f"{visit['captured_at']},{visit['id']}"
+
+
+def visits_before(conn, before: str = "", *, limit: int, **filters) -> list:
+    """Visits newest first, only those older than the `before` cursor (the last card already shown, see keyset()).
+    Unlike an offset this can't skip or repeat a card when the list changes between pages, e.g. when a false trigger
+    is confirmed and leaves it. A bad cursor is the first page."""
+    where, args = db._where(**filters)
+    ts, _, vid = before.rpartition(",")
+    if ts and vid.isdigit():
+        where += " AND (captured_at < ? OR (captured_at = ? AND id < ?))"
+        args = [*args, ts, ts, int(vid)]
+    return conn.execute(
+        f"SELECT *, {db.LABEL} AS label FROM visits WHERE {where} ORDER BY captured_at DESC, id DESC LIMIT ?",
+        (*args, limit)).fetchall()
+
+
+def more_url(path: str, visits: list, limit: int, filters: dict | None = None, **extra) -> str | None:
+    """The Load more link after a full page of `visits`, or None when that was the last page."""
+    if len(visits) < limit:
+        return None
+    return f"{path}?{query_string(filters or {}, before=keyset(visits[-1]), **extra)}"
 
 
 @app.get("/visits/archive-more", response_class=HTMLResponse)
-def visits_archive_more(request: Request, offset: int = 0, conn=Depends(get_conn)):
+def visits_archive_more(request: Request, before: str = "", conn=Depends(get_conn)):
     filters = filters_from(request)
-    visits = db.list_visits(conn, **filters, limit=PAGE_SIZE, offset=offset)
-    more = f"/visits/archive-more?{query_string(filters, offset=offset + PAGE_SIZE)}" if len(visits) == PAGE_SIZE else None
-    return page(request, "_cards.html", visits=visits, next_url=more)
+    visits = visits_before(conn, before, limit=PAGE_SIZE, **filters)
+    return page(request, "_cards.html", visits=visits,
+                next_url=more_url("/visits/archive-more", visits, PAGE_SIZE, filters))
 
 
 @app.get("/visits/more", response_class=HTMLResponse)
-def more_visits(request: Request, offset: int = 0, conn=Depends(get_conn)):
+def more_visits(request: Request, before: str = "", conn=Depends(get_conn)):
     filters = filters_from(request)
-    visits = db.list_visits(conn, **filters, limit=PAGE_SIZE, offset=offset)
-    next_offset = offset + PAGE_SIZE
-    # Unfiltered, the cards are split into Today and Earlier; the card just before this page says which side it was on.
+    visits = visits_before(conn, before, limit=PAGE_SIZE, **filters)
+    # Unfiltered, the cards are split into Today and Earlier; the card just before this page (the cursor's) says which side it was on.
     split_day = prev_day = None
-    if not any(filters.values()) and offset > 0:
+    if not any(filters.values()) and before:
         split_day = clock.today().isoformat()
-        prev = db.list_visits(conn, limit=1, offset=offset - 1)
-        prev_day = prev[0]["captured_at"][:10] if prev else None
-    return page(
-        request,
-        "_cards.html",
-        visits=visits,
-        split_day=split_day,
-        prev_day=prev_day,
-        next_url=f"/visits/more?{query_string(filters, offset=next_offset)}" if len(visits) == PAGE_SIZE else None,
-    )
+        prev_day = before[:10]
+    return page(request, "_cards.html", visits=visits, split_day=split_day, prev_day=prev_day,
+                next_url=more_url("/visits/more", visits, PAGE_SIZE, filters))
 
 
 @app.get("/visit/{visit_id}", response_class=HTMLResponse)
@@ -842,12 +862,12 @@ def unconfirm(visit_id: int, conn=Depends(get_conn)):
 
 @app.post("/visit/{visit_id}/keep")
 def keep(request: Request, visit_id: int, on: int = Form(...), conn=Depends(get_conn)):
-    """The blue keeper mark: answers with the updated button (static/star.js calls it for a visit with no species)."""
+    """Favorite on or off for a visit with no species (static/star.js calls it; the star repaints itself)."""
     visit = db.get_visit(conn, visit_id)
     if visit is None:
         raise HTTPException(404)
     db.set_keep(conn, visit_id, bool(on))
-    return page(request, "_keeper_btn.html", v=db.get_visit(conn, visit_id))
+    return Response(status_code=204)
 
 
 @app.post("/visit/{visit_id}/public")
@@ -907,11 +927,13 @@ def species_page(request: Request, name: str, conn=Depends(get_conn)):
     row = db.species_row(conn, name)
     if not row:
         raise HTTPException(404)
+    visits = db.list_visits(conn, species=name, limit=SPECIES_PAGE)
     return page(
         request,
         "species.html",
         sp=row,
-        visits=db.list_visits(conn, species=name, limit=200),
+        visits=visits,
+        next_url=more_url(f"/species/{quote(name)}/more", visits, SPECIES_PAGE),
         daily=db.daily_counts(conn, days=60, species=name),
         hourly=db.hourly_counts(conn, species=name),
         # A cached info card renders with the page; an uncached one still loads afterward over htmx.
@@ -925,11 +947,19 @@ def species_page(request: Request, name: str, conn=Depends(get_conn)):
     )
 
 
+@app.get("/species/{name}/more", response_class=HTMLResponse)
+def species_more(request: Request, name: str, before: str = "", conn=Depends(get_conn)):
+    """The next page of a species' grid; its cards carry the same star and ?species= scope as the page's."""
+    visits = visits_before(conn, before, limit=SPECIES_PAGE, species=name)
+    return page(request, "_cards.html", visits=visits, fav_label=name, scope_species=name,
+                next_url=more_url(f"/species/{quote(name)}/more", visits, SPECIES_PAGE))
+
+
 STAR_STATES = db.STAR_STATES
 
 
 @app.post("/species/{name}/photo")
-def species_photo(name: str, visit_id: int = Form(...), state: str = Form(""), conn=Depends(get_conn)):
+def set_species_cover(name: str, visit_id: int = Form(...), state: str = Form(""), conn=Depends(get_conn)):
     """The star on a photo: unset -> favorite (blue, kept) -> species cover (yellow, one per species, also kept)
     -> unset (no longer kept). `state` sets one outright (static/star.js always sends it: it holds yellow for a
     moment and may ask before replacing a cover); without it the click moves one step along. A new cover leaves
@@ -1153,7 +1183,8 @@ def about(request: Request, conn=Depends(get_conn)):
 
 @app.get("/review", response_class=HTMLResponse)
 def review(request: Request, conn=Depends(get_conn)):
-    return page(request, "review.html", visits=db.list_visits(conn, review=True, limit=200))
+    return page(request, "review.html", visits=db.list_visits(conn, review=True, limit=REVIEW_SHOWN),
+                total=db.count_visits(conn, review=True), shown=REVIEW_SHOWN)
 
 
 @app.get("/notes", response_class=HTMLResponse)
@@ -1396,7 +1427,7 @@ def false_triggers(request: Request, cleared: int | None = None, confirmed: int 
         "false_triggers.html",
         visits=visits,
         show_all=show_all,
-        next_url=_ft_more(FT_PAGE, show_all) if len(visits) == FT_PAGE else None,
+        next_url=_ft_more(visits, show_all),
         hourly=db.hourly_counts(conn, false_triggers=True),
         total=db.count_visits(conn, false_triggers=True, has_photo=True),
         storage=retention.usage(conn),
@@ -1425,17 +1456,17 @@ def false_trigger_cards(request: Request, ids: str = "", after: int | None = Non
     return resp
 
 
-def _ft_more(offset: int, show_all: bool) -> str:
-    return f"/false-triggers/more?offset={offset}" + ("&show=all" if show_all else "")
+def _ft_more(visits: list, show_all: bool) -> str | None:
+    return more_url("/false-triggers/more", visits, FT_PAGE, show=("all" if show_all else ""))
 
 
 @app.get("/false-triggers/more", response_class=HTMLResponse)
-def more_false_triggers(request: Request, offset: int = 0, show: str = "", conn=Depends(get_conn)):
+def more_false_triggers(request: Request, before: str = "", show: str = "", conn=Depends(get_conn)):
+    """The next page of the list, after the card with the `before` cursor. Confirming photos while paging removes
+    them from the list, so a position count would skip unseen ones; the cursor does not."""
     show_all = show == "all"
-    visits = db.list_visits(conn, false_triggers=True, has_photo=True, unchecked=not show_all, limit=FT_PAGE,
-                            offset=offset)
-    next_url = _ft_more(offset + FT_PAGE, show_all) if len(visits) == FT_PAGE else None
-    return page(request, "_cards.html", visits=visits, next_url=next_url, ft_cards=True)
+    visits = visits_before(conn, before, limit=FT_PAGE, false_triggers=True, has_photo=True, unchecked=not show_all)
+    return page(request, "_cards.html", visits=visits, next_url=_ft_more(visits, show_all), ft_cards=True)
 
 
 @app.post("/false-triggers/clean")

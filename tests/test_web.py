@@ -122,12 +122,20 @@ def test_multiple_chip_follows_mammals_and_filters(client, add_visit):
     assert "2 visits matching" in client.get("/visits?kind=multiple").text
 
 
+def more_link(html: str) -> str:
+    """The Load more button's URL in a page or fragment."""
+    import html as htmllib
+    m = re.search(r'class="load-more" hx-get="([^"]+)"', html)
+    assert m, "no Load more button"
+    return htmllib.unescape(m.group(1))
+
+
 def test_load_more_pages_in_24s(client, add_visit):
     for _ in range(30):
         add_visit()
     first = client.get("/").text
-    assert first.count('class="card"') == 24 and "/visits/more?offset=24" in first
-    more = client.get("/visits/more?offset=24").text
+    assert first.count('class="card"') == 24 and "/visits/more?before=" in first
+    more = client.get(more_link(first)).text
     assert more.count('class="card"') == 6 and "load-more" not in more
 
 
@@ -139,10 +147,10 @@ def test_home_splits_cards_into_today_and_earlier(client, add_visit):
         add_visit()
     first = client.get("/").text
     assert first.count("grid-break grid-today") == 1 and "grid-break grid-earlier" not in first  # 24 cards, all from today
-    more = client.get("/visits/more?offset=24").text
+    more = client.get(more_link(first)).text
     assert "grid-break grid-today" not in more and more.count("grid-break grid-earlier") == 1
     assert more.index("grid-break grid-earlier") > more.index('class="card"')  # 2 more today first, then Earlier
-    assert "grid-break grid-earlier" not in client.get("/visits/more?offset=48").text
+    assert "load-more" not in more
     assert "grid-break grid-today" not in client.get("/?kind=bird").text  # filters show one plain grid
 
 
@@ -785,8 +793,8 @@ def test_false_triggers_come_in_pages(client, add_visit, monkeypatch):
     for _ in range(3):
         add_visit(visitor="none", species=None)
     html = client.get("/false-triggers").text
-    assert html.count('class="card"') == 2 and "/false-triggers/more?offset=2" in html
-    more = client.get("/false-triggers/more?offset=2").text
+    assert html.count('class="card"') == 2 and "/false-triggers/more?before=" in html
+    more = client.get(more_link(html)).text
     assert more.count('class="card"') == 1 and "?ft=1" in more and "load-more" not in more
 
 
@@ -947,7 +955,7 @@ def test_only_the_latest_visitor_and_live_view_carry_a_zoom_button(client, add_v
     assert hero.index("hero-kicker") < hero.index("hero-goto") < hero.index("hero-name")
     assert 'id="home-viewer-reset"' in html and "Reset view" in html  # zoom viewer
     # Load more cards and the other pages have none
-    more = client.get("/visits/more?offset=1").text
+    more = client.get(more_link(html)).text
     assert f'href="/visit/{first}"' in more and "zoom-btn" not in more
     assert "zoom-btn" not in client.get("/visits").text
     assert "zoom-btn" not in client.get("/species/Bushtit").text
@@ -987,8 +995,8 @@ def test_visits_archive_load_more_and_filters(client, add_visit):
         add_visit(species="Bushtit")
     add_visit(visitor="raccoon", species=None)
     first = client.get("/visits").text
-    assert first.count('class="card"') == 24 and "/visits/archive-more?offset=24" in first and "31 visits" in first
-    more = client.get("/visits/archive-more?offset=24").text
+    assert first.count('class="card"') == 24 and "/visits/archive-more?before=" in first and "31 visits" in first
+    more = client.get(more_link(first)).text
     assert more.count('class="card"') == 7 and "load-more" not in more and "grid-break" not in more
     assert "1 visit matching" in client.get("/visits?kind=mammal").text
 
@@ -1106,3 +1114,77 @@ def test_visit_page_keeps_visits_nav_highlighted(client, add_visit):
     page = client.get(f"/visit/{vid}").text
     assert re.search(r'<a href="/visits" aria-current="page">Visits</a>', page)
     assert not re.search(r'<a href="/" aria-current="page">Latest</a>', page)
+
+
+def card_ids(html: str) -> list[int]:
+    return [int(i) for i in re.findall(r'class="card" href="/visit/(\d+)', html)]
+
+
+def test_false_trigger_paging_survives_confirming_between_pages(client, add_visit, conn, monkeypatch):
+    """Confirmed photos leave the list; the next page must still start right after the last card seen."""
+    monkeypatch.setattr(webapp, "FT_PAGE", 3)
+    ids = [add_visit(visitor="none", species=None, captured_at=f"2026-11-01T10:00:{i:02d}") for i in range(9)]
+    newest_first = ids[::-1]
+    first = client.get("/false-triggers").text
+    assert card_ids(first) == newest_first[:3]
+    db.confirm_visits(conn, newest_first[:3])  # the owner confirms the page just seen
+    second = client.get(more_link(first)).text
+    assert card_ids(second) == newest_first[3:6]
+    db.confirm_visits(conn, newest_first[3:5])  # and two of the next page, which leave the list as well
+    third = client.get(more_link(second)).text
+    assert card_ids(third) == newest_first[6:9]
+    assert card_ids(client.get(more_link(third)).text) == []  # a full page can be the last: the next one is just empty
+    shown = client.get("/false-triggers?show=all").text
+    assert "show=all" in more_link(shown) and card_ids(client.get(more_link(shown)).text) == newest_first[3:6]
+
+
+def test_visits_paging_ties_and_bad_cursor(client, add_visit, monkeypatch):
+    monkeypatch.setattr(webapp, "PAGE_SIZE", 2)
+    ids = [add_visit(captured_at="2026-11-01T10:00:00") for _ in range(5)]  # the same second: the id breaks ties
+    first = client.get("/visits").text
+    second = client.get(more_link(first)).text
+    third = client.get(more_link(second)).text
+    assert card_ids(first) + card_ids(second) + card_ids(third) == ids[::-1] and "load-more" not in third
+    assert card_ids(client.get("/visits/archive-more?before=junk").text) == ids[::-1][:2]
+
+
+def test_species_page_without_a_card_has_title_facts_and_charts(client, add_visit):
+    add_visit(species="Bushtit")
+    html = client.get("/species/Bushtit").text
+    assert "<h1>Bushtit</h1>" in html and 'class="facts"' in html and "First seen" in html
+    assert 'id="daily"' in html and 'id="hourly"' in html
+
+
+def test_species_page_while_the_card_loads_keeps_the_fallback(client, add_visit):
+    add_visit(species="Bushtit")  # a species with a card (species_info.has_card), not cached yet
+    html = client.get("/species/Bushtit").text
+    # The card arrives over htmx and replaces these; if it comes back empty they stay.
+    assert 'hx-get="/species-info/Bushtit?fold=1"' in html
+    assert 'id="sp-fallback"' in html and "<h1>Bushtit</h1>" in html and 'id="daily"' in html
+
+
+def test_species_page_pages_past_200_visits(client, add_visit, monkeypatch):
+    monkeypatch.setattr(webapp, "SPECIES_PAGE", 4)
+    ids = [add_visit(species="Bushtit", captured_at=f"2026-11-01T10:00:{i:02d}") for i in range(10)]
+    add_visit(species="Song Sparrow")
+    newest_first = ids[::-1]
+    first = client.get("/species/Bushtit").text
+    assert card_ids(first) == newest_first[:4] and "/species/Bushtit/more?before=" in first
+    second = client.get(more_link(first)).text
+    assert card_ids(second) == newest_first[4:8] and "?species=Bushtit" in second
+    third = client.get(more_link(second)).text
+    assert card_ids(third) == newest_first[8:] and "load-more" not in third
+
+
+def test_review_heading_shows_the_real_total(client, add_visit, monkeypatch):
+    monkeypatch.setattr(webapp, "REVIEW_SHOWN", 2)
+    for i in range(3):
+        add_visit(needs_review=1, captured_at=f"2026-11-01T10:00:{i:02d}")
+    html = client.get("/review").text
+    assert 'Review queue <span class="muted">3</span>' in html and html.count('class="card"') == 2
+    assert "Showing the oldest 2 of 3" in html
+
+
+def test_alert_pills_and_the_local_off_pill_have_their_own_tooltips(client):
+    html = client.get("/about").text
+    assert "this alert is switched" in html and "this local step doesn" not in html
