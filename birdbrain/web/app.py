@@ -98,6 +98,13 @@ _FETCH_SHIM = ('<script>window.BB_BASE={base};(()=>{{const f=window.fetch;window
                'typeof u==="string"&&u.startsWith("/")&&!u.startsWith("//")?{base}+u:u,o)}})();</script>')
 
 
+def site_url(path: str) -> str:
+    """A site URL as the browser must ask for it: `path` ("/images/...") with the base path in front. The
+    base_path middleware rewrites HTML, but JSON isn't touched, so any route that answers a URL in JSON (for a
+    script to put in an img src or a fetch) builds it with this. BASE is read at call time (tests set it)."""
+    return BASE + path if path.startswith("/") and not path.startswith("//") else path
+
+
 @app.middleware("http")
 async def base_path(request: Request, call_next):
     response = await call_next(request)
@@ -1063,7 +1070,7 @@ def _compare_photo(v, name: str) -> dict:
     marks = [m for m in start_marks(v) if not db.mark_frame(m)]
     mark = next((m for m in marks if m.get("label") == name), None) or next((m for m in marks if not m.get("label")), None) \
         or (marks[0] if marks else None)
-    return {"id": v["id"], "src": "/images/" + db.photo_rel(v), "when": nice_time(v["captured_at"]),
+    return {"id": v["id"], "src": site_url("/images/" + db.photo_rel(v)), "when": nice_time(v["captured_at"]),
             "mark": {k: mark[k] for k in ("x", "y", "r")} if mark else None}
 
 
@@ -1950,14 +1957,14 @@ def latest_visit(request: Request, conn=Depends(get_conn)):
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def manifest():
     """Web app manifest: lets Android use a maskable icon (a full-bleed square it can crop to a circle) when
-    the site is added to the home screen. JSON isn't rewritten by the base_path middleware, so add BASE here."""
-    st = f"{BASE}/static"
+    the site is added to the home screen. JSON isn't rewritten by the base_path middleware, so site_url()."""
+    st = site_url("/static")
     v = templates.env.globals["asset_version"]
     icons = [{"src": f"{st}/icon-{n}.png?v={v}", "sizes": f"{n}x{n}", "type": "image/png", "purpose": "any"}
              for n in (192, 512)]
     icons += [{"src": f"{st}/icon-maskable-{n}.png?v={v}", "sizes": f"{n}x{n}", "type": "image/png",
                "purpose": "maskable"} for n in (192, 512)]
-    data = {"name": "Birdbrain", "short_name": "Birdbrain", "start_url": f"{BASE}/", "scope": f"{BASE}/",
+    data = {"name": "Birdbrain", "short_name": "Birdbrain", "start_url": site_url("/"), "scope": site_url("/"),
             "display": "standalone", "background_color": "#f6f5f0", "theme_color": "#f6f5f0", "icons": icons}
     return Response(json.dumps(data), media_type="application/manifest+json")
 

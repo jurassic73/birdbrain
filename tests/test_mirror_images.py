@@ -140,3 +140,62 @@ def test_gate_redirects_and_photos_are_never_kept_by_a_shared_cache(mirror, phot
     assert mirror.post("/visit/1/delete", follow_redirects=False).headers["cache-control"] == "no-store"
     mirror.cookies.set(viewer.COOKIE, cookie)
     assert mirror.get(photo).status_code == 200
+
+
+def _json_site_urls(data) -> list[str]:
+    """Every site URL (an absolute path such as "/images/...") inside a JSON answer, at any depth."""
+    found = []
+    if isinstance(data, dict):
+        for v in data.values():
+            found += _json_site_urls(v)
+    elif isinstance(data, list):
+        for v in data:
+            found += _json_site_urls(v)
+    elif isinstance(data, str) and (data.startswith("/") or "/images/" in data or "/static/" in data):
+        found.append(data)
+    return found
+
+
+def test_json_answers_carry_the_base_path_and_resolve(mirror, photos, conn, add_visit):
+    """The base_path middleware rewrites HTML only. Routes that answer a URL in JSON (for a script to put in an
+    img src) must add the prefix themselves (app.site_url), or the browser asks the host's root and gets nothing."""
+    v1, _, _ = photos
+    new = add_visit(image_path="2026/11/03/a.jpg", thumb_path="2026/11/03/a_t.jpg", species="Dark-eyed Junco",
+                    captured_at=FROZEN_NOW.replace(hour=11, minute=30).isoformat())
+    conn.commit()
+    compare_url = f"/species/Dark-eyed%20Junco/cover-compare?visit_id={new}"
+    answers = {compare_url: mirror.get(compare_url), "/manifest.webmanifest": mirror.get("/manifest.webmanifest")}
+    compare = answers[compare_url]
+    assert compare.status_code == 200
+    assert compare.json()["cover"]["id"] == v1 and compare.json()["candidate"]["id"] == new
+    manifest = answers["/manifest.webmanifest"].json()
+    assert manifest["start_url"] == BASE + "/" and manifest["scope"] == BASE + "/"
+    failures = []
+    for route, r in answers.items():
+        assert r.status_code == 200, route
+        urls = _json_site_urls(r.json())
+        assert urls, route
+        for url in urls:
+            if not url.startswith(BASE + "/"):
+                failures.append(f"{route}: {url} lacks the base path")
+                continue
+            got = mirror.get(url[len(BASE):])  # nginx strips the prefix before the app sees it
+            want = "text/html" if url.endswith("/") else "image/"  # start_url is a page, the rest are pictures
+            if got.status_code != 200 or not got.headers.get("content-type", "").startswith(want):
+                failures.append(f"{route}: {url} -> {got.status_code} {got.headers.get('content-type')}")
+    assert not failures, "\n".join(failures)
+
+
+def test_json_answers_keep_plain_paths_without_a_base_path(conn, add_visit):
+    """On the LAN (no BIRDBRAIN_BASE) the URLs stay as they were."""
+    assert webapp.BASE == ""
+    client = TestClient(webapp.app)
+    old = add_visit(species="Bushtit", image_path="2026/11/03/old.jpg")
+    new = add_visit(species="Bushtit", image_path="2026/11/03/new.jpg")
+    db.set_species_photo(conn, "Bushtit", old)
+    r = client.get(f"/species/Bushtit/cover-compare?visit_id={new}").json()
+    assert r["cover"]["src"] == "/images/2026/11/03/old.jpg"
+    assert r["candidate"]["src"] == "/images/2026/11/03/new.jpg"
+    m = client.get("/manifest.webmanifest").json()
+    assert m["start_url"] == "/" and all(i["src"].startswith("/static/") for i in m["icons"])
+    assert webapp.site_url("//evil.example/x") == "//evil.example/x"  # protocol-relative: never prefixed
