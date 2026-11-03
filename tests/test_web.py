@@ -230,6 +230,10 @@ def test_false_trigger_page_shows_its_burst_in_order_and_delete_removes_it(clien
     assert [html.index(p) for p in saved] == sorted(html.index(p) for p in saved)
     assert "+0.25 s" in html and "Claude saw" in html and "frame 2" in html
     assert 'data-tip="Previous frame (wraps)"' in html and 'data-tip="Next frame (wraps)"' in html and "/ 3" in html
+    # Under the photo (inside its column, after the legend line), not in the details column; no on-photo hint.
+    media = html[html.index('class="visit-media"'):html.index('class="viewer photo-viewer"')]
+    assert 'class="vburst"' in media and media.index('id="mark-legend"') < media.index('class="vburst"')
+    assert "photo-hint" not in html and "mark-hint" not in html
     client.post(f"/visit/{vid}/delete")
     assert images.burst_paths(image_rel) == []
 

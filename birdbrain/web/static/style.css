@@ -652,11 +652,7 @@ main.wide { max-width: 1600px; }
 .overlays-toggle .slash { display: none; }
 .overlays-toggle[aria-pressed="false"] .slash { display: inline; }
 .overlays-toggle[hidden] { display: none; }
-.photo-hint {
-  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); margin: 0; width: max-content; max-width: calc(100% - 124px); text-align: center; padding: 3px 10px;
-  border-radius: 6px; background: rgba(0, 0, 0, .6); color: #fff; font-size: .8rem; pointer-events: none;
-}
-.photo-hint[hidden], .photo-clear[hidden] { display: none; }
+.photo-clear[hidden] { display: none; }
 /* The crop box the Pi and Claude looked at (dashed) and the zone that fired (solid outline, light tint, brightened
    2026-11-02 because it was hard to see): the fill stays light so the animal still shows through. Faded while drawing circles; the same on every burst frame. */
 .zones-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden;
@@ -687,17 +683,15 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .marks .claude .num-bg { fill: #e9edf0; }
 /* The Pi's circle (drawn from the motion on a visit it named itself, Claude not asked) looks like Claude's: a solid,
    faded white ring, helpful but not distracting (owner, 2026-11-01). The visit page's legend says who drew it. */
-.mark-legend {
-  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); margin: 0; width: max-content; max-width: calc(100% - 124px); text-align: center;
-  padding: 3px 10px; border-radius: 6px; background: rgba(0, 0, 0, .6); color: #fff; pointer-events: none;
-}
+.mark-legend { margin: 0; }  /* a plain line under the photo (it used to sit on the photo and cover the time chip) */
 .mark-legend[hidden] { display: none; }
 .marks .pill-tile { fill: rgba(20, 24, 28, .72); stroke: rgba(255, 255, 255, .25); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .marks .pill-name { fill: #fff; font-weight: 600; dominant-baseline: central; font-family: inherit; }
 .marks .num {fill: #111; font-weight: 700; text-anchor: middle; dominant-baseline: central; font-family: inherit; }
 .feedback-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .review .feedback-head button { padding: 4px 12px; font-size: .85rem; align-self: center; }
-.visit-info { max-height: var(--media-h); overflow-y: auto; padding-right: 4px; }
+/* No height cap or inner scroll: an inner scroll area cut the details and form off at the photo's height with no visible scrollbar; the page scrolls instead. */
+.visit-info { min-width: 0; }
 .visit-info h1 { margin-bottom: 4px; }
 .visit-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
 .visit-head .label-block { min-width: 0; }
@@ -706,7 +700,6 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .visit-info dl { margin: 8px 0; }
 @media (max-width: 800px) {
   .visit { grid-template-columns: 1fr; }
-  .visit-info { max-height: none; }
 }
 .button-link {
   display: inline-block; padding: 7px 12px; border: 1px solid var(--line); border-radius: 8px;
@@ -1334,7 +1327,6 @@ details.review-fold > summary { display: none; }
   .label-block h1 .title-back { flex: none; margin: 0 0 0 auto; white-space: nowrap; }
   .visit-head .label-block { flex: 1 1 100%; }
   .photo-arrow { display: flex; }
-  .mark-legend { font-size: .75rem; padding: 3px 8px; }
   /* Steps move under "Identified by" and wrap: smaller pills, and a step that agrees with the result shows only its confidence. */
   .decision-flow.in-nav { display: none; }
   .decision-flow.in-info { display: flex; margin: 2px 0 0; font-size: .72rem; gap: 4px 0; }
@@ -1352,7 +1344,6 @@ details.review-fold > summary { display: none; }
   .visit-info { display: contents; }
   .visit-head { order: -1; align-self: stretch; min-width: 0; }
   .visit dl { margin: 0; }
-  .photo-hint { display: none; }
   .visit dd.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
   .review { padding: 12px 14px; margin-top: 8px; }
 
@@ -1571,12 +1562,14 @@ button.se-all { font-weight: 600; }
 .live-viewer .live-badge { top: 10px; bottom: auto; left: 10px; line-height: normal; }
 
 /* A false trigger's whole burst, beside its photo: tap a frame to show it big. */
-.vburst { margin: 12px 0; }
+.vburst { margin: 6px 0 0; }  /* sits under the photo; .visit-media supplies the gap */
 .vburst-head { font-size: 1rem; margin: 0 0 6px; display: flex; align-items: baseline; gap: 8px; }
 .vburst-steps { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .vburst-step { min-width: 36px; min-height: 32px; padding: 0 8px; font-size: 1.2rem; line-height: 1; background: var(--surface); color: var(--accent); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
 .vburst-count { min-width: 3.2em; text-align: center; white-space: nowrap; }
-.vburst-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+/* One row across the photo's width (--n frames, set in the template); phones wrap instead. */
+.vburst-strip { display: grid; grid-template-columns: repeat(var(--n, 6), minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 800px) { .vburst-strip { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); } }
 .vburst-frame { position: relative; padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; overflow: hidden; line-height: 0; cursor: pointer; }
 .vburst-frame img { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
 .vburst-frame.on { border-color: var(--accent); }

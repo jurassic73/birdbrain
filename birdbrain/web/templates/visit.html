@@ -60,12 +60,29 @@
     </svg>
     {% endif %}
     <svg class="marks" aria-hidden="true"></svg>
-    <p class="photo-hint" id="mark-hint"{% if visit.photo_deleted_at %} hidden{% endif %}>Click to enlarge, pinch to zoom.{% if request.state.admin %} Edit circles to mark things for your feedback.{% endif %}</p>
-    <p class="muted small mark-legend" id="mark-legend" hidden></p>
     {# Phones: newer/older in the bottom corners, so a thumb on them never covers the photo. #}
     {% if prev_id %}<a class="photo-arrow prev" href="/visit/{{ prev_id }}{{ ft_param }}" aria-label="Newer visit">&#8249;</a>{% endif %}
     {% if next_id %}<a class="photo-arrow next" href="/visit/{{ next_id }}{{ ft_param }}" aria-label="Older visit">&#8250;</a>{% endif %}
   </div>
+  {# Under the photo, not on it: what the circles mean, then the burst filmstrip. #}
+  <p class="muted small mark-legend" id="mark-legend" hidden></p>
+  {% if burst %}
+  <section class="vburst" aria-label="Burst">
+    <h2 class="vburst-head">Burst <span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
+      <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi's animal check learns from.">i</span>
+      <span class="vburst-steps"><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
+    <div class="vburst-strip" style="--n: {{ burst | length }}">
+      {% for f in burst %}
+      <button type="button" class="vburst-frame{% if f.best %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
+        <img src="/images/{{ f.path }}" alt="" loading="lazy" width="96" height="54">
+        <span class="vburst-at">+{{ '%g' | format(f.at) }} s</span>
+        <span class="vburst-marks" hidden></span>
+      </button>
+      {% endfor %}
+    </div>
+    {% if burst | selectattr("best") | list %}<p class="muted small vburst-note">{{ badge("Claude saw", "burst-best") }} frame {{ (burst | map(attribute="best") | list).index(true) + 1 }}</p>{% endif %}
+  </section>
+  {% endif %}
   </div>
   <dialog class="viewer photo-viewer" id="photo-viewer" aria-label="Full-size photo">
     {{ zoom_out_btn("photo-viewer-close") }}
@@ -110,23 +127,6 @@
       {% if visit.notes %}<dt>Claude's notes</dt><dd class="clamp" onclick="this.classList.toggle('clamp')">{{ visit.notes }}</dd>{% endif %}
       {% if visit.model %}<dt>Identified by</dt><dd>{{ visit.model }}{% if visit.escalated %} (escalated){% endif %}</dd>{% endif %}
     </dl>
-    {% if burst %}
-    <section class="vburst" aria-label="Burst">
-      <h2 class="vburst-head">Burst <span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
-        <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi's animal check learns from.">i</span>
-        <span class="vburst-steps"><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
-      <div class="vburst-strip">
-        {% for f in burst %}
-        <button type="button" class="vburst-frame{% if f.best %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
-          <img src="/images/{{ f.path }}" alt="" loading="lazy" width="96" height="54">
-          <span class="vburst-at">+{{ '%g' | format(f.at) }} s</span>
-          <span class="vburst-marks" hidden></span>
-        </button>
-        {% endfor %}
-      </div>
-      {% if burst | selectattr("best") | list %}<p class="muted small vburst-note">{{ badge("Claude saw", "burst-best") }} frame {{ (burst | map(attribute="best") | list).index(true) + 1 }}</p>{% endif %}
-    </section>
-    {% endif %}
     {{ flow("in-info") }}
     {# What this visit teaches the Pi's animal check (presence.teaches; admins only). #}
     {% set teach_line %}{% if teaches %}{% if not teaches.animal %}Teaches the Pi's animal check an empty frame.{% if teaches.checked %} Counts 3 times: you checked it.{% endif %}{% elif teaches.used %}Teaches the Pi's animal check what an animal in the dashed box looks like, from {{ teaches.why }}.{% if teaches.checked %} Counts 3 times: you checked it.{% endif %}{% else %}Left out of the Pi's animal check's training: {{ teaches.why }}.{% endif %}{% endif %}{% endset %}
@@ -606,7 +606,7 @@
     const img = photo.querySelector("img"), svg = photo.querySelector("svg.marks");
     if (!img) return;  // the photo was deleted to save space: nothing to draw on
     const field = document.getElementById("marks") || {};
-    const clear = document.getElementById("mark-clear"), hint = document.getElementById("mark-hint");
+    const clear = document.getElementById("mark-clear");
     const legend = document.getElementById("mark-legend"), claudeSaw = {{ (visit.species or visit.visitor) | lower | tojson }};
     // The name that goes after a circle's number: the visit's own, unless it names no animal.
     const visitName = {{ (visit.label if visit.label and visit.label not in ('None', 'Other') else '') | tojson }};
@@ -631,7 +631,7 @@
       const taken = [], rings = marks.map(m => here(m) ? {x: m.x * w, y: m.y * h, r: (editing ? m.r : markRadius(m.r)) * w} : null);
       const keepIn = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
       const hits = (b, c) => Math.hypot(c.x - keepIn(c.x, b[0], b[2]), c.y - keepIn(c.y, b[1], b[3])) < c.r;
-      // The line under the photo that explains the circles is written first, so the pills can stay off it too.
+      // The line under the photo that explains the circles.
       const ci = cur === null ? marks.flatMap((m, i) => m.claude ? [i] : []) : [];  // machine circles: Claude's frame
       const pi = cur === null ? marks.flatMap((m, i) => m.pi ? [i] : []) : [];
       legend.hidden = !ci.length && !pi.length;
@@ -640,11 +640,6 @@
         : ci.length === 1
         ? `Circle ${ci[0] + 1}: where Claude saw the ${marks[ci[0]].label || claudeSaw}. Remove it if that's wrong.`
         : `Where Claude saw them: ${ci.map(i => `${i + 1} ${marks[i].label || claudeSaw}`).join(", ")}. Remove any that's wrong.`;
-      const lr = legend.getBoundingClientRect(), ib = img.getBoundingClientRect();
-      if (lr.width && ib.width) {
-        const k = w / ib.width, gap = w / 120;
-        taken.push([(lr.left - ib.left) * k - gap, (lr.top - ib.top) * k - gap, (lr.right - ib.left) * k + gap, (lr.bottom - ib.top) * k + gap]);
-      }
       marks.forEach((m, i) => {
         if (!here(m)) return;
         const g = el("g", {"data-i": i, class: m.pi ? "mark claude pi" : m.claude ? "mark claude" : "mark"});
@@ -656,7 +651,7 @@
         const dr = touch ? Math.max(s * 0.85, 14 * px) : s * 0.85;
         // Number and × sit off the circle's bottom-right (below the animal, so the label is there for reference
         // without spoiling the view; owner, 2026-11-02), the number's edge a third of its width clear of
-        // the ring so it never covers the animal; near an edge, another pill or the line under the photo they
+        // the ring so it never covers the animal; near an edge, or another pill, they
         // swing to the first corner that's free (bottom-left, then the top ones).
         // With a name the number is the end of one pill: a dark tile with the name runs away from the ring
         // (to the right from a right-hand corner, to the left from a left-hand one). Names over 24 letters are cut short.
@@ -719,7 +714,6 @@
       const shown = marks.filter(here).length;
       document.getElementById("circles-toggle").hidden = editing || !shown;
       clear.hidden = !editing || !shown;
-      hint.hidden = editing || shown > 0;
       // The filmstrip marks each frame that has circles with their numbers.
       document.querySelectorAll(".vburst-frame").forEach(b => {
         const f = b.dataset.best === "1" ? null : +b.dataset.frame;
