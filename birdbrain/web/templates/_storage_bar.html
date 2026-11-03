@@ -1,23 +1,38 @@
-{# The photo budget as one bar. Needs `bd` (retention.breakdown) and `bar` (app.storage_bar). #}
+{# The photo budget: a headline, the bar with a scale above it, and a table of kinds. Needs `bd` (retention.breakdown) and `bar` (app.storage_bar). #}
 <div class="sbar-wrap" id="storage-bar">
+  <p class="sbar-line">
+    <strong>Photos {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% else %}, no budget{% endif %}</strong>{% if bar.over %} <span class="sbar-over">over by {{ (bd.used_bytes - bd.budget_bytes) | mb }}</span>{% endif %}
+  </p>
+  <div class="sbar-scale{{ ' two' if bar.warn_low }}">
+    <span class="sc sc-zero">0</span>
+    {% if bar.warn_at is not none %}<span class="sc sc-alert{{ ' low low-' + bar.warn_side if bar.warn_low }}" style="left: {{ bar.warn_at }}%" data-tip="{{ bar.warn_tip }}">{{ '%g' | format(bd.warn_pct) }}% alert</span>{% endif %}
+    {% if bar.limit_label %}<span class="sc sc-limit{{ ' at' if bar.over }}"{% if bar.over %} style="--at: {{ bar.budget_at }}%"{% endif %}>{{ bar.limit_label }}</span>{% endif %}
+    {% if bar.use_label %}<span class="sc sc-use{{ ' end' if bar.over }}"{% if not bar.over %} style="--at: {{ bar.use_at }}%"{% endif %}>{{ bar.use_label }}</span>
+    <i class="sc-caret" style="left: {{ bar.use_at }}%"></i>{% endif %}
+  </div>
   <div class="sbar{{ ' over' if bar.over }}{{ ' empty' if not bar.segments }}" role="img"
        aria-label="Photos use {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of a {{ bd.budget_bytes | mb }} budget{% endif %}{{ ', over the budget' if bar.over }}">
     {% for s in bar.segments %}
     <span class="sbar-seg sb-{{ s.key }}" style="width: {{ s.pct }}%" data-tip="{{ s.tip }}"></span>
     {% endfor %}
     {% if bar.free_pct %}<span class="sbar-seg sb-free" style="width: {{ bar.free_pct }}%" data-tip="{{ bar.free_tip }}"></span>{% endif %}
-    {% if bar.warn_at is not none %}<i class="sbar-tick warn" style="left: {{ bar.warn_at }}%" data-tip="Warning: one phone alert goes out when photos reach {{ '%g' | format(bd.warn_pct) }}% of the budget"></i>{% endif %}
+    {% if bar.warn_at is not none %}<i class="sbar-tick warn" style="left: {{ bar.warn_at }}%" data-tip="{{ bar.warn_tip }}"></i>{% endif %}
     {% if bar.over %}<i class="sbar-tick budget" style="left: {{ bar.budget_at }}%" data-tip="The budget ends here. The part after it is the overage."></i>{% endif %}
   </div>
-  <ul class="sbar-legend">
-    {% for s in bar.legend %}
-    <li data-tip="{{ s.tip }}"><i class="sw sb-{{ s.key }}"></i>{{ s.label }} <b>{{ s.bytes | mb }}</b></li>
-    {% endfor %}
-    {% if bar.free_pct %}<li data-tip="{{ bar.free_tip }}"><i class="sw sb-free"></i>Free in budget <b>{{ bar.free_bytes | mb }}</b></li>{% endif %}
-  </ul>
+  <table class="sbar-table">
+    <thead><tr><th>Kind</th><th class="num">Photos</th><th class="num">Size</th><th class="rule">When space runs short</th></tr></thead>
+    <tbody>
+      {% for s in bar.table %}
+      <tr data-tip="{{ s.tip }}"><td><i class="sw sb-{{ s.key }}"></i>{{ s.label }}</td><td class="num">{{ s.count }}</td><td class="num">{{ s.bytes | mb }}</td><td class="rule">{{ s.rule }}</td></tr>
+      {% endfor %}
+      {% if bar.free_bytes %}
+      <tr class="free" data-tip="{{ bar.free_tip }}"><td><i class="sw sb-free"></i>Free in budget</td><td class="num"></td><td class="num">{{ bar.free_bytes | mb }}</td><td class="rule"></td></tr>
+      {% endif %}
+    </tbody>
+    <tfoot><tr><td>Total</td><td class="num">{{ bar.total_count }}</td><td class="num">{{ bd.used_bytes | mb }}</td><td class="rule">{% if bd.budget_bytes %}of {{ bd.budget_bytes | mb }}{% endif %}</td></tr></tfoot>
+  </table>
   <p class="sbar-line">
-    <strong>Photos {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% else %}, no budget{% endif %}</strong>{% if bar.over %} <span class="sbar-over">over by {{ (bd.used_bytes - bd.budget_bytes) | mb }}</span>{% endif %}
-    <span class="muted">· Disk free on this machine {{ bd.disk.free_bytes | mb }}{% if bd.disk.floor_bytes %} (keeps {{ bd.disk.floor_bytes | mb }} free){% endif %}</span><br>
+    <span class="muted">Disk free on this machine {{ bd.disk.free_bytes | mb }}{% if bd.disk.floor_bytes %} (keeps {{ bd.disk.floor_bytes | mb }} free){% endif %}</span><br>
     <small class="muted" data-tip="These live in the same data folder but are not part of the photo budget and are never thinned.">Not counted: models {{ bd.system.models | mb }}, database {{ bd.system.database | mb }}, calibration {{ bd.system.calibration | mb }}</small>
   </p>
 </div>

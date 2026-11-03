@@ -537,7 +537,7 @@
     <div class="sbar{{ ' over' if bar.over }}" role="img" aria-label="Photo use by kind">
       {% for s in bar.segments %}<span class="sbar-seg sb-{{ s.key }}" style="width: {{ s.pct }}%" data-tip="{{ s.tip }}"></span>{% endfor %}
     </div>
-    <ul class="sbar-legend">
+    <ul class="sbar-key">
       {% for s in bar.legend %}<li data-tip="{{ s.tip }}"><i class="sw sb-{{ s.key }}"></i>{{ s.label }}</li>{% endfor %}
     </ul>
   </div>

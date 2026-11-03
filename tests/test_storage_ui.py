@@ -84,3 +84,34 @@ def test_run_now_is_post_and_admin_only(client, monkeypatch):
 def test_about_has_storage_section(client):
     html = client.get("/about").text
     assert 'id="storage"' in html and "Never thinned" in html
+
+
+def _bd(used, budget, warn=80):
+    cats = [{"key": k, "label": k, "count": 1, "bytes": b} for k, b in
+            (("species_photos", 10), ("keepers", 0), ("training", 500), ("recent", 9000), ("older", 100), ("false_triggers", 40))]
+    return {"categories": cats, "thumbs": {"count": 3, "bytes": 200}, "used_bytes": used, "budget_bytes": budget,
+            "warn_pct": warn, "options": {"full_days": 90, "full_per_day": 2}, "false_trigger_limit_bytes": 500_000_000,
+            "disk": {"free_bytes": 5_000_000_000, "floor_bytes": 0},
+            "system": {"models": 1, "database": 1, "calibration": 1}}
+
+
+def _render(bd):
+    bar = webapp.storage_bar(bd)
+    return bar, webapp.templates.get_template("_storage_bar.html").render(bd=bd, bar=bar)
+
+
+def test_table_sorted_by_size_with_scale_labels():
+    bar, html = _render(_bd(147_000_000, 10_000_000_000))
+    sizes = [r["bytes"] for r in bar["table"]]
+    assert sizes == sorted(sizes, reverse=True) and bar["table"][0]["key"] == "recent"
+    assert html.index("Free in budget") > html.index("Thumbnails") and "Total" in html
+    assert ">0</span>" in html and ">10 GB</span>" in html and ">147 MB</span>" in html
+    assert "80% alert" in html and "Phone alert when photos reach 80% of the budget (8 GB)" in html
+    assert "Thinned after 90 days" in html and "own 500 MB cap" in html
+
+
+def test_no_alert_label_when_warn_is_off_and_over_budget_scale():
+    _, html = _render(_bd(147_000_000, 10_000_000_000, warn=0))
+    assert "alert</span>" not in html
+    bar, html = _render(_bd(5_000_000, 1_000_000))
+    assert "sc-use end" in html and "sc-limit at" in html and bar["budget_at"] == 20

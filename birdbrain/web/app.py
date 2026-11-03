@@ -1256,29 +1256,53 @@ _TIPS = {
 }
 
 
+def _short(n: int) -> str:
+    """Bytes for a scale label: 10 GB, 147 MB, 0."""
+    return "0" if not n else mb(n).replace(".0 ", " ")
+
+
 def storage_bar(bd: dict) -> dict:
-    """The photo budget as bar segments (widths in % of the bar), a legend, and where the ticks go."""
+    """The photo budget as bar segments (widths in % of the bar), a table of kinds (biggest first), scale labels and ticks."""
     o = bd["options"]
     budget, used = bd["budget_bytes"], bd["used_bytes"]
     over = bool(budget) and used > budget
     scale = max(used, budget) or 1
     tips = {k: v.format(**o) for k, v in _TIPS.items()}
+    rule = {"species_photos": "Protected", "keepers": "Protected", "training": "Protected",
+            "recent": f"Thinned after {o['full_days']} days", "older": "Cut to thumbnail, oldest first",
+            "false_triggers": f"Oldest first, own {_short(bd['false_trigger_limit_bytes'])} cap", "thumbs": "Never removed"}
     rows = [{**c, "tip": f"{tips[c['key']]} {c['count']} photo{'s' if c['count'] != 1 else ''}, {mb(c['bytes'])}."}
             for c in bd["categories"]]
     rows.append({"key": "thumbs", "label": "Thumbnails", **bd["thumbs"],
                  "tip": f"{tips['thumbs']} {bd['thumbs']['count']} thumbnails, {mb(bd['thumbs']['bytes'])}."})
+    for r in rows:
+        r["rule"] = rule.get(r["key"], "")
+        r["tip"] += f" When space runs short: {r['rule']}."
+    table = sorted(rows, key=lambda r: -r["bytes"])
     legend = [r for r in rows if r["bytes"]]
     segments = [{**r, "pct": round(100 * r["bytes"] / scale, 3)} for r in legend]
     free = max(budget - used, 0) if budget else 0
+    warn_at = round(100 * budget * bd["warn_pct"] / 100 / scale, 2) if budget and bd["warn_pct"] and not over else None
+    use_at = round(100 * used / scale, 2)
+    pct = lambda v: "{:g}".format(bd["warn_pct"])
     return {
         "segments": segments,
         "legend": legend,
+        "table": table,
         "over": over,
         "free_bytes": free,
         "free_pct": round(100 * free / scale, 3) if free else 0,
         "free_tip": f"Room left in the budget: {mb(free)}.",
-        "warn_at": round(100 * budget * bd["warn_pct"] / 100 / scale, 2) if budget and bd["warn_pct"] and not over else None,
+        "warn_at": warn_at,
+        "warn_low": warn_at is not None and abs(use_at - warn_at) < 18,
+        "warn_side": "r" if use_at < (warn_at or 0) else "l",
+        "warn_tip": (f"Phone alert when photos reach {pct(0)}% of the budget ({_short(int(budget * bd['warn_pct'] / 100))})"
+                     if warn_at is not None else ""),
         "budget_at": round(100 * budget / scale, 2) if over else None,
+        "use_at": use_at,
+        "use_label": _short(used) if used else "",
+        "limit_label": _short(budget) if budget else "",
+        "total_count": sum(r["count"] for r in rows),
     }
 
 
