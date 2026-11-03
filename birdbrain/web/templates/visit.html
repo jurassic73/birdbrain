@@ -46,7 +46,8 @@
     <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
     {% set nc = no_circle_note(visit) %}{% if nc and not visit.photo_deleted_at %}<span class="photo-note muted small" data-tip="Claude wasn't asked, and the Pi's circle from the motion found nothing it was sure of (see How it was decided), so there's no circle on this photo.">{{ nc }}</span>{% endif %}
   </div>
-  <div class="visit-photo" id="photo" data-marks="{{ marks | tojson | forceescape }}">
+  {# data-frame: the burst frame shown first (the owner's pick), empty for the photo Claude saw. #}
+  <div class="visit-photo" id="photo" data-marks="{{ marks | tojson | forceescape }}" data-frame="{{ photo_frame or '' }}">
     {% if visit.photo_deleted_at %}
     <div class="photo-gone" data-tip="Deleted on {{ visit.photo_deleted_at[:10] }} to save space. The record stays, and so does what the Pi's animal check learned from it.">Photo deleted to save space</div>
     {% else %}
@@ -75,14 +76,24 @@
       <span class="vburst-steps"><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
     <div class="vburst-strip" style="--n: {{ burst | length }}">
       {% for f in burst %}
-      <button type="button" class="vburst-frame{% if f.best %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
+      <button type="button" class="vburst-frame{% if f.on %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
         <img src="/images/{{ f.path }}" alt="" loading="lazy" width="96" height="54">
         <span class="vburst-at">+{{ '%g' | format(f.at) }} s</span>
         <span class="vburst-marks" hidden></span>
       </button>
       {% endfor %}
     </div>
-    {% if burst | selectattr("best") | list %}<p class="muted small vburst-note">{{ badge("Claude saw", "burst-best") }} frame {{ (burst | map(attribute="best") | list).index(true) + 1 }}</p>{% endif %}
+    {# Which frame is the visit's photo: Claude's, or the one the owner picked (admins can pick any frame shown
+       big, or go back to Claude's; POST /visit/<id>/photo-frame, the page reloads). #}
+    {% set best_n = ((burst | map(attribute="best") | list).index(true) + 1) if burst | selectattr("best") | list else none %}
+    <div class="muted small vburst-note">
+      {% if best_n %}<span class="vburst-who">{{ badge("Claude saw", "burst-best") }} frame {{ best_n }}</span>{% endif %}
+      {% if photo_frame %}<span class="vburst-who">{{ badge("your photo", "your-photo") }} frame {{ photo_frame }}</span>{% endif %}
+      {% if request.state.admin and not visit.photo_deleted_at %}
+      <form class="vburst-use" hx-post="/visit/{{ visit.id }}/photo-frame" hx-swap="none"><input type="hidden" name="frame" id="use-frame-n" value="0"><button type="submit" class="link-btn" id="use-frame" hidden data-tip="Make the frame shown big this visit's photo: the big photo here and its card on False triggers. Nothing is deleted; Claude's frame stays on record and your circles stay on the frames you drew them on.">Use as photo</button></form>
+      {% if photo_frame %}<form class="vburst-use" hx-post="/visit/{{ visit.id }}/photo-frame" hx-swap="none"><input type="hidden" name="frame" value="0"><button type="submit" class="link-btn" id="use-claude" data-tip="Back to the frame Claude saw as this visit's photo.">Use Claude's photo</button></form>{% endif %}
+      {% endif %}
+    </div>
   </section>
   {% endif %}
   </div>
@@ -617,7 +628,7 @@
     };
     const edit = document.getElementById("mark-edit");
     let marks = JSON.parse(photo.dataset.marks || "[]"), press = null, drag = null, editing = false;
-    let cur = null;  // the burst frame in the big photo, null for Claude's
+    let cur = photo.dataset.frame ? +photo.dataset.frame : null;  // the burst frame in the big photo, null for Claude's
     const here = m => (m.frame || null) === cur;
     // Fingers on the photo: a second one means a pinch, which zooms and never draws.
     const fingers = new Set();
@@ -826,11 +837,22 @@
     const viewerImg = document.querySelector("#photo-viewer .photo-viewer-frame img");
     const list = [...frames], n = document.getElementById("vburst-n"), section = document.querySelector(".vburst");
     const shown = () => Math.max(0, list.findIndex(o => o.classList.contains("on")));
+    // Use as photo (admins) offers the frame shown big, unless it's the photo already or Claude's (then
+    // Use Claude's photo is the way back).
+    const useBtn = document.getElementById("use-frame"), useN = document.getElementById("use-frame-n");
+    const photoFrame = photo.dataset.frame ? +photo.dataset.frame : null;
+    const offer = frame => {
+      if (!useBtn) return;
+      useN.value = frame === null ? 0 : frame;
+      useBtn.hidden = frame === null || frame === photoFrame;
+    };
     frames.forEach(b => b.addEventListener("click", () => {
       frames.forEach(o => o.classList.toggle("on", o === b));
       full.src = viewerImg.src = link.href = b.dataset.src;
-      photo.dispatchEvent(new CustomEvent("birdbrain:frame", {detail: {frame: b.dataset.best === "1" ? null : +b.dataset.frame}}));
+      const frame = b.dataset.best === "1" ? null : +b.dataset.frame;
+      photo.dispatchEvent(new CustomEvent("birdbrain:frame", {detail: {frame}}));
       n.textContent = list.indexOf(b) + 1;
+      offer(frame);
     }));
     const step = d => list[(shown() + d + list.length) % list.length].click();
     section.querySelectorAll(".vburst-step").forEach(b => b.addEventListener("click", () => step(+b.dataset.step)));

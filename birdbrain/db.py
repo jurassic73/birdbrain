@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from . import clock, config
+from . import clock, config, images
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS visits (
@@ -136,7 +136,11 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  "photo_thinned_at": "TEXT",
                  # Laplacian variance of the stored photo inside its crop box, measured before any thinning: picks
                  # each species' sharpest photos of the day, which stay full size.
-                 "photo_sharpness": "REAL"}
+                 "photo_sharpness": "REAL",
+                 # A false trigger's photo as the owner picked it: the burst frame (1-based) the big photo and the
+                 # card show instead of the one Claude saw (NULL). image_path stays Claude's frame: its answer,
+                 # circles and the animal check's training all go by that one (photo_rel, thumb_rel).
+                 "photo_frame": "INTEGER"}
 # The visit's photo files are there (false triggers past the storage limit lose them; see retention.prune).
 HAS_PHOTO = "photo_deleted_at IS NULL"
 # The photo itself is there, full size or thinned, not just the thumbnail: for checks that look at the frame.
@@ -759,13 +763,38 @@ def _seen(where: str) -> str:
         FROM (SELECT * FROM visits WHERE {where}) v, json_each(COALESCE(v.corrected_also, v.also)) j"""
 
 
+def photo_frame(visit) -> int | None:
+    """The burst frame (1-based) the owner picked as a visit's photo, or None for the one Claude saw."""
+    try:
+        n = visit["photo_frame"]
+    except (IndexError, KeyError):
+        return None
+    return n if isinstance(n, int) and n > 0 else None
+
+
+def thumb_rel(visit) -> str:
+    """A visit's thumbnail for the cards: the picked burst frame's (images.pick_thumb), else the photo's."""
+    n = photo_frame(visit)
+    return images.burst_thumb_path(visit["image_path"], n) if n else visit["thumb_path"]
+
+
 def photo_rel(visit) -> str:
-    """The biggest photo of a visit still on disk: its photo, or its thumbnail once only that is left."""
+    """The biggest photo of a visit still on disk: its photo (the burst frame the owner picked, else the one
+    Claude saw), or its thumbnail once only that is left."""
     try:
         thumb_only = visit["photo_level"] == "thumb"
     except (IndexError, KeyError):
         thumb_only = False
-    return visit["thumb_path"] if thumb_only else visit["image_path"]
+    if thumb_only:
+        return thumb_rel(visit)
+    n = photo_frame(visit)
+    return images.burst_path(visit["image_path"], n) if n else visit["image_path"]
+
+
+def set_photo_frame(conn: sqlite3.Connection, visit_id: int, frame: int | None) -> None:
+    """Record which burst frame is the visit's photo (None: back to the one Claude saw)."""
+    with writing(conn):
+        conn.execute("UPDATE visits SET photo_frame = ? WHERE id = ?", (frame, visit_id))
 
 
 def also_of(visit) -> list[dict]:

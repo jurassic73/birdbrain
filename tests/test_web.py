@@ -251,6 +251,114 @@ def test_burst_arrows_absent_without_a_burst(client, stored_visit):
     assert 'class="vburst-step"' not in client.get(f"/visit/{vid}").text
 
 
+@pytest.fixture
+def burst_visit(stored_visit):
+    """A false trigger with a 4-frame burst on disk; Claude saw frame 2. Returns (id, image_rel, burst paths)."""
+    def add(**fields):
+        vid = stored_visit(visitor="none", species=None, raw_json=json.dumps({"burst": {"count": 4, "best": 1, "fps": 4}}),
+                           **fields)
+        with db.session() as conn:
+            image_rel = db.get_visit(conn, vid)["image_path"]
+        frames = []
+        for shade in (40, 90, 140, 190):  # each frame its own gray, so the thumbnail says which frame it came from
+            buf = io.BytesIO()
+            Image.new("RGB", (640, 360), (shade, shade, shade)).save(buf, "JPEG")
+            frames.append(buf.getvalue())
+        return vid, image_rel, images.store_burst(frames, image_rel)
+    return add
+
+
+def test_picking_a_burst_frame_as_the_photo_is_admin_only_and_false_triggers_only(client, burst_visit, stored_visit, monkeypatch):
+    vid, image_rel, saved = burst_visit()
+    real = stored_visit()
+    assert client.post(f"/visit/{real}/photo-frame", data={"frame": "1"}).status_code == 400  # one frame only
+    for bad in ("5", "-1", "x", "99"):
+        assert client.post(f"/visit/{vid}/photo-frame", data={"frame": bad}).status_code == 400, bad
+    assert client.post(f"/visit/{vid}/photo-frame", data={"frame": "1"}).headers["HX-Refresh"] == "true"
+    assert client.post("/visit/999999/photo-frame", data={"frame": "1"}).status_code == 404
+    # Visitors: the change is refused and the page shows no controls, but it does show the picked photo.
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    assert client.post(f"/visit/{vid}/photo-frame", data={"frame": "0"}).status_code == 403
+    html = client.get(f"/visit/{vid}").text
+    assert 'id="use-frame"' not in html and 'id="use-claude"' not in html and "photo-frame" not in html
+    assert f'src="/images/{saved[0]}"' in html and "your photo" in html
+    with db.session() as conn:
+        assert db.get_visit(conn, vid)["photo_frame"] == 1
+
+
+def test_picked_frame_becomes_the_photo_on_the_page_and_the_card_and_reset_restores_claudes(client, burst_visit, conn):
+    vid, image_rel, saved = burst_visit()
+    thumb = images.burst_thumb_path(image_rel, 3)
+    html = client.get(f"/visit/{vid}").text
+    assert f'src="/images/{image_rel}"' in html and 'data-frame=""' in html
+    assert 'id="use-frame" hidden' in html and 'id="use-claude"' not in html  # nothing to go back to yet
+    assert 'class="vburst-frame on" data-src="/images/' + saved[1] in html  # Claude's frame is the one shown
+    client.post(f"/visit/{vid}/photo-frame", data={"frame": "3"})
+    v = db.get_visit(conn, vid)
+    assert v["photo_frame"] == 3 and v["image_path"] == image_rel  # Claude's frame stays the record
+    assert (config.IMAGES_DIR / thumb).exists() and images.burst_paths(image_rel) == saved
+    assert db.photo_rel(v) == saved[2] and db.thumb_rel(v) == thumb
+    html = client.get(f"/visit/{vid}").text
+    assert f'src="/images/{saved[2]}"' in html and f'href="/images/{saved[2]}"' in html and 'data-frame="3"' in html
+    assert 'class="vburst-frame on" data-src="/images/' + saved[2] in html and html.count('vburst-frame on"') == 1
+    assert "your photo" in html and "frame 3" in html and "Claude saw" in html and "frame 2" in html
+    assert 'id="use-claude"' in html
+    card = client.get("/false-triggers").text
+    assert f'src="/images/{thumb}"' in card and f'data-full="/images/{saved[2]}"' in card
+    assert f'src="/images/{v["thumb_path"]}"' not in card
+    # Picking the frame Claude saw is the same as no pick.
+    client.post(f"/visit/{vid}/photo-frame", data={"frame": "2"})
+    assert db.get_visit(conn, vid)["photo_frame"] is None and not (config.IMAGES_DIR / thumb).exists()
+    client.post(f"/visit/{vid}/photo-frame", data={"frame": "4"})
+    client.post(f"/visit/{vid}/photo-frame", data={"frame": ""})  # reset
+    v = db.get_visit(conn, vid)
+    assert v["photo_frame"] is None and images.burst_thumbs(image_rel) == []
+    assert db.photo_rel(v) == image_rel and db.thumb_rel(v) == v["thumb_path"]
+    assert f'src="/images/{v["thumb_path"]}"' in client.get("/false-triggers").text
+    assert images.burst_paths(image_rel) == saved and all((config.IMAGES_DIR / r).exists() for r in (image_rel, *saved))
+    # Once the photo budget has left only the thumbnail, nothing can be picked.
+    conn.execute("UPDATE visits SET photo_level = 'thumb' WHERE id = ?", (vid,))
+    conn.commit()
+    assert client.post(f"/visit/{vid}/photo-frame", data={"frame": "3"}).status_code == 400
+
+
+def test_circles_stay_on_their_frame_when_another_frame_becomes_the_photo(client, burst_visit, conn):
+    from birdbrain import presence
+    vid, image_rel, saved = burst_visit()
+    on_claudes = {"x": 0.5, "y": 0.5, "r": 0.05}
+    on_three = {"x": 0.2, "y": 0.3, "r": 0.05, "frame": 3}
+    client.post(f"/visit/{vid}/correct", data={"visitor": "none", "feedback": "1 is a leaf, 2 is a leaf",
+                                               "marks": json.dumps([on_claudes, on_three])})
+    photo_marks = webapp.templates.env.globals["photo_marks"]
+    assert photo_marks(db.get_visit(conn, vid)) == [on_claudes]
+    client.post(f"/visit/{vid}/photo-frame", data={"frame": "3"})
+    v = db.get_visit(conn, vid)
+    # Stored as drawn; the card (frame 3 now) shows only frame 3's circle; Claude's frame is still frame 2.
+    assert db.parse_marks(v["marks"]) == [on_claudes, on_three]
+    assert photo_marks(v) == [on_three] and db.claude_frame(v["raw_json"]) == 2
+    assert presence.owner_frame(v["marks"], json.loads(v["raw_json"])) is None  # the first circle is on Claude's photo
+    html = client.get(f"/visit/{vid}").text
+    assert "&#34;frame&#34;: 3" in html and html.count("&#34;x&#34;: ") == 2
+    assert "(on burst frame 3, not the photo you saw)" in db.recent_lessons(conn)[0]
+    # Saving again while frame 3 is the photo: a circle on Claude's frame (2) still folds to "no frame".
+    client.post(f"/visit/{vid}/correct", data={"visitor": "none", "feedback": "leaves",
+                                               "marks": json.dumps([{**on_three}, {**on_claudes, "frame": 2}])})
+    assert db.parse_marks(db.get_visit(conn, vid)["marks"]) == [on_three, on_claudes]
+    client.post(f"/visit/{vid}/photo-frame", data={"frame": "0"})
+    assert photo_marks(db.get_visit(conn, vid)) == [on_claudes]
+
+
+def test_deleting_a_visit_with_a_picked_frame_removes_every_file_once(client, burst_visit):
+    vid, image_rel, saved = burst_visit()
+    client.post(f"/visit/{vid}/photo-frame", data={"frame": "4"})
+    folder = (config.IMAGES_DIR / image_rel).parent
+    stem = Path(image_rel).stem
+    assert sorted(p.name for p in folder.iterdir() if p.name.startswith(stem)) == sorted(
+        [f"{stem}.jpg", f"{stem}_t.jpg", f"{stem}_b4_t.jpg"] + [f"{stem}_b{n}.jpg" for n in range(1, 5)])
+    client.post(f"/visit/{vid}/delete")
+    assert not [p for p in folder.iterdir() if p.name.startswith(stem)]
+
+
 def test_marking_no_animal_moves_the_visit_to_false_triggers_and_teaches_claude(client, add_visit, conn):
     vid = add_visit(needs_review=1)
     r = client.post(f"/visit/{vid}/correct", data={"visitor": "none", "species": "Dark-eyed Junco", "feedback": "rock tip"})

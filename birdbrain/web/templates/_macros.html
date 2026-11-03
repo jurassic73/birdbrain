@@ -1,7 +1,8 @@
-{# A visit thumbnail with its circles (the owner's saved ones, else Claude's) drawn over it by static/thumb-marks.js. #}
+{# A visit thumbnail with its circles (the owner's saved ones, else Claude's) drawn over it by static/thumb-marks.js.
+   The picture is the visit's photo: the burst frame the owner picked on a false trigger, else the one Claude saw. #}
 {% macro thumb(v, cls="thumb", lazy=True, full=False) -%}
 <span class="{{ cls }}">
-  <img src="/images/{{ photo_src(v) if full else v.thumb_path }}" alt="{{ v.label }}"{% if lazy %} loading="lazy"{% endif %}>
+  <img src="/images/{{ photo_src(v) if full else thumb_src(v) }}" alt="{{ v.label }}"{% if lazy %} loading="lazy"{% endif %}>
   {%- set marks = photo_marks(v) %}{% if marks %}<svg class="marks thumb-marks" preserveAspectRatio="xMidYMid slice" aria-hidden="true" data-marks='{{ marks | tojson }}'></svg>{% endif %}
 </span>
 {%- endmacro %}
@@ -33,6 +34,7 @@
 {% macro badge(text, cls, tag="span", key=none) -%}
 {%- set tips = {
   "high": "High confidence: Claude was sure of this answer.",
+  "your photo": "Your photo: you picked this burst frame as the visit's photo, so the big photo and the card show it. Claude saw another frame, and its answer, its circle and what the Pi's animal check learns still go by that one. Use Claude's photo puts it back.",
   "medium": "Medium confidence: Claude thought this was likely, but key marks were hidden, blurry or far away.",
   "low": "Low confidence: Claude was guessing. Low answers about an animal go to the review queue.",
   "night": "Night: taken in infrared after dark, so the photo is black and white.",
@@ -59,7 +61,7 @@
   "night mode": "Night mode: infrared on, so photos are black and white.",
   "Confirmed": "Confirmed: 3 or more sure visits (high confidence, or labelled by you). A medium answer for this species skips Sonnet's second look, so there's no need to confirm it.",
   "Not confirmed yet": "Not confirmed yet: fewer than 3 sure visits (high confidence, or labelled by you). Picking the right label on a medium visit counts toward 3; after that its medium answers skip Sonnet.",
-  "Claude saw": "Claude saw: the sharpest frame of the burst, the one sent to Claude and kept as this visit's photo.",
+  "Claude saw": "Claude saw: the sharpest frame of the burst, the one sent to Claude. It's the visit's photo unless you pick another frame (Use as photo).",
   "private": "Private: the Pi saw a person in this photo, so it stays off the public mirror. It still shows here.",
   "public (checked)": "Public (checked): the Pi's person check flagged this photo, but you looked and saw no person, so the public mirror shows it. If a photo of this visit is later checked again and scores higher, it's held back again. Undo keeps it private.",
   "not public yet":"Not public yet: this photo hasn't had its person check, so the public mirror doesn't show it until the next push checks it.",

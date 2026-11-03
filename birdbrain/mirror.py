@@ -19,7 +19,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from . import clock, config, db, privacy, zones
+from . import clock, config, db, images, privacy, zones
 
 # Settings the public pages read (settings table). Everything else (Claude's Notes, alert topics, the camera log,
 # calibration status, legacy blobs) stays on the Pi.
@@ -102,30 +102,30 @@ def is_temp(name: str) -> bool:
 
 def files_of(db_path: Path, images_dir: Path | None = None) -> list[str]:
     """Every photo file the (filtered) copy refers to that is on disk, as paths relative to the images folder:
-    each visit's photo, its thumbnail and its burst frames. Nothing else goes: not a photo saved since the copy
-    was made, not an orphan, never a temporary file. Each day folder is listed once (images.frame_parts)."""
+    each visit's photo, its thumbnail and its burst frames (with a picked frame's thumbnail). Nothing else goes: not
+    a photo saved since the copy was made, not an orphan, never a temporary file. Each day folder is listed once
+    (images.frame_parts)."""
     images_dir = images_dir or config.IMAGES_DIR
     conn = sqlite3.connect(db_path)
     try:
         visits = conn.execute("SELECT image_path, thumb_path FROM visits ORDER BY id").fetchall()
     finally:
         conn.close()
-    folders: dict[Path, tuple[set[str], dict[str, list[tuple[int, str]]]]] = {}
+    folders: dict[Path, tuple[set[str], dict[str, list[tuple[int, bool, str]]]]] = {}
 
-    def folder(rel: str) -> tuple[set[str], dict[str, list[tuple[int, str]]]]:
+    def folder(rel: str) -> tuple[set[str], dict[str, list[tuple[int, bool, str]]]]:
         parent = Path(rel).parent
         if parent not in folders:
             names: set[str] = set()
-            bursts: dict[str, list[tuple[int, str]]] = {}  # photo stem -> [(n, name)] of its burst frames
+            bursts: dict[str, list[tuple[int, bool, str]]] = {}  # photo stem -> [(n, is thumb, name)] of its burst files
             try:
                 with os.scandir(images_dir / parent) as entries:
                     for e in entries:
                         if is_temp(e.name) or not e.is_file():
                             continue
                         names.add(e.name)
-                        stem, _, n = e.name.removesuffix(".jpg").rpartition("_b")
-                        if e.name.endswith(".jpg") and stem and n.isdigit():
-                            bursts.setdefault(stem, []).append((int(n), e.name))
+                        if parsed := images.burst_file(e.name):
+                            bursts.setdefault(parsed[0], []).append((parsed[1], parsed[2], e.name))
             except (FileNotFoundError, NotADirectoryError):
                 pass
             folders[parent] = (names, bursts)
@@ -141,7 +141,7 @@ def files_of(db_path: Path, images_dir: Path | None = None) -> list[str]:
         parent = Path(image_rel).parent
         if Path(image_rel).name in names:
             wanted.append(image_rel)
-        wanted += [str(parent / name) for _, name in sorted(bursts.get(Path(image_rel).name.removesuffix(".jpg"), []))]
+        wanted += [str(parent / name) for *_, name in sorted(bursts.get(Path(image_rel).name.removesuffix(".jpg"), []))]
         if thumb_rel and Path(thumb_rel).name in folder(thumb_rel)[0]:
             wanted.append(thumb_rel)
         for rel in wanted:
