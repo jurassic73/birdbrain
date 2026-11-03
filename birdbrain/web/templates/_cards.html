@@ -1,6 +1,7 @@
 {% from "_macros.html" import sp_name, badge, thumb, keeper_btn %}
 {# Unfiltered home page: a Today heading over the visits since midnight, then Earlier (once, also across Load more pages). #}
 {% set ns = namespace(prev=prev_day | default(none)) %}
+{% set covers = star_covers(request) if request.state.admin else {} %}
 {% for v in visits %}
 {% if split_day %}
   {% set day = v.captured_at[:10] %}
@@ -9,11 +10,21 @@
   {% if day != split_day and (ns.prev is none or ns.prev == split_day) %}<h3 class="grid-break grid-earlier">Earlier</h3>{% endif %}
   {% set ns.prev = day %}
 {% endif %}
-{% set fav = fav_label is defined and fav_label and request.state.admin %}
-{% if fav %}<div class="card-fav">{% endif %}
+{% set sp = fav_label if fav_label is defined and fav_label else v.label %}
+{# The star shows for admins on every card with a species (not false triggers, empty shots or "Other"). #}
+{% set fav = request.state.admin and not ft_cards and sp and sp not in ('None', 'Other') %}
 <a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}" data-full="/images/{{ v.image_path }}" data-when="{{ v.captured_at | nice_time }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
   {{ thumb(v) }}
   {% if request.state.admin %}{{ keeper_btn(v) }}{% endif %}
+  {% if fav %}{% set st = 'cover' if covers.get(sp) == v.id else ('favorite' if v.keep == 1 else 'unset') %}
+  {% set tips = {'unset': 'Tap to use as the species cover.', 'cover': 'Species cover: shows for ' ~ sp ~ ' on the Species page, and never deleted when space is cleared. Tap for favorite.', 'favorite': 'Favorite: never deleted when space is cleared. Tap to unset.'} %}
+  {# Star: unset -> yellow species cover -> blue favorite -> unset (static/star.js; the server decides). #}
+  <button type="button" class="fav-star" data-state="{{ st }}" data-keep="{{ 1 if v.keep == 1 else 0 }}" aria-pressed="{{ 'false' if st == 'unset' else 'true' }}"
+    aria-label="{{ tips[st] }}" data-id="{{ v.id }}" data-species="{{ sp }}"
+    data-tip-unset="{{ tips['unset'] }}" data-tip-cover="{{ tips['cover'] }}" data-tip-favorite="{{ tips['favorite'] }}"
+    data-tip="{{ tips[st] }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg></button>
+  <span class="fav-pill" hidden data-tip="Just set: species cover (yellow, shows on the Species page, never deleted when space is cleared), favorite (blue, never deleted when space is cleared) or unset."></span>
+  {% endif %}
   <div class="card-body">
     <div class="card-title">{{ sp_name(v.label) }}{% if v.count and v.count > 1 %} <span class="muted">x{{ v.count }}</span>{% endif %}
       {%- for a in also_of(v) %} <span class="also-name">+ {{ sp_name(also_label(a)) }}{% if a.count and a.count > 1 %} <span class="muted">x{{ a.count }}</span>{% endif %}</span>{% endfor %}</div>
@@ -29,12 +40,6 @@
     </div>
   </div>
 </a>
-{% if fav %}{% set on = fav_pick == v.id %}
-<button type="button" class="fav-star" aria-pressed="{{ 'true' if on else 'false' }}" aria-label="Use as the species photo"
-  hx-post="/species/{{ fav_label | urlencode }}/photo" hx-vals='{"visit_id": {{ v.id }}}' hx-swap="none"
-  data-id="{{ v.id }}" data-tip-on="The species photo. Tap again to let Birdbrain pick it." data-tip-off="Use this photo for {{ fav_label }} on the Species page."
-  data-tip="{{ 'The species photo. Tap again to let Birdbrain pick it.' if on else 'Use this photo for ' ~ fav_label ~ ' on the Species page.' }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg></button>
-</div>{% endif %}
 {% endfor %}
 {% if next_url %}
 <button class="load-more" hx-get="{{ next_url }}" hx-trigger="click, intersect once" hx-swap="outerHTML">Load more</button>

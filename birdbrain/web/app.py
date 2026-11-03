@@ -206,6 +206,17 @@ def count_label(n: int) -> str:
 
 
 templates.env.globals["nav_waiting"] = nav_waiting
+
+
+def star_covers(request: Request) -> dict:
+    """Species -> visit id of the owner's cover picks, for the stars on cards (admins only; one query per page)."""
+    conn = getattr(request.state, "conn", None)
+    if conn is None or not request.state.admin:
+        return {}
+    return db.species_photos(conn)
+
+
+templates.env.globals["star_covers"] = star_covers
 templates.env.globals["count_label"] = count_label
 
 
@@ -898,19 +909,29 @@ def species_page(request: Request, name: str, conn=Depends(get_conn)):
         confirmed=db.confirmed_species(conn),
         fav_label=name,
         scope_species=name,
-        fav_pick=row["photo_id"] if row["photo_picked"] else None,
     )
 
 
 @app.post("/species/{name}/photo")
 def species_photo(name: str, visit_id: int = Form(...), conn=Depends(get_conn)):
-    """The star on a species page's cards: use this visit's photo for the species, or (the current pick again)
-    go back to the automatic pick. Answers with the visit now picked, or null."""
+    """The star on a card, three states per click: unset -> species cover (yellow, one per species, also kept)
+    -> favorite (blue: the cover pick is cleared, the photo stays kept) -> unset (no longer kept). A new cover
+    leaves the old one as a kept favorite. Answers with the visit's new state and the species' cover now."""
     if not db.shows_species(conn, visit_id, name):
         raise HTTPException(404)
-    picked = None if db.species_photos(conn).get(name) == visit_id else visit_id
-    db.set_species_photo(conn, name, picked)
-    return {"visit_id": picked}
+    cover = db.species_photos(conn).get(name)
+    if cover == visit_id:
+        db.set_species_photo(conn, name, None)
+        db.set_keep(conn, visit_id, True)  # old data may have a cover that isn't kept
+        state, cover = "favorite", None
+    elif db.get_visit(conn, visit_id)["keep"]:
+        db.set_keep(conn, visit_id, False)
+        state = "unset"
+    else:
+        db.set_species_photo(conn, name, visit_id)
+        db.set_keep(conn, visit_id, True)
+        state, cover = "cover", visit_id
+    return {"visit_id": visit_id, "species": name, "state": state, "cover_id": cover}
 
 
 @app.get("/species-info/{name}", response_class=HTMLResponse)
