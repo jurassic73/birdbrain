@@ -351,6 +351,8 @@ def test_agreeing_with_the_pi_and_saying_nothing_more_is_not_a_lesson(conn, add_
     claude = add_visit(**empty, corrected_visitor="none")  # Claude's own answer confirmed: still a lesson
     assert [r["visit_id"] for r in db.all_lessons(conn)] == [claude, circled]
     assert "The owner circled spots" in db.recent_lessons(conn)[1]
+    from birdbrain import lessons  # nor does the Lessons summary read it
+    assert set(lessons.fingerprint(db.all_lessons(conn))) == {str(claude), str(circled)}
 
 
 def test_the_prompt_preview_shows_a_skipped_visits_lesson(conn, add_visit):

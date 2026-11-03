@@ -47,8 +47,9 @@ Another model identifies animals in each photo from this camera, and your list g
 photo, so every point must be a fact about this camera, this yard or how this owner wants things named or counted
 that helps that model answer better.
 
-You get every correction and note the owner saved, oldest first. Each line says what the model answered, what the
-owner says was really there, the owner's note, and sometimes where they circled on the frame.
+You get every correction and note the owner saved, oldest first. Each line says what the model answered (or that
+the Pi settled the photo without asking it), what the owner says was really there, the owner's note, and sometimes
+where they circled on the frame.
 
 Rules:
 - Keep every distinct fact: things here that look like animals but are not (and when: night infrared, after a
