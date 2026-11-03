@@ -140,11 +140,12 @@ def test_species_page_folds_and_names_once(client, add_visit, fake_build):
     assert html.count('id="hourly"') == 1 and html.index('id="hourly"') > html.index("sp-more")
 
 
-def test_species_page_loading_card_has_no_title_and_asks_for_fold(client, add_visit):
+def test_species_page_loading_card_asks_for_fold_and_keeps_a_fallback(client, add_visit):
     add_visit(species="Bushtit")
     html = client.get("/species/Bushtit").text  # no cached card yet: loads over htmx
-    assert "<h1>" not in html and "/species-info/Bushtit?fold=1" in html
-    assert 'id="daily"' not in html  # the charts come with the card
+    assert "/species-info/Bushtit?fold=1" in html
+    # Title, facts and charts stand in until the card arrives (the page drops them then), or stay if it never does.
+    assert 'id="sp-fallback"' in html and 'id="daily"' in html
 
 
 def test_species_page_without_card_keeps_title(client, add_visit):

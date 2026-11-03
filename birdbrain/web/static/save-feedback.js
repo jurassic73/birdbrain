@@ -44,14 +44,23 @@
     const save = isSave(btn);
     const saveIndex = [...card.querySelectorAll("button")].indexOf(btn);
     try {
-      const r = await fetch(btn?.getAttribute("formaction") || form.action,
-                            { method: "POST", body: new URLSearchParams(new FormData(form, btn)) });
-      if (!r.ok) throw new Error(r.status);
-      refreshCard(card, await r.text());
-      // The card may have been rebuilt; find the same button again by position.
-      if (save) confirmSaved(btn.isConnected ? btn : card.querySelectorAll("button")[saveIndex]);
-    } catch {
-      form.submit(); // fall back to a normal page load
+      let r;
+      try {
+        r = await fetch(btn?.getAttribute("formaction") || form.action,
+                        { method: "POST", body: new URLSearchParams(new FormData(form, btn)) });
+      } catch {
+        r = null;
+      }
+      if (!r || !r.ok) {
+        form.submit(); // the save did not go through: fall back to a normal page load (shows the server's answer)
+        return;
+      }
+      // Saved. Whatever goes wrong repainting must not post the form a second time.
+      try {
+        refreshCard(card, await r.text());
+        // The card may have been rebuilt; find the same button again by position.
+        if (save) confirmSaved(btn.isConnected ? btn : card.querySelectorAll("button")[saveIndex]);
+      } catch (err) { console.error(err); }
     } finally {
       btn?.classList.remove("sending");
     }

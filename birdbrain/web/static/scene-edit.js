@@ -436,10 +436,12 @@
     const up = () => {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);  // the browser took the touch over (a scroll, a call)
       if (sel?.obj && JSON.stringify(before) !== JSON.stringify(sel.obj)) stage();
     };
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
   }
 
   document.addEventListener("pointerdown", (e) => {

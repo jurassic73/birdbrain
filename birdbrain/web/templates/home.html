@@ -112,7 +112,7 @@
   {% endif %}
 
   {% if visits %}
-  <div class="grid">
+  <div class="grid"{% if split_day %} data-day="{{ split_day }}"{% endif %}>
     {% include "_cards.html" %}
   </div>
   {% elif filtered %}
@@ -289,7 +289,7 @@
       if (busy) return;
       busy = true;
       try {
-        const r = await fetch("/live.jpg", { cache: "no-store" });
+        const r = await fetch("/live.jpg", { cache: "no-store", signal: AbortSignal.timeout(10000) });
         if (!r.ok) throw new Error(r.status);
         const serverAge = parseFloat(r.headers.get("X-Frame-Age") || "0");
         const url = URL.createObjectURL(await r.blob());
@@ -316,7 +316,8 @@
     img.addEventListener("error", () => { if (frameAge === null) { failures++; render(); } });
 
     refresh();
-    setInterval(refresh, REFRESH_MS);
+    // Not in a background tab: each fetch past the frame's max age makes the Pi grab a new one. The handler below catches up on return.
+    setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
     setInterval(render, 1000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   })();
@@ -351,12 +352,14 @@
     }
     addEventListener("scroll", () => { if (pill && !gridAbove()) hidePill(); }, { passive: true });
 
+    const failed = () => document.dispatchEvent(new CustomEvent("birdbrain:update-failed"));
+
     async function update() {
       if (busy) { again = true; return; }
       busy = true;
       try {
-        const r = await fetch(location.href, { cache: "no-store" });
-        if (!r.ok) return;
+        const r = await fetch(location.href, { cache: "no-store", signal: AbortSignal.timeout(10000) });
+        if (!r.ok) { failed(); return; }
         const doc = new DOMParser().parseFromString(await r.text(), "text/html");
         const tally = document.querySelector(".tally-box"), freshTally = doc.querySelector(".tally-box");
         if (tally && freshTally) tally.replaceWith(freshTally);
@@ -365,7 +368,7 @@
         const range = document.querySelector(".critters")?.dataset.range;
         swap(doc, ".today-info");  // not the live view in Today, which keeps running
         if (range && range !== doc.querySelector(".critters")?.dataset.range) {  // keep the period picked on the scoreboard
-          const s = await fetch(`/scoreboard?range=${range}`, { cache: "no-store" });
+          const s = await fetch(`/scoreboard?range=${range}`, { cache: "no-store", signal: AbortSignal.timeout(10000) });
           const board = document.querySelector(".critters");
           if (s.ok && board) { board.outerHTML = await s.text(); htmx.process(document.querySelector(".critters")); }
         }
@@ -381,6 +384,8 @@
         swap(doc, ".visits-head h2");
         const g = grid(), freshGrid = doc.querySelector(".visits .grid");
         if (!freshGrid) return;
+        // Left open past midnight: the Today heading is yesterday's. The grid knows which day it called Today.
+        if (g && g.dataset.day !== freshGrid.dataset.day) { location.reload(); return; }
         if (!g) {  // "No visitors yet" until now: take the whole section
           swap(doc, "section.visits");
           grid().querySelectorAll(".card").forEach(c => c.classList.add("card-new"));
@@ -408,7 +413,7 @@
           if (shift) scrollBy(0, shift);
           showPill(added.length);
         }
-      } catch (e) { /* atmos unreachable; the next check tries again */ }
+      } catch (e) { failed(); }  // atmos unreachable or slow: tab-alert.js says so again on its next poll
       finally {
         busy = false;
         if (again) { again = false; update(); }
@@ -416,7 +421,7 @@
     }
     document.addEventListener("birdbrain:visits", update);
 
-    // Cards slid in at the top push the rest down, so "Load more" (which counts from the top) repeats a few: drop them.
+    // Safety net: never show the same card twice (Load more pages by time, so it should not happen).
     document.addEventListener("htmx:afterSettle", () => {
       const seen = new Set();
       grid()?.querySelectorAll(".card").forEach(c => {

@@ -42,7 +42,7 @@ def mirror(monkeypatch):
 PUBLIC_GETS = {
     "/", "/about", "/api/latest-visit", "/api/photo-reminder", "/favicon.ico", "/guest-login", "/live.jpg",
     "/live/latest.jpg", "/manifest.webmanifest", "/scoreboard", "/species", "/species-info/{name}",
-    "/species-photo", "/species-search", "/species/{name}", "/species/{name}/cover-compare", "/stats",
+    "/species-photo", "/species-search", "/species/{name}", "/species/{name}/cover-compare", "/species/{name}/more", "/stats",
     "/visit/{visit_id}", "/visits", "/visits/archive-more", "/visits/more", "/weather",
 }
 LOGIN_ROUTES = {"/login", "/logout", "/guest-login"}

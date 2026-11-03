@@ -33,10 +33,19 @@
           const img = document.getElementById("zones-now-img");
           if (!img || busy || document.hidden) return;
           busy = true;
-          const next = new Image();
-          next.onload = () => { img.src = next.src; busy = false; };
-          next.onerror = () => { busy = false; };
-          next.src = "/live.jpg?t=" + Date.now();
+          // One request, as a blob (not a second one for img.src), like static/cam-live.js.
+          fetch("/live.jpg?t=" + Date.now(), { cache: "no-store", signal: AbortSignal.timeout(10000) })
+            .then(r => (r.ok ? r.blob() : Promise.reject(r.status)))
+            .then(async b => {
+              const url = URL.createObjectURL(b), next = new Image();
+              next.src = url;
+              try { await next.decode(); } catch (e) { URL.revokeObjectURL(url); throw e; }
+              const old = img.src;
+              img.src = url;
+              if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+            })
+            .catch(() => {})
+            .finally(() => { busy = false; });
         };
         if (!window.zonesPhotoTimer) {
           window.zonesPhotoTimer = setInterval(window.zonesFreshPhoto, {{ live_refresh * 1000 }});

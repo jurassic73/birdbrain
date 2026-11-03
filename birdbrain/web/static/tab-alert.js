@@ -13,6 +13,7 @@
   let unseen = 0;
   let clearTimer = null;
   let busy = false;
+  let retry = false;  // a page failed to pull in the last news: say so again on the next poll
 
   function clear() {
     unseen = 0;
@@ -68,17 +69,24 @@
     if (busy) return;
     busy = true;
     try {
-      const r = await fetch("/api/latest-visit", { cache: "no-store" });
+      const r = await fetch("/api/latest-visit", { cache: "no-store", signal: AbortSignal.timeout(10000) });  // a phone that slept can leave a request pending forever
       const v = await r.json();
       syncNav(v.waiting);
       if (lastSeen === null) { lastSeen = v.id; lastAny = v.any_id; return; }
       const real = v.id > lastSeen, any = v.any_id > lastAny;
       if (real) { lastSeen = v.id; flag(v.label); }
       if (any) lastAny = v.any_id;
-      if (real || any) document.dispatchEvent(new CustomEvent("birdbrain:visits", { detail: { real, any, id: v.id } }));
+      if (real || any || retry) {
+        const again = retry && !real && !any;
+        retry = false;
+        document.dispatchEvent(new CustomEvent("birdbrain:visits", { detail: { real, any, id: v.id, retry: again } }));
+      }
     } catch (e) { /* atmos unreachable; try again next poll */ }
     finally { busy = false; }
   }
+
+  // A page that could not fetch its update (offline, timed out) asks to be told again.
+  document.addEventListener("birdbrain:update-failed", () => { retry = true; });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;

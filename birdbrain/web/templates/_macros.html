@@ -28,18 +28,9 @@
 {%- endif -%}
 {%- endmacro %}
 
-{# The blue keeper mark (a star) on a card; admin only, so callers check request.state.admin. htmx swaps it for
-   the server's updated copy. Lives inside the card's link, so the click must not follow the link. #}
-{% macro keeper_btn(v) -%}
-{%- set on = v.keep == 1 -%}
-<button type="button" class="keep-mark" aria-pressed="{{ 'true' if on else 'false' }}" aria-label="Keep this photo"
-  hx-post="/visit/{{ v.id }}/keep" hx-vals='{"on": {{ 0 if on else 1 }}}' hx-target="this" hx-swap="outerHTML"
-  onclick="event.preventDefault(); event.stopPropagation()"
-  data-tip="Keeper: this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg></button>
-{%- endmacro %}
-
 {# A status pill. Every pill says what it means in a hover tooltip (static/tips.js); add new pills here. #}
-{% macro badge(text, cls, tag="span") -%}
+{# `key` picks the tooltip when the text alone is ambiguous (the alert pills' "on"/"off" vs the local step's "off"). #}
+{% macro badge(text, cls, tag="span", key=none) -%}
 {%- set tips = {
   "high": "High confidence: Claude was sure of this answer.",
   "medium": "Medium confidence: Claude thought this was likely, but key marks were hidden, blurry or far away.",
@@ -56,8 +47,8 @@
   "Winter visitor": "Winter visitor: reported here mainly in winter, going by local iNaturalist reports.",
   "Passes through in spring and fall": "Passes through: reported here mainly during spring and fall migration, going by local iNaturalist reports.",
   "in use": "In use: the local model mode picked on the Settings page.",
-  "on": "On: this alert is switched on in Settings.",
-  "off": "Off: this alert is switched off in Settings.",
+  "alert on": "On: this alert is switched on in Settings.",
+  "alert off": "Off: this alert is switched off in Settings.",
   "moved": "Moved: the zones were updated to match what the camera sees now.",
   "no change": "No change: the rocks and the camera were where the zones expected them.",
   "skipped": "Skipped: nothing was changed this time (too dark, too busy, or the camera moved too far to fix on its own).",
@@ -86,7 +77,7 @@
   "favorite": "Favorite (blue star): you marked this photo to keep. It is never thinned or deleted to save space. Undo takes the mark off.",
   "too old": "Too old: newer lessons fill the prompt, so this one isn't sent any more. Switching newer ones off brings it back.",
 } -%}
-<{{ tag }} class="badge {{ cls }}"{% if tips[text] %} data-tip="{{ tips[text] }}"{% endif %}>{{ text }}</{{ tag }}>
+<{{ tag }} class="badge {{ cls }}"{% if tips[key or text] %} data-tip="{{ tips[key or text] }}"{% endif %}>{{ text }}</{{ tag }}>
 {%- endmacro %}
 
 {# Whether a species is confirmed here (db.confirmed_species); needs `confirmed` from the route. #}

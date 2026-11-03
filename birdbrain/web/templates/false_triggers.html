@@ -212,7 +212,7 @@
   }
   document.addEventListener("birdbrain:visits", e => { if (e.detail?.any) update(); });
 
-  // Cards added at the top shift Load more's offset, so it can repeat a few: drop them.
+  // Safety net: never show the same card twice (Load more pages by time, so it should not happen).
   document.addEventListener("htmx:afterSettle", () => {
     const seen = new Set();
     grid?.querySelectorAll("a.card").forEach(c => { if (seen.has(c.dataset.id)) c.remove(); else seen.add(c.dataset.id); });
