@@ -327,7 +327,7 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 .critter-name:hover, .critter-name:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .info-tip.card-tip { cursor: pointer; }
 /* The Today list's info icons, 50% bigger than elsewhere (owner: too small to see or tap). */
-.critters .info-tip { font-size: .825em; }
+.critters .info-tip { font-size: 1.125em; }
 .info-tip.card-tip:hover, .info-tip.card-tip:focus-visible { color: var(--accent); }
 .critter-n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); text-decoration: none; }
 .critter-n:hover, .critter-n:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
@@ -1275,11 +1275,13 @@ button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 
 
 /* Small circled "i" that shows its data-tip on hover or tap */
 .info-tip {
-  display: inline-flex; align-items: center; justify-content: center;
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
   width: 1.1em; height: 1.1em; margin-left: .3em; vertical-align: middle;
   border: 1.5px solid currentColor; border-radius: 50%;
-  font: italic 600 .55em/1 Georgia, serif; opacity: .55; cursor: default;
+  font: italic 600 .75em/1 Georgia, serif; opacity: .55; cursor: default;
 }
+/* Invisible ring around the icon so the mouse does not have to land exactly on it */
+.info-tip::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
 .info-tip:hover, .info-tip:focus { opacity: 1; }
 
 /* ---------- Phone tidy-up (<= 640px): fold, shorten and tighten so pages read in a few screens ---------- */
@@ -1676,7 +1678,7 @@ button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 .wx-now-lines { list-style: none; margin: 0; padding: 0; }
 .wx-now-lines li { position: relative; padding: 3px 0 3px 18px; line-height: 1.4; }
 .wx-now-lines li::before { content: ""; position: absolute; left: 4px; top: .85em; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.wx-now .info-tip { font-size: .7em; }
+.wx-now .info-tip { font-size: .95em; }
 .wx-empty { max-width: 640px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .wx-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted); font-size: .85rem; margin-bottom: 6px; }
 .wx-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
