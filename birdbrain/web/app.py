@@ -1345,7 +1345,7 @@ def forecast_blurb(fc: dict, bd: dict, now: datetime | None = None) -> dict:
     if fc["no_growth"]:
         text = f"Photos haven't grown over the last {w} days, so there is nothing to forecast."
     elif fc["at_budget"]:
-        text = f"{pace}, photos are already at the budget; thinning and trimming keep them there."
+        text = f"{pace}, photos have reached the budget; thinning and trimming keep them at or under it."
     elif not fc["budget"]:
         text = f"{pace}, no budget is set."
     else:
