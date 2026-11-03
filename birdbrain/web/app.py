@@ -751,8 +751,8 @@ async def ask_species(visit_id: int, hint: str = Form(""), conn=Depends(get_conn
     visitor = result.visitor if result.visitor in db.VISITORS else "other"
     name = result.name.strip()
     if visitor == "bird":  # only an eBird name: keeps one spelling per species
-        official = names.canonical(name, [n for n, _ in db.species_kinds(conn)])
-        if not official and names.bird_names():
+        official = await asyncio.to_thread(names.canonical, name, [n for n, _ in db.species_kinds(conn)])
+        if not official and await asyncio.to_thread(names.bird_names):
             return JSONResponse({"error": f"Claude said \"{name}\", which isn't an eBird species name. Try another clue."})
         name = official or name
     return JSONResponse({"name": name, "visitor": visitor, "confidence": result.confidence,
@@ -968,7 +968,7 @@ def species_cover_compare(name: str, visit_id: int, conn=Depends(get_conn)):
 def species_card(request: Request, name: str, mini: bool = False, fold: bool = False, conn=Depends(get_conn)):
     """The species info card (or its hover preview), built from outside sources on first use."""
     # Visitors only see cards already built, so they can't make the site fetch or call Claude.
-    info = species_info.get(conn, name, fetch=request.state.admin)
+    info = species_info.get(conn, name, fetch=request.state.admin and not mini)
     if not info:
         return HTMLResponse('<p class="muted sp-empty">No info found for this one yet.</p>')
     return page(

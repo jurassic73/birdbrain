@@ -5,8 +5,8 @@ DATA_DIR/ebird_names.json. Picking from it keeps one spelling per species, so th
 "House Finch" are the same species everywhere on the site.
 """
 
-import json
 import re
+import time
 from datetime import datetime
 
 from pydantic import BaseModel
@@ -16,6 +16,7 @@ from . import config, db
 MODEL = "claude-sonnet-5-5"
 TAXONOMY_URL = "https://api.ebird.org/v2/ref/taxonomy/ebird"
 _names: list[str] | None = None
+_failed_at = 0.0  # time.monotonic() of the last failed download
 
 
 def _key(name: str) -> str:
@@ -24,22 +25,28 @@ def _key(name: str) -> str:
 
 
 def bird_names() -> list[str]:
-    """Every eBird species name, downloaded on first use (~1 MB). Empty if it can't be fetched."""
-    global _names
+    """Every eBird species name, downloaded on first use (~1 MB). Empty if it can't be fetched; a failed download
+    is retried at most hourly (every search keystroke would otherwise wait on a 30 s request)."""
+    global _names, _failed_at
     if _names is None:
+        from . import species_info
         path = config.DATA_DIR / "ebird_names.json"
-        if not path.exists():
+        names = species_info.read_json(path)  # a truncated or garbled file counts as missing
+        if not isinstance(names, list):
+            if _failed_at and time.monotonic() - _failed_at < species_info.RETRY_AFTER:
+                return []
             try:
                 import httpx
 
-                from .species_info import HEADERS
-                r = httpx.get(TAXONOMY_URL, params={"fmt": "json", "cat": "species"}, headers=HEADERS, timeout=30)
+                r = httpx.get(TAXONOMY_URL, params={"fmt": "json", "cat": "species"}, headers=species_info.HEADERS,
+                              timeout=30)
                 r.raise_for_status()
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps([t["comName"] for t in r.json()]))
+                names = [t["comName"] for t in r.json()]
+                species_info.write_json_atomic(path, names)
             except Exception:
-                return []  # offline: the yard's own names still work; try again next time
-        _names = json.loads(path.read_text())
+                _failed_at = time.monotonic()
+                return []  # offline: the yard's own names still work; try again later
+        _names = names
     return _names
 
 

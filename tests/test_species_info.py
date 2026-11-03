@@ -111,6 +111,7 @@ def test_card_route_renders_full_card(client, add_visit, fake_build):
 
 
 def test_card_route_mini(client, fake_build):
+    client.get("/species-info/Bushtit")  # builds the card; the hover preview only reads it
     html = client.get("/species-info/Bushtit?mini=1").text
     assert "Click for more" in html and "<h2>" not in html
 

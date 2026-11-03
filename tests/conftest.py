@@ -49,6 +49,8 @@ def offline_species_info(monkeypatch):
     # prefetch() builds in a background thread that can outlive the test: once this patch is undone it ran the real build()
     # (Wikipedia, iNaturalist, then Haiku with the fake key, a stray 401 after "100%" in about 1 run in 3). Tests never need it.
     monkeypatch.setattr(species_info, "prefetch", lambda name: None)
+    monkeypatch.setattr(species_info, "_failed_at", {})
+    monkeypatch.setattr(species_info, "_building", set())
     species_info.forget_cached_cards()
 
 
@@ -82,6 +84,7 @@ def fresh_zones():
 def offline_bird_names(monkeypatch):
     """The eBird name list is downloaded on first use; tests get a small fixed one."""
     from birdbrain import names
+    monkeypatch.setattr(names, "_failed_at", 0.0)
     monkeypatch.setattr(names, "_names", ["House Finch", "Purple Finch", "Cassin's Finch", "House Sparrow",
                                           "Dark-eyed Junco", "Black-capped Chickadee", "Bushtit"])
 
