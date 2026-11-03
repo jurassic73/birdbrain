@@ -25,6 +25,11 @@
 {% set current_visitor = visit.corrected_visitor or visit.visitor %}
 {% set has_correction = visit.corrected_visitor or visit.corrected_species or visit.feedback or visit.marks or visit.corrected_also is not none %}
 {% set claude_also = also_of({"also": visit.also}) %}
+{# The Pi judged the frame empty and Claude wasn't asked (the note box says so). #}
+{% set claude_skipped = visit.visitor == 'none' and decision.steps | selectattr("skipped_claude") | list %}
+{# Block sets: their apostrophes stay as typed, as they were inline. #}
+{% set note_tip %}{% if claude_skipped %}Claude wasn't asked about this visit: the Pi judged it empty. A note is saved to Claude's Notes as a lesson and read on future identifications.{% else %}Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake.{% endif %} The Pi's local animal check never reads notes: it learns from the answer you pick above.{% endset %}
+{% set note_placeholder %}{% if claude_skipped %}Claude didn't look at this one. Optional: what set off the motion? e.g. wind ripples on the rim{% else %}What did Claude get wrong? e.g. No bird: rocks poking out after a refill{% endif %}{% endset %}
 {% set embed = request.query_params.get('embed') == '1' %}
 {# In the False triggers pop-up every link keeps embed=1 (and todo=1, unconfirmed only), so the arrows stay inside it. #}
 {% set ft_args = (['ft=1'] if is_ft else []) + (['todo=1'] if todo else []) + (['embed=1'] if embed else []) + (['species=' ~ (scope | urlencode)] if scope else []) %}
@@ -326,12 +331,12 @@
       </div>
       <div class="field">
         <div class="feedback-head">
-          <label for="feedback" class="tip-label">{{ claude_mark() }}Note for Claude <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake. The Pi's local animal check never reads notes: it learns from the answer you pick above.">i</span></label>
+          <label for="feedback" class="tip-label">{{ claude_mark() }}Note for Claude <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="{{ note_tip }}">i</span></label>
         </div>
         <input type="hidden" name="marks" id="marks">
         <div class="feedback-row">
           <textarea id="feedback" name="feedback" rows="1"
-                    placeholder="What did Claude get wrong? e.g. No bird: rocks poking out after a refill">{{ visit.feedback or '' }}</textarea>
+                    placeholder="{{ note_placeholder }}">{{ visit.feedback or '' }}</textarea>
           <div class="feedback-actions">
             <button type="submit" class="save-btn" data-tip="{{ save_none if current_visitor == 'none' else save_animal }}">Save</button>
             {% if has_correction %}

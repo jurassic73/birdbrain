@@ -1137,23 +1137,58 @@ def _spoken_also(rows: list[dict]) -> str:
     return ", ".join(f"{r.get('count') or 1} {_spoken_name(r.get('species'), r['visitor'])}" for r in rows)
 
 
+# What settled a visit on the Pi without asking Claude (identify.settled_*), as a lesson line tells Claude.
+SKIPPED_BY = {"presence": "the Pi's animal check judged this frame empty",
+              "detector": "the Pi's local detector found no animal"}
+
+
+def skipped_by(raw_json: str | None) -> str | None:
+    """How the Pi settled a visit without asking Claude: "presence" (the local animal check judged it empty),
+    "detector" (the local detector found nothing) or "classifier" (the local classifier named it). None when
+    Claude was asked, or the saved trail is missing or unreadable."""
+    try:
+        calls = (json.loads(raw_json or "{}") or {}).get("calls")
+    except (ValueError, TypeError, AttributeError):
+        return None
+    if not isinstance(calls, dict) or not calls.get("skipped_claude"):
+        return None
+    if calls.get("settled_by") == "classifier":
+        return "classifier"
+    presence = calls.get("presence")
+    return "presence" if isinstance(presence, dict) and presence.get("empty") else "detector"
+
+
 def all_lessons(conn: sqlite3.Connection) -> list[dict]:
-    """Every correction and note, newest first, as the line Claude would read, with whether it's in the prompt now."""
+    """Every correction and note, newest first, as the line Claude would read, with whether it's in the prompt now.
+    A visit the Pi settled without asking Claude reads as such (Claude never answered it). One where the owner
+    only agreed with the Pi, with no note, circles or other animals, tells Claude nothing and is left out."""
     rows = conn.execute(
         "SELECT id, captured_at, visitor, species, corrected_visitor, corrected_species, feedback, marks, is_night, "
-        f"lesson_off, also, corrected_also FROM visits WHERE {CORRECTED} ORDER BY id DESC"
+        f"lesson_off, also, corrected_also, raw_json FROM visits WHERE {CORRECTED} ORDER BY id DESC"
     ).fetchall()
     lessons, used = [], 0
     for r in rows:
         said = _spoken_name(r["species"], r["visitor"])
         actual = r["corrected_species"] or (_spoken_name(None, r["corrected_visitor"]) if r["corrected_visitor"] else None)
         when = "night (IR)" if r["is_night"] else "day"
-        if claude_also := also_of({"corrected_also": None, "also": r["also"]}):
-            said += f"\" with \"{_spoken_also(claude_also)}"
-        prefix = f"- {r['captured_at'][:10]}, {when}: you said \"{said}\""
-        line = f"{prefix}; the owner says it was \"{actual}\"." if actual else f"{prefix} and the owner confirmed it."
-        if r["corrected_also"] is not None:
-            owner_also = also_of(r)
+        marks = parse_marks(r["marks"])
+        owner_also = also_of(r) if r["corrected_also"] is not None else None
+        if by := skipped_by(r["raw_json"]):
+            changed = actual is not None and actual != said
+            if not (changed or r["feedback"] or marks or owner_also):
+                continue  # the owner agreed with the Pi and said nothing more: no lesson for Claude
+            head = (f"the Pi's species classifier named it \"{said}\"" if by == "classifier" else SKIPPED_BY[by])
+            prefix = f"- {r['captured_at'][:10]}, {when}: {head}, so you weren't asked"
+            line = (f"{prefix}; the owner says it was \"{actual}\"." if changed
+                    else f"{prefix}; the owner confirmed {'no animal was there' if r['visitor'] == 'none' else 'it'}.")
+            said_by = "the Pi"
+        else:
+            if claude_also := also_of({"corrected_also": None, "also": r["also"]}):
+                said += f"\" with \"{_spoken_also(claude_also)}"
+            prefix = f"- {r['captured_at'][:10]}, {when}: you said \"{said}\""
+            line = f"{prefix}; the owner says it was \"{actual}\"." if actual else f"{prefix} and the owner confirmed it."
+            said_by = "Claude"
+        if owner_also is not None:
             line += (f" The owner says also there: \"{_spoken_also(owner_also)}\"." if owner_also
                      else " The owner says no other animal was there.")
         if r["feedback"]:
@@ -1161,14 +1196,15 @@ def all_lessons(conn: sqlite3.Connection) -> list[dict]:
             if len(note) > NOTE_LIMIT:  # a long note is cut for the prompt; the visit keeps all of it
                 note = note[:NOTE_LIMIT - 1].rstrip() + "…"
             line += " Owner's note: " + note
-        if marks := parse_marks(r["marks"]):
+        if marks:
             line += f" The owner circled spots on the full frame: {describe_marks(marks)}."
         in_use = not r["lesson_off"] and used < LESSON_LIMIT
         used += in_use
         lessons.append({"visit_id": r["id"], "captured_at": r["captured_at"], "line": line,
                         "off": bool(r["lesson_off"]), "in_use": in_use,
-                        # what the edit form shows: Claude's answer stays fixed, the owner's parts can change
-                        "said": said, "when": when, "visitor": r["corrected_visitor"] or r["visitor"],
+                        # what the edit form shows: the first answer stays fixed, the owner's parts can change
+                        "said": said, "said_by": said_by, "when": when,
+                        "visitor": r["corrected_visitor"] or r["visitor"],
                         "species": r["corrected_species"] or r["species"] or "", "feedback": r["feedback"] or "",
                         "corrected_also": r["corrected_also"],
                         "circles": len(marks)})

@@ -170,8 +170,8 @@ def system_prompt(lessons: list[str] | None = None, site: dict | None = None) ->
         )
     if lessons:
         parts.append(
-            "<corrections>\nCorrections the owner made to your recent answers at this camera, newest first. "
-            "Learn from them, especially about what is not an animal here:\n" + "\n".join(lessons) + "\n</corrections>"
+            "<corrections>\nCorrections the owner made to recent answers at this camera, newest first: yours, or the "
+            "Pi's where a line says you weren't asked. Learn from them, especially about what is not an animal here:\n" + "\n".join(lessons) + "\n</corrections>"
         )
     return "\n\n".join(parts)
 

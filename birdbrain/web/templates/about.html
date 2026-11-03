@@ -458,7 +458,7 @@
   </ol>
   <p>Claude doesn't get retrained; it simply reads your latest corrections every time (in-context learning, not fine-tuning). Older ones aren't lost: after every {{ auto_every }} new notes, Claude distills all of them into a short <a href="/notes#summary">Lessons summary</a>, which you check and accept on Claude's Notes and which then goes with every photo{% if totals.distills %} ({{ totals.distills }} summar{{ 'y' if totals.distills == 1 else 'ies' }} drafted so far, counted in the spend above){% endif %}. The Pi's animal check does retrain on them, in the background within about a minute.
     You can circle things on the photo, fix the other animals in the shot, or press Ask to have Claude suggest a name
-    <span data-tip="Ask costs about a cent. Species boxes suggest eBird names so one bird never gets two spellings. Claude's Notes lists every lesson exactly as Claude reads it; switch off any that don't help.">(more)</span>.
+    <span data-tip="Ask costs about a cent. Species boxes suggest eBird names so one bird never gets two spellings. Claude's Notes lists every lesson exactly as Claude reads it; switch off any that don't help. On a photo the Pi judged empty without asking Claude, the lesson says so; agreeing it was empty adds a lesson only with a note, circles or another animal.">(more)</span>.
     {% if totals.corrected %}You've corrected or annotated {{ totals.corrected }} visit{{ 's' if totals.corrected != 1 }} so far.{% endif %}</p>
   <h3 id="circle-check">Missed something? Circle it and ask, cheapest first</h3>
   <ol class="loop ladder" aria-label="Asking about a circle">
