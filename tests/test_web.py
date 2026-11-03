@@ -802,16 +802,23 @@ def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, co
     for cls, color in zip(("z-rim", "z-water", "z-spot", "z-crop"), colors):
         assert f'class="{cls}" style="color: {color}"' in html
     assert "1 landing spot inside the water" in html
-    assert re.search(r'mode on" role="listitem">\s*<strong>Gate</strong><span class="badge', html)  # mode marked
+    assert re.search(r'The Pi animal check <span class="badge pi-only"[^>]*>gate</span>', html)  # mode marked, live
     assert "claude-haiku-5-5" in html and "claude-sonnet-5-5" in html
-    assert "2</span> motion events checked" in html and "Example: a summer visitor" in html
     assert "—" not in html
-    # diagrams first, then the numbers with visible titles, then the zones
+    # the 10,000-foot view: no numbers, seasons, cooldowns or JSON; diagrams first, then the zones and rules
+    for gone in ("motion events checked", "How often visitors come", "Example: a summer visitor", "Cooldowns and rainy days",
+                 '"visitor": "bird"', 'id="numbers"', 'id="seasons"', 'href="#numbers"', 'href="#seasons"'):
+        assert gone not in html, gone
     assert "How a visit gets spotted, identified and shared here" in html
     assert "The network path, from the bird to you" in html
-    assert "How often visitors come" in html
-    pos = [html.index(f'id="{i}"') for i in ("flow", "network", "numbers", "zones")]
-    assert pos == sorted(pos) and '<a href="#numbers">Numbers</a>' in html
+    pos = [html.index(f'id="{i}"') for i in ("flow", "handled", "network", "zones", "rules", "photos", "learning", "sources",
+                                             "storage", "stack")]
+    assert pos == sorted(pos) and '<a href="#photos">Photos to Claude</a>' in html
+    # which parts learn and which don't, one row each with its pill
+    learn = html[html.index('id="learning"'):html.index('id="sources"')]
+    assert learn.count("<tr>") == 4 and all(n in learn for n in FOUR)
+    assert ">can&#39;t be trained<" in learn or ">can't be trained<" in learn
+    assert "in-context learning, not fine-tuning" in learn and f"{db.CONFIRMED_MIN} sure visits" in learn
 
 
 def test_about_page_without_calibration_or_data(client, monkeypatch):
@@ -822,15 +829,13 @@ def test_about_page_without_calibration_or_data(client, monkeypatch):
     assert "Whole frame" in html and "Claude sees the whole photo" in html
     assert 'class="z-water"' not in html and "Open water</h3>" not in html
     assert 'class="z-ground"' not in html and "Ground around the bath" not in html
-    assert "motion events checked" not in html
-    assert 'id="numbers"' not in html and 'href="#numbers"' not in html
 
 
 def test_about_page_explains_the_ground_zone(client, calibrated, monkeypatch):
     monkeypatch.setattr(config, "GROUND_ZONE", ((0.1, 0.5), (0.9, 0.5), (0.9, 1), (0.1, 1)))
     html = client.get("/about").text
     assert 'class="z-ground"' in html and "Ground around the bath</h3>" in html
-    assert f"own cap of {config.GROUND_MAX_CALLS_PER_DAY}" in html and "plus the ground around the bath" in html
+    assert "plus the ground around the bath" in html
     assert "0.6%</strong>" not in html and "about cat-sized (0.6%)" in html     # GROUND_MIN_BLOB_NIGHT, live
 
 
@@ -899,22 +904,6 @@ def test_visit_photo_without_any_zones_draws_nothing(client, add_visit, monkeypa
     vid = add_visit(raw_json=json.dumps({"trigger": "rim"}))
     html = client.get(f"/visit/{vid}").text
     assert 'class="zones-overlay"' not in html and 'id="zones-toggle"' not in html
-
-
-def test_backoff_steps_stop_at_the_cap(monkeypatch):
-    monkeypatch.setattr(config, "COOLDOWN_NONE", 20)
-    monkeypatch.setattr(config, "COOLDOWN_NONE_MAX", 300)
-    assert webapp.backoff_steps() == [20, 40, 80, 160, 300]
-
-
-def test_season_example_prefers_a_real_card_with_a_season():
-    year_round = {"local_counts": [50] * 12, "expected_months": list(range(1, 13))}
-    summer = {"local_counts": [0, 0, 2, 10, 60, 90, 100, 80, 30, 5, 0, 0], "expected_months": [5, 6, 7, 8, 9]}
-    ex = webapp.season_example({"American Robin": year_round, "Black-headed Grosbeak": summer})
-    assert ex["name"] == "Black-headed Grosbeak" and ex["status"] == "Summer visitor"
-    badges = {m["name"]: m["badge"] for m in ex["months"]}
-    assert badges["Apr"] == "Early arrival" and badges["Oct"] == "Late departure" and badges["Jun"] is None
-    assert webapp.season_example({})["name"] is None
 
 
 def test_visit_page_says_which_zone_saw_the_motion(client, add_visit):
@@ -1382,11 +1371,6 @@ def test_review_heading_shows_the_real_total(client, add_visit, monkeypatch):
     assert "Showing the oldest 2 of 3" in html
 
 
-def test_alert_pills_and_the_local_off_pill_have_their_own_tooltips(client):
-    html = client.get("/about").text
-    assert "this alert is switched" in html and "this local step doesn" not in html
-
-
 FOUR = ("Motion detector", "Pi animal check", "BioCLIP 2 species check", "Claude")
 
 
@@ -1419,7 +1403,8 @@ def test_about_has_the_four_steps_as_numbered_cards_with_live_numbers(client):
     assert f"{config.TRIGGER_FRAMES} frames in a row" in section and f"{classifier.GATE_MIN_SCORE * 100:g}%" in section
     assert f"at least {db.CONFIRMED_MIN} earlier visits" in section and f"newest {db.LESSON_LIMIT} lessons" in section
     assert f"After every {lessons.AUTO_EVERY} new lessons" in section
-    assert "Anything there?" not in html.split('id="local"')[0].split('id="flow"')[1]  # the pipeline strip says Pi animal check
+    assert len(re.findall(r"<summary>More</summary>", section)) == 4  # training and controls fold under More
+    assert "Anything there?" not in html  # the page says Pi animal check, never the Settings sub-label
 
 
 def test_no_page_calls_the_pi_animal_check_by_an_old_name(client, add_visit):

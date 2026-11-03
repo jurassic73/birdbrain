@@ -1,5 +1,6 @@
 {# The four components a photo passes through (web/steps.py): the same words on False triggers, About and a visit's
-   page. Option B, strips: a pill and one or two sentences each, the detail under More. Option A, flow: numbered cards. #}
+   page. Option B, strips: a pill and one or two sentences each, the detail under More. Option A, flow: numbered cards
+   (About) with the one-line short each; what it does, training and controls under More. #}
 {% from "_macros.html" import badge %}
 
 {% macro strips(items, open=False, bottom=True) -%}
@@ -24,9 +25,12 @@
   {% for s in items %}
   <div class="hs-step" id="step-{{ s.n }}"><div class="hs-num">{{ s.n }}</div><div>
     <h3>{{ s.name }} <span class="hs-q">{% if s.n == 4 %}&middot; (the easy button){% else %}&middot; &ldquo;{{ s.question }}&rdquo;{% endif %}</span> {{ badge(s.pill[0], s.pill[1]) }}</h3>
-    <div class="hs-lab">What the {{ s.name }} does</div>{{ s.does | safe }}
-    <div class="hs-lab">How the {{ s.name }} is trained</div>{{ s.train | safe }}
-    <div class="hs-lab">What you control</div>{{ s.control | safe }}
+    <p>{{ s.short | safe }}</p>
+    <details><summary>More</summary><div class="hs-more">
+      <div class="hs-lab">What the {{ s.name }} does</div>{{ s.does | safe }}
+      <div class="hs-lab">How the {{ s.name }} is trained</div>{{ s.train | safe }}
+      <div class="hs-lab">What you control</div>{{ s.control | safe }}
+    </div></details>
   </div></div>
   {% if s.next %}<div class="hs-conn"><span>{{ s.next }}</span></div>{% endif %}
   {% endfor %}

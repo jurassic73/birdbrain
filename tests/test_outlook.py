@@ -262,9 +262,3 @@ def test_page_box_without_weather_and_without_visits(client, add_visit):
     add_visit(captured_at="2026-11-02T09:10:00", species="Dark-eyed Junco")
     html = client.get("/weather").text
     assert "Today at the bath" in html and "Most seen this week: " in html and "wx-now-head" not in html
-
-
-def test_about_page_explains_the_box(client, add_visit):
-    add_visit()
-    html = client.get("/about").text
-    assert "Today at the bath" in html and f"once there are {db.MIN_LIKE_TODAY} of them" in html
