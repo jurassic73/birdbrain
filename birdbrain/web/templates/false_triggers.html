@@ -30,6 +30,7 @@
 {% if cleared is not none %}<p class="notice saved">Deleted {{ cleared }} photo{{ 's' if cleared != 1 }}. The Pi keeps what it learned from them.</p>{% endif %}
 <details class="m-fold" id="ft-storage">
   <summary>Storage and triggers by hour</summary>
+  {% include "_storage_bar.html" %}
   {% include "_storage.html" %}
   <div class="charts single">
     <figure><figcaption>False triggers by hour of day <span class="muted">· lots from one spot? Adjust the <a href="/settings#zones" data-tip="The zones are where the camera watches for motion: the rim, the rocks, the open water and the ground. Nothing changes them automatically because of false triggers. Move or shrink one by hand if it keeps firing on leaves or ripples.">zones</a></span></figcaption><canvas id="hourly"></canvas></figure>

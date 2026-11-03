@@ -133,7 +133,7 @@ FALSE_TRIGGER_PHOTO = _env("FALSE_TRIGGER_PHOTO", "medium").strip().lower()  # s
 # only; the Settings page overrides them. Over the budget, or with less free disk than DISK_FLOOR_MB, space is freed:
 # false triggers first, then older real visits are thinned, then the oldest thinned ones keep only their thumbnail.
 # Keepers, species photos, corrected or annotated visits, first sightings and rare species are never touched.
-PHOTO_BUDGET_MB = float(_env("PHOTO_BUDGET_MB", "5120"))   # 0 = no budget
+PHOTO_BUDGET_MB = float(_env("PHOTO_BUDGET_MB", "10240"))   # 0 = no budget
 PHOTO_THIN = _env("PHOTO_THIN", "1").strip() not in ("0", "false", "off", "no")  # thin real visits after PHOTO_FULL_DAYS
 PHOTO_FULL_DAYS = int(_env("PHOTO_FULL_DAYS", "90"))       # real visits younger than this stay full size
 PHOTO_FULL_PER_DAY = int(_env("PHOTO_FULL_PER_DAY", "2"))  # sharpest photos per species per day that stay full size

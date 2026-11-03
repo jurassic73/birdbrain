@@ -1,0 +1,23 @@
+{# The photo budget as one bar. Needs `bd` (retention.breakdown) and `bar` (app.storage_bar). #}
+<div class="sbar-wrap" id="storage-bar">
+  <div class="sbar{{ ' over' if bar.over }}{{ ' empty' if not bar.segments }}" role="img"
+       aria-label="Photos use {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of a {{ bd.budget_bytes | mb }} budget{% endif %}{{ ', over the budget' if bar.over }}">
+    {% for s in bar.segments %}
+    <span class="sbar-seg sb-{{ s.key }}" style="width: {{ s.pct }}%" data-tip="{{ s.tip }}"></span>
+    {% endfor %}
+    {% if bar.free_pct %}<span class="sbar-seg sb-free" style="width: {{ bar.free_pct }}%" data-tip="{{ bar.free_tip }}"></span>{% endif %}
+    {% if bar.warn_at is not none %}<i class="sbar-tick warn" style="left: {{ bar.warn_at }}%" data-tip="Warning: one phone alert goes out when photos reach {{ '%g' | format(bd.warn_pct) }}% of the budget"></i>{% endif %}
+    {% if bar.over %}<i class="sbar-tick budget" style="left: {{ bar.budget_at }}%" data-tip="The budget ends here. The part after it is the overage."></i>{% endif %}
+  </div>
+  <ul class="sbar-legend">
+    {% for s in bar.legend %}
+    <li data-tip="{{ s.tip }}"><i class="sw sb-{{ s.key }}"></i>{{ s.label }} <b>{{ s.bytes | mb }}</b></li>
+    {% endfor %}
+    {% if bar.free_pct %}<li data-tip="{{ bar.free_tip }}"><i class="sw sb-free"></i>Free in budget <b>{{ bar.free_bytes | mb }}</b></li>{% endif %}
+  </ul>
+  <p class="sbar-line">
+    <strong>Photos {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% else %}, no budget{% endif %}</strong>{% if bar.over %} <span class="sbar-over">over by {{ (bd.used_bytes - bd.budget_bytes) | mb }}</span>{% endif %}
+    <span class="muted">· Disk free on this machine {{ bd.disk.free_bytes | mb }}{% if bd.disk.floor_bytes %} (keeps {{ bd.disk.floor_bytes | mb }} free){% endif %}</span><br>
+    <small class="muted" data-tip="These live in the same data folder but are not part of the photo budget and are never thinned.">Not counted: models {{ bd.system.models | mb }}, database {{ bd.system.database | mb }}, calibration {{ bd.system.calibration | mb }}</small>
+  </p>
+</div>

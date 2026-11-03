@@ -119,9 +119,69 @@
 </details>
 
 <details class="settings-card" id="storage" open>
-  <summary><h2>Storage</h2><span class="summary-hint">{{ storage.bytes | mb }}{% if storage.limit_bytes %} of {{ storage.limit_bytes | mb }}{% endif %}</span></summary>
+  <summary><h2>Storage</h2><span class="summary-hint">Photos {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% endif %}</span></summary>
   <div class="settings-body">
   {% if pruned is not none %}<p class="notice saved">Saved.{% if pruned %} Deleted {{ pruned }} false-trigger photo{{ 's' if pruned != 1 }} (confirmed ones first, then the oldest).{% endif %}</p>{% endif %}
+  {% if limits_saved %}<p class="notice saved">Saved. The watcher picks the new limits up within about 10 minutes.</p>{% endif %}
+  {% if limits_error %}<p class="notice error">Not saved: {{ limits_error }}</p>{% endif %}
+  {% include "_storage_bar.html" %}
+
+  {% set o = bd.options %}
+  <form class="settings-form" method="post" action="/settings/storage/limits">
+    <h3>Photo budget</h3>
+    <fieldset class="field">
+      <legend>Budget for all photos</legend>
+      {% set gb = (o.budget_mb / 1024) if o.budget_mb else 0 %}
+      <div class="choices">
+        {% for g in budget_choices %}
+        <label class="choice"><input type="radio" name="budget_gb" value="{{ g }}" {% if gb == g %}checked{% endif %}><span>{{ g }} GB</span></label>
+        {% endfor %}
+        <label class="choice"><input type="radio" name="budget_gb" value="none" {% if not o.budget_mb %}checked{% endif %}><span>No budget</span></label>
+        <label class="choice"><input type="radio" name="budget_gb" value="custom" {% if o.budget_mb and gb not in budget_choices %}checked{% endif %}><span>Custom</span></label>
+        <input type="number" name="budget_custom" min="0" step="any" value="{{ '%g' | format(gb) if o.budget_mb and gb not in budget_choices }}" placeholder="GB" aria-label="Custom budget in GB" class="narrow">
+      </div>
+      <small class="muted" data-tip="Counts every photo file: real visits, false triggers and their bursts, and thumbnails. Models and the database are not counted. Visits, counts, first-seen dates and lessons are never deleted; only photo files get smaller.">Counts all photos and thumbnails. Visits and their records are never deleted.</small>
+    </fieldset>
+
+    <fieldset class="field">
+      <legend>Thinning</legend>
+      <div class="choices">
+        <label class="choice"><input type="checkbox" name="thin_on" value="1" {% if o.thin_on %}checked{% endif %}><span>Thin old photos <small>after the days below</small></span></label>
+      </div>
+      <div class="limit-grid">
+        <label>Keep full size for (days)<input type="number" name="full_days" min="0" max="3650" value="{{ o.full_days }}"></label>
+        <label>Full-size photos per species per day<input type="number" name="full_per_day" min="0" max="100" value="{{ o.full_per_day }}"></label>
+        <label>Rare species: keep every photo if seen fewer than<input type="number" name="rare_under" min="0" value="{{ o.rare_under }}"></label>
+      </div>
+      <div class="choices">
+        {% for e in thin_choices %}
+        <label class="choice"><input type="radio" name="thin_edge" value="{{ e }}" {% if o.thin_edge == e %}checked{% endif %}><span>{{ 'Don\'t thin' if e == 1920 else 'Thin to ' ~ e ~ ' px' }}</span></label>
+        {% endfor %}
+      </div>
+      <small class="muted" data-tip="Older real visits are saved once at the smaller size, except each species' sharpest photos of the day. Favorites, species covers, corrected or annotated visits, first sightings and rare species are never thinned.">The sharpest few of each species each day stay full size. Favorites, covers and corrected visits are never thinned.</small>
+    </fieldset>
+
+    <fieldset class="field">
+      <legend>Warnings</legend>
+      <div class="limit-grid">
+        <label>Alert my phone at (% of budget, 0 = off)<input type="number" name="warn_pct" min="0" max="100" step="1" value="{{ '%g' | format(o.warn_pct) }}"></label>
+        <label>Keep this much disk free (GB, 0 = off)<input type="number" name="disk_floor_gb" min="0" step="any" value="{{ '%g' | format(o.disk_floor_mb / 1024) }}"></label>
+      </div>
+      <small class="muted" data-tip="Below the disk floor, space is freed the same way as over the budget: oldest false triggers first, then more thinning, then the oldest keep only a thumbnail.">Below the disk floor, space is freed the same way as when over budget.</small>
+    </fieldset>
+
+    <div class="actions"><button type="submit">Save limits</button>
+      <small class="muted" data-tip="The watcher re-reads these every 10 minutes and thins or frees space if the new numbers ask for it.">Reaches the watcher within about 10 minutes.</small></div>
+  </form>
+
+  <div class="storage-actions">
+    <button type="button" hx-get="/settings/storage/preview" hx-target="#storage-preview" hx-swap="innerHTML" data-tip="Shows what thinning would do right now, without changing anything">Preview</button>
+    <button type="button" hx-post="/settings/storage/run" hx-target="#storage-run" hx-swap="innerHTML" hx-confirm="Thin photos and free space now? Visits and records are not deleted." data-tip="Runs the daily thinning now in the background: the age rule, then the budget">Run now</button>
+  </div>
+  <div id="storage-preview"></div>
+  <div id="storage-run"></div>
+
+  <h3>False triggers</h3>
   {% include "_storage.html" %}
 
   <form class="settings-form" method="post" action="/settings/storage">
