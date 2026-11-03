@@ -118,7 +118,12 @@ SETTINGS = {
     "scene_notes": "",   # what the camera sees: the bath, rocks, feeders
     "target_notes": "",  # what to look for: expected visitors, their sizes, where they land
     "ignore_notes": "",  # things that move or look like animals but aren't
+    # Claude's distillation of every correction and note (birdbrain.lessons), accepted by the owner. In SETTINGS
+    # so prompt_site carries it to every identify prompt; written only through lessons.accept.
+    "lessons_summary": "",
 }
+# Running count and cost of the Lessons summary distills (JSON {n, usd}), for the Claude spend in totals.
+DISTILL_SPEND = "lessons_distill_spend"
 ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT", "lesson_off": "INTEGER NOT NULL DEFAULT 0",
                  "also": "TEXT", "corrected_also": "TEXT", "ended_at": "TEXT",
                  "confirmed_at": "TEXT",  # the owner pressed Confirm: Claude's answer is right (birdbrain.presence)
@@ -581,6 +586,37 @@ def set_value(conn: sqlite3.Connection, key: str, value: str) -> None:
         (key, value),
     )
     conn.commit()
+
+
+def delete_value(conn: sqlite3.Connection, key: str) -> None:
+    conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+    conn.commit()
+
+
+def get_json(conn: sqlite3.Connection, key: str) -> dict | None:
+    """A settings value stored as a JSON object, or None when missing or unreadable."""
+    raw = get_value(conn, key)
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def add_spend(conn: sqlite3.Connection, key: str, usd: float) -> dict:
+    """Count one more Claude call under `key` (JSON {n, usd}) and return the running total."""
+    with writing(conn):
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        try:
+            spend = json.loads(row["value"]) if row else {}
+        except ValueError:
+            spend = {}
+        spend = {"n": int(spend.get("n") or 0) + 1, "usd": float(spend.get("usd") or 0.0) + usd}
+        conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                     (key, json.dumps(spend)))
+    return spend
 
 
 PI_CHECK_TIMES = "pi_check_times"  # legacy settings blob {n, total, recent}; still counted, never written
@@ -1421,6 +1457,7 @@ def _totals(conn: sqlite3.Connection, max_age: float) -> dict:
     ).fetchone()
     probes = conn.execute("SELECT COALESCE(SUM(n), 0) FROM counters WHERE name = 'probe_empty'").fetchone()[0]
     checks = owner_checks_spend(conn, max_age)
+    distills = get_json(conn, DISTILL_SPEND) or {}
     n = lambda k: r[k] or 0
     return {
         "since": r["since"],
@@ -1434,9 +1471,11 @@ def _totals(conn: sqlite3.Connection, max_age: float) -> dict:
         "escalated": n("escalated"),
         "waiting_review": n("waiting_review"),
         "corrected": n("corrected"),
-        "claude_usd": (r["claude_usd"] or 0.0) + checks["usd"],
+        "claude_usd": (r["claude_usd"] or 0.0) + checks["usd"] + float(distills.get("usd") or 0.0),
         "owner_checks": checks["n"],
         "owner_checks_usd": checks["usd"],
+        "distills": int(distills.get("n") or 0),
+        "distill_usd": float(distills.get("usd") or 0.0),
     }
 
 

@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth, viewer
-from .. import alert, camera, circle_check, clock, config, db, identify, images, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
+from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 log = logging.getLogger("birdbrain.web")
@@ -235,6 +235,18 @@ def star_covers(request: Request) -> dict:
 
 templates.env.globals["star_covers"] = star_covers
 templates.env.globals["count_label"] = count_label
+
+
+def lessons_popup(request: Request) -> dict | None:
+    """The Lessons summary draft an automatic distill left, for the review pop-up in base.html. Admins only (never
+    on the public mirror), and not on Claude's Notes itself, where the draft is already on the page."""
+    conn = getattr(request.state, "conn", None)
+    if conn is None or not request.state.admin or auth.public() or request.url.path == "/notes":
+        return None
+    return lessons.pending_auto_draft(conn)
+
+
+templates.env.globals["lessons_popup"] = lessons_popup
 
 
 def filters_from(request: Request) -> dict:
@@ -752,6 +764,7 @@ def correct(
     also = db.plan_also(v, also_species, also_count, visitor.strip() or None)
     db.correct_visit(conn, visit_id, new_visitor, new_species, feedback,
                      db.parse_marks(marks, db.claude_frame(v["raw_json"])), also)
+    lessons.maybe_auto(conn)  # every AUTO_EVERY new notes, Claude distills them in the background
     return Response(headers=REFRESH)
 
 
@@ -1174,6 +1187,8 @@ def about(request: Request, conn=Depends(get_conn)):
         sonnet=identify.SONNET,
         lessons=len(db.recent_lessons(conn)),
         note_limit=db.NOTE_LIMIT,
+        lesson_limit=db.LESSON_LIMIT,
+        auto_every=lessons.AUTO_EVERY,
         confirmed_min=db.CONFIRMED_MIN,
         site=db.prompt_site(conn),
         avg_call=db.avg_haiku_call_usd(conn),
@@ -1197,7 +1212,7 @@ def review(request: Request, conn=Depends(get_conn)):
 
 
 @app.get("/notes", response_class=HTMLResponse)
-def notes(request: Request, saved: bool = False, conn=Depends(get_conn)):
+def notes(request: Request, saved: bool = False, accepted: bool = False, conn=Depends(get_conn)):
     """Claude's Notes: everything Claude is told about this yard, in one place."""
     site = db.prompt_site(conn)
     rows = db.all_lessons(conn)
@@ -1206,13 +1221,39 @@ def notes(request: Request, saved: bool = False, conn=Depends(get_conn)):
         "notes.html",
         site=site,
         saved=saved,
+        accepted=accepted,
         lessons=rows,
         in_use=sum(l["in_use"] for l in rows),
         limit=db.LESSON_LIMIT,
         visitors=db.VISITORS,
+        summary=lessons.status(conn, rows),
+        in_summary=lessons.in_summary(conn, rows),
         prompt_preview=identify_prompt_preview(site, db.recent_lessons(conn)),
         **zone_drawing(zones.load(conn)),
     )
+
+
+@app.post("/notes/summary/distill", response_class=HTMLResponse)
+async def distill_lessons(request: Request, conn=Depends(get_conn)):
+    """Distill now: Sonnet folds every lesson into a draft summary; the section re-renders with it (or the reason
+    nothing was saved). Nothing reaches the prompt until the owner accepts."""
+    result = await asyncio.to_thread(lessons.distill, conn)
+    return page(request, "_lessons_summary.html", summary=lessons.status(conn), limit=db.LESSON_LIMIT,
+                summary_error=None if result["ok"] else result["error"], distilled=result["ok"])
+
+
+@app.post("/notes/summary/accept")
+def accept_lessons_summary(text: str = Form(""), conn=Depends(get_conn)):
+    """The draft, as edited in the textarea, becomes the summary Claude reads from the next photo on."""
+    if not lessons.accept(conn, text):
+        raise HTTPException(404, "There is no draft to accept.")
+    return RedirectResponse("/notes?accepted=1#summary", status_code=303)
+
+
+@app.post("/notes/summary/discard")
+def discard_lessons_summary(conn=Depends(get_conn)):
+    lessons.discard(conn)
+    return RedirectResponse("/notes#summary", status_code=303)
 
 
 @app.post("/notes")
@@ -1259,7 +1300,7 @@ async def refine_notes(
 
 
 @app.get("/lessons")
-def lessons():
+def lessons_redirect():
     return RedirectResponse("/notes#lessons", status_code=301)
 
 
@@ -1277,6 +1318,7 @@ def lesson_edit(
         raise HTTPException(400, str(e)) from None
     also = json.loads(v["corrected_also"]) if v["corrected_also"] is not None else None
     db.correct_visit(conn, visit_id, new_visitor, new_species, feedback, db.parse_marks(v["marks"]), also)
+    lessons.maybe_auto(conn)
     return Response(headers=REFRESH)
 
 

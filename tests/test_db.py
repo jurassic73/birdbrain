@@ -310,10 +310,11 @@ def test_recent_lessons_wording_order_and_limit(conn, add_visit):
 
 
 def test_settings_default_empty_save_trim_and_overwrite(conn):
-    assert db.get_settings(conn) == {"location": "", "scene_notes": "", "target_notes": "", "ignore_notes": ""}
+    assert db.get_settings(conn) == {"location": "", "scene_notes": "", "target_notes": "", "ignore_notes": "", "lessons_summary": ""}
     db.save_settings(conn, location="  Vancouver, WA  ", ignore_notes="branch on the right")
     db.save_settings(conn, location="Portland, OR")
-    assert db.get_settings(conn) == {"location": "Portland, OR", "scene_notes": "", "target_notes": "", "ignore_notes": "branch on the right"}
+    assert db.get_settings(conn) == {"location": "Portland, OR", "scene_notes": "", "target_notes": "", "ignore_notes": "branch on the right",
+                                     "lessons_summary": ""}
     with pytest.raises(ValueError):
         db.save_settings(conn, password="nope")
 

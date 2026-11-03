@@ -99,6 +99,20 @@
   <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
+  {% if not embed %}{% set draft = lessons_popup(request) %}{% if draft %}
+  {# A Lessons summary Claude drafted on its own is waiting (admins only; static/lessons-popup.js shows it). #}
+  <dialog class="popup popup-ask" id="lessons-popup" data-at="{{ draft.at }}" aria-labelledby="lessons-popup-title">
+    <h2 class="popup-title" id="lessons-popup-title">A new Lessons summary to review</h2>
+    <div class="popup-msg">
+      <p>Claude distilled your {{ draft.notes }} notes and corrections into a new Lessons summary. Please read it over: it goes with every photo only once you accept it.</p>
+    </div>
+    <div class="popup-actions">
+      <button type="button" class="popup-cancel">Later</button>
+      <a class="popup-go" href="/notes#summary">Review it</a>
+    </div>
+  </dialog>
+  <script src="/static/lessons-popup.js?v={{ asset_version }}" defer></script>
+  {% endif %}{% endif %}
   <script>
     // Phones start with secondary sections folded (<details data-m-closed>); wider screens keep them open.
     if (matchMedia("(max-width: 640px)").matches) document.querySelectorAll("details[data-m-closed]").forEach(d => d.open = false);
