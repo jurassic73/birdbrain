@@ -611,7 +611,7 @@ main.wide { max-width: 1600px; }
 .visit .full { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; border-radius: var(--radius); }
 .visit-photo { position: relative; min-width: 0; }
 .visit-photo .marks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; border-radius: var(--radius); }
-/* Two fingers always pinch-zoom; one finger scrolls, or draws once Edit circles is on. */
+/* Two fingers always pinch-zoom; one finger scrolls, or draws once Add circles is on. */
 .visit-photo { touch-action: pan-x pan-y pinch-zoom; cursor: zoom-in; }
 .visit-photo.editing { touch-action: pinch-zoom; cursor: crosshair; }
 .visit-photo .mark { pointer-events: auto; }

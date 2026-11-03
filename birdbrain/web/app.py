@@ -845,7 +845,7 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
         raise HTTPException(404)
     picked = circle_check.owner_circle(marks, db.claude_frame(v["raw_json"]))
     if not picked:
-        return JSONResponse({"error": "Circle the animal first: press Edit circles and drag on the photo."})
+        return JSONResponse({"error": "Circle the animal first: press Add circles and drag on the photo."})
     number, circle = picked
     # The frame the circle was drawn on (a burst frame), else the photo when that frame is gone.
     jpeg, frame = circle_check.jpeg_of(v, db.mark_frame(circle))
