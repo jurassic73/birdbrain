@@ -582,3 +582,24 @@ def test_the_box_for_a_visit_claude_answered(client, conn, yard, add_visit):
 def test_the_visit_box_is_for_admins_only(client, conn, yard, add_visit, monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
     assert 'id="trains"' not in client.get(f"/visit/{pi_settled_empty(add_visit, conn, yard)}").text
+
+
+def test_the_box_for_a_pi_named_visit_the_owner_changed_or_confirmed(client, conn, yard, add_visit):
+    """A visit the BioCLIP 2 species check named counts toward that species being settled only once the owner
+    confirms it or names a species (db.settled_species); "No animal" or a bare type does not count."""
+    raw = {"calls": {"skipped_claude": True, "settled_by": "classifier", "classifier": {
+        "top": [{"name": "Dark-eyed Junco", "score": 0.97, "scientific": "Junco hyemalis"}], "local_share": 0.9}}}
+    vid = add_visit(model="bioclip-2", species="Dark-eyed Junco", raw_json=json.dumps(raw))
+    presence.store(conn, vid, vec(True, yard))
+    box = trains_box(client, vid)
+    assert "Named the animal on the Pi" in box and "Press Looks right" in box
+    db.correct_visit(conn, vid, "none", None, None)  # the owner: nothing was there
+    box = trains_box(client, vid)
+    assert "counts toward Dark-eyed Junco being settled" not in box and "does not count" in box
+    db.correct_visit(conn, vid, "squirrel", None, None)  # a type with no name counts toward nothing either
+    assert "does not count" in trains_box(client, vid)
+    db.correct_visit(conn, vid, None, "Bushtit", None)
+    assert "counts toward Bushtit being settled" in trains_box(client, vid)
+    db.correct_visit(conn, vid, None, None, None)
+    db.confirm_visits(conn, [vid])
+    assert "counts toward Dark-eyed Junco being settled" in trains_box(client, vid)

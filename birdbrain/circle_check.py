@@ -133,12 +133,13 @@ def cost(model_key: str, usage: dict) -> float:
     return (usage.get("input_tokens", 0) * price["input"] + usage.get("output_tokens", 0) * price["output"]) / 1e6
 
 
-def ask_claude(conn, source: str, jpeg: bytes, circle: dict, captured_at: datetime, size: tuple[int, int]) -> dict:
-    """Haiku or Sonnet on the circle's square, with the same prompt as every identification. A bird's name is
-    put in eBird's spelling when it has one."""
+def ask_claude(conn, source: str, jpeg: bytes, circle: dict, captured_at: datetime, size: tuple[int, int],
+               night: bool = False) -> dict:
+    """Haiku or Sonnet on the circle's square, with the same prompt as every identification (`night`: the frame is
+    infrared, which the prompt says). A bird's name is put in eBird's spelling when it has one."""
     box = square(circle, *size)
     sighting, meta = identify.ask(MODELS[source], [identify.prepare(jpeg, box)], captured_at,
-                                  db.recent_lessons(conn), db.prompt_site(conn), note=NOTE)
+                                  db.recent_lessons(conn), db.prompt_site(conn), note=NOTE, night=night)
     usage = {"input_tokens": meta.get("input_tokens", 0), "output_tokens": meta.get("output_tokens", 0)}
     entry = {"source": source, "model": meta.get("model") or MODELS[source], **usage,
              "usd": round(cost(source, usage), 6)}
@@ -187,8 +188,9 @@ def frame_size(jpeg: bytes) -> tuple[int, int]:
 
 def jpeg_of(visit, frame: int | None = None) -> tuple[bytes | None, int | None]:
     """The photo to crop from and which burst frame it is: burst frame `frame` (1-based) when the circle was drawn
-    there and the file is still on disk, else the visit's photo (frame None). Marks are fractions, so a burst frame
-    of another size than the photo needs nothing special."""
+    there and the file is still on disk, else the visit's photo (frame None), else its thumbnail once the photo
+    budget has cut the visit down to that (the page shows the thumbnail then, with the Ask buttons). Marks are
+    fractions, so a frame of another size than the photo needs nothing special."""
     from . import images
 
     if visit["photo_deleted_at"]:
@@ -197,5 +199,7 @@ def jpeg_of(visit, frame: int | None = None) -> tuple[bytes | None, int | None]:
         paths = images.burst_paths(visit["image_path"])
         if frame <= len(paths) and (path := config.IMAGES_DIR / paths[frame - 1]).exists():
             return path.read_bytes(), frame
-    path = config.IMAGES_DIR / visit["image_path"]
-    return (path.read_bytes() if path.exists() else None), None
+    for rel in (visit["image_path"], visit["thumb_path"]):
+        if rel and (path := config.IMAGES_DIR / rel).exists():
+            return path.read_bytes(), None
+    return None, None
