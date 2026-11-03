@@ -1,0 +1,8 @@
+<div class="sp-tip-inner">
+  {% if info.photo %}<img src="{{ info.photo.url }}" alt="">{% endif %}
+  <div>
+    <strong>{{ info.common or info.name }}</strong>
+    {% if info.status %}<span class="muted">{{ info.status }}</span>{% endif %}
+    <small class="muted">Click for more</small>
+  </div>
+</div>

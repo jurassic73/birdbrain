@@ -1,0 +1,17 @@
+[Unit]
+Description=Birdbrain motion watcher and capture pipeline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=/opt/birdbrain
+Environment=BIRDBRAIN_DATA=/var/lib/birdbrain
+ExecStart=/opt/birdbrain/venv/bin/python -m birdbrain.watch
+Restart=always
+RestartSec=10
+# Lower priority, so other services sharing the Pi stay responsive.
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

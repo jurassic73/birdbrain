@@ -1,0 +1,2 @@
+{# When the photos reach the budget and the disk floor. Needs `forecast` (app.forecast_blurb). #}
+{% if forecast %}<p class="sbar-forecast" data-tip="{{ forecast.tip }}">{{ forecast.text }}</p>{% endif %}

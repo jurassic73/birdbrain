@@ -1,0 +1,57 @@
+{# The owner's description in three boxes. Refine with Claude swaps this form for one filled with Haiku's suggestion. #}
+{% from "_macros.html" import claude_mark %}
+{% set f = form or site %}
+<form class="settings" id="yard-form" method="post" action="/notes">
+  {% if saved %}<p class="notice saved">Saved. Used from the next photo on.</p>{% endif %}
+  {% if refined and refined.kept %}<p class="notice">Already concise: Claude's version wasn't shorter ({{ refined.before }} to {{ refined.after }} words), so your text is unchanged.
+    <span class="muted small">(Haiku, about ${{ '%.4f' | format(refined.usd) }})</span></p>
+  {% elif refined %}<p class="notice">Claude's suggestion is in the boxes below, not saved yet. Check it, then Save.
+    {{ refined.changes }} <span class="muted small">(Haiku, {{ refined.before }} to {{ refined.after }} words, about ${{ '%.4f' | format(refined.usd) }})</span></p>{% endif %}
+  {% if refine_error %}<p class="notice">{{ refine_error }}</p>{% endif %}
+  <p class="muted">Sent to Claude with every photo.</p>
+
+  <div class="field">
+    <label for="location">Location</label>
+    <input id="location" name="location" value="{{ f.location }}"
+           placeholder="e.g. Vancouver, Washington, USA (Clark County, Pacific Northwest lowlands)">
+    <small class="muted">Helps Claude favor local species.</small>
+  </div>
+
+  <div class="field">
+    <label for="scene_notes">What the camera sees</label>
+    <textarea id="scene_notes" name="scene_notes" rows="4"
+              placeholder="e.g.
+A round 17 inch concrete birdbath, about 2 feet away, seen from above.
+A flat gray rock, 5 inches across, sits near the center of the water.
+Mulch around the base, lawn behind.">{{ f.scene_notes }}</textarea>
+    <small class="muted">The birdbath or feeder, its size and distance, what birds land on, anything permanent.</small>
+  </div>
+
+  <div class="field">
+    <label for="target_notes">What to look for</label>
+    <textarea id="target_notes" name="target_notes" rows="3"
+              placeholder="e.g.
+Small songbirds like chickadees (5 inches, the rock's length) up to ravens (24 inches).
+Squirrels on the rim and the ground.">{{ f.target_notes }}</textarea>
+    <small class="muted">The visitors you expect, their size against things in view, where they land.</small>
+  </div>
+
+  <div class="field">
+    <label for="ignore_notes">What to ignore</label>
+    <textarea id="ignore_notes" name="ignore_notes" rows="3"
+              placeholder="e.g.
+The rock can look like a bird's back in night vision.
+Ripples and reflections right after a refill.">{{ f.ignore_notes }}</textarea>
+    <small class="muted">Things that move or look like animals but aren't.</small>
+  </div>
+
+  <div class="actions">
+    <button type="submit">Save</button>
+    <button type="button" class="claude-btn" hx-post="/notes/refine" hx-target="#yard-form" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="#refine-busy"
+            data-tip="Haiku rewrites the boxes into short lines, keeps every fact, and moves each one to its box. Nothing is saved until you click Save. Costs a fraction of a cent.">
+      {{ claude_mark() }}
+      Refine with Claude</button>
+    <span id="refine-busy" class="muted small htmx-indicator">Claude is tidying your notes…</span>
+  </div>
+</form>

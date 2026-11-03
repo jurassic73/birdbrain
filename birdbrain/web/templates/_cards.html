@@ -1,0 +1,37 @@
+{% from "_macros.html" import sp_name, badge, thumb, fav_star %}
+{# Unfiltered home page: a Today heading over the visits since midnight, then Earlier (once, also across Load more pages). #}
+{% set ns = namespace(prev=prev_day | default(none)) %}
+{% set covers = star_covers(request) if request.state.admin else {} %}
+{% for v in visits %}
+{% if split_day %}
+  {% set day = v.captured_at[:10] %}
+  {% if ns.prev is none %}<h3 class="grid-break grid-today">Today</h3>
+    {% if day != split_day %}<p class="grid-none-today muted">No visitors yet today.</p>{% endif %}{% endif %}
+  {% if day != split_day and (ns.prev is none or ns.prev == split_day) %}<h3 class="grid-break grid-earlier">Earlier</h3>{% endif %}
+  {% set ns.prev = day %}
+{% endif %}
+{% set sp = fav_label if fav_label is defined and fav_label else v.label %}
+{# The star shows for admins on every card with a species (not false triggers, empty shots or "Other"). #}
+{% set fav = request.state.admin and not ft_cards and sp and sp not in ('None', 'Other') %}
+<a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}" data-full="/images/{{ photo_src(v) }}" data-when="{{ v.captured_at | nice_time }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
+  {{ thumb(v) }}
+  {% if fav %}{{ fav_star(v, sp, covers) }}{% endif %}
+  <div class="card-body">
+    <div class="card-title">{{ sp_name(v.label) }}{% if v.count and v.count > 1 %} <span class="muted">x{{ v.count }}</span>{% endif %}
+      {%- for a in also_of(v) %} <span class="also-name">+ {{ sp_name(also_label(a)) }}{% if a.count and a.count > 1 %} <span class="muted">x{{ a.count }}</span>{% endif %}</span>{% endfor %}</div>
+    <div class="card-meta">
+      <span>{{ v.captured_at | nice_time }}{% if stayed(v) %}, {{ stayed(v) }}{% endif %}</span>
+      {% if v.corrected_species or v.corrected_visitor or v.corrected_also is not none %}{{ badge("corrected", "corrected") }}
+      {% elif v.confirmed_at %}{{ badge("Confirmed No Animal" if v.label == 'None' else "confirmed by human", "checked") }}
+      {% elif v.model == "bioclip-presence" %}{{ badge("pi only", "pi-only") }}
+      {% elif v.model == "bioclip-2" %}{{ badge("pi named", "pi-only") }}
+      {% elif v.confidence %}{{ badge(v.confidence, "conf-" ~ v.confidence) }}{% endif %}
+      {% if v.is_night %}{{ badge("night", "night") }}{% endif %}
+      {% if not ft_cards %}{% set sb = season_badge(v.label, v.captured_at) %}{% if sb %}{{ badge(sb, "out-of-season") }}{% endif %}{% endif %}
+    </div>
+  </div>
+</a>
+{% endfor %}
+{% if next_url %}
+<button class="load-more" hx-get="{{ next_url }}" hx-trigger="click, intersect once" hx-swap="outerHTML">Load more</button>
+{% endif %}

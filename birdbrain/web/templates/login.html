@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Admin login | Birdbrain{% endblock %}
+{% block content %}
+<form class="login-box" method="post" action="/login">
+  <h1>Admin login</h1>
+  <p class="muted">Anyone can browse. Log in to correct visits, ask Claude and change settings.</p>
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="password">Password</label>
+  <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+  {% if error %}<p class="login-error">{{ error }}</p>{% endif %}
+  <button type="submit">Log in</button>
+</form>
+{% endblock %}

@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+{% from "_macros.html" import sp_name, thumb, zoom_btn, zoom_out_btn, fav_star %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+{# Hovering a visit card prerenders its page, so the click shows it finished instead of building it out.
+   Not the latest-visitor photo: the Right arrow opens it, and a prerendered page swapped in by a key press may not
+   have keyboard focus yet, so the first Esc there (back home, see visit.html) was lost. #}
+<script type="speculationrules">
+  {"prerender": [{"where": {"and": [{"href_matches": "/visit/*"}, {"not": {"selector_matches": ".hero-link, .hero-goto"}}]}, "eagerness": "moderate"}]}
+</script>
+{% macro live_box() %}
+<div class="live" id="live-box">
+  <img id="live" src="/live/latest.jpg" alt="Live view of the birdbath"{% if not today.latest %} fetchpriority="high"{% endif %}>
+  <button type="button" class="live-zoom" aria-label="Open the live view big"></button>
+  {{ zoom_btn() }}
+  <div class="live-badge"><span class="dot"></span><span id="live-status">Live</span> <span class="muted" id="live-age"></span></div>
+  <div class="live-title" data-tip="What the camera sees right now, refreshed every few seconds">Live view</div>
+  <div class="live-offline">Camera offline</div>
+</div>
+{% endmacro %}
+{# The latest visitor gets the big photo (the live view is mostly an empty birdbath); the live view sits in Today.
+   Until the first visitor ever, the live view stays big. #}
+<section class="hero">
+  {% set lv = today.latest %}
+  {% if lv %}
+  <div class="hero-latest">
+  <a class="hero-link" href="/visit/{{ lv.id }}">
+    {{ thumb(lv, "thumb hero-photo", lazy=False, full=True) }}
+  </a>
+  {% set kicker = 'Latest visitor' if lv.captured_at[:10] == today.date else 'Last visitor, before today' %}
+    {# One chip at the top-left (the camera burns its date stamp into the bottom-left): kicker, then name and time. #}
+  {# A sibling of the photo link (no nested <a>); clicks on the chip fall through to the photo link except on "Go to visit". #}
+    <div class="hero-caption">
+      <span class="hero-kicker">{{ kicker }} <a class="hero-goto" href="/visit/{{ lv.id }}" title="Open this visit (→)">Go to visit</a></span>
+      <div class="hero-row">
+        <span class="hero-name">{{ lv.label }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}
+          {%- for a in also_of(lv) %} + {{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}</span>
+        <span class="hero-time">{{ lv.captured_at | short_time }}</span>
+      </div>
+      {% set nc = no_circle_note(lv) %}{% if nc %}<span class="hero-note">{{ nc }}</span>{% endif %}
+    </div>
+  {% if not lv.photo_deleted_at %}{{ zoom_btn(lv) }}{% endif %}
+  {# The same star as on the cards (admins), just left of the magnifier. #}
+  {% if request.state.admin and lv.label and lv.label not in ('None', 'Other') %}{{ fav_star(lv, lv.label, star_covers(request)) }}{% endif %}
+  </div>
+  {% else %}
+  {{ live_box() }}
+  {% endif %}
+
+  <aside class="today">
+    {% if lv %}{{ live_box() }}<hr class="today-rule">{% endif %}
+    <div class="today-info">
+    {% include "_scoreboard.html" %}
+
+    {% if today.review and request.state.admin %}
+    <a class="notice" href="/review">{{ today.review }} visit{{ 's' if today.review != 1 }} waiting for review</a>
+    {% endif %}
+
+    </div>
+  </aside>
+</section>
+
+<section class="visits">
+  {% set a = activity %}
+  <div class="visits-bar">
+    <div class="tally-box tally-head" data-tip="Birds and animals identified today{% if a.species %}, {{ a.species }} species{% endif %}. The rest of today's numbers (false alarms, Pi checks, Claude calls) are on the Stats page.">
+      <span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }} today</span>
+    </div>
+  </div>
+  <div class="visits-head">
+    {% if filtered %}<h2 class="visits-count">{{ total }} matching</h2>{% endif %}
+    {% if any_visits %}
+    <nav class="chips" aria-label="Quick filters">
+      {% for name, href, is_active in chips %}
+      <a href="{{ href }}" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
+      {% endfor %}
+    </nav>
+    {% endif %}
+    {% if any_visits %}
+    <button type="button" class="filters-toggle" aria-controls="more-filters" aria-expanded="{{ 'true' if more_filters_open else 'false' }}"
+            data-tip="Filter by species, birds, mammals or photos with several animals, day or night, and a date range">
+      <svg class="filters-funnel" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
+      More filters
+      <svg class="filters-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    {% endif %}
+  </div>
+  {% if any_visits %}
+      <form class="filters more-filters-form" id="more-filters" method="get" action="/"{% if not more_filters_open %} hidden{% endif %}>
+      <select name="species" aria-label="Species">
+        <option value="">All species</option>
+        {% for name in species_names %}
+        <option value="{{ name }}" {% if filters.species == name %}selected{% endif %}>{{ name }}</option>
+        {% endfor %}
+      </select>
+      <select name="kind" aria-label="Visitor type">
+        <option value="">Birds and mammals</option>
+        <option value="bird" {% if filters.kind == 'bird' %}selected{% endif %}>Birds</option>
+        <option value="mammal" {% if filters.kind == 'mammal' %}selected{% endif %}>Mammals</option>
+        <option value="multiple" {% if filters.kind == 'multiple' %}selected{% endif %}>Multiple animals</option>
+      </select>
+      <select name="tod" aria-label="Day or night">
+        <option value="">Day and night</option>
+        <option value="day" {% if filters.tod == 'day' %}selected{% endif %}>Day</option>
+        <option value="night" {% if filters.tod == 'night' %}selected{% endif %}>Night</option>
+      </select>
+      <label>From <input type="date" name="date_from" value="{{ filters.date_from or '' }}"></label>
+      <label>To <input type="date" name="date_to" value="{{ filters.date_to or '' }}"></label>
+      <button type="submit">Apply</button>
+      {% if filtered %}<a class="clear" href="/">Clear</a>{% endif %}
+      </form>
+  {% endif %}
+
+  {% if visits %}
+  <div class="grid">
+    {% include "_cards.html" %}
+  </div>
+  {% elif filtered %}
+  <p class="empty">No visitors match these filters. <a href="/">Show all</a></p>
+  {% else %}
+  <div class="empty">
+    <p><strong>No visitors yet.</strong> The camera is watching the birdbath.</p>
+    {% if today.last_motion %}
+    <p class="muted">Last motion {{ today.last_motion.captured_at | short_time }}:
+      {{ 'no animal' if today.last_motion.label == 'None' else today.last_motion.label }}.
+      {% if request.state.admin %}<a href="/false-triggers">See false triggers</a>{% endif %}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<dialog class="viewer live-viewer" id="live-viewer" aria-label="Live view, big">
+  <div class="live-viewer-frame">
+    <img id="live-big" alt="Live view of the birdbath">
+    <div class="live-badge"><span class="dot"></span><span id="live-big-status">Live</span> <span class="muted" id="live-big-age"></span></div>
+  </div>
+  {{ zoom_out_btn("live-viewer-close") }}
+</dialog>
+
+<dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
+  <button type="button" class="viewer-reset" id="home-viewer-reset" hidden>Reset view</button>
+  {{ zoom_out_btn("photo-viewer-close") }}
+  <div class="photo-viewer-frame"><img alt="" draggable="false"><svg class="marks" aria-hidden="true"></svg></div>
+</dialog>
+
+<script>
+  // The magnifier on a photo (hero and cards, also the ones added later) opens it big here: the full-size file, never
+  // stretched past its own size, with the same circles. Esc, the x or a click closes it. Phones go full screen.
+  (() => {
+    const viewer = document.getElementById("home-viewer"), img = viewer.querySelector("img");
+    const frame = viewer.querySelector(".photo-viewer-frame"), resetBtn = document.getElementById("home-viewer-reset");
+    // Zoom and pan: one transform on the frame that holds the photo and its circles. Scale 1 is the fit size (never past
+    // the photo's native size), so zooming only ever grows from what the owner already sees. The frame is centred in the
+    // viewer, so tx,ty are shifts from the centre.
+    const MAX = 6;
+    let k = 1, tx = 0, ty = 0, moved = false;
+    const apply = () => {
+      const mx = Math.max(0, (frame.offsetWidth * k - viewer.clientWidth) / 2);   // keep the photo covering the view
+      const my = Math.max(0, (frame.offsetHeight * k - viewer.clientHeight) / 2);
+      tx = Math.min(mx, Math.max(-mx, tx)); ty = Math.min(my, Math.max(-my, ty));
+      if (k === 1) { tx = 0; ty = 0; }
+      frame.style.transform = k === 1 ? "" : `translate(${tx}px, ${ty}px) scale(${k})`;
+      viewer.classList.toggle("zoomed", k > 1);
+      resetBtn.hidden = k === 1;
+    };
+    const reset = () => { k = 1; tx = 0; ty = 0; apply(); };
+    const zoomAt = (newK, px, py) => {  // keeps the point under (px, py) still
+      newK = Math.min(MAX, Math.max(1, newK));
+      const vx = px - viewer.clientWidth / 2, vy = py - viewer.clientHeight / 2;
+      tx = vx - (vx - tx) * newK / k; ty = vy - (vy - ty) * newK / k;
+      k = newK; apply();
+    };
+    resetBtn.addEventListener("click", e => { e.stopPropagation(); reset(); });
+    viewer.addEventListener("wheel", e => {
+      e.preventDefault();
+      zoomAt(k * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0025)), e.clientX, e.clientY);  // ctrl = trackpad pinch
+    }, { passive: false });
+    // One pointer drags when zoomed; two pinch.
+    const pts = new Map(); let last = null, start = null, pinch = null, lastTap = 0;
+    viewer.addEventListener("pointerdown", e => {
+      if (e.target.closest("button")) return;
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 1) moved = false;
+      if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), k }; moved = true; }
+      last = start = [e.clientX, e.clientY];
+    });
+    viewer.addEventListener("pointermove", e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pts.size === 2 && pinch) {
+        const [a, b] = [...pts.values()];
+        zoomAt(pinch.k * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+        return;
+      }
+      if (Math.hypot(e.clientX - start[0], e.clientY - start[1]) > 5) moved = true;
+      if (k > 1 && moved) { tx += e.clientX - last[0]; ty += e.clientY - last[1]; apply(); viewer.classList.add("panning"); }
+      last = [e.clientX, e.clientY];
+    });
+    const up = e => {
+      pts.delete(e.pointerId); pinch = null; viewer.classList.remove("panning");
+      if (pts.size === 1) last = [...pts.values()][0];
+    };
+    viewer.addEventListener("pointerup", up); viewer.addEventListener("pointercancel", up);
+    // A single click closes the viewer, but only after DOUBLE_MS, so a double click (or double tap) can cancel it and zoom.
+    const DOUBLE_MS = 300;
+    let closeTimer = 0;
+    const toggle2x = (x, y) => { clearTimeout(closeTimer); if (k > 1) reset(); else zoomAt(2, x, y); };
+    viewer.addEventListener("dblclick", e => { if (!e.target.closest("button")) toggle2x(e.clientX, e.clientY); });
+    viewer.addEventListener("touchend", e => {  // double-tap (touch browsers don't all send dblclick)
+      if (e.touches.length || e.changedTouches.length !== 1 || e.target.closest("button")) return;
+      const t = e.changedTouches[0], now = Date.now();
+      if (now - lastTap < DOUBLE_MS && !moved) { e.preventDefault(); toggle2x(t.clientX, t.clientY); lastTap = 0; }
+      else lastTap = now;
+    });
+    document.addEventListener("click", e => {
+      const btn = e.target.closest("[data-zoom-photo]");
+      if (!btn) return;
+      e.preventDefault(); e.stopPropagation();  // never follows a link; keeps tips.js quiet
+      reset();  // every photo opens at fit
+      img.removeAttribute("src");  // the last photo doesn't flash while this one loads
+      img.src = btn.dataset.zoomPhoto;
+      img.alt = btn.dataset.zoomAlt || "";
+      const marks = btn.parentElement.querySelector("svg.thumb-marks[viewBox]");
+      const none = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      none.setAttribute("class", "marks");
+      frame.querySelector(".marks").replaceWith(marks ? marks.cloneNode(true) : none);
+      viewer.showModal();
+      if (matchMedia("(max-width: 640px), (max-height: 500px)").matches && viewer.requestFullscreen) {
+        viewer.requestFullscreen().then(() => screen.orientation?.lock?.("landscape")).catch(() => {});
+      }
+    }, true);
+    // The x, Esc, or a click anywhere (on the photo too, zoomed or not) closes. The end of a drag or pinch doesn't.
+    viewer.addEventListener("click", e => {
+      if (e.target.closest(".photo-viewer-close")) return viewer.close();
+      if (e.target.closest("button")) return;
+      if (moved) { moved = false; return; }
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => viewer.close(), DOUBLE_MS);
+    });
+    viewer.addEventListener("close", () => {
+      clearTimeout(closeTimer); reset();
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    });
+    addEventListener("resize", () => { if (viewer.open) apply(); });
+  })();
+
+  // Stale-while-revalidate: the saved frame paints instantly (img src above), then fresh frames are
+  // downloaded and decoded off-screen and swapped in only when complete, so the box never blanks.
+  (() => {
+    const REFRESH_MS = {{ live_refresh * 1000 }};
+    const STALE_S = {{ live_stale }};
+    const box = document.getElementById("live-box");
+    const img = document.getElementById("live");
+    const status = document.getElementById("live-status");
+    const age = document.getElementById("live-age");
+    // Click the live view to open it big; it keeps refreshing there. Escape, the x or a click anywhere closes it.
+    const viewer = document.getElementById("live-viewer");
+    const big = document.getElementById("live-big");
+    box.querySelectorAll(".live-zoom, .live-zoom-btn").forEach(b => b.addEventListener("click", e => {
+      e.stopPropagation();  // keeps tips.js from showing its touch tooltip behind the viewer
+      big.src = img.src;
+      viewer.showModal();
+      refresh();
+    }));
+    viewer.addEventListener("click", () => viewer.close());
+    // Say Offline only after a while with no good frame and repeated failures: one slow camera grab isn't an outage.
+    const OFFLINE_AFTER_MS = 15000;
+    let frameAge = null, receivedAt = 0, failures = 0, lastOkAt = Date.now(), busy = false;
+    const isOffline = () => failures >= 2 && Date.now() - lastOkAt > OFFLINE_AFTER_MS;
+
+    const ageNow = () => frameAge === null ? null : frameAge + (Date.now() - receivedAt) / 1000;
+    const clock = s => new Date(Date.now() - s * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+    function render() {
+      const a = ageNow();
+      const offline = isOffline();
+      const stale = a !== null && a > STALE_S;
+      box.classList.toggle("stale", stale && !offline);
+      box.classList.toggle("offline", offline && a === null);
+      status.textContent = offline ? "Offline" : stale ? "Last frame" : "Live";
+      age.textContent = a === null ? "" : stale ? clock(a) : `updated ${Math.round(a)} s ago`;
+      box.querySelector(".dot").classList.toggle("off", offline || stale);
+      document.getElementById("live-big-status").textContent = status.textContent;
+      document.getElementById("live-big-age").textContent = age.textContent;
+      viewer.querySelector(".dot").classList.toggle("off", offline || stale);
+    }
+
+    async function refresh() {
+      if (busy) return;
+      busy = true;
+      try {
+        const r = await fetch("/live.jpg", { cache: "no-store" });
+        if (!r.ok) throw new Error(r.status);
+        const serverAge = parseFloat(r.headers.get("X-Frame-Age") || "0");
+        const url = URL.createObjectURL(await r.blob());
+        const next = new Image();
+        next.src = url;
+        await next.decode();  // fully decoded before it touches the page
+        const old = img.src;
+        img.src = url;
+        big.src = url;
+        if (old.startsWith("blob:")) URL.revokeObjectURL(old);
+        frameAge = serverAge; receivedAt = lastOkAt = Date.now(); failures = 0;
+      } catch (e) {
+        failures++;  // keep showing the last frame; labeled Offline only once failures add up
+      } finally {
+        busy = false;
+        render();
+      }
+    }
+
+    // Age of the instantly painted saved frame, so it is labeled honestly until the fresh one lands.
+    fetch("/live/latest.jpg", { method: "HEAD", cache: "no-store" }).then(r => {
+      if (r.ok && frameAge === null) { frameAge = parseFloat(r.headers.get("X-Frame-Age") || "0"); receivedAt = Date.now(); render(); }
+    }).catch(() => {});
+    img.addEventListener("error", () => { if (frameAge === null) { failures++; render(); } });
+
+    refresh();
+    setInterval(refresh, REFRESH_MS);
+    setInterval(render, 1000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+  })();
+
+  // Visitors that arrive while the page is open (tab-alert.js checks every 20 s): fetch this page again (same
+  // filters) and slide the new cards in at the top, and refresh today's numbers. Scrolled down into the cards,
+  // the view stays put and a pill offers a jump back up.
+  (() => {
+    const grid = () => document.querySelector(".visits .grid");
+    let busy = false, again = false, pill = null, waiting = 0;
+
+    function swap(doc, sel) {
+      const old = document.querySelector(sel), fresh = doc.querySelector(sel);
+      if (old && fresh) old.replaceWith(fresh);
+    }
+
+    const gridAbove = () => grid().getBoundingClientRect().top < document.querySelector(".topbar").getBoundingClientRect().bottom;
+
+    function hidePill() { pill?.remove(); pill = null; waiting = 0; }
+
+    function showPill(n) {
+      waiting += n;
+      if (!pill) {
+        pill = document.createElement("button");
+        pill.type = "button";
+        pill.className = "new-visits-pill";
+        pill.addEventListener("click", () => { document.querySelector(".visits").scrollIntoView({ behavior: "smooth" }); hidePill(); });
+        document.body.append(pill);
+      }
+      pill.style.top = Math.max(8, document.querySelector(".topbar").getBoundingClientRect().bottom + 8) + "px";
+      pill.textContent = `↑ ${waiting} new visitor${waiting === 1 ? "" : "s"}`;
+    }
+    addEventListener("scroll", () => { if (pill && !gridAbove()) hidePill(); }, { passive: true });
+
+    async function update() {
+      if (busy) { again = true; return; }
+      busy = true;
+      try {
+        const r = await fetch(location.href, { cache: "no-store" });
+        if (!r.ok) return;
+        const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+        const tally = document.querySelector(".tally-box"), freshTally = doc.querySelector(".tally-box");
+        if (tally && freshTally) tally.replaceWith(freshTally);
+        // The first visitor ever moves the live view out of the big slot: redraw the page once.
+        if (!document.querySelector(".hero-latest") !== !doc.querySelector(".hero-latest")) { location.reload(); return; }
+        const range = document.querySelector(".critters")?.dataset.range;
+        swap(doc, ".today-info");  // not the live view in Today, which keeps running
+        if (range && range !== doc.querySelector(".critters")?.dataset.range) {  // keep the period picked on the scoreboard
+          const s = await fetch(`/scoreboard?range=${range}`, { cache: "no-store" });
+          const board = document.querySelector(".critters");
+          if (s.ok && board) { board.outerHTML = await s.text(); htmx.process(document.querySelector(".critters")); }
+        }
+        const hero = document.querySelector(".hero-latest"), freshHero = doc.querySelector(".hero-latest");
+        if (hero && freshHero && hero.querySelector(".hero-link").getAttribute("href") !== freshHero.querySelector(".hero-link").getAttribute("href")) {
+          const big = new Image();  // decode the new photo off-screen so the slot never blanks
+          big.src = freshHero.querySelector("img").src;
+          await big.decode().catch(() => {});
+          freshHero.classList.add("card-new");
+          hero.replaceWith(freshHero);
+          freshHero.dispatchEvent(new CustomEvent("birdbrain:cards", { bubbles: true }));  // its circle
+        }
+        swap(doc, ".visits-head h2");
+        const g = grid(), freshGrid = doc.querySelector(".visits .grid");
+        if (!freshGrid) return;
+        if (!g) {  // "No visitors yet" until now: take the whole section
+          swap(doc, "section.visits");
+          grid().querySelectorAll(".card").forEach(c => c.classList.add("card-new"));
+          grid().dispatchEvent(new CustomEvent("birdbrain:cards", { bubbles: true }));
+          return;
+        }
+        const have = new Set([...g.querySelectorAll(".card")].map(c => c.getAttribute("href")));
+        const added = [];
+        for (const card of freshGrid.querySelectorAll(".card")) {
+          if (have.has(card.getAttribute("href"))) break;
+          card.classList.add("card-new");
+          added.push(card);
+        }
+        if (!added.length) return;
+        const scrolled = gridAbove();
+        const anchor = [...g.querySelectorAll(".card")].find(c => c.getBoundingClientRect().bottom > 0);
+        const before = anchor?.getBoundingClientRect().top;
+        const todayHead = g.querySelector(".grid-today");  // new visitors go under the Today heading
+        g.querySelector(".grid-none-today")?.remove();
+        if (todayHead) todayHead.after(...added); else g.prepend(...added);
+        g.dispatchEvent(new CustomEvent("birdbrain:cards", { bubbles: true }));
+        if (scrolled) {
+          // Browsers that anchor scrolling already kept the view still; this covers the ones that don't.
+          const shift = anchor ? anchor.getBoundingClientRect().top - before : 0;
+          if (shift) scrollBy(0, shift);
+          showPill(added.length);
+        }
+      } catch (e) { /* atmos unreachable; the next check tries again */ }
+      finally {
+        busy = false;
+        if (again) { again = false; update(); }
+      }
+    }
+    document.addEventListener("birdbrain:visits", update);
+
+    // Cards slid in at the top push the rest down, so "Load more" (which counts from the top) repeats a few: drop them.
+    document.addEventListener("htmx:afterSettle", () => {
+      const seen = new Set();
+      grid()?.querySelectorAll(".card").forEach(c => {
+        const href = c.getAttribute("href");
+        if (seen.has(href)) c.remove(); else seen.add(href);
+      });
+    });
+  })();
+  // Right arrow opens the latest visitor's visit (the visit page's Older arrow); Left does nothing here.
+  // The hero is looked up on each press because new visitors swap it in.
+  document.addEventListener("keydown", e => {
+    if (e.key !== "ArrowRight" || e.repeat || e.defaultPrevented) return;
+    if (e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return;
+    if (document.documentElement.dataset.tour) return;
+    const t = e.target;
+    if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
+    if (document.querySelector("dialog[open]")) return;
+    const link = document.querySelector(".hero-link");
+    if (!link) return;
+    // "#from-home" tells the visit page it was reached by arrow keys, so Esc there comes back here (see visit.html).
+    // It rides in the URL rather than sessionStorage: a page prerendered on hover (speculation rules above) can
+    // run with a copy of sessionStorage taken before this press, and a fragment is never sent to the server, so
+    // the prefetched page is still used.
+    location.href = link.href.split("#")[0] + "#from-home";
+  });
+</script>
+<script src="/static/photo-reminder.js?v={{ asset_version }}" defer></script>
+<script>
+  // More filters: the button after the chips shows or hides the filter boxes under the row.
+  (() => {
+    const btn = document.querySelector(".filters-toggle"), form = document.getElementById("more-filters");
+    if (!btn || !form) return;
+    btn.addEventListener("click", () => {
+      const open = form.hidden;
+      form.hidden = !open;
+      btn.setAttribute("aria-expanded", String(open));
+      if (open) form.querySelector("select, input")?.focus({preventScroll: true});
+    });
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,123 @@
+{# A visit thumbnail with its circles (the owner's saved ones, else Claude's) drawn over it by static/thumb-marks.js. #}
+{% macro thumb(v, cls="thumb", lazy=True, full=False) -%}
+<span class="{{ cls }}">
+  <img src="/images/{{ photo_src(v) if full else v.thumb_path }}" alt="{{ v.label }}"{% if lazy %} loading="lazy"{% endif %}>
+  {%- set marks = photo_marks(v) %}{% if marks %}<svg class="marks thumb-marks" preserveAspectRatio="xMidYMid slice" aria-hidden="true" data-marks='{{ marks | tojson }}'></svg>{% endif %}
+</span>
+{%- endmacro %}
+
+{# The star on a photo (admins): unset -> blue favorite -> yellow species cover -> unset
+   (static/star.js; yellow waits 2 s and asks before replacing another cover). Used on the photo cards, the home page's big latest-visitor
+   photo and the visit page's big photo. covers is star_covers(request). sp is None for a visit with no species (None/Other):
+   no cover then, the star only toggles blue favorite on and off. #}
+{% macro fav_star(v, sp, covers) -%}
+{% set st = 'cover' if sp and covers.get(sp) == v.id else ('favorite' if v.keep == 1 else 'unset') %}
+  {% set tips = {'unset': 'Tap to make it a favorite.', 'favorite': ('Favorite: never deleted when space is cleared. Tap again to use it as the species cover.' if sp else 'Favorite: never deleted when space is cleared. Tap again to unset.'), 'cover': 'Species cover: shows for ' ~ sp ~ ' on the Species page, and never deleted when space is cleared. Tap to unset.'} %}
+  <button type="button" class="fav-star" data-state="{{ st }}" data-keep="{{ 1 if v.keep == 1 else 0 }}" aria-pressed="{{ 'false' if st == 'unset' else 'true' }}"
+    aria-label="{{ tips[st] }}" data-id="{{ v.id }}"{% if sp %} data-star-species="{{ sp }}"{% endif %}
+    data-tip-unset="{{ tips['unset'] }}" {% if sp %}data-tip-cover="{{ tips['cover'] }}"{% endif %} data-tip-favorite="{{ tips['favorite'] }}"
+    data-tip="{{ tips[st] }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg></button>
+  <span class="fav-pill" hidden data-tip="Just set: {% if sp %}species cover (yellow, shows on the Species page, never deleted when space is cleared), {% endif %}favorite (blue, never deleted when space is cleared) or unset."></span>
+{%- endmacro %}
+
+{% macro sp_name(label, text=None) -%}
+{%- if has_card(label) -%}
+<span class="sp-name" data-species="{{ label }}" role="button" tabindex="0">{{ text or label }}</span>
+{%- else -%}
+{{ text or label }}
+{%- endif -%}
+{%- endmacro %}
+
+{# The blue keeper mark (a star) on a card; admin only, so callers check request.state.admin. htmx swaps it for
+   the server's updated copy. Lives inside the card's link, so the click must not follow the link. #}
+{% macro keeper_btn(v) -%}
+{%- set on = v.keep == 1 -%}
+<button type="button" class="keep-mark" aria-pressed="{{ 'true' if on else 'false' }}" aria-label="Keep this photo"
+  hx-post="/visit/{{ v.id }}/keep" hx-vals='{"on": {{ 0 if on else 1 }}}' hx-target="this" hx-swap="outerHTML"
+  onclick="event.preventDefault(); event.stopPropagation()"
+  data-tip="Keeper: this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg></button>
+{%- endmacro %}
+
+{# A status pill. Every pill says what it means in a hover tooltip (static/tips.js); add new pills here. #}
+{% macro badge(text, cls, tag="span") -%}
+{%- set tips = {
+  "high": "High confidence: Claude was sure of this answer.",
+  "medium": "Medium confidence: Claude thought this was likely, but key marks were hidden, blurry or far away.",
+  "low": "Low confidence: Claude was guessing. Low answers about an animal go to the review queue.",
+  "night": "Night: taken in infrared after dark, so the photo is black and white.",
+  "corrected": "Corrected: you changed this label. Claude's original answer is still on the visit page.",
+  "Needs review": "Needs review: Claude was still unsure after a second look. Pick what was there to clear it.",
+  "Early arrival": "Early arrival: seen the month before this species usually shows up here, going by local iNaturalist reports.",
+  "Late departure": "Late departure: seen the month after this species usually leaves, going by local iNaturalist reports.",
+  "Unusual this time of year": "Unusual: this species is seldom reported here in this month, going by local iNaturalist reports.",
+  "Rarely reported here": "Rarely reported here: few local iNaturalist reports of this species in any month.",
+  "Year-round resident": "Year-round resident: reported here in most months, going by local iNaturalist reports.",
+  "Summer visitor": "Summer visitor: reported here mainly in summer, going by local iNaturalist reports.",
+  "Winter visitor": "Winter visitor: reported here mainly in winter, going by local iNaturalist reports.",
+  "Passes through in spring and fall": "Passes through: reported here mainly during spring and fall migration, going by local iNaturalist reports.",
+  "in use": "In use: the local model mode picked on the Settings page.",
+  "on": "On: this alert is switched on in Settings.",
+  "off": "Off: this alert is switched off in Settings.",
+  "moved": "Moved: the zones were updated to match what the camera sees now.",
+  "no change": "No change: the rocks and the camera were where the zones expected them.",
+  "skipped": "Skipped: nothing was changed this time (too dark, too busy, or the camera moved too far to fix on its own).",
+  "undone": "Undone: the zones were put back the way they were before.",
+  "in prompt": "In prompt: this line is sent to Claude with every identification right now.",
+  "switched off": "Switched off: you took this lesson out of the prompt. The visit keeps your label.",
+  "day mode": "Day mode: the camera sees in color, infrared off.",
+  "night mode": "Night mode: infrared on, so photos are black and white.",
+  "Confirmed": "Confirmed: 3 or more sure visits (high confidence, or labelled by you). A medium answer for this species skips Sonnet's second look, so there's no need to confirm it.",
+  "Not confirmed yet": "Not confirmed yet: fewer than 3 sure visits (high confidence, or labelled by you). Picking the right label on a medium visit counts toward 3; after that its medium answers skip Sonnet.",
+  "Claude saw": "Claude saw: the sharpest frame of the burst, the one sent to Claude and kept as this visit's photo.",
+  "private": "Private: the Pi saw a person in this photo, so it stays off the public mirror. It still shows here.",
+  "public (checked)": "Public (checked): the Pi's person check flagged this photo, but you looked and saw no person, so the public mirror shows it. If a photo of this visit is later checked again and scores higher, it's held back again. Undo keeps it private.",
+  "not public yet":"Not public yet: this photo hasn't had its person check, so the public mirror doesn't show it until the next push checks it.",
+  "Confirmed No Animal": "Confirmed no animal: you looked at this photo and said it's empty. It leaves the False triggers list, and the local animal check on the Pi trains on it as an empty photo, counting it extra. Undo takes it back.",
+  "confirmed by human": "Confirmed by human: you looked at this photo and said the answer is right. It leaves the False triggers list, and the local animal check on the Pi trains on it, counting it extra. Undo takes it back.",
+  "pi named": "Pi named: the local species classifier on the Pi was sure of a species already settled in this yard, so Claude wasn't asked. Confirm it or correct it.",
+  "pi circle": "Pi circle: Claude wasn't asked, so the Pi found the animal itself, comparing the photo with an empty view of the scene and circling the biggest patch of change near the zone that fired. Free; it can circle the wrong thing, so check it.",
+  "pi only": "Pi only: the local animal check on the Pi judged this frame empty, so Claude wasn't asked. Check it, then confirm it or correct it.",
+  "your check": "Your check: you circled part of the photo and asked what's in it. Only an answer; the label changes when you save a correction.",
+  "shadow": "Shadow: a local model on the Pi made this guess only to be scored. Claude's answer (or yours) is the label.",
+  "gate": "Gate: the Pi's answer counts. A frame it judges empty skips Claude and waits on False triggers for your check.",
+  "off": "Off: this local step doesn't run.",
+  "thinned": "Thinned: to save space, this older photo was saved once at a smaller size. It wasn't one of the sharpest photos of its species that day. The visit, its label, its circles and its place in every count are unchanged. Keepers and species photos are never thinned.",
+  "thumbnail only": "Thumbnail only: the photo budget ran short, so only this visit's thumbnail is kept. The visit, its label and its place in every count stay. Raise the photo budget in Settings to keep more full photos.",
+  "favorite": "Favorite (blue star): you marked this photo to keep. It is never thinned or deleted to save space. Undo takes the mark off.",
+  "too old": "Too old: newer lessons fill the prompt, so this one isn't sent any more. Switching newer ones off brings it back.",
+} -%}
+<{{ tag }} class="badge {{ cls }}"{% if tips[text] %} data-tip="{{ tips[text] }}"{% endif %}>{{ text }}</{{ tag }}>
+{%- endmacro %}
+
+{# Whether a species is confirmed here (db.confirmed_species); needs `confirmed` from the route. #}
+{% macro confirm_badge(label) -%}
+{%- if label in confirmed %}{{ badge("Confirmed", "confirmed") }}{% else %}{{ badge("Not confirmed yet", "unconfirmed") }}{% endif -%}
+{%- endmacro %}
+
+{# The Claude mark, on every button that asks Claude something (and so costs a little). #}
+{% macro claude_mark() %}<svg class="claude-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.6 12.1L7.3 0.1L5.9 0.7L10.4 13.5Z"/><path d="M13.7 13.1L14.8 0.7L13.4 0.5L10.3 12.5Z"/><path d="M13.4 13.9L20.4 3.7L19.2 2.7L10.6 11.7Z"/><path d="M12.5 14.5L23.6 10.1L23.2 8.7L11.5 11.1Z"/><path d="M11.8 14.6L23.4 14.5L23.6 13.1L12.2 11.0Z"/><path d="M11.0 14.3L22.0 20.1L22.8 18.9L13.0 11.3Z"/><path d="M10.5 13.7L16.6 22.5L17.8 21.9L13.5 11.9Z"/><path d="M10.2 12.7L10.8 23.8L12.2 23.8L13.8 12.9Z"/><path d="M10.5 11.8L5.2 21.7L6.4 22.5L13.5 13.8Z"/><path d="M11.1 11.3L2.2 17.9L3.0 19.1L12.9 14.3Z"/><path d="M12.2 11.1L0.4 10.5L0.2 11.9L11.8 14.5Z"/><path d="M13.1 11.4L2.5 4.8L1.7 6.0L10.9 14.2Z"/><path d="M8.8 12.8a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0 -6.4 0Z"/></svg>{% endmacro %}
+
+{# The zones (app.zone_shapes) as an SVG to lay over a camera frame in a .zones-frame, each in its Settings color. #}
+{% macro zone_svg(zones) -%}
+<svg viewBox="0 0 {{ zones.w }} {{ zones.h }}" preserveAspectRatio="none" aria-label="Zones drawn over the camera view">
+          {% if zones.ground %}<path class="z-ground" style="color: {{ zones.colors.ground }}" d="{{ zones.ground }}" fill-rule="evenodd"/>{% endif %}
+          {% if zones.rim %}<path class="z-rim" style="color: {{ zones.colors.ring }}" d="{{ zones.rim }}" fill-rule="evenodd"/>{% endif %}
+          {% if zones.water %}<path class="z-water" style="color: {{ zones.colors.water }}" d="{{ zones.water }}" fill-rule="evenodd"/>{% endif %}
+          {% for s in zones.spots %}<path class="z-spot" style="color: {{ zones.spot_colors[loop.index0] }}" d="{{ s }}"/>{% endfor %}
+          {% if zones.roi %}<rect class="z-rim" style="color: {{ zones.colors.ring }}" x="{{ zones.roi.x }}" y="{{ zones.roi.y }}" width="{{ zones.roi.w }}" height="{{ zones.roi.h }}"/>{% endif %}
+          {% if zones.crop %}<rect class="z-crop" style="color: {{ zones.colors.crop }}" x="{{ zones.crop.x }}" y="{{ zones.crop.y }}" width="{{ zones.crop.w }}" height="{{ zones.crop.h }}"/>{% endif %}
+        </svg>
+{%- endmacro %}
+
+{# A small magnifier in a photo's upper-right corner (home page trial): opens the photo big in place, while a click
+   on the rest of the photo keeps its link. Put it beside the link, not inside it. Without a visit it is the live view's. #}
+{% macro zoom_btn(v=none) -%}
+<button type="button" class="zoom-btn{{ '' if v else ' live-zoom-btn' }}"{% if v %} data-zoom-photo="/images/{{ photo_src(v) }}" data-zoom-alt="{{ v.label }}"{% endif %}
+  aria-label="Open {{ 'the photo' if v else 'the live view' }} big" data-tip="Open big"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M10.5 8v5M8 10.5h5"/></svg></button>
+{%- endmacro %}
+
+{# The other half of zoom_btn: in a big view opened by the magnifier, the close button is the same round button with a
+   minus, since closing takes the photo back to its small size. #}
+{% macro zoom_out_btn(cls) -%}
+<button type="button" class="viewer-close viewer-zoom-out {{ cls }}" aria-label="Zoom out (Esc)" title="Zoom out (Esc)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M8 10.5h5"/></svg></button>
+{%- endmacro %}

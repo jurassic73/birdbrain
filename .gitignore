@@ -1,0 +1,28 @@
+# Per-camera factory firmware backups (large, device-specific, may hold account data)
+firmware-backup/
+
+*.dmg
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime data
+*.sqlite
+*.db
+captures/
+snapshots/
+
+.env
+
+# App data (database, captured images)
+data/
+
+# Downloaded model weights (scripts/get_model.sh)
+models/
+
+# Private project notes (home network details); kept local only
+CLAUDE.md

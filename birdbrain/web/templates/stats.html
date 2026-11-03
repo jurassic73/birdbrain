@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Stats | Birdbrain{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Stats <span class="muted">{{ total }} visits</span></h1></div>
+{% set a = activity %}
+<section class="today-motion" id="today-motion">
+  <h2>Today's motion</h2>
+  <ol class="tally" aria-label="Today's numbers">
+    <li data-tip="Birds and animals identified today"><span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }}</span></li>
+    <li data-tip="Motion with no animal: rain, wind, ripples">
+      <span class="tally-n">{{ a.false_alarms }}</span> {% if request.state.admin %}<a class="tally-label" href="/false-triggers">False alarms</a>{% else %}<span class="tally-label">False alarms</span>{% endif %}
+    </li>
+    {% if presence_mode != 'off' %}
+    <li data-tip="False alarms the Pi's animal check screened out for free"><span class="tally-n">{{ a.kept_on_pi }}</span> <a class="tally-label" href="#presence">Kept on the Pi</a></li>
+    {% endif %}
+    <li data-tip="Cost {{ a.claude_usd | usd }} today{% if presence_mode == 'shadow' and a.would_keep %}; gate mode would have kept {{ a.would_keep }} on the Pi{% endif %}">
+      <span class="tally-n">{{ a.sent_to_claude }}</span> <span class="tally-label">Sent to Claude</span> <span class="tally-why">{{ a.claude_usd | usd }}</span>
+    </li>
+  </ol>
+  {% set motion = a.visitors + a.false_alarms %}
+  {% if motion %}
+  <ul class="tally-facts">
+    <li>{{ (100 * a.visitors / motion) | round | int }}% of today's {{ motion }} motion events were a real animal; the rest were rain, wind, leaves or ripples.</li>
+    {% if a.visitors %}<li>Each visitor cost about {{ (a.claude_usd / a.visitors) | usd }} in Claude calls.</li>{% endif %}
+    {% if a.kept_on_pi %}<li>The Pi's animal check settled {{ a.kept_on_pi }} false alarm{{ 's' if a.kept_on_pi != 1 }} on the Pi without asking Claude.</li>{% endif %}
+    {% if presence_mode == 'shadow' and a.would_keep %}<li>Gate mode would have kept {{ a.would_keep }} more on the Pi, saving about {{ a.would_keep_usd | usd }}.</li>{% endif %}
+  </ul>
+  {% endif %}
+</section>
+<div class="charts">
+  <figure><figcaption>Visits per day, last 30 days <a class="fig-link" href="/weather">How weather changes visits</a></figcaption><canvas id="daily"></canvas></figure>
+  <figure><figcaption>Visits by hour of day</figcaption><canvas id="hourly"></canvas></figure>
+</div>
+<div class="two-col">
+  <section>
+    <h2>Most frequent visitors</h2>
+    <ol class="leaders">
+      {% for s in leaders %}
+      <li><a href="/species/{{ s.label | urlencode }}" data-species="{{ s.label }}">{{ s.label }}</a> <span class="muted">{{ s.visits }}</span></li>
+      {% else %}<li class="muted">Nothing yet.</li>{% endfor %}
+    </ol>
+  </section>
+  <section>
+    <h2>New to the yard</h2>
+    <ul class="leaders">
+      {% for s in newest %}
+      <li><a href="/species/{{ s.label | urlencode }}" data-species="{{ s.label }}">{{ s.label }}</a> <span class="muted">first {{ s.first_seen | nice_date }}</span></li>
+      {% else %}<li class="muted">Nothing yet.</li>{% endfor %}
+    </ul>
+  </section>
+</div>
+{% set p = presence %}
+{% if presence_mode != 'off' or p.frames %}
+<section class="detector-report" id="presence">
+  <h2>Local animal check <span class="muted">{{ 'gate mode: skips Claude when it judges a frame empty' if presence_mode == 'gate' else 'shadow mode: scoring, Claude still sees everything' }}</span></h2>
+  {% if p.frames %}
+  <div class="today-stats">
+    <div><span class="big">{{ p.visitors }}</span> visitors</div>
+    <div><span class="big {{ 'bad' if p.missed }}">{{ p.missed | length }}</span> it called empty</div>
+    <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames {{ 'kept from Claude' if presence_mode == 'gate' else 'it would keep from Claude' }}</div>
+    {% if p.skipped %}<div><span class="big">{{ p.unchecked }}</span> skipped frames not confirmed yet</div>{% endif %}
+  </div>
+  <p class="muted">Last {{ p.days }} days, judged against the final answer: your correction if there is one, else Claude's (a frame skipped in gate mode counts as empty until you correct it).
+    <span data-tip="BioCLIP 2 looks at the crop box only. A small model trained on this yard's own frames, with the ones you checked counting 3 times, calls it empty or not. It screens every trigger that reaches the Pi (rim, water, ground, probes), day and night. It needs 10 visitors and 30 empty frames before it judges anything. Frames it skips are marked pi only on False triggers.">How it works</span>
+    {% if p.missed %}Missed: {% for m in p.missed %}<a href="/visit/{{ m.id }}">{{ m.label }}</a>{{ ' (night)' if m.night }}{{ ', ' if not loop.last }}{% endfor %}. Correcting them teaches it.{% endif %}
+    {% if p.unchecked %}Check skipped frames on <a href="/false-triggers">False triggers</a>.{% endif %}</p>
+  {% else %}
+  <p class="muted">No frames judged yet.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% if classifier_on or classifier.checked %}
+<section class="detector-report" id="classifier">
+  <h2>Local species classifier <span class="muted">{% if classifier_mode == 'gate' %}gate mode: names sure daytime regulars on the Pi, Claude names the rest{% else %}shadow mode: guesses the species on the Pi, Claude still names every visitor{% endif %}</span></h2>
+  {% if classifier.checked %}
+  <div class="today-stats">
+    <div><span class="big">{{ (100 * classifier.top1 / classifier.checked) | round | int }}%</span> first guess right ({{ classifier.top1 }}/{{ classifier.checked }})</div>
+    <div><span class="big">{{ (100 * classifier.top3 / classifier.checked) | round | int }}%</span> right within its top 3 ({{ classifier.top3 }}/{{ classifier.checked }})</div>
+    <div><span class="big">{{ classifier.night_top1 }}/{{ classifier.night }}</span> right at night</div>
+  </div>
+  <table class="classifier-species">
+    <thead><tr><th>Species</th><th class="num">Visits</th><th class="num">First guess</th><th class="num">Top 3</th></tr></thead>
+    <tbody>
+      {% for s in classifier.species[:15] %}
+      <tr><td><span data-species="{{ s.label }}">{{ s.label }}</span></td><td class="num">{{ s.visits }}</td><td class="num">{{ s.top1 }}</td><td class="num">{{ s.top3 }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">All visits named to species so far (birds and mammals), judged against the final label: your correction if there is one, else Claude's. Visits the Pi named itself count only after you check or correct them{% if classifier.seconds is not none %}; about {{ classifier.seconds }} s per photo{% endif %}.
+    {% if classifier.misses %}Recent misses:
+      {% for m in classifier.misses %}<a href="/visit/{{ m.id }}">{{ m.label }}</a> <span class="muted">(said {{ m.guess }})</span>{{ ', ' if not loop.last }}{% endfor %}.
+    {% endif %}
+  </p>
+  {% else %}
+  <p class="muted">No visits scored yet (birds and mammals named to a species). Older visits can be scored with <code>python -m birdbrain.classifier --backfill</code>.</p>
+  {% endif %}
+</section>
+{% endif %}
+<script src="/static/charts.js?v={{ asset_version }}"></script>
+<script>
+  barChart("daily", {{ daily | map(attribute=0) | list | tojson }}.map(d => d.slice(5)), {{ daily | map(attribute=1) | list | tojson }});
+  barChart("hourly", hourLabels(), {{ hourly | tojson }});
+</script>
+{% endblock %}

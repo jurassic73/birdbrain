@@ -1,0 +1,122 @@
+{% from "_macros.html" import badge %}
+{# The Zones section's live part. While a recalibration runs only the timer ticks (it polls /settings/zones/status);
+   the panel reloads once when the run is done, so the photo and shapes don't redraw. #}
+<div id="zones-status" class="recal">
+  {% if not recal_ring or not recal_spots %}
+  <p class="notice">Rock tracking needs a birdbath ring and rock spots from a hand calibration (see the README). Camera moves are still caught.</p>
+  {% endif %}
+  {# The one place the zones are edited (scene-edit.js; Claude's Notes only shows them): click the photo, pick a shape, drag it.
+     Save posts every shape to /settings/zones/manual. Read-only while a recalibration runs (this part reloads). #}
+  <div class="scene-body zones-body">
+  <figure class="scene-pic zones-now" id="zones-now">
+    <div class="scene-frame">
+      {# The saved frame paints at once; a fresh one is decoded off-screen and swapped in (like the home page). #}
+      <img id="zones-now-img" src="/live/latest.jpg" alt="The camera right now, with the zones drawn over it" onerror="this.hidden = true" onload="this.hidden = false">
+      <svg viewBox="0 0 {{ zone_w }} {{ zone_h }}" aria-label="The zones: click a shape to adjust it"
+           {% if not recal_pending %}data-which="zones" data-at="zones" data-rotate="1" data-save="/settings/zones/manual"
+           data-panel="zones-status" data-panel-url="/settings/zones"{% endif %} data-objs='{{ zone_objs | tojson }}'>
+        {% for o in zone_objs %}{% if not o.ellipse %}<path class="scene-{{ o.kind }}" style="color: {{ o.color }}" data-i="{{ loop.index0 }}" d="{{ o.d }}"/>{% endif %}{% endfor %}
+        {% for o in zone_objs %}{% if o.hit %}<path class="scene-hit" data-i="{{ loop.index0 }}" d="{{ o.hit }}"/>{% endif %}{% endfor %}
+        {% for o in zone_objs %}{% if o.ellipse %}<path class="scene-{{ o.kind }}" style="color: {{ o.color }}" data-i="{{ loop.index0 }}" d="{{ o.d }}"/>{% endif %}{% endfor %}
+        {% for o in zone_objs %}{% if o.water %}<path class="scene-water" data-i="{{ loop.index0 }}" d="{{ o.water }}"/>{% endif %}{% endfor %}
+        {% for o in zone_objs %}<text class="scene-{{ o.kind }}" style="color: {{ o.color }}" data-i="{{ loop.index0 }}" x="{{ '%.2f' | format(o.lx) }}" y="{{ '%.2f' | format(o.ly - 1) }}">{{ loop.index }}</text>{% endfor %}
+      </svg>
+    </div>
+    <figcaption class="muted small">The camera right now, updated every few seconds.{% if not recal_pending %} Click the
+      photo to open it big and drag the zones into place.{% endif %}</figcaption>
+    <script>
+      // Keep the photo current like the home page's live view: a fresh frame every few seconds while the tab is
+      // visible, one right away when the tab comes back or the editor opens. Decoded off-screen, then swapped in.
+      (function () {
+        let busy = false;
+        window.zonesFreshPhoto = function () {
+          const img = document.getElementById("zones-now-img");
+          if (!img || busy || document.hidden) return;
+          busy = true;
+          const next = new Image();
+          next.onload = () => { img.src = next.src; busy = false; };
+          next.onerror = () => { busy = false; };
+          next.src = "/live.jpg?t=" + Date.now();
+        };
+        if (!window.zonesPhotoTimer) {
+          window.zonesPhotoTimer = setInterval(window.zonesFreshPhoto, {{ live_refresh * 1000 }});
+          document.addEventListener("visibilitychange", () => window.zonesFreshPhoto());
+        }
+        window.zonesFreshPhoto();
+      })();
+    </script>
+  </figure>
+  {% set zone_tips = {
+    'ring': 'The outer edge of the bowl. Motion between it and the open water starts a visit. Drag the round handle above it to turn it.',
+    'water': 'The open water inside the rim: there only one solid, bird-sized blob counts, so ripples are ignored. Moves, resizes and turns on its own.',
+    'spot': 'Rocks or other landing spots in the water: watched like the rim. Automatic checks move it onto the rocks if they shift.',
+    'ground': 'Critters passing by on the ground, outside the bath. Drag a faded dot to add a corner.',
+    'crop': 'The part of the photo Claude is sent for a birdbath visit. Smaller means cheaper and sharper, but keep the whole rim in it.'} %}
+  <ol class="scene-list">
+    {% for o in zone_objs %}
+    <li data-i="{{ loop.index0 }}" data-name="{{ o.name }}" data-color="{{ o.color }}"><span class="scene-swatch" style="color: {{ o.color }}"></span>
+      <div><strong data-tip="{{ zone_tips[o.role] }}">{{ o.name }}</strong>
+        {% if not recal_pending %}<button type="button" class="link-btn scene-adjust" data-which="zones" data-i="{{ loop.index0 }}">Adjust</button>
+        <button type="button" class="link-btn scene-eye" data-which="zones" data-i="{{ loop.index0 }}"
+                data-tip="Hide or show this shape on the photo, to get at the ones under it. Only on this browser; nothing is saved.">Hide</button>{% endif %}</div></li>
+    {% endfor %}
+  </ol>
+  </div>
+  <div class="actions">
+    <form method="post" action="/settings/zones/now">
+      <button type="submit" {% if recal_pending %}disabled class="sending"{% endif %}>{{ 'Looking at the bath…' if recal_pending else 'Recalibrate now' }}</button>
+    </form>
+    {% if recal_pending %}
+    <span class="recal-timer" id="recal-timer" data-started="{{ recal_status.started }}"
+          data-tip="Time since you pressed Recalibrate now. In brackets: how long the last runs took on average.">
+      <span class="recal-elapsed">0:00</span>{% if recal_status.average %}
+      <span class="muted">(avg {{ '%d:%02d' | format(recal_status.average // 60, recal_status.average % 60) }})</span>{% endif %}</span>
+    <script>
+      (function () {
+        const box = document.getElementById("recal-timer");
+        const started = new Date(box.dataset.started).getTime();
+        const out = box.querySelector(".recal-elapsed");
+        const tick = () => {
+          const s = Math.max(0, Math.round((Date.now() - started) / 1000));
+          out.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+        };
+        tick();
+        const clock = setInterval(tick, 1000);
+        const poll = setInterval(async () => {
+          if (!document.body.contains(box)) { clearInterval(clock); clearInterval(poll); return; }
+          try {
+            const st = await (await fetch("/settings/zones/status")).json();
+            if (st.pending) return;
+            clearInterval(clock); clearInterval(poll);
+            htmx.ajax("GET", "/settings/zones", {target: "#zones-status", swap: "outerHTML"});
+          } catch (e) { /* try again on the next poll */ }
+        }, 3000);
+      })();
+    </script>
+    {% endif %}
+    {% if recal_undo and not recal_pending %}
+    <form method="post" action="/settings/zones/undo/{{ recal_undo }}"><button type="submit" class="secondary">Undo last change</button></form>
+    {% endif %}
+  </div>
+  {% if recal_pending %}
+  <p class="muted small">The watcher starts within half a minute, then samples quiet frames for about a minute. This updates by itself.</p>
+  {% endif %}
+
+  <div class="recal-body">
+  {% if recal_runs %}
+  <ul class="recal-list">
+    {% for r in recal_runs %}
+    {% set label = {'moved': 'moved', 'unchanged': 'no change', 'skipped': 'skipped', 'undone': 'undone'}[r.status] %}
+    <li>
+      <span class="when">{{ r.ran_at | short_time }}</span>
+      {{ badge(label, 'recal-' ~ r.status) }}
+      <span>{{ r.summary }}{% if r.reason == 'manual' %} <span class="muted">(asked for)</span>{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% if recal_runs | length > 3 %}<button type="button" class="m-only secondary" onclick="this.previousElementSibling.classList.add('all'); this.remove()">Show all {{ recal_runs | length }}</button>{% endif %}
+  {% else %}
+  <p class="muted small">No recalibrations yet.</p>
+  {% endif %}
+  </div>
+</div>
