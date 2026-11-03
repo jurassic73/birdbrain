@@ -1230,72 +1230,30 @@ def zone_colors(z: zones.Zones) -> dict:
     return {"colors": colors, "spot_colors": spots}
 
 
-def backoff_steps() -> list[int]:
-    """Seconds waited after each false trigger in a row, until the cap."""
-    steps = []
-    while len(steps) < 8 and (not steps or steps[-1] < config.COOLDOWN_NONE_MAX):
-        steps.append(config.false_trigger_wait(len(steps) + 1))
-    return steps
-
-
-# Illustration for the season badges when no cached card has a clear season yet: a summer visitor's reports.
-EXAMPLE_COUNTS = [0, 0, 1, 6, 48, 90, 100, 74, 28, 4, 0, 0]
-
-
-def season_example(cards: dict[str, dict]) -> dict:
-    """A species card with a distinct season (or the illustration) and the badge each month would get."""
-    name, counts, expected = None, EXAMPLE_COUNTS, species_info.local_status(EXAMPLE_COUNTS)[1]
-    for label in sorted(cards):
-        card = cards[label]
-        if card.get("local_counts") and 3 <= len(card.get("expected_months") or []) <= 9:
-            name, counts, expected = label, card["local_counts"], card["expected_months"]
-            break
-    info = {"local_counts": counts, "expected_months": expected}
-    peak = max(counts) or 1
-    months = [{"name": species_info.MONTHS[m - 1], "pct": round(100 * n / peak), "expected": m in expected,
-               "badge": species_info.season_badge(info, m)} for m, n in enumerate(counts, 1)]
-    return {"name": name, "months": months, "status": species_info.local_status(counts)[0]}
-
-
 @app.get("/about", response_class=HTMLResponse)
 def about(request: Request, conn=Depends(get_conn)):
-    cards = species_info.cached_cards()
+    """The 10,000-foot view: live values only where the page states a rule or a setting."""
     return page(
         request,
         "about.html",
         cfg=config,
-        totals=db.totals(conn),
-        rate=db.capture_rate(conn),
         zones=zone_shapes(zones.load(conn)),
         recal=zones.schedule(conn),
         recal_stored=zones.stored(conn) is not None,
         has_frame=_live["jpeg"] is not None or live_file().exists(),
-        backoff=backoff_steps(),
         classifier_mode=config.CLASSIFIER,
-        classifier=db.classifier_report(conn),
-        presence=db.presence_report(conn),
         presence_mode=presence.mode(conn),
-        presence_min=(presence.MIN_VISITORS, presence.MIN_EMPTY),
         haiku=identify.HAIKU,
         sonnet=identify.SONNET,
         four=steps.components(),
         weight=f"{presence.CONFIRMED_WEIGHT:g}",
-        lessons=len(db.recent_lessons(conn)),
-        note_limit=db.NOTE_LIMIT,
         lesson_limit=db.LESSON_LIMIT,
         auto_every=lessons.AUTO_EVERY,
         confirmed_min=db.CONFIRMED_MIN,
         site=db.prompt_site(conn),
         avg_call=db.avg_haiku_call_usd(conn),
         alerts=alert.get_settings(conn),
-        cards=len(cards),
-        season=season_example(cards),
-        expected_pct=round(species_info.EXPECTED_SHARE * 100),
         card_days=species_info.REFRESH_AFTER.days,
-        local_km=species_info.LOCAL_KM,
-        nearby_km=species_info.NEARBY_KM,
-        min_hours=db.MIN_HOURS,
-        min_like_today=db.MIN_LIKE_TODAY,
         **storage_context(conn),
     )
 
