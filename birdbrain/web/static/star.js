@@ -22,7 +22,7 @@
   }
 
   function coverOf(species) {
-    for (const s of document.querySelectorAll(".fav-star[data-state=cover]")) if (s.dataset.species === species) return Number(s.dataset.id);
+    for (const s of document.querySelectorAll(".fav-star[data-state=cover]")) if (s.dataset.starSpecies === species) return Number(s.dataset.id);
     return null;
   }
 
@@ -50,12 +50,12 @@
     try {
       const body = new FormData();
       body.append("visit_id", star.dataset.id);
-      const res = await fetch("/species/" + encodeURIComponent(star.dataset.species) + "/photo", {method: "POST", body});
+      const res = await fetch("/species/" + encodeURIComponent(star.dataset.starSpecies) + "/photo", {method: "POST", body});
       if (!res.ok) return;
       const r = await res.json();
       star.dataset.keep = r.state === "unset" ? "0" : "1";
       document.querySelectorAll(".fav-star").forEach((b) => {
-        if (b.dataset.species === r.species) paint(b, r.cover_id);
+        if (b.dataset.starSpecies === r.species) paint(b, r.cover_id);
       });
       flash(star, r.state);
     } finally {
@@ -71,7 +71,7 @@
     const star = document.querySelector('.fav-star[data-id="' + id + '"]');
     if (!star) return;
     star.dataset.keep = JSON.parse(btn.getAttribute("hx-vals")).on ? "1" : "0";
-    paint(star, coverOf(star.dataset.species));
+    paint(star, coverOf(star.dataset.starSpecies));
   });
 
   // Cards slid in by the home page aren't known to htmx yet.

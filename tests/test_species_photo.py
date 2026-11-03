@@ -124,8 +124,8 @@ def test_star_shows_on_other_pages_with_the_cover_yellow(client, conn, add_visit
     for path in ("/", "/visits"):
         text = client.get(path).text
         assert "class=\"fav-star\" data-state=\"cover\"" in text, path
-        assert f'data-id="{cover}" data-species="Bushtit"' in text and f'data-id="{plain}" data-species="Dark-eyed Junco"' in text
-        assert f'data-id="{nothing}" data-species' not in text
+        assert f'data-id="{cover}" data-star-species="Bushtit"' in text and f'data-id="{plain}" data-star-species="Dark-eyed Junco"' in text
+        assert f'data-id="{nothing}" data-star-species' not in text
     assert 'class="fav-star"' not in client.get("/false-triggers?show=all").text
     # a star on the home page posts under the card's own species
     assert click(client, plain, "Dark-eyed Junco")["state"] == "cover"
@@ -179,3 +179,11 @@ def test_covers_picked_before_the_keep_rule_get_kept_at_startup(conn, add_visit)
     assert db.get_visit(conn, old)["keep"] == 1
     db.init_db(conn)  # runs every start; harmless the second time
     assert db.get_visit(conn, old)["keep"] == 1
+
+
+def test_the_star_is_not_a_species_link(client, add_visit):
+    # species-card.js opens the species pop-up for any [data-species] click (and hover), so the star must not carry it.
+    import re
+    add_visit(species="Bushtit")
+    stars = re.findall(r'<button type="button" class="fav-star"[^>]*>', client.get("/").text)
+    assert stars and all(" data-species=" not in s for s in stars)
