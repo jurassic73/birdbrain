@@ -915,26 +915,55 @@ def species_page(request: Request, name: str, conn=Depends(get_conn)):
     )
 
 
+STAR_STATES = ("unset", "favorite", "cover")
+
+
 @app.post("/species/{name}/photo")
-def species_photo(name: str, visit_id: int = Form(...), conn=Depends(get_conn)):
-    """The star on a card, three states per click: unset -> species cover (yellow, one per species, also kept)
-    -> favorite (blue: the cover pick is cleared, the photo stays kept) -> unset (no longer kept). A new cover
-    leaves the old one as a kept favorite. Answers with the visit's new state and the species' cover now."""
+def species_photo(name: str, visit_id: int = Form(...), state: str = Form(""), conn=Depends(get_conn)):
+    """The star on a photo: unset -> favorite (blue, kept) -> species cover (yellow, one per species, also kept)
+    -> unset (no longer kept). `state` sets one outright (static/star.js always sends it: it holds yellow for a
+    moment and may ask before replacing a cover); without it the click moves one step along. A new cover leaves
+    the old one as a kept favorite. Answers with the visit's new state and the species' cover now."""
     if not db.shows_species(conn, visit_id, name):
         raise HTTPException(404)
     cover = db.species_photos(conn).get(name)
-    if cover == visit_id:
-        db.set_species_photo(conn, name, None)
-        db.set_keep(conn, visit_id, True)  # old data may have a cover that isn't kept
-        state, cover = "favorite", None
-    elif db.get_visit(conn, visit_id)["keep"]:
-        db.set_keep(conn, visit_id, False)
-        state = "unset"
-    else:
+    if state not in STAR_STATES:
+        if state:
+            raise HTTPException(400)
+        now = "cover" if cover == visit_id else "favorite" if db.get_visit(conn, visit_id)["keep"] else "unset"
+        state = STAR_STATES[(STAR_STATES.index(now) + 1) % 3]
+    if state == "cover":
         db.set_species_photo(conn, name, visit_id)
-        db.set_keep(conn, visit_id, True)
-        state, cover = "cover", visit_id
+        cover = visit_id
+    elif cover == visit_id:
+        db.set_species_photo(conn, name, None)
+        cover = None
+    db.set_keep(conn, visit_id, state != "unset")
     return {"visit_id": visit_id, "species": name, "state": state, "cover_id": cover}
+
+
+def _compare_photo(v, name: str) -> dict:
+    """One side of the star's "Replace the cover?" question: the photo, when, and the circle around the species
+    (fractions; null when there's none, then the whole frame shows)."""
+    marks = [m for m in start_marks(v) if not db.mark_frame(m)]
+    mark = next((m for m in marks if m.get("label") == name), None) or next((m for m in marks if not m.get("label")), None) \
+        or (marks[0] if marks else None)
+    return {"id": v["id"], "src": "/images/" + db.photo_rel(v), "when": nice_time(v["captured_at"]),
+            "mark": {k: mark[k] for k in ("x", "y", "r")} if mark else None}
+
+
+@app.get("/species/{name}/cover-compare")
+def species_cover_compare(name: str, visit_id: int, conn=Depends(get_conn)):
+    """The species' current cover and a candidate, for the side-by-side question (cover null when there is none,
+    or it is this visit, or its photo is gone: then the star just sets it)."""
+    v = db.get_visit(conn, visit_id)
+    if v is None or not db.shows_species(conn, visit_id, name):
+        raise HTTPException(404)
+    cid = db.species_photos(conn).get(name)
+    old = db.get_visit(conn, cid) if cid and cid != visit_id else None
+    if old is not None and (old["photo_deleted_at"] or not db.shows_species(conn, cid, name)):
+        old = None
+    return {"species": name, "cover": _compare_photo(old, name) if old else None, "candidate": _compare_photo(v, name)}
 
 
 @app.get("/species-info/{name}", response_class=HTMLResponse)

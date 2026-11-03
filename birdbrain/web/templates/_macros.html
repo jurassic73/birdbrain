@@ -6,12 +6,12 @@
 </span>
 {%- endmacro %}
 
-{# The star on a photo (admins, visits with a species): unset -> yellow species cover -> blue favorite -> unset
-   (static/star.js; the server decides). Used on the photo cards and the home page's big latest-visitor photo.
+{# The star on a photo (admins, visits with a species): unset -> blue favorite -> yellow species cover -> unset
+   (static/star.js; yellow waits 2 s and asks before replacing another cover). Used on the photo cards and the home page's big latest-visitor photo.
    covers is star_covers(request). #}
 {% macro fav_star(v, sp, covers) -%}
 {% set st = 'cover' if covers.get(sp) == v.id else ('favorite' if v.keep == 1 else 'unset') %}
-  {% set tips = {'unset': 'Tap to use as the species cover.', 'cover': 'Species cover: shows for ' ~ sp ~ ' on the Species page, and never deleted when space is cleared. Tap for favorite.', 'favorite': 'Favorite: never deleted when space is cleared. Tap to unset.'} %}
+  {% set tips = {'unset': 'Tap to make it a favorite.', 'favorite': 'Favorite: never deleted when space is cleared. Tap again to use it as the species cover.', 'cover': 'Species cover: shows for ' ~ sp ~ ' on the Species page, and never deleted when space is cleared. Tap to unset.'} %}
   <button type="button" class="fav-star" data-state="{{ st }}" data-keep="{{ 1 if v.keep == 1 else 0 }}" aria-pressed="{{ 'false' if st == 'unset' else 'true' }}"
     aria-label="{{ tips[st] }}" data-id="{{ v.id }}" data-star-species="{{ sp }}"
     data-tip-unset="{{ tips['unset'] }}" data-tip-cover="{{ tips['cover'] }}" data-tip-favorite="{{ tips['favorite'] }}"

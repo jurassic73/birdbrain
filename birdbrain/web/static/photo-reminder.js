@@ -26,7 +26,7 @@
     const msg = document.createElement("div");
     msg.className = "popup-msg";
     const p = document.createElement("p");
-    p.append("Open ", link(first), " and tap the star on the photo you like best.");
+    p.append("Open ", link(first), " and tap the star twice (yellow) on the photo you like best.");
     msg.append(p);
     if (rest.length) {
       const q = document.createElement("p");

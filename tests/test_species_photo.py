@@ -64,15 +64,21 @@ def test_bad_stored_value_means_no_picks(conn, add_visit):
     assert db.species_photos(conn) == {} and db.species_row(conn, "Bushtit")["visits"] == 1
 
 
-def click(client, vid, name="Bushtit"):
-    return client.post(f"/species/{name}/photo", data={"visit_id": vid}).json()
+def click(client, vid, name="Bushtit", state=None):
+    data = {"visit_id": vid, **({"state": state} if state else {})}
+    return client.post(f"/species/{name}/photo", data=data).json()
 
 
-def test_star_cycles_cover_favorite_unset(client, conn, add_visit):
+def test_star_cycles_favorite_cover_unset(client, conn, add_visit):
     add_visit(species="Bushtit", thumb_path="auto_t.jpg")
     pick = add_visit(species="Bushtit", thumb_path="pick_t.jpg", confidence="low")
     page = client.get("/species/Bushtit").text
     assert 'class="fav-star" data-state="unset"' in page and 'class="fav-star" data-state="cover"' not in page
+
+    # blue first: kept, the cover untouched
+    assert click(client, pick) == {"visit_id": pick, "species": "Bushtit", "state": "favorite", "cover_id": None}
+    assert photo(conn, "Bushtit") == "auto_t.jpg" and db.get_visit(conn, pick)["keep"] == 1
+    assert 'class="fav-star" data-state="favorite"' in client.get("/species/Bushtit").text
 
     # yellow: the species photo, and kept like a blue one
     assert click(client, pick) == {"visit_id": pick, "species": "Bushtit", "state": "cover", "cover_id": pick}
@@ -80,14 +86,10 @@ def test_star_cycles_cover_favorite_unset(client, conn, add_visit):
     assert client.get("/species/Bushtit").text.count('class="fav-star" data-state="cover"') == 1
     assert 'src="/images/pick_t.jpg"' in client.get("/species").text
 
-    # blue: the cover pick is cleared, keep stays
-    assert click(client, pick)["state"] == "favorite"
-    assert photo(conn, "Bushtit") == "auto_t.jpg" and db.get_visit(conn, pick)["keep"] == 1
-    assert 'class="fav-star" data-state="favorite"' in client.get("/species/Bushtit").text
-
-    # unset: no longer kept
+    # unset: not the cover, no longer kept
     assert click(client, pick) == {"visit_id": pick, "species": "Bushtit", "state": "unset", "cover_id": None}
     assert not db.get_visit(conn, pick)["keep"] and db.species_photos(conn) == {}
+    assert photo(conn, "Bushtit") == "auto_t.jpg"
 
     # a visit that isn't this species can't be starred for it
     other = add_visit(species="Dark-eyed Junco")
@@ -95,25 +97,58 @@ def test_star_cycles_cover_favorite_unset(client, conn, add_visit):
     assert not db.get_visit(conn, other)["keep"]
 
 
+def test_star_sets_the_state_it_is_sent(client, conn, add_visit):
+    """static/star.js always says which state: yellow is held a moment, and blue -> unset skips the cover."""
+    vid = add_visit(species="Bushtit")
+    assert click(client, vid, state="favorite")["state"] == "favorite"
+    assert click(client, vid, state="unset") == {"visit_id": vid, "species": "Bushtit", "state": "unset", "cover_id": None}
+    assert db.species_photos(conn) == {} and not db.get_visit(conn, vid)["keep"]
+    assert click(client, vid, state="cover")["cover_id"] == vid and db.get_visit(conn, vid)["keep"] == 1
+    assert click(client, vid, state="favorite") == {"visit_id": vid, "species": "Bushtit", "state": "favorite", "cover_id": None}
+    assert db.species_photos(conn) == {} and db.get_visit(conn, vid)["keep"] == 1
+    assert client.post("/species/Bushtit/photo", data={"visit_id": vid, "state": "gold"}).status_code == 400
+
+
 def test_only_one_cover_and_the_old_one_stays_kept(client, conn, add_visit):
     a = add_visit(species="Bushtit")
     b = add_visit(species="Bushtit")
-    click(client, a)
-    r = click(client, b)
+    click(client, a, state="cover")
+    r = click(client, b, state="cover")
     assert r["state"] == "cover" and r["cover_id"] == b and db.species_photos(conn) == {"Bushtit": b}
     assert db.get_visit(conn, a)["keep"] == 1  # the old cover is a blue favorite now
     text = client.get("/species/Bushtit").text
     assert text.count('class="fav-star" data-state="cover"') == 1 and text.count('class="fav-star" data-state="favorite"') == 1
-    assert click(client, a)["state"] == "unset"  # blue -> unset
-    assert db.species_photos(conn) == {"Bushtit": b}
+    assert click(client, a)["state"] == "cover"  # blue -> yellow takes the cover back
+    assert db.species_photos(conn) == {"Bushtit": a} and db.get_visit(conn, b)["keep"] == 1
 
 
-def test_cover_that_is_not_kept_goes_blue_on_the_next_click(client, conn, add_visit):
+def test_cover_that_is_not_kept_unsets_on_the_next_click(client, conn, add_visit):
     vid = add_visit(species="Bushtit")
     db.set_species_photo(conn, "Bushtit", vid)  # old data: a cover without keep
     r = click(client, vid)
-    assert r["state"] == "favorite" and r["cover_id"] is None
-    assert db.get_visit(conn, vid)["keep"] == 1 and db.species_photos(conn) == {}
+    assert r["state"] == "unset" and r["cover_id"] is None
+    assert not db.get_visit(conn, vid)["keep"] and db.species_photos(conn) == {}
+
+
+def test_cover_compare_gives_both_photos_with_the_species_circle(client, conn, add_visit):
+    old = add_visit(species="Bushtit", image_path="old.jpg",
+                    raw_json=json.dumps({"calls": {"circle": {"x": 0.25, "y": 0.5, "r": 0.05}}}))
+    new = add_visit(species="Dark-eyed Junco", image_path="new.jpg",
+                    also=json.dumps([{"visitor": "bird", "species": "Bushtit", "count": 1, "confidence": "high",
+                                      "circle": {"x": 0.7, "y": 0.4, "r": 0.03}}]),
+                    raw_json=json.dumps({"calls": {"circle": {"x": 0.1, "y": 0.1, "r": 0.1}}}))
+    url = f"/species/Bushtit/cover-compare?visit_id={new}"
+    assert client.get(url).json()["cover"] is None  # no cover yet: the star just sets it
+    db.set_species_photo(conn, "Bushtit", old)
+    r = client.get(url).json()
+    assert r["species"] == "Bushtit"
+    assert r["cover"]["id"] == old and r["cover"]["src"].endswith("old.jpg") and r["cover"]["mark"] == {"x": 0.25, "y": 0.5, "r": 0.05}
+    # the Bushtit's circle, not the Junco's
+    assert r["candidate"]["id"] == new and r["candidate"]["mark"] == {"x": 0.7, "y": 0.4, "r": 0.03}
+    assert r["candidate"]["when"]
+    # asking about the cover itself: nothing to compare
+    assert client.get(f"/species/Bushtit/cover-compare?visit_id={old}").json()["cover"] is None
+    assert client.get(f"/species/Steller's Jay/cover-compare?visit_id={new}").status_code == 404
 
 
 def test_star_shows_on_other_pages_with_the_cover_yellow(client, conn, add_visit):
@@ -128,7 +163,7 @@ def test_star_shows_on_other_pages_with_the_cover_yellow(client, conn, add_visit
         assert f'data-id="{nothing}" data-star-species' not in text
     assert 'class="fav-star"' not in client.get("/false-triggers?show=all").text
     # a star on the home page posts under the card's own species
-    assert click(client, plain, "Dark-eyed Junco")["state"] == "cover"
+    assert click(client, plain, "Dark-eyed Junco")["state"] == "favorite"
 
 
 def test_big_latest_photo_has_the_star_too(client, conn, add_visit):
