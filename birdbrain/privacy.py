@@ -13,7 +13,7 @@ the visit back again. An override that can't be read counts as none (fails close
 CLI (exit 0 = clean, 1 = person or not checked, 2 = error):
   python -m birdbrain.privacy check live.jpg          is it safe to push this frame?
   python -m birdbrain.privacy filter mirror.db excl   drop visits with a person from a copy of the database
-                                                       and write their files to an rsync --exclude-from list
+                                                       and list their files in excl (birdbrain.mirror runs this)
 """
 
 import json
@@ -103,11 +103,11 @@ def held_back(rel: str, score: float, override: dict[str, float]) -> bool:
     return score >= MIN_SCORE and not (rel in override and score <= override[rel])
 
 
-def make_override(image_rel: str, cache: dict[str, float]) -> dict | None:
+def make_override(image_rel: str, cache: dict[str, float], thumb_rel: str | None = None) -> dict | None:
     """What Make public stores: the scores of the visit's photos that showed a person. None unless every
     photo has been checked and at least one held the visit back (there's nothing to clear otherwise)."""
     files = {}
-    for rel in visit_files(image_rel, thumbs=False):
+    for rel in files_to_check(image_rel, thumb_rel):
         if rel not in cache:
             return None
         if cache[rel] >= MIN_SCORE:
@@ -118,7 +118,7 @@ def make_override(image_rel: str, cache: dict[str, float]) -> dict | None:
 _status: tuple[float, dict] = (0.0, {})
 
 
-def visit_status(image_rel: str, public_ok: str | None = None) -> str | None:
+def visit_status(image_rel: str, public_ok: str | None = None, thumb_rel: str | None = None) -> str | None:
     """'person', 'unchecked', 'cleared' (the owner said Make public) or None (clean) for a visit's
     photos, for the pill on the Pi's visit page."""
     global _status
@@ -129,7 +129,7 @@ def visit_status(image_rel: str, public_ok: str | None = None) -> str | None:
     if mtime != _status[0]:
         _status = (mtime, load_cache())
     cache, override = _status[1], parse_override(public_ok)
-    scores = {rel: cache.get(rel) for rel in visit_files(image_rel, thumbs=False)}
+    scores = {rel: cache.get(rel) for rel in files_to_check(image_rel, thumb_rel)}
     if any(s is not None and held_back(rel, s, override) for rel, s in scores.items()):
         return "person"
     if None in scores.values():
@@ -143,24 +143,36 @@ def visit_files(image_rel: str, thumb_rel: str | None = None, thumbs: bool = Tru
     return files + [thumb_rel] if thumbs and thumb_rel else files
 
 
+def files_to_check(image_rel: str, thumb_rel: str | None) -> list[str]:
+    """The files of a visit that could reach the mirror, so each needs a score: the photo and its burst frames,
+    or, once the photo budget has left only the thumbnail (retention.py), the thumbnail in the photo's place.
+    A file that isn't on disk can't leak anything and isn't listed."""
+    files = visit_files(image_rel, thumbs=False)
+    if not (config.IMAGES_DIR / image_rel).exists() and thumb_rel:
+        files = [thumb_rel, *files[1:]]
+    return [rel for rel in files if (config.IMAGES_DIR / rel).exists()]
+
+
 def blocked_visits(rows, cache: dict[str, float], budget: float = FILTER_BUDGET) -> tuple[list, int]:
     """Check unchecked photos (newest visits first, within the time budget) and return the visits to keep
-    off the mirror: a person in any frame (unless the owner cleared it), or not checked yet. Rows are
-    (id, image, thumb[, public_ok]). Also returns how many photos were checked."""
+    off the mirror: a person in any frame (unless the owner cleared it), or not checked yet, which includes a
+    file on disk that can't be read. Rows are (id, image, thumb[, public_ok]). Also returns how many photos
+    were checked."""
     start, checked = time.monotonic(), 0
     blocked = []
-    for vid, image_rel, _thumb, *rest in rows:
+    for vid, image_rel, thumb_rel, *rest in rows:
         override = parse_override(rest[0] if rest else None)
         person = unchecked = False
-        for rel in visit_files(image_rel, thumbs=False):
+        for rel in files_to_check(image_rel, thumb_rel):
             if rel not in cache:
                 if time.monotonic() - start > budget:
                     unchecked = True
                     continue
-                path = config.IMAGES_DIR / rel
-                if not path.exists():
-                    continue  # a missing burst frame can't leak anything
-                cache[rel] = score_file(path)
+                try:
+                    cache[rel] = score_file(config.IMAGES_DIR / rel)
+                except ValueError:  # a file that isn't a readable image: unchecked, so the visit stays off
+                    unchecked = True
+                    continue
                 checked += 1
             person |= held_back(rel, cache[rel], override)
         if person or unchecked:

@@ -35,17 +35,31 @@ last_visit_id: int | None = None  # set by handle_event, so the watcher can keep
 
 
 _push: subprocess.Popen | None = None
+_push_started = 0.0
+PUSH_TIMEOUT = 330  # seconds: the script stops itself after 300 (timeout); this is the backstop if it can't
 
 
 def push_public() -> None:
     """Send the new visit to the public mirror now instead of waiting for cron (PUBLIC_DEST in .env).
-    Runs in the background; skipped if the previous push is still going (the next one catches up)."""
-    global _push
-    if not os.environ.get("PUBLIC_DEST") or (_push is not None and _push.poll() is None):
+    Runs in the background; skipped if the previous push is still going (the next one catches up), unless
+    that one has hung past PUSH_TIMEOUT: then it's stopped so pushes never stay blocked behind it."""
+    global _push, _push_started
+    if not os.environ.get("PUBLIC_DEST"):
         return
+    if _push is not None and _push.poll() is None:
+        if time.monotonic() - _push_started < PUSH_TIMEOUT:
+            return
+        log.warning("public push still running after %d s: stopping it", PUSH_TIMEOUT)
+        _push.terminate()
+        try:
+            _push.wait(5)
+        except subprocess.TimeoutExpired:
+            _push.kill()
+            _push.wait()
     script = Path(__file__).resolve().parent.parent / "scripts" / "push_public.sh"
     if script.exists():
         _push = subprocess.Popen([str(script)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _push_started = time.monotonic()
 
 def redact(text: str) -> str:
     return re.sub(r"rtsp://[^@/\s]*@", "rtsp://***@", text)

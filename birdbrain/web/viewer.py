@@ -2,6 +2,7 @@
 
 The password lives only as a scrypt hash in VIEWER_PASSWORD_FILE (default /etc/birdbrain/viewer.pw, readable
 by the service, never in the repo or the synced data). No file = no gate, so the Pi's own site is unchanged.
+A file that is there but can't be read (a permissions problem) fails closed: the site answers 503 until it can.
 Set or change it on the server with:  cd /opt/birdbrain && sudo venv/bin/python -m birdbrain.web.viewer
 Changing it signs everyone out.
 
@@ -11,8 +12,10 @@ server or log; the sign-in page reads it and posts it like a password. Only its 
 VIEWER_INVITE_FILE (default /etc/birdbrain/viewer.invite). Making a new link retires the old one and signs
 everyone out.
 
-Guessing is throttled: 3 wrong tries from one address locks that address out for 15 minutes, and 20 wrong
-tries from everyone together locks the login for everyone for 15 minutes (so rotating addresses doesn't help).
+Guessing is throttled: 3 wrong tries from one address lock that address out for 15 minutes. Once everyone
+together has got it wrong 20 times in 15 minutes (someone rotating addresses), every password try waits a few
+seconds first; it never locks the family out, and anyone already signed in, or arriving by share link, isn't
+held up. Only wrong tries are remembered, for 15 minutes and for at most MAX_TRACKED addresses.
 """
 import base64
 import getpass
@@ -32,12 +35,18 @@ MAX_AGE = 30 * 24 * 3600
 PER_IP_FAILS = 3
 ALL_FAILS = 20
 LOCKOUT = 15 * 60
+SLOW_DELAY = 3.0    # seconds each password try waits once everyone's wrong tries pass ALL_FAILS
+MAX_TRACKED = 1000  # addresses remembered at most; past that the ones quiet longest are forgotten
 # Exact paths only (compared with ==, never a prefix). The manifest holds just the app name, colors and icon URLs,
 # and browsers fetch it without cookies, so behind the gate it would 303 and Android couldn't read it.
 OPEN_PATHS = ("/guest-login", "/manifest.webmanifest")
 OPEN_PREFIXES = ("/static/",)
-_fails: dict[str, list[float]] = {}
+_fails: dict[str, list[float]] = {}  # address ("*" = everyone together) -> times of wrong tries, oldest first
 _cache: dict = {}
+
+
+class Unreadable(Exception):
+    """The gate's file is there but can't be read, so nobody can be let in."""
 
 
 def password_file() -> Path:
@@ -49,15 +58,21 @@ def invite_file() -> Path:
 
 
 def _read(path: Path) -> str:
-    """A file's stripped text, re-read only when it changes; '' if it's missing."""
+    """A file's stripped text, re-read only when it changes; '' if it's missing. Any other trouble reading it
+    (permissions, a directory in its place) raises Unreadable: the gate fails closed, never open."""
     try:
         mtime = path.stat().st_mtime
-    except OSError:
+    except FileNotFoundError:
         _cache.pop(str(path), None)
         return ""
+    except OSError as e:
+        raise Unreadable(f"{path}: {e.strerror or e}") from e
     cached = _cache.get(str(path))
     if not cached or cached[0] != mtime:
-        cached = _cache[str(path)] = (mtime, path.read_text().strip())
+        try:
+            cached = _cache[str(path)] = (mtime, path.read_text().strip())
+        except OSError as e:
+            raise Unreadable(f"{path}: {e.strerror or e}") from e
     return cached[1]
 
 
@@ -107,41 +122,76 @@ def make_cookie() -> str:
 
 
 def signed_in(request: Request) -> bool:
+    """Whether the request carries a valid guest cookie. Anything odd in it (letters, non-ASCII, a digit from
+    another script) just means not signed in."""
     expires, _, sig = request.cookies.get(COOKIE, "").partition(".")
-    if not expires.isdigit() or int(expires) < time.time():
+    if not (expires.isascii() and expires.isdigit()) or int(expires) < time.time():
         return False
-    return hmac.compare_digest(sig, hmac.new(_key(), expires.encode(), hashlib.sha256).hexdigest())
+    want = hmac.new(_key(), expires.encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig.encode("utf-8", "replace"), want.encode())
 
 
 def is_open(path: str) -> bool:
     return path in OPEN_PATHS or path.startswith(OPEN_PREFIXES)
 
 
+def trusted_proxies() -> set[str]:
+    """Direct peers whose CF-Connecting-IP header is believed: the proxy on this machine (nginx behind the
+    Cloudflare tunnel), plus VIEWER_TRUSTED_PROXIES (comma-separated) for one elsewhere."""
+    extra = os.environ.get("VIEWER_TRUSTED_PROXIES", "")
+    return {"127.0.0.1", "::1", *(p.strip() for p in extra.split(",") if p.strip())}
+
+
 def client_ip(request: Request) -> str:
-    """The visitor's address. Behind the Cloudflare tunnel every request reaches us from 127.0.0.1, so use the
-    header Cloudflare sets (it overwrites any copy a visitor sends); without it, the direct peer."""
-    return request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "?")
+    """The visitor's address. Behind the Cloudflare tunnel every request reaches the proxy from 127.0.0.1 and the
+    visitor's address is in the header Cloudflare sets; anyone else sending that header is ignored (they could
+    pick which address gets locked out), and the direct peer counts."""
+    peer = request.client.host if request.client else "?"
+    if peer in trusted_proxies():
+        return request.headers.get("cf-connecting-ip") or peer
+    return peer
 
 
 def _recent(key: str) -> list[float]:
+    """Wrong tries from `key` within the lockout window. Only looks: a look never adds an entry."""
     now = time.time()
-    _fails[key] = [t for t in _fails.get(key, []) if now - t < LOCKOUT]
-    return _fails[key]
+    return [t for t in _fails.get(key, ()) if now - t < LOCKOUT]
 
 
 def locked(ip: str) -> int:
     """Seconds until this address may try again (0 = may try now)."""
-    for key, limit in ((ip, PER_IP_FAILS), ("*", ALL_FAILS)):
-        tries = _recent(key)
-        if len(tries) >= limit:
-            return int(tries[-limit] + LOCKOUT - time.time()) + 1
+    tries = _recent(ip)
+    if len(tries) >= PER_IP_FAILS:
+        return int(tries[-PER_IP_FAILS] + LOCKOUT - time.time()) + 1
     return 0
+
+
+def slow_down() -> float:
+    """Seconds a password try should wait first: SLOW_DELAY once everyone together has got it wrong ALL_FAILS
+    times lately, else 0. A brake on guessing from many addresses, not a lockout."""
+    return SLOW_DELAY if len(_recent("*")) >= ALL_FAILS else 0.0
+
+
+def _prune(now: float) -> None:
+    """Forget expired tries, addresses with none left, and the longest-quiet addresses past MAX_TRACKED."""
+    for key in list(_fails):
+        kept = [t for t in _fails[key] if now - t < LOCKOUT]
+        if kept:
+            _fails[key] = kept
+        else:
+            del _fails[key]
+    extra = len(_fails) - MAX_TRACKED
+    if extra > 0:
+        for key in sorted((k for k in _fails if k != "*"), key=lambda k: _fails[k][-1])[:extra]:
+            del _fails[key]
 
 
 def failed(ip: str) -> None:
     now = time.time()
-    _fails.setdefault(ip, []).append(now)
-    _fails.setdefault("*", []).append(now)
+    _prune(now)
+    # Only as many as the limits look at, so the table stays small however hard someone tries.
+    _fails[ip] = [*_fails.get(ip, []), now][-PER_IP_FAILS:]
+    _fails["*"] = [*_fails.get("*", []), now][-ALL_FAILS:]
 
 
 def succeeded(ip: str) -> None:

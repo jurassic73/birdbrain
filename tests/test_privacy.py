@@ -73,6 +73,38 @@ def test_unchecked_visits_stay_off_when_out_of_time(setup, tmp_path):
     assert checked == 0 and clean in blocked and len(blocked) == 3
 
 
+def test_thumbnail_is_checked_once_the_photo_is_gone(setup, tmp_path, conn, add_visit):
+    """The photo budget can leave a visit with only its thumbnail (retention.py): that is what would go public,
+    so it gets the check the photo would have had."""
+    import cv2
+    import numpy as np
+
+    _, clean, person, burst = setup
+    img = np.zeros((20, 30, 3), np.uint8)
+    img[0, 0] = 255
+    cv2.imwrite(str(tmp_path / "images" / "d_t.jpg"), img)  # a person, in the thumbnail only
+    cv2.imwrite(str(tmp_path / "images" / "e_t.jpg"), np.zeros((20, 30, 3), np.uint8))  # a clean thumbnail
+    (tmp_path / "images" / "f_t.jpg").write_bytes(b"not a jpeg")  # a thumbnail that can't be read
+    rows = [(1, "d.jpg", "d_t.jpg", None), (2, "e.jpg", "e_t.jpg", None), (3, "f.jpg", "f_t.jpg", None),
+            (4, "nothing.jpg", "nothing_t.jpg", None)]  # no files at all: nothing to leak
+    cache = {}
+    blocked, checked = privacy.blocked_visits(rows, cache)
+    assert blocked == [1, 3] and checked == 2
+    assert cache == {"d_t.jpg": 0.6, "e_t.jpg": 0.0}
+    assert privacy.files_to_check("d.jpg", "d_t.jpg") == ["d_t.jpg"]
+    assert privacy.files_to_check("c.jpg", "c_t.jpg") == ["c.jpg", "c_b2.jpg"]  # the photo is there: it, not the thumb
+    # The whole flow: the thumb-only visit with a person is kept off the mirror and its thumbnail isn't listed.
+    held = add_visit(image_path="d.jpg", thumb_path="d_t.jpg")
+    conn.commit()
+    excl = tmp_path / "private.txt"
+    privacy.filter_db(mirror_copy(tmp_path), excl)
+    assert "/d_t.jpg" in excl.read_text().split()
+    privacy.save_cache(cache)
+    assert privacy.visit_status("d.jpg", None, "d_t.jpg") == "person"
+    assert privacy.make_override("d.jpg", privacy.load_cache(), "d_t.jpg")["files"] == {"d_t.jpg": 0.6}
+    assert held not in pushed(tmp_path)
+
+
 def test_check_cli_fails_closed(setup, tmp_path, monkeypatch):
     assert privacy.main(["check", str(tmp_path / "images" / "a.jpg")]) == 0
     assert privacy.main(["check", str(tmp_path / "images" / "b.jpg")]) == 1

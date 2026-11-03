@@ -433,3 +433,47 @@ def test_probe_with_an_untrained_check_goes_to_claude(pipeline, monkeypatch):
     monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {"model": "bioclip-presence", "score": None, "empty": False})
     assert watch.handle_event(probe=True, trigger="ground") == "bird"
     assert asked == [1]
+
+
+class FakePush:
+    """A push_public.sh process: running until told otherwise."""
+
+    def __init__(self, running=True):
+        self.running, self.signals = running, []
+
+    def poll(self):
+        return None if self.running else 0
+
+    def terminate(self):
+        self.signals.append("term")
+        self.running = False
+
+    def kill(self):
+        self.signals.append("kill")
+        self.running = False
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def test_push_public_skips_a_running_push_but_stops_a_hung_one(monkeypatch):
+    import subprocess, time
+
+    monkeypatch.setenv("PUBLIC_DEST", "deploy@mirror:")
+    started = []
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: started.append(args) or FakePush())
+    running = FakePush()
+    monkeypatch.setattr(watch, "_push", running)
+    monkeypatch.setattr(watch, "_push_started", time.monotonic() - 10)
+    watch.push_public()
+    assert started == [] and running.signals == []  # a recent push is left to finish
+    monkeypatch.setattr(watch, "_push_started", time.monotonic() - watch.PUSH_TIMEOUT - 1)
+    watch.push_public()
+    assert running.signals == ["term"] and len(started) == 1 and started[0][0].endswith("scripts/push_public.sh")
+    assert watch._push is not running and time.monotonic() - watch._push_started < 5
+    watch._push.running = False  # done: the next visit starts a new one
+    watch.push_public()
+    assert len(started) == 2
+    monkeypatch.delenv("PUBLIC_DEST")
+    watch.push_public()
+    assert len(started) == 2  # no mirror configured: nothing to do

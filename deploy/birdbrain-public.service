@@ -5,11 +5,15 @@ Wants=network-online.target
 
 [Service]
 User=__USER__
+# The friends & family password hash lives in /etc/birdbrain (0750, group birdbrain, written by
+# birdbrain.web.viewer); the service reads it through this group. The data the Pi pushes is group-readable too.
+Group=birdbrain
 WorkingDirectory=/opt/birdbrain
 Environment=BIRDBRAIN_DATA=/var/lib/birdbrain
 Environment=BIRDBRAIN_PUBLIC=1
 Environment=BIRDBRAIN_BASE=/birdbrain
 Environment=BIRDBRAIN_NO_DOTENV=1
+# If the proxy that sets CF-Connecting-IP runs on another machine, name it: Environment=VIEWER_TRUSTED_PROXIES=10.0.0.5
 ExecStart=/opt/birdbrain/venv/bin/uvicorn birdbrain.web.app:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=always
 RestartSec=5
