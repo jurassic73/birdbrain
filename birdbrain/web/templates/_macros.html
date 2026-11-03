@@ -1,7 +1,7 @@
 {# A visit thumbnail with its circles (the owner's saved ones, else Claude's) drawn over it by static/thumb-marks.js. #}
 {% macro thumb(v, cls="thumb", lazy=True, full=False) -%}
 <span class="{{ cls }}">
-  <img src="/images/{{ v.image_path if full else v.thumb_path }}" alt="{{ v.label }}"{% if lazy %} loading="lazy"{% endif %}>
+  <img src="/images/{{ photo_src(v) if full else v.thumb_path }}" alt="{{ v.label }}"{% if lazy %} loading="lazy"{% endif %}>
   {%- set marks = photo_marks(v) %}{% if marks %}<svg class="marks thumb-marks" preserveAspectRatio="xMidYMid slice" aria-hidden="true" data-marks='{{ marks | tojson }}'></svg>{% endif %}
 </span>
 {%- endmacro %}
@@ -67,6 +67,8 @@
   "shadow": "Shadow: a local model on the Pi made this guess only to be scored. Claude's answer (or yours) is the label.",
   "gate": "Gate: the Pi's answer counts. A frame it judges empty skips Claude and waits on False triggers for your check.",
   "off": "Off: this local step doesn't run.",
+  "thinned": "Thinned: to save space, this older photo was saved once at a smaller size. It wasn't one of the sharpest photos of its species that day. The visit, its label, its circles and its place in every count are unchanged. Keepers and species photos are never thinned.",
+  "thumbnail only": "Thumbnail only: the photo budget ran short, so only this visit's thumbnail is kept. The visit, its label and its place in every count stay. Raise the photo budget in Settings to keep more full photos.",
   "keeper": "Keeper: you marked this photo to keep. It is never thinned or deleted to save space. Undo takes the mark off.",
   "too old": "Too old: newer lessons fill the prompt, so this one isn't sent any more. Switching newer ones off brings it back.",
 } -%}
@@ -96,7 +98,7 @@
 {# A small magnifier in a photo's upper-right corner (home page trial): opens the photo big in place, while a click
    on the rest of the photo keeps its link. Put it beside the link, not inside it. Without a visit it is the live view's. #}
 {% macro zoom_btn(v=none) -%}
-<button type="button" class="zoom-btn{{ '' if v else ' live-zoom-btn' }}"{% if v %} data-zoom-photo="/images/{{ v.image_path }}" data-zoom-alt="{{ v.label }}"{% endif %}
+<button type="button" class="zoom-btn{{ '' if v else ' live-zoom-btn' }}"{% if v %} data-zoom-photo="/images/{{ photo_src(v) }}" data-zoom-alt="{{ v.label }}"{% endif %}
   aria-label="Open {{ 'the photo' if v else 'the live view' }} big" data-tip="Open big"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M10.5 8v5M8 10.5h5"/></svg></button>
 {%- endmacro %}
 

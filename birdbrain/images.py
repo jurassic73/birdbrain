@@ -146,7 +146,12 @@ def frame_bytes(image_rel: str, thumb_rel: str, images_dir: Path | None = None) 
 
 
 def frames_bytes(visits: list[tuple[str, str]], images_dir: Path | None = None) -> list[int]:
-    """frame_bytes for many (image, thumbnail) pairs at once, in the same order.
+    """frame_bytes for many (image, thumbnail) pairs at once, in the same order."""
+    return [sum(parts) for parts in frame_parts(visits, images_dir)]
+
+
+def frame_parts(visits: list[tuple[str, str]], images_dir: Path | None = None) -> list[tuple[int, int, int]]:
+    """(photo, thumbnail, burst frames) bytes for many (image, thumbnail) pairs at once, in the same order.
 
     Lists each day folder once instead of globbing it per visit: with hundreds of false triggers a day,
     the per-visit glob took ~1 s on the Pi and grew with the square of the day's count.
@@ -177,17 +182,64 @@ def frames_bytes(visits: list[tuple[str, str]], images_dir: Path | None = None) 
 
     out = []
     for image_rel, thumb_rel in visits:
-        total = 0
-        for rel in (image_rel, thumb_rel):
-            total += folder(rel)[0].get(Path(rel).name, 0)
-        total += folder(image_rel)[1].get(Path(image_rel).name.removesuffix(".jpg"), 0)
-        out.append(total)
+        photo = folder(image_rel)[0].get(Path(image_rel).name, 0)
+        thumb = folder(thumb_rel)[0].get(Path(thumb_rel).name, 0) if thumb_rel else 0
+        burst = folder(image_rel)[1].get(Path(image_rel).name.removesuffix(".jpg"), 0)
+        out.append((photo, thumb, burst))
     return out
 
 
 def delete_frame(image_rel: str, thumb_rel: str, images_dir: Path | None = None) -> None:
     images_dir = images_dir or config.IMAGES_DIR
     for rel in (image_rel, thumb_rel, *burst_paths(image_rel, images_dir)):
+        (images_dir / rel).unlink(missing_ok=True)
+
+
+# Thinning an older visit's photo (birdbrain.retention): saved once, smaller, from the stored original.
+THIN_QUALITY = 88
+
+
+def thin_photo(image_rel: str, edge: int, images_dir: Path | None = None,
+               quality: int = THIN_QUALITY) -> tuple[int, int]:
+    """Save a visit's photo again with its long edge at `edge` px. Returns (bytes before, bytes after).
+
+    Lanczos from the stored photo at quality 88 (a little above the original's 85, so the shrink isn't followed by a
+    second round of visible loss), keeping any EXIF and color profile. The time stamp shrinks with the photo and stays
+    readable. A photo already no bigger than `edge` is left exactly as it is, which also means a thinned photo is never
+    shrunk again. Writes a temp file and renames it, so a crash never leaves half a photo. The thumbnail and any
+    burst frames aren't touched.
+    """
+    images_dir = images_dir or config.IMAGES_DIR
+    path = images_dir / image_rel
+    before = path.stat().st_size
+    with Image.open(path) as im:
+        if max(im.size) <= edge:
+            return before, before
+        extra = {k: im.info[k] for k in ("exif", "icc_profile") if im.info.get(k)}
+        img = im.convert("RGB")
+    w, h = img.size
+    scale = edge / max(w, h)
+    small = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.Resampling.LANCZOS)
+    buf = io.BytesIO()
+    small.save(buf, "JPEG", quality=quality, optimize=True, **extra)
+    if buf.tell() >= before:  # can't happen with a real photo, but never make one bigger
+        return before, before
+    tmp = path.with_name(f".{path.name}.thin.tmp")
+    try:
+        with open(tmp, "wb") as f:
+            f.write(buf.getvalue())
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return before, buf.tell()
+
+
+def drop_photo(image_rel: str, images_dir: Path | None = None) -> None:
+    """Delete a visit's photo and burst frames but keep its thumbnail, so its card still shows."""
+    images_dir = images_dir or config.IMAGES_DIR
+    for rel in (image_rel, *burst_paths(image_rel, images_dir)):
         (images_dir / rel).unlink(missing_ok=True)
 
 

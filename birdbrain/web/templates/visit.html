@@ -50,7 +50,7 @@
     {% if visit.photo_deleted_at %}
     <div class="photo-gone" data-tip="Deleted on {{ visit.photo_deleted_at[:10] }} to save space. The record stays, and so does what the Pi's animal check learned from it.">Photo deleted to save space</div>
     {% else %}
-    <a href="/images/{{ visit.image_path }}" draggable="false"><img class="full" draggable="false" src="/images/{{ visit.image_path }}" width="1920" height="1080" alt="{{ visit.label }}"></a>
+    <a href="/images/{{ photo_src(visit) }}" draggable="false"><img class="full" draggable="false" src="/images/{{ photo_src(visit) }}" width="1920" height="1080" alt="{{ visit.label }}"></a>
     {% endif %}
     {% if vzones and not visit.photo_deleted_at %}
     {# The crop box the Pi and Claude looked at, and the zone whose motion fired this capture (app.visit_zones). #}
@@ -73,7 +73,7 @@
     {% if prev_id %}<a class="photo-viewer-arrow prev" id="zoom-prev" href="/visit/{{ prev_id }}{{ zoom_param }}" aria-label="Newer visit" title="Newer (←)">&#8249;</a>{% endif %}
     {% if next_id %}<a class="photo-viewer-arrow next" id="zoom-next" href="/visit/{{ next_id }}{{ zoom_param }}" aria-label="Older visit" title="Older (→)">&#8250;</a>{% endif %}
     <div class="photo-viewer-frame">
-      {% if not visit.photo_deleted_at %}<img src="/images/{{ visit.image_path }}" alt="{{ visit.label }}">{% endif %}
+      {% if not visit.photo_deleted_at %}<img src="/images/{{ photo_src(visit) }}" alt="{{ visit.label }}">{% endif %}
       {% if vzones %}<svg class="zones-overlay" aria-hidden="true"></svg>{% endif %}
       <svg class="marks" aria-hidden="true"></svg>
     </div>
@@ -85,6 +85,7 @@
         {% if visit.label and visit.label not in ('None', 'Other') %}
         <a class="button-link solid" id="species-page" href="/species/{{ visit.label | urlencode }}">All {{ visit.label }} visits</a>
         {% endif %}
+        {% if visit.photo_level == "thinned" %}{{ badge("thinned", "photo-level") }}{% elif visit.photo_level == "thumb" %}{{ badge("thumbnail only", "photo-level") }}{% endif %}
         {% if request.state.admin %}{% set ms = mirror_status(visit.image_path, visit.public_ok) %}{% if ms == "person" %}<span class="confirm-pair">{{ badge("private", "private") }}<button class="link-btn" id="public-anyway" hx-post="/visit/{{ visit.id }}/public" hx-confirm="Only press this if the photo and every burst frame show no person. The next push to the public mirror then includes this visit." data-confirm-title="No person in this visit?" data-confirm-ok="Public anyway" data-tip="The Pi's person check flagged this visit, so the public mirror leaves it out. If you've looked and there's no person, this lets it go public. Undo puts it back.">Public anyway</button></span>{% elif ms == "unchecked" %}{{ badge("not public yet", "private") }}{% elif ms == "cleared" %}<span class="confirmed-pair">{{ badge("public (checked)", "public-ok") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/private">Undo</button></span>{% endif %}{% endif %}
         {% if request.state.admin %}
         {% if visit.keep %}
