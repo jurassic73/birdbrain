@@ -792,7 +792,7 @@ def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, co
     db.set_value(conn, "presence_mode", "gate")
     html = client.get("/about").text
     assert "How Birdbrain works" in html and 'href="/about"' in html
-    assert f'href="{config.REPO_URL}"' in html and "Source code on GitHub" in html
+    assert "Source code on GitHub" not in html
     assert "2%</strong> of the watched area" in html                            # MOTION_MIN_AREA, live
     assert f"{config.BURST_FRAMES} full-size photos" in html
     assert html.count('class="z-rim"') == 1 and html.count('class="z-spot"') == 1

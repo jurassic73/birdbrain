@@ -11,7 +11,6 @@
 
 <header class="about-intro">
   <h1>How Birdbrain works</h1>
-  {% if cfg.REPO_URL %}<p class="about-repo"><a href="{{ cfg.REPO_URL }}" rel="noopener" data-tip="Birdbrain is open source: the code, the setup guide and the model files">Source code on GitHub ↗</a></p>{% endif %}
   <p>A camera watches the birdbath. A Raspberry Pi at home spots movement, snaps a burst of photos, and works out who came
     to visit, asking Claude only when it can't tell on its own.</p>
   <p class="muted small">It checks the camera's small video stream {{ cfg.SUB_FPS }} times a second, day and night;

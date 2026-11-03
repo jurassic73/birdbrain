@@ -1051,7 +1051,6 @@ html { scroll-behavior: smooth; }
 .about h3 { font-size: 1rem; margin: 0 0 6px; }
 .about p { margin: 0 0 8px; }
 .about-intro p { max-width: 760px; }
-.about-intro .about-repo { margin: -4px 0 10px; font-weight: 600; }
 .about-toc { margin-top: 10px; }
 /* The tour callout: text on the left, the button on the right and centred on it; on a phone the button goes under the text. */
 .about-tour {
