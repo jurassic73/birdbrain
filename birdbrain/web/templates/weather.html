@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import sp_name with context %}
 {% block title %}Weather &amp; visits | Birdbrain{% endblock %}
-{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
+{% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
 {% block content %}
 {# Small weather pictures, drawn here so they follow the palette (sun, cloud and rain colors are tokens in style.css). #}
 {% macro wx_icon(kind) -%}

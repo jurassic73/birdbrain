@@ -35,7 +35,8 @@ def test_photo_comes_from_the_cached_card(client, conn, inat):
     assert inat == []
 
 
-def test_photo_only_lookup_is_cached_and_never_builds_a_card(client, conn, inat):
+def test_photo_only_lookup_is_cached_and_never_builds_a_card(client, conn, inat, add_visit):
+    add_visit(species="Red-breasted Nuthatch")
     for _ in range(2):
         p = client.get("/species-photo", params={"name": "Red-breasted Nuthatch"}).json()["photo"]
     assert p["url"] == "https://inat.test/Red-breasted_Nuthatch.jpg"
@@ -44,7 +45,9 @@ def test_photo_only_lookup_is_cached_and_never_builds_a_card(client, conn, inat)
     assert db.get_species_info(conn, "Red-breasted Nuthatch") is None  # no card was built
 
 
-def test_generic_labels_use_aliases_and_misses_are_cached(client, conn, inat, monkeypatch):
+def test_generic_labels_use_aliases_and_misses_are_cached(client, conn, inat, monkeypatch, add_visit):
+    add_visit(visitor="raccoon", species=None)
+    add_visit(species="Nobody")
     client.get("/species-photo", params={"name": "Raccoon"})
     assert inat == ["Common Raccoon"]
     monkeypatch.setattr(species_info, "find_taxon", lambda http, q: inat.append(q))  # nothing found
@@ -54,14 +57,23 @@ def test_generic_labels_use_aliases_and_misses_are_cached(client, conn, inat, mo
     assert client.get("/species-photo", params={"name": "None"}).json()["photo"] is None
 
 
-def test_lookup_failure_is_soft(client, inat, monkeypatch):
+def test_lookup_failure_is_soft(client, inat, monkeypatch, add_visit):
+    add_visit(species="Bushtit")
+
     def fail(http, q):
         raise RuntimeError("offline")
     monkeypatch.setattr(species_info, "find_taxon", fail)
     assert client.get("/species-photo", params={"name": "Bushtit"}).json() == {"photo": None}
 
 
-def test_visitors_only_get_cached_photos(client, conn, inat, monkeypatch):
+def test_unknown_names_are_never_looked_up(client, conn, inat):
+    """Only an animal the visits know gets a lookup (and a cached row): a name made up in a URL gets nothing."""
+    assert client.get("/species-photo", params={"name": "Red-breasted Nuthatch"}).json() == {"photo": None}
+    assert inat == [] and db.get_value(conn, "refphoto:Red-breasted Nuthatch") is None
+
+
+def test_visitors_only_get_cached_photos(client, conn, inat, monkeypatch, add_visit):
+    add_visit(species="Bushtit")
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
     auth._fails.clear()
     assert client.get("/species-photo", params={"name": "Bushtit"}).json()["photo"] is None

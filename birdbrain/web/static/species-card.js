@@ -1,6 +1,7 @@
 // Species info cards: hover a species name for a preview (mouse only), click or tap it for the full card.
 (() => {
-  const LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
+  // Our own copy (static/vendor), under the site's base path when it has one (the shim in base.html sets it).
+  const LEAFLET = (window.BB_BASE || "") + "/static/vendor/leaflet-1.9.4/";
   const cache = new Map();
   const load = (name, mini) => {
     const url = `/species-info/${encodeURIComponent(name)}${mini ? "?mini=1" : ""}`;
@@ -102,8 +103,8 @@
   function loadLeaflet() {
     if (window.L) return Promise.resolve();
     leaflet ??= new Promise((resolve, reject) => {
-      const css = Object.assign(document.createElement("link"), { rel: "stylesheet", href: LEAFLET + "leaflet.min.css" });
-      const js = Object.assign(document.createElement("script"), { src: LEAFLET + "leaflet.min.js", onload: resolve, onerror: reject });
+      const css = Object.assign(document.createElement("link"), { rel: "stylesheet", href: LEAFLET + "leaflet.css" });
+      const js = Object.assign(document.createElement("script"), { src: LEAFLET + "leaflet.js", onload: resolve, onerror: reject });
       document.head.append(css, js);
     }).catch((e) => { leaflet = null; throw e; });
     return leaflet;

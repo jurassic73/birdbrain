@@ -1145,6 +1145,20 @@ def species_names(conn: sqlite3.Connection) -> list[str]:
     return [r[0] for r in conn.execute(f"SELECT DISTINCT label FROM ({_seen(REAL)}) ORDER BY label")]
 
 
+def known_species(conn: sqlite3.Connection) -> set[str]:
+    """Every name the visits have carried: the labels shown now (main and other animals), plus what Claude said
+    before a correction. Cards and reference photos are only fetched for these, never for a name made up in a URL."""
+    rows = conn.execute(
+        """SELECT species AS n FROM visits WHERE species IS NOT NULL
+           UNION SELECT corrected_species FROM visits WHERE corrected_species IS NOT NULL
+           UNION SELECT json_extract(j.value, '$.species') FROM visits v, json_each(v.also) j
+                 WHERE json_extract(j.value, '$.species') IS NOT NULL
+           UNION SELECT json_extract(j.value, '$.species') FROM visits v, json_each(v.corrected_also) j
+                 WHERE json_extract(j.value, '$.species') IS NOT NULL"""
+    ).fetchall()
+    return {r["n"] for r in rows} | set(species_names(conn))
+
+
 def species_kinds(conn: sqlite3.Connection) -> list[tuple[str, str]]:
     """Every name seen so far with its visitor type (the most common one, if it was ever labelled two ways)."""
     rows = conn.execute(

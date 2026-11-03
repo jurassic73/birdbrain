@@ -67,8 +67,9 @@ def test_concurrent_build_is_skipped(conn, monkeypatch):
     assert calls == ["Bushtit"] and not species_info._building
 
 
-def test_mini_never_fetches(conn, monkeypatch):
+def test_mini_never_fetches(conn, monkeypatch, add_visit):
     _stale(conn)
+    add_visit(species="Bushtit")  # cards are only built for animals the visits know
     calls = []
     monkeypatch.setattr(species_info, "build", lambda name: calls.append(name) or CARD)
     with TestClient(webapp.app) as c:

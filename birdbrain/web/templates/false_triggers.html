@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge %}
 {% block title %}False triggers | Birdbrain{% endblock %}
-{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
+{% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
 {% block content %}
 <div class="page-head ft-head"><h1>False triggers <span class="muted ft-count" id="ft-unchecked" data-tip="Photos listed below. Confirmed ones are hidden unless Show confirmed is on.">{{ total if show_all else unchecked }}</span></h1>
 {% if total > unchecked or not show_all %}<a class="link-btn" id="ft-show"{% if total == unchecked %} hidden{% endif %} href="/false-triggers{{ '' if show_all else '?show=all' }}" data-tip="Photos you already confirmed (or corrected but still empty) are hidden so the list is only what's left to check. Show them dimmed, or hide them again.">{{ 'Hide confirmed' if show_all else 'Show confirmed (' ~ (total - unchecked) ~ ')' }}</a>{% endif %}</div>
