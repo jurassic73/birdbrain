@@ -128,7 +128,7 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  "also": "TEXT", "corrected_also": "TEXT", "ended_at": "TEXT",
                  "confirmed_at": "TEXT",  # the owner pressed Confirm: Claude's answer is right (birdbrain.presence)
                  # A false trigger's photo files were deleted to save space (birdbrain.retention); the row and its
-                 # embedding stay, so the Pi's animal check keeps learning from it.
+                 # embedding stay, so the Pi animal check keeps learning from it.
                  "photo_deleted_at": "TEXT",
                  # The owner saw no person in a photo the Pi's person check flagged ("Make public"):
                  # JSON {"at", "files": {photo: score}} pinning the scores they cleared (birdbrain.privacy).
@@ -1138,7 +1138,7 @@ def _spoken_also(rows: list[dict]) -> str:
 
 
 # What settled a visit on the Pi without asking Claude (identify.settled_*), as a lesson line tells Claude.
-SKIPPED_BY = {"presence": "the Pi's animal check judged this frame empty",
+SKIPPED_BY = {"presence": "the Pi animal check judged this frame empty",
               "detector": "the Pi's local detector found no animal"}
 
 
@@ -1177,7 +1177,7 @@ def all_lessons(conn: sqlite3.Connection) -> list[dict]:
             changed = actual is not None and actual != said
             if not (changed or r["feedback"] or marks or owner_also):
                 continue  # the owner agreed with the Pi and said nothing more: no lesson for Claude
-            head = (f"the Pi's species classifier named it \"{said}\"" if by == "classifier" else SKIPPED_BY[by])
+            head = (f"the BioCLIP 2 species check named it \"{said}\"" if by == "classifier" else SKIPPED_BY[by])
             prefix = f"- {r['captured_at'][:10]}, {when}: {head}, so you weren't asked"
             line = (f"{prefix}; the owner says it was \"{actual}\"." if changed
                     else f"{prefix}; the owner confirmed {'no animal was there' if r['visitor'] == 'none' else 'it'}.")

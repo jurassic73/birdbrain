@@ -2,7 +2,7 @@
   <div class="storage-text">
     <div class="tip-label">
       False-trigger photos: <strong>{{ storage.bytes | mb }}</strong>{% if storage.limit_bytes %} of {{ storage.limit_bytes | mb }}{% else %}, no limit{% endif %}
-      ({{ storage.count }} photo{{ 's' if storage.count != 1 }}) <span class="info-tip" tabindex="0" aria-label="About false-trigger photos" data-tip="Each false trigger keeps its photo plus its whole burst of frames, so you can check before and after on its page. Past the limit, photos you confirmed empty go first, then the oldest. Only the photos are deleted: the record and what the Pi's animal check learned from it stay.">i</span>
+      ({{ storage.count }} photo{{ 's' if storage.count != 1 }}) <span class="info-tip" tabindex="0" aria-label="About false-trigger photos" data-tip="Each false trigger keeps its photo plus its whole burst of frames, so you can check before and after on its page. Past the limit, photos you confirmed empty go first, then the oldest. Only the photos are deleted: the record and what the Pi animal check learned from it stay.">i</span>
     </div>
     {% if storage.limit_bytes %}
     <div class="meter" role="img" aria-label="{{ (100 * storage.bytes / storage.limit_bytes) | round | int }}% of the limit used">

@@ -354,7 +354,7 @@ def settled_locally(det: dict) -> Result:
 def settled_by_presence(check: dict, det: dict | None) -> Result:
     """Gate mode of the local animal check (birdbrain.presence): it judged the frame empty, so Claude isn't
     asked. Stored as a false trigger for the owner's daily review."""
-    notes = (f"Local animal check found nothing (score {check['score']:.3f}, threshold {check['threshold']:.3f}); "
+    notes = (f"Pi animal check found nothing (score {check['score']:.3f}, threshold {check['threshold']:.3f}); "
              "Claude was not asked.")
     s = Sighting(visitor="none", species=None, count=0, confidence="medium", notes=notes, circle=None, also=[])
     raw = {"presence": check, "skipped_claude": True, **({"detector": det} if det is not None else {})}
@@ -366,7 +366,7 @@ def settled_by_classifier(guess: dict, pick: tuple[str, str], check: dict | None
     names the visit, and Claude isn't asked. It can't count or see a second kind of animal."""
     species, visitor = pick
     score = guess["top"][0]["score"]
-    notes = (f"Named on the Pi by the local classifier ({score:.0%} sure); Claude was not asked, "
+    notes = (f"Named on the Pi by the BioCLIP 2 species check ({score:.0%} sure); Claude was not asked, "
              "so the count and any other animals weren't checked.")
     s = Sighting(visitor=visitor, species=species, count=1, confidence="high", notes=notes, circle=None, also=[])
     raw = {"classifier": guess, "skipped_claude": True, "settled_by": "classifier",

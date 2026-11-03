@@ -328,13 +328,13 @@ def test_a_lesson_on_a_visit_claude_never_saw_says_so(conn, add_visit):
     add_visit(**empty, raw_json="{not json", feedback="Bad trail.")  # unreadable: treated as Claude's answer
     bad, classifier, detector, bushtit, ripples = db.recent_lessons(conn)
     day = at(0)[:10]
-    assert ripples == (f"- {day}, day: the Pi's animal check judged this frame empty, so you weren't asked; the owner "
+    assert ripples == (f"- {day}, day: the Pi animal check judged this frame empty, so you weren't asked; the owner "
                        "confirmed no animal was there. Owner's note: Wind ripples on the rim.")
-    assert bushtit == (f"- {day}, night (IR): the Pi's animal check judged this frame empty, so you weren't asked; "
+    assert bushtit == (f"- {day}, night (IR): the Pi animal check judged this frame empty, so you weren't asked; "
                        'the owner says it was "Bushtit".')
     assert detector.endswith("day: the Pi's local detector found no animal, so you weren't asked; the owner confirmed "
                              "no animal was there. Owner's note: Leaf shadow.")
-    assert classifier.endswith('the Pi\'s species classifier named it "Bushtit", so you weren\'t asked; the owner says '
+    assert classifier.endswith('the BioCLIP 2 species check named it "Bushtit", so you weren\'t asked; the owner says '
                                'it was "Lesser Goldfinch".')
     assert bad.endswith('day: you said "no animal" and the owner confirmed it. Owner\'s note: Bad trail.')
     rows = db.all_lessons(conn)
@@ -362,7 +362,7 @@ def test_the_prompt_preview_shows_a_skipped_visits_lesson(conn, add_visit):
     add_visit(visitor="none", species=None, raw_json=_skipped(), feedback="Wind ripples.", captured_at=at(0))
     with TestClient(webapp.app) as client:
         page = client.get("/notes").text
-    assert "the Pi&#39;s animal check judged this frame empty, so you weren&#39;t asked" in page
+    assert "the Pi animal check judged this frame empty, so you weren&#39;t asked" in page
     assert "or the Pi&#39;s where a line says you weren&#39;t asked" in page  # the corrections intro
     assert "the Pi said &#34;no animal&#34;" in page or 'the Pi said "no animal"' in page
 

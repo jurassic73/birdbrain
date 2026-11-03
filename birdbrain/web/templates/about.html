@@ -2,6 +2,7 @@
 {% block title %}About | Birdbrain{% endblock %}
 {% block content %}
 {% from "_macros.html" import badge, zone_svg %}
+{% import "_steps.html" as steps_ui %}
 {# Keep this page current: any change to a feature, zone, detection rule, model step or outside source updates it. #}
 {% macro pct(v) %}{{ '%g' | format((v * 100) | round(2)) }}{% endmacro %}
 <div class="about">
@@ -17,8 +18,8 @@
     <span data-tip="Rim: {{ cfg.TRIGGER_FRAMES }} frames in a row (about {{ secs(cfg.TRIGGER_FRAMES) }}).{% if cfg.WATER_WATCH and zones.water %} Open water: {{ cfg.WATER_PERSIST_FRAMES }} (about {{ secs(cfg.WATER_PERSIST_FRAMES) }}).{% endif %}{% if zones.ground %} Ground: {{ cfg.GROUND_PERSIST_FRAMES }} (about {{ secs(cfg.GROUND_PERSIST_FRAMES) }}).{% endif %} The models only run after that.">Movement has to last a fraction of a second</span>
     before it takes full-size photos and checks what's there.</p>
   <nav class="chips about-toc" aria-label="On this page">
-    <a href="#flow">How it works</a><a href="#network">Network path</a>{% if totals.events or rate.photos %}<a href="#numbers">Numbers</a>{% endif %}<a href="#zones">Zones</a><a href="#rules">Detection rules</a><a href="#burst">Photos</a>
-    <a href="#local">Local model</a><a href="#claude">Claude</a><a href="#learning">Learning</a>
+    <a href="#flow">How it works</a><a href="#handled">Four steps</a><a href="#network">Network path</a>{% if totals.events or rate.photos %}<a href="#numbers">Numbers</a>{% endif %}<a href="#zones">Zones</a><a href="#rules">Detection rules</a><a href="#burst">Photos</a>
+    <a href="#local">Pi checks</a><a href="#claude">Claude</a><a href="#learning">Learning</a>
     <a href="#sources">Outside sources</a><a href="#storage">Storage</a><a href="#seasons">Seasons and alerts</a><a href="#stack">Under the hood</a>
   </nav>
 </header>
@@ -56,7 +57,7 @@
     </li>
     <li class="flow-step where-pi">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c3-6 5-6 7 0s4 6 6 0 4-6 7 0"/></svg>
-      <strong>Motion zones</strong><small>Rim, rocks and open water{{ ', plus the ground around the bath' if zones.ground }}, each with its own rule</small>
+      <strong>Motion detector</strong><small>Watches the rim, rocks and open water{{ ', plus the ground around the bath' if zones.ground }}, each with its own rule</small>
     </li>
     <li class="flow-step where-pi">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v14M16 5v14"/></svg>
@@ -65,13 +66,13 @@
     {% if presence_mode != 'off' %}
     <li class="flow-step where-pi{% if presence_mode == 'shadow' %} shadow{% endif %}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
-      <strong><a href="#presence">Anything there?</a></strong><small>{% if presence_mode == 'gate' %}Frames the Pi judges empty skip Claude and wait for your check{% else %}The Pi judges empty or not; only scored for now{% endif %}</small>
+      <strong><a href="#presence">Pi animal check</a></strong><small>{% if presence_mode == 'gate' %}Photos it judges empty skip Claude and wait for your check{% else %}Judges empty or not; only scored for now{% endif %}</small>
     </li>
     {% endif %}
     {% if classifier_mode == 'gate' %}
     <li class="flow-step where-pi">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c3-1 5-4 9-4 3 0 5 2 7 2l-3 3c-2 0-3 3-7 3-3 0-5-2-6-4z"/><circle cx="15" cy="11.5" r=".6"/><path d="M8 18l-1 3M11 18l1 3"/></svg>
-      <strong><a href="#classifier">Species guess</a></strong><small>By day, a sure guess of a regular names it without Claude</small>
+      <strong><a href="#classifier">BioCLIP 2 species check</a></strong><small>By day, a sure guess of a regular names it without Claude</small>
     </li>
     {% endif %}
     <li class="flow-step where-cloud">
@@ -85,7 +86,7 @@
     {% if classifier_mode == 'shadow' %}
     <li class="flow-step where-pi shadow">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c3-1 5-4 9-4 3 0 5 2 7 2l-3 3c-2 0-3 3-7 3-3 0-5-2-6-4z"/><circle cx="15" cy="11.5" r=".6"/><path d="M8 18l-1 3M11 18l1 3"/></svg>
-      <strong><a href="#classifier">Species guess</a></strong><small>The Pi's own guess, only scored for now</small>
+      <strong><a href="#classifier">BioCLIP 2 species check</a></strong><small>Guesses on the Pi, only scored for now</small>
     </li>
     {% endif %}
     <li class="flow-step where-you">
@@ -97,6 +98,14 @@
     <span class="where where-cam">Camera</span><span class="where where-pi">On the Pi at home</span>
     <span class="where where-cloud">Claude, in the cloud</span><span class="where where-you">You</span>
   </p>
+</section>
+
+{# ---------- 1a. The four components, in the order a photo meets them (web/steps.py) ---------- #}
+<section class="about-section" id="handled">
+  <h2>How a photo is handled</h2>
+  <p>Four components handle every photo, in this order. Each card says what the component does, how (or whether) the
+    component is trained, and what you control. The same four names are used everywhere on this site.</p>
+  {{ steps_ui.flow(four) }}
 </section>
 
 {# ---------- 1b. The hardware path ---------- #}
@@ -121,7 +130,7 @@
     </li>
     <li class="flow-step where-pi">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
-      <strong>Raspberry Pi 4</strong><small>Watches for motion, takes the photos, runs the local checks, stores everything and serves this site</small>
+      <strong>Raspberry Pi 4</strong><small>Watches for motion, takes the photos, runs the Pi animal check and the BioCLIP 2 species check, stores everything and serves this site</small>
     </li>
     <li class="flow-step where-cloud">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.5-10 6 6 0 0 1 11.5 2 4 4 0 0 1-.5 8z"/></svg>
@@ -256,7 +265,7 @@
         {{ pct(cfg.WATER_MAX_BLOB) }}% of the water's area, staying near the same spot for
         <strong>{{ cfg.WATER_PERSIST_FRAMES }} frames in a row</strong>. Raindrop rings fade faster than that.
         It rests at night, when nothing flies in to land on the water.
-        {% if presence_mode != 'off' %}Even then, the Pi's <a href="#presence">animal check</a> looks first, so a drifting leaf never costs a Claude call.{% endif %}</p>
+        {% if presence_mode != 'off' %}Even then, the <a href="#presence">Pi animal check</a> looks first, so a drifting leaf never costs a Claude call.{% endif %}</p>
     </article>
     {% endif %}
     {% if zones.ground %}
@@ -282,8 +291,8 @@
       <p>The lawn moves all day, so the ground has its own rule. It needs one animal-sized blob that stays in view for
         <strong>{{ cfg.GROUND_PERSIST_FRAMES }} frames in a row</strong> and moves at walking pace.
         By day a ground bird is big enough ({{ pct(cfg.GROUND_MIN_BLOB) }}% of the frame);
-        at night it must be about cat-sized ({{ pct(cfg.GROUND_MIN_BLOB_NIGHT) }}%). {% if presence_mode == 'gate' %}The Pi's
-        <a href="#presence">animal check</a> looks first, and only photos with something in them go to Claude.{% else %}The photo goes to Claude.{% endif %}</p>
+        at night it must be about cat-sized ({{ pct(cfg.GROUND_MIN_BLOB_NIGHT) }}%). {% if presence_mode == 'gate' %}The
+        <a href="#presence">Pi animal check</a> looks first, and only photos with something in them go to Claude.{% else %}The photo goes to Claude.{% endif %}</p>
     </article>
     {% endif %}
     <article class="rule rule-wide">
@@ -305,11 +314,11 @@
         {% endfor %}
       </ol>
       {% if presence_mode != 'off' %}
-      <p class="muted small">Once the Pi's <a href="#presence">animal check</a> has learned this yard ({{ presence_min[0] }} visitors and
+      <p class="muted small">Once the <a href="#presence">Pi animal check</a> has learned this yard ({{ presence_min[0] }} visitors and
         {{ presence_min[1] }} empty frames), a long wait doesn't mean going blind: it still takes photos every {{ cfg.COOLDOWN_NONE }} s and
         lets the check look. Only if it doesn't call the photo empty does Claude get asked. Empty checks aren't even saved.
         After {{ cfg.PROBE_AFTER }} false alarms in a row it stays in this mode until a visitor turns up, with one full Claude check every
-        {{ (cfg.FULL_CHECK_EVERY / 60) | round | int }} minutes in case the local look missed something.
+        {{ (cfg.FULL_CHECK_EVERY / 60) | round | int }} minutes in case the Pi animal check missed something.
         Until the check is trained, or whenever it can't give a verdict (its model missing, or switched off), it simply waits out the
         doubling backoff above: a probe nobody is filtering would just be asking Claude every {{ cfg.COOLDOWN_NONE }} s.</p>
       {% endif %}
@@ -357,13 +366,15 @@
 {# ---------- 5. Local model ---------- #}
 <section class="about-section" id="local">
   <h2>Checking on the Pi first</h2>
-  <p>Before anything leaves the house, the Pi asks <strong>BioCLIP 2</strong>, an open model of living things, two
-    questions: is anything there, and what is it? Each check can be off, shadow (it only keeps score) or gate (its answer counts).</p>
+  <p>Before anything leaves the house, <strong>BioCLIP 2</strong>, an open model of living things, answers two questions on
+    the Pi: the Pi animal check asks whether anything is there, and the BioCLIP 2 species check asks what it is. The
+    cards above say what each does and how each is trained; this section has the details. Each check can be off,
+    shadow (keeps score only) or gate (its answer counts).</p>
   <div class="modes" role="list">
     {% for m, title, text in [
       ('off', 'Off', 'Not used. Claude sees every motion event.'),
       ('shadow', 'Shadow', 'Runs and records its answer, but Claude still decides. Builds a scorecard to show whether it can be trusted.'),
-      ('gate', 'Gate', 'Its answer counts: a photo it calls empty never goes to Claude, and waits on False triggers for your check. The species guess has a gate mode too: a sure daytime name of a regular skips Claude.'),
+      ('gate', 'Gate', 'Its answer counts: a photo the Pi animal check calls empty never goes to Claude, and waits on False triggers for your check. The BioCLIP 2 species check has a gate mode too: its sure daytime name of a regular skips Claude.'),
     ] %}
     <div class="mode{{ ' on' if presence_mode == m }}" role="listitem">
       <strong>{{ title }}</strong>{% if presence_mode == m %}{{ badge('in use', '') }}{% endif %}
@@ -371,31 +382,29 @@
     </div>
     {% endfor %}
   </div>
-  <p class="muted small">Switch modes in <a href="/settings#local">Settings &gt; Local checks</a>.</p>
-  <h3 id="presence">Anything there? A check trained on this yard{% if presence_mode != 'off' %} {{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') }}{% endif %}</h3>
-  <p>Most motion is leaves, ripples and light. A small check trained on this yard's own photos, and on your corrections,
-    decides whether anything is really there.
-    {% if presence_mode == 'gate' %}Photos it calls empty skip Claude and are marked {{ badge("pi only", "pi-only") }} under False triggers, so you can
-    correct any it got wrong (that's how it learns). Confirming the empty ones teaches it too: checked photos
-    count 3 times, and deleting their photos later keeps what it learned.{% elif presence_mode == 'shadow' %}For now it only keeps score; Claude still sees everything.{% else %}It's switched off here.{% endif %}
-    It looks at the sharpest photo of the burst{% if cfg.PRESENCE_LAST_FRAME %} and, when that one looks empty, at the last one too, since a landing
+  <p class="muted small">Switch modes in <a href="/settings#local">Settings &gt; Pi checks</a>.</p>
+  <h3 id="presence">Pi animal check (&ldquo;Anything there?&rdquo;){% if presence_mode != 'off' %} {{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') }}{% endif %}</h3>
+  <p>Most motion is leaves, ripples and light.
+    {% if presence_mode == 'gate' %}Photos the Pi animal check calls empty skip Claude and are marked {{ badge("pi only", "pi-only") }} under False triggers, so you can
+    correct any the Pi animal check got wrong. Confirming the empty ones teaches the Pi animal check too: checked photos
+    count {{ weight }} times, and deleting their photos later keeps what it learned.{% elif presence_mode == 'shadow' %}For now the Pi animal check only keeps score; Claude still sees everything.{% else %}The Pi animal check is switched off here.{% endif %}
+    The Pi animal check looks at the sharpest photo of the burst{% if cfg.PRESENCE_LAST_FRAME %} and, when that one looks empty, at the last one too, since a landing
     bird is often only in the bowl by then (if only the last one shows it, that becomes the photo Claude sees){% endif %}.
-    <span data-tip="It learns whether an animal is inside the crop box, not where. A false trigger keeps every frame of its burst, and you can circle on any of them: circle the animal on the frame that shows it best and save, and that frame becomes the example (the Pi looks at it in the background, about 6 seconds). Without a circle on another frame, the Pi looks through the burst itself for the frame where the animal is inside the crop box, or uses the photo when your circle there is mostly inside the box. A circle mostly outside the box leaves that visit out, so one photo of a tail can't make every empty frame look possible.">What it learns from your corrections</span>.
-    <span data-tip="On the first 683 frames, tested on ones it hadn't trained on, it kept all 55 visitors and caught 616 of 628 empty frames. No night visitors yet.">How well?</span>
+    <span data-tip="The Pi animal check learns whether an animal is inside the crop box, not where. A false trigger keeps every frame of its burst, and you can circle on any of them: circle the animal on the frame that shows it best and save, and that frame becomes the example (the Pi looks at it in the background, about 6 seconds). Without a circle on another frame, the Pi looks through the burst itself for the frame where the animal is inside the crop box, or uses the photo when your circle there is mostly inside the box. A circle mostly outside the box leaves that visit out, so one photo of a tail can't make every empty frame look possible.">Which frame the Pi animal check learns from</span>.
+    <span data-tip="On the first 683 frames, tested on ones it hadn't trained on, the Pi animal check kept all 55 visitors and caught 616 of 628 empty frames. No night visitors yet.">How well?</span>
     Scorecard on <a href="/stats#presence">Stats</a>.</p>
-  <h3 id="classifier">A species guess of its own{% if classifier_mode == 'gate' %} {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %} {{ badge('shadow', 'shadow') }}{% endif %}</h3>
-  <p>{% if classifier_mode == 'off' %}Switched off here. When on, the{% else %}The{% endif %} Pi guesses the species itself, choosing
+  <h3 id="classifier">BioCLIP 2 species check{% if classifier_mode == 'gate' %} {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %} {{ badge('shadow', 'shadow') }}{% endif %}</h3>
+  <p>{% if classifier_mode == 'off' %}The BioCLIP 2 species check is switched off here. When on, it{% else %}The BioCLIP 2 species check{% endif %} chooses
     among the birds and mammals {% if cfg.INAT_PLACE_ID %}reported to iNaturalist nearby{% else %}reported nearby{% endif %}
     <span data-tip="BioCLIP 2 turns the photo into a fingerprint of numbers and picks the species whose text fingerprint is closest. About 6 s on the Pi, free. Not tried on infrared photos yet.">(how it works)</span>.
-    {% if classifier_mode == 'gate' %}By day, when it's at least 93% sure of a species seen here 3+ times, that's the answer and Claude isn't
-    asked; those visits say {{ badge("pi named", "pi-only") }}. Anything less sure, every night photo, and any photo with
+    {% if classifier_mode == 'gate' %}Visits it names say {{ badge("pi named", "pi-only") }}. A photo with
     <span data-tip="The Pi compares the photo with the empty scene from just before the motion and counts separate animal-sized changes in the crop box. Changes only on the open water (sky reflections, drifting leaves) don't count. One guess can only name one animal, so groups go to Claude, which counts them and names any other kind.">more than one animal in view</span>
-    goes to Claude.
+    always goes to Claude.
     The species model says what, not where, so the Pi
-    <span data-tip="It compares the photo with the empty scene from just before the motion (for older photos: the median of nearby photos), ignoring changes that keep the scene's pattern (a patch of sun), and circles the biggest solid patch of change touching the zone that fired. Open water counts only for one small, solid patch (a bathing bird). Two patches of a similar size, or one too big for an animal, give no circle. Free, a fraction of a second.">circles the animal from the motion</span>
-    itself: the same faded white ring, or &ldquo;Named on the Pi, no circle&rdquo; when it isn't sure where.
-    {% else %}For now it only keeps score and never changes a label.{% endif %}
-    {% if classifier.checked %}So far it matched {{ classifier.top1 }} of {{ classifier.checked }} checked visits.{% endif %}
+    <span data-tip="The Pi compares the photo with the empty scene from just before the motion (for older photos: the median of nearby photos), ignoring changes that keep the scene's pattern (a patch of sun), and circles the biggest solid patch of change touching the zone that fired. Open water counts only for one small, solid patch (a bathing bird). Two patches of a similar size, or one too big for an animal, give no circle. Free, a fraction of a second.">circles the animal from the motion</span>
+    itself: the same faded white ring, or &ldquo;Named on the Pi, no circle&rdquo; when the Pi isn't sure where.
+    {% else %}For now the BioCLIP 2 species check only keeps score and never changes a label.{% endif %}
+    {% if classifier.checked %}So far the BioCLIP 2 species check matched {{ classifier.top1 }} of {{ classifier.checked }} checked visits.{% endif %}
     Scorecard on <a href="/stats#classifier">Stats</a>.</p>
 </section>
 
@@ -408,7 +417,7 @@
       <li class="q" data-down="Yes"><span class="diamond">Saw an animal?</span>
         <span class="side"><span class="tag">No</span> <span><a href="/false-triggers">False triggers</a>, hidden from the gallery. If it only thinks the photo is empty (something might be an animal), Sonnet looks too, and one still in doubt waits in the <a href="/review">review queue</a> instead of being quietly filed away</span></span></li>
       <li class="q" data-down="No, or it declined"><span class="diamond" data-tip="Every animal in the photo counts: a guess at a second one also gets Sonnet's look.">Sure of every animal?</span>
-        <span class="side"><span class="tag">Yes</span> <span><a href="/">Gallery</a> and alerts. Also when fairly sure of a species already confirmed here {{ confirmed_min }}+ times (the Confirmed pill on <a href="/species">Species</a>), as long as the Pi's own classifier, looking at Claude's circle by day, names the same species</span></span></li>
+        <span class="side"><span class="tag">Yes</span> <span><a href="/">Gallery</a> and alerts. Also when fairly sure of a species already confirmed here {{ confirmed_min }}+ times (the Confirmed pill on <a href="/species">Species</a>), as long as the <a href="#classifier">BioCLIP 2 species check</a>, looking at Claude's circle by day, names the same species</span></span></li>
       <li class="node cloud"><strong>Sonnet</strong> looks at the 3 sharpest photos together, combining angles</li>
       <li class="q" data-down="Yes"><span class="diamond">Still unsure?</span>
         <span class="side"><span class="tag">No</span> <span><a href="/">Gallery</a> and alerts</span></span></li>
@@ -456,7 +465,7 @@
     <li><strong>It becomes a lesson</strong><small>The latest {{ lesson_limit }} join every prompt in full; all of them feed the Lessons summary</small></li>
     <li><strong>Next photo</strong><small>Claude gets it right, starting with the very next visit</small></li>
   </ol>
-  <p>Claude doesn't get retrained; it simply reads your latest corrections every time (in-context learning, not fine-tuning). Older ones aren't lost: after every {{ auto_every }} new notes, Claude distills all of them into a short <a href="/notes#summary">Lessons summary</a>, which you check and accept on Claude's Notes and which then goes with every photo{% if totals.distills %} ({{ totals.distills }} summar{{ 'y' if totals.distills == 1 else 'ies' }} drafted so far, counted in the spend above){% endif %}. The Pi's animal check does retrain on them, in the background within about a minute.
+  <p>Claude doesn't get retrained; Claude simply reads your latest corrections every time (in-context learning, not fine-tuning). Older ones aren't lost: after every {{ auto_every }} new notes, Claude distills all of them into a short <a href="/notes#summary">Lessons summary</a>, which you check and accept on Claude's Notes and which then goes with every photo{% if totals.distills %} ({{ totals.distills }} summar{{ 'y' if totals.distills == 1 else 'ies' }} drafted so far, counted in the spend above){% endif %}. The Pi animal check, unlike Claude, does retrain on your labels, in the background within about a minute; it never reads notes.
     You can circle things on the photo, fix the other animals in the shot, or press Ask to have Claude suggest a name
     <span data-tip="Ask costs about a cent. Species boxes suggest eBird names so one bird never gets two spellings. Claude's Notes lists every lesson exactly as Claude reads it; switch off any that don't help. On a photo the Pi judged empty without asking Claude, the lesson says so; agreeing it was empty adds a lesson only with a note, circles or another animal.">(more)</span>.
     {% if totals.corrected %}You've corrected or annotated {{ totals.corrected }} visit{{ 's' if totals.corrected != 1 }} so far.{% endif %}</p>
@@ -469,7 +478,7 @@
   </ol>
   <p>Each answer comes with a Use button that fills in the correction form, and every check is listed on the visit
     under "How it was decided"{% if totals.owner_checks %} ({{ totals.owner_checks }} Claude check{{ 's' if totals.owner_checks != 1 }} so far, counted in the spend above){% endif %}.
-    <span data-tip="The checks look at the first circle you drew yourself (Claude's dashed circle doesn't count), on the frame it's on. Saving teaches the Pi's animal check, not its species model: it trains on the whole crop box of every photo, labelled with the final answer. Saving an animal on a false trigger flips that visit from empty to animal and counts it 3 times; if your first circle is on another burst frame, that frame's crop box is what it learns from, so the next photo like it is more likely to reach Claude.">How it teaches the Pi</span></p>
+    <span data-tip="The checks look at the first circle you drew yourself (Claude's dashed circle doesn't count), on the frame it's on. Saving teaches the Pi animal check, not the BioCLIP 2 species check: it trains on the whole crop box of every photo, labelled with the final answer. Saving an animal on a false trigger flips that visit from empty to animal and counts it 3 times; if your first circle is on another burst frame, that frame's crop box is what it learns from, so the next photo like it is more likely to reach Claude.">How it teaches the Pi</span></p>
   <p>On any photo card, on the big latest-visitor photo on the home page, and on the big photo on a visit's page, the owner can tap the star to cycle it:
     one tap makes it <strong>blue</strong>, a favorite; a second makes it <strong>yellow</strong>, the species cover (the photo shown
     for that species on the Species page, one per species); a third unsets it. Yellow waits two seconds before it's saved, so tapping
@@ -486,9 +495,9 @@
     ({{ cards }} so far), and refreshed every {{ card_days }} days. Every photo and recording shows its author and license.</p>
   <div class="sources">
     <a class="source" href="https://www.inaturalist.org" target="_blank" rel="noopener">
-      <strong>iNaturalist</strong><span>Reference photos, the range map, and{% if cfg.INAT_PLACE_ID %} how often each species is reported locally, month by month, plus the local bird list that limits the Pi's own species guesses{% else %} local monthly reports once a place is set{% endif %}. Its photos are part of what trained that guesser</span></a>
+      <strong>iNaturalist</strong><span>Reference photos, the range map, and{% if cfg.INAT_PLACE_ID %} how often each species is reported locally, month by month, plus the local bird list that limits the guesses of the BioCLIP 2 species check{% else %} local monthly reports once a place is set{% endif %}. Its photos are part of what BioCLIP 2 learned from</span></a>
     <a class="source" href="https://imageomics.github.io/bioclip-2/" target="_blank" rel="noopener">
-      <strong>BioCLIP 2</strong><span>The Imageomics Institute's open model (MIT license) behind the Pi's own species guess</span></a>
+      <strong>BioCLIP 2</strong><span>The Imageomics Institute's open model (MIT license) behind the Pi animal check and the BioCLIP 2 species check</span></a>
     <a class="source" href="https://www.wikipedia.org" target="_blank" rel="noopener">
       <strong>Wikipedia</strong><span>The short description, and the article Claude Haiku summarizes into behavior notes (labeled as an AI summary, sticking to the article)</span></a>
     <a class="source{{ '' if cfg.XC_API_KEY else ' off' }}" href="https://xeno-canto.org" target="_blank" rel="noopener">
@@ -572,8 +581,8 @@
   <h2>Under the hood</h2>
   <ul class="stack">
     <li><strong>Camera</strong> Any camera with two RTSP streams; this project uses an inexpensive Wi-Fi camera with open-source firmware. Its picture and day/night settings can be changed from Settings &gt; Camera, through the camera's own web API; every change is logged and can be undone.</li>
-    <li><strong>Computer</strong> A Raspberry Pi on the home network runs the watcher, the local model, the database and this site.</li>
-    <li><strong>Software</strong> Python with OpenCV for motion, ONNX Runtime for the local models, FastAPI and htmx for the pages, SQLite for the visits, Chart.js and Leaflet for charts and maps.</li>
+    <li><strong>Computer</strong> A Raspberry Pi on the home network runs the watcher, the Pi animal check and the BioCLIP 2 species check, the database and this site.</li>
+    <li><strong>Software</strong> Python with OpenCV for motion, ONNX Runtime for BioCLIP 2, FastAPI and htmx for the pages, SQLite for the visits, Chart.js and Leaflet for charts and maps.</li>
     <li><strong>Privacy</strong> Photos and records stay on the Pi. Only the photos Claude is asked about leave the house (plus alert photos to ntfy,
       and species names to the info sources). A public copy, if set up, never gets a photo where the Pi's person check fires,
       unless you've looked, seen no one and pressed Make public on that visit.</li>

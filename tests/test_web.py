@@ -549,7 +549,7 @@ def test_settings_sections_collapse_and_show_a_status_when_closed(client, conn):
     html = client.get("/settings").text
     for section in ("local", "storage", "alerts"):
         assert f'<details class="settings-card" id="{section}" open>' in html
-    assert ">Animal check shadow, species guess gate<" in html and ">Off<" in html
+    assert ">Pi animal check shadow, BioCLIP 2 species check gate<" in html and ">Off<" in html
     notes = client.get("/notes").text
     for section in ("camera", "lessons"):
         assert f'<details class="settings-card" id="{section}" open>' in notes
@@ -770,7 +770,7 @@ def test_settings_shows_the_local_checks_as_one_flow(client, conn, monkeypatch):
     monkeypatch.setattr(config, "PRESENCE", "shadow")
     html = client.get("/settings").text
     assert 'id="local"' in html and 'id="detector"' not in html and 'value="shadow" checked' in html
-    steps = ["Anything there?", "What species?", "Ask Claude"]
+    steps = ["(Anything there?)", "(What species?)", "3</span> Claude"]
     assert [html.index(s) for s in steps] == sorted(html.index(s) for s in steps)
     assert "kept on the Pi" in html and "sent to Claude" in html
     r = client.post("/settings/presence", data={"mode": "gate"}, follow_redirects=False)
@@ -1064,9 +1064,9 @@ def test_false_trigger_cards_refresh_after_the_pop_up(client, add_visit, conn):
 def test_visit_page_says_notes_are_for_claude_only(client, add_visit):
     html = client.get(f"/visit/{add_visit()}").text
     # The note box is one short line; its info tip says the Pi never reads notes.
-    assert "Note for Claude" in html and "The Pi's local animal check never reads notes" in html
+    assert "Note for Claude" in html and "The Pi animal check never reads notes" in html
     assert 'id="feedback" name="feedback" rows="1"' in html
-    assert "The answer you pick trains the Pi's local animal check" in html
+    assert "The answer you pick trains the Pi animal check" in html
 
 
 def _flows(html):
@@ -1090,7 +1090,7 @@ def test_local_only_steps_get_no_claude_mark(client, add_visit):
     raw = json.dumps({"calls": {"presence": {"empty": True, "score": 0.02, "threshold": 0.5, "trained_on": 40}, "skipped_claude": True}})
     html = client.get(f"/visit/{add_visit(visitor='none', species=None, model='presence', raw_json=raw)}").text
     flows = _flows(html)
-    assert flows and all("Detection path" in f and "Local animal check" in f and "claude-mark" not in f for f in flows)
+    assert flows and all("Detection path" in f and "Pi animal check" in f and "claude-mark" not in f for f in flows)
 
 
 def test_note_for_claude_label_has_the_mark(client, add_visit):
@@ -1385,3 +1385,40 @@ def test_review_heading_shows_the_real_total(client, add_visit, monkeypatch):
 def test_alert_pills_and_the_local_off_pill_have_their_own_tooltips(client):
     html = client.get("/about").text
     assert "this alert is switched" in html and "this local step doesn" not in html
+
+
+FOUR = ("Motion detector", "Pi animal check", "BioCLIP 2 species check", "Claude")
+
+
+def test_the_false_triggers_intro_shows_the_four_components_with_live_numbers(client):
+    from birdbrain import classifier, db
+    html = client.get("/false-triggers").text
+    strips = re.findall(r'<div class="hs-strip" id="step-\d">', html)
+    assert len(strips) == 4 and all(n in html for n in FOUR)
+    assert f"{config.TRIGGER_FRAMES} frames in a row" in html and f"{classifier.GATE_MIN_SCORE * 100:g}%" in html
+    assert f"newest {db.LESSON_LIMIT} lessons" in html and "<summary>More</summary>" in html
+    assert "delete confirmed photos to save space" in html and 'id="ft-delete-link"' in html
+
+
+def test_about_has_the_four_steps_as_numbered_cards_with_live_numbers(client):
+    from birdbrain import classifier, db, lessons
+    html = client.get("/about").text
+    start = html.index('id="handled"')
+    section = html[start:html.index("</section>", start)]
+    assert "How a photo is handled" in section and len(re.findall(r'class="hs-step"', section)) == 4
+    for name in FOUR:
+        assert f"What the {name} does" in section and f"How the {name} is trained" in section
+    assert "What you control" in section
+    assert f"{config.TRIGGER_FRAMES} frames in a row" in section and f"{classifier.GATE_MIN_SCORE * 100:g}%" in section
+    assert f"at least {db.CONFIRMED_MIN} earlier visits" in section and f"newest {db.LESSON_LIMIT} lessons" in section
+    assert f"After every {lessons.AUTO_EVERY} new lessons" in section
+    assert "Anything there?" not in html.split('id="local"')[0].split('id="flow"')[1]  # the pipeline strip says Pi animal check
+
+
+def test_no_page_calls_the_pi_animal_check_by_an_old_name(client, add_visit):
+    vid = add_visit(visitor="none", species=None)
+    for path in ("/false-triggers", "/about", "/settings", "/stats", f"/visit/{vid}"):
+        html = client.get(path).text
+        for old in ("Local animal check", "local animal check", "Local classifier", "Local checks", "the Pi's animal check",
+                    "The Pi's animal check"):
+            assert old not in html, (path, old)

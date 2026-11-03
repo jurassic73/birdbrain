@@ -109,7 +109,7 @@ def ask_pi(conn, jpeg: bytes, circle: dict, night: bool, clf=None, local=None) -
         _last_used = time.monotonic()
         clf = clf or classifier.load()
     if clf is None:
-        raise RuntimeError("the local classifier is off (CLASSIFIER=off)")
+        raise RuntimeError("the BioCLIP 2 species check is off (CLASSIFIER=off)")
     img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
     start = time.perf_counter()
     patch, _ = classifier.crop_for(img, circle, None, MARGIN)

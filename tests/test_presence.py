@@ -174,7 +174,7 @@ def test_false_triggers_confirm_all_shown_skips_real_visits(client, conn, add_vi
     assert ">3</span>" in page and "Confirm all shown false triggers have no animals</button>" in page
     assert "not contain an animal" in page  # the pop-up before it confirms
     assert 'href="#ft-storage"' in page and 'id="ft-storage"' in page  # the intro links to the Delete button
-    assert "found no animal in them. Now it's your turn to look." in page and 'id="ft-visit"' in page
+    assert "found no animal in them. Open a photo to check it" in page and 'id="ft-visit"' in page
     r = client.post("/false-triggers/confirm", data={"ids": ",".join(map(str, [*empty[:2], real]))},
                     follow_redirects=False)
     assert r.headers["location"] == "/false-triggers?confirmed=2"
@@ -196,7 +196,7 @@ def test_false_triggers_list_only_unconfirmed_unless_show_all(client, conn, add_
 
 
 def test_settings_switches_the_animal_check(client, conn):
-    assert "Local checks" in client.get("/settings").text
+    assert "Pi checks" in client.get("/settings").text
     client.post("/settings/presence", data={"mode": "gate"})
     assert presence.mode(conn) == "gate"
     assert client.post("/settings/presence", data={"mode": "nope"}).status_code == 400
@@ -394,7 +394,7 @@ def test_the_visit_page_says_which_frame_teaches_the_check(conn, yard, add_visit
     presence.pick_frames(conn, clf=FakeClf(yard))
     with TestClient(webapp.app) as c:
         html = c.get(f"/visit/{vid}").text
-    assert "what an animal in the dashed box looks like, from burst frame 2 (your circle)" in html
+    assert "burst frame 2 (your circle)" in html and "An animal example" in html
     assert 'class="save-btn"' in html and "your first circle is on another burst frame" in html
 
 
@@ -519,7 +519,66 @@ def test_the_note_box_says_claude_wasnt_asked_on_a_skipped_visit(client, add_vis
     skipped = add_visit(visitor="none", species=None, count=0, model=presence.MODEL_NAME, raw_json=json.dumps(
         {"calls": {"skipped_claude": True, "presence": {"score": 0.01, "threshold": 0.1, "empty": True, "trained_on": 700}}}))
     page = client.get(f"/visit/{skipped}").text
-    assert "Claude didn't look at this one. Optional: what set off the motion?" in page
-    assert "Claude wasn't asked about this visit" in page and "What did Claude get wrong?" not in page
+    assert "Claude didn't look at this one. Describe each numbered circle, e.g. 1: spiderweb moving in the wind" in page
+    assert "Claude wasn't asked about this visit" in page
     asked = client.get(f"/visit/{add_visit(visitor='none', species=None, count=0)}").text
-    assert "What did Claude get wrong?" in asked and "Claude wasn't asked about this visit" not in asked
+    assert 'placeholder="Describe each numbered circle, e.g. 1: spiderweb moving in the wind"' in asked
+    assert "Claude wasn't asked about this visit" not in asked
+
+
+# --- "What this photo trains" (web/steps.py): the four components, in this photo's real state --------------------
+
+def trains_box(client, vid) -> str:
+    html = client.get(f"/visit/{vid}").text
+    start = html.index('id="trains"')
+    return html[start:html.index("</section>", start)]
+
+
+def pi_settled_empty(add_visit, conn, yard):
+    vid = add_visit(visitor="none", species=None, count=0, model=presence.MODEL_NAME, raw_json=json.dumps(
+        {"calls": {"skipped_claude": True, "presence": {"score": 0.01, "threshold": 0.1, "empty": True, "trained_on": 700}},
+         "trigger": "rim"}))
+    presence.store(conn, vid, vec(False, yard))
+    return vid
+
+
+def test_the_box_for_an_empty_photo_the_pi_settled_and_nobody_checked(client, conn, yard, add_visit):
+    box = trains_box(client, pi_settled_empty(add_visit, conn, yard))
+    for name in ("Motion detector", "Pi animal check", "BioCLIP 2 species check", "Claude"):
+        assert name in box
+    assert "An empty frame." in box and "Counts 3x once you Confirm" in box and "counts 3x on Confirm" in box
+    assert "Not reached" in box and "not reached" in box
+    assert "Not asked" in box and "no lesson yet" in box and "Confirm alone is not a lesson" in box
+    assert "It spotted movement on the rim" in box
+
+
+def test_the_box_after_confirming_says_counted_3x(client, conn, yard, add_visit):
+    vid = pi_settled_empty(add_visit, conn, yard)
+    db.confirm_visits(conn, [vid])
+    box = trains_box(client, vid)
+    assert "An empty frame, counted 3x" in box and ">counted 3x<" in box
+    assert "no lesson yet" in box  # Confirm alone is not a lesson
+
+
+def test_the_box_for_a_false_trigger_corrected_to_an_animal(client, conn, yard, add_visit):
+    vid = pi_settled_empty(add_visit, conn, yard)
+    found_animal(conn, vid)
+    box = trains_box(client, vid)
+    assert "An animal example" in box and "counted 3x: you checked it" in box
+    assert "An empty frame" not in box
+    assert "Not reached" in box and "Not asked" in box
+    assert ">lesson<" in box and "A lesson on Claude" in box  # a correction is a lesson, sent word for word
+
+
+def test_the_box_for_a_visit_claude_answered(client, conn, yard, add_visit):
+    vid = add_visit(raw_json=json.dumps({"calls": {"haiku": {"frames": 1, "answer": {
+        "visitor": "bird", "species": "Dark-eyed Junco", "confidence": "high"}}}}))
+    presence.store(conn, vid, vec(True, yard))
+    box = trains_box(client, vid)
+    assert "Answered:" in box and "Dark-eyed Junco" in box and "An animal example" in box
+    assert "No guess" in box  # no BioCLIP 2 species check step was recorded
+
+
+def test_the_visit_box_is_for_admins_only(client, conn, yard, add_visit, monkeypatch):
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    assert 'id="trains"' not in client.get(f"/visit/{pi_settled_empty(add_visit, conn, yard)}").text
