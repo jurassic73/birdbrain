@@ -41,7 +41,7 @@
     <a class="brand" href="/"><img src="/static/logo.png?v={{ asset_version }}" alt="" width="34" height="34">Birdbrain</a>
     <nav>
       <a href="/" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Latest</a>
-      <a href="/visits" {% if request.url.path == '/visits' %}aria-current="page"{% endif %}>Visits</a>
+      <a href="/visits" {% if request.url.path == '/visits' or request.url.path.startswith('/visit/') %}aria-current="page"{% endif %}>Visits</a>
       <a href="/species" {% if request.url.path.startswith('/species') %}aria-current="page"{% endif %}>Species</a>
       <a href="/stats" {% if request.url.path in ('/stats', '/weather') %}aria-current="page"{% endif %}>Stats</a>
       {% if request.state.admin %}

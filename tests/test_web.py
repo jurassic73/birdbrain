@@ -1083,3 +1083,10 @@ def test_c_key_confirms_and_moves_on_for_admin_visit_pages(client, add_visit, mo
     assert "// C: confirm this visit" not in embed and "// C: confirmed no animal" in embed
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
     assert "// C: confirm this visit" not in client.get(f"/visit/{vid}").text
+
+
+def test_visit_page_keeps_visits_nav_highlighted(client, add_visit):
+    vid = add_visit(visitor="bird", species="Dark-eyed Junco")
+    page = client.get(f"/visit/{vid}").text
+    assert re.search(r'<a href="/visits" aria-current="page">Visits</a>', page)
+    assert not re.search(r'<a href="/" aria-current="page">Latest</a>', page)
