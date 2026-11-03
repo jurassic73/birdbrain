@@ -474,6 +474,13 @@ def test_species_pages(client, add_visit):
     assert client.get("/species/Nope").status_code == 404
 
 
+def test_species_page_has_the_full_size_photo_browser(client, add_visit):
+    add_visit(species="Bushtit")
+    html = client.get("/species/Bushtit").text
+    assert 'class="lb-open"' in html and "/static/lightbox.js" in html
+    assert 'data-full="/images/' in html
+
+
 @pytest.mark.parametrize("path", ["/stats", "/review", "/false-triggers", "/species?sort=name", "/species?sort=bogus"])
 def test_pages_render(client, add_visit, path):
     add_visit(needs_review=1)

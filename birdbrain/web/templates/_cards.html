@@ -11,7 +11,7 @@
 {% endif %}
 {% set fav = fav_label is defined and fav_label and request.state.admin %}
 {% if fav %}<div class="card-fav">{% endif %}
-<a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
+<a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}" data-full="/images/{{ v.image_path }}" data-when="{{ v.captured_at | nice_time }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
   {{ thumb(v) }}
   <div class="card-body">
     <div class="card-title">{{ sp_name(v.label) }}{% if v.count and v.count > 1 %} <span class="muted">x{{ v.count }}</span>{% endif %}
