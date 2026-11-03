@@ -1283,6 +1283,8 @@ button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 
 /* Invisible ring around the icon so the mouse does not have to land exactly on it */
 .info-tip::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
 .info-tip:hover, .info-tip:focus { opacity: 1; }
+/* Hovering the words of a .tip-label lights their icon too (tips.js shows its tip) */
+.tip-label:hover .info-tip, .tip-label:hover + .info-tip { opacity: 1; }
 
 /* ---------- Phone tidy-up (<= 640px): fold, shorten and tighten so pages read in a few screens ---------- */
 .m-only, .topbar nav .short { display: none; }
