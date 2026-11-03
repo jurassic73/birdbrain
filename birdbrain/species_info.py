@@ -7,6 +7,7 @@ call, cached in the species_info table and refreshed monthly. Any source can fai
 import json
 import logging
 import math
+import os
 import re
 import sqlite3
 import threading
@@ -36,6 +37,9 @@ LICENSES = {
 }
 
 _building: set[str] = set()
+RETRY_AFTER = 3600  # seconds before trying a failed download or rebuild again
+MERGED_FIELDS = ("description", "notes", "photo", "sounds", "map_center")  # a rebuild lacking one keeps the old
+_failed_at: dict[str, float] = {}  # species name (or "ebird_codes") -> time.monotonic() of its last failed fetch
 _lock = threading.Lock()
 
 
@@ -112,14 +116,43 @@ def links(common: str, is_bird: bool, ebird_code: str | None, inat_id: int | Non
     return out
 
 
+def write_json_atomic(path, obj) -> None:
+    """Write JSON so a crash or full disk never leaves a truncated file: write a .part file, then replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    part = path.with_name(path.name + ".part")
+    try:
+        part.write_text(json.dumps(obj))
+        os.replace(part, path)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+
+
+def read_json(path):
+    """The parsed file, or None if it is missing or unreadable (a truncated download counts as missing)."""
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
 def ebird_code(client: httpx.Client, common: str) -> str | None:
-    """eBird species code by common name, from the eBird taxonomy (downloaded once, ~3.5 MB, no key needed)."""
+    """eBird species code by common name, from the eBird taxonomy (downloaded once, ~3.5 MB, no key needed).
+    A failed download is retried at most hourly."""
     path = config.DATA_DIR / "ebird_codes.json"
-    if not path.exists():
-        taxa = _get(client, "https://api.ebird.org/v2/ref/taxonomy/ebird", fmt="json", cat="species")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({t["comName"].lower(): t["speciesCode"] for t in taxa}))
-    return json.loads(path.read_text()).get(common.lower())
+    codes = read_json(path)
+    if not isinstance(codes, dict):
+        last = _failed_at.get("ebird_codes")
+        if last is not None and time.monotonic() - last < RETRY_AFTER:
+            return None
+        try:
+            taxa = _get(client, "https://api.ebird.org/v2/ref/taxonomy/ebird", fmt="json", cat="species")
+            codes = {t["comName"].lower(): t["speciesCode"] for t in taxa}
+            write_json_atomic(path, codes)
+        except Exception:
+            _failed_at["ebird_codes"] = time.monotonic()
+            raise
+    return codes.get(common.lower())
 
 
 QUALITY = {"A": 0, "B": 1, "C": 2, "D": 3, "E": 4}
@@ -389,14 +422,40 @@ def get(conn: sqlite3.Connection, name: str, fetch: bool = True) -> dict | None:
         _add_sounds(conn, name, cached[0], cached[1])
     if fresh or not fetch:
         return cached[0] if cached else None
+    last = _failed_at.get(name)
+    if last is not None and time.monotonic() - last < RETRY_AFTER:
+        return cached[0] if cached else None  # it just failed; don't hammer the sources
+    with _lock:
+        if name in _building:  # someone else is building this card right now
+            return cached[0] if cached else None
+        _building.add(name)
+    try:
+        return _rebuild(conn, name, cached)
+    finally:
+        with _lock:
+            _building.discard(name)
+
+
+def _rebuild(conn: sqlite3.Connection, name: str, cached: tuple[dict, str] | None) -> dict | None:
+    old = cached[0] if cached else None
     try:
         data = build(name)
     except Exception:
         log.exception("species card failed for %s", name)
-        return cached[0] if cached else None
+        _failed_at[name] = time.monotonic()
+        return old
     if not data.get("inat_id") and not data.get("description"):
-        return cached[0] if cached else None  # nothing found; try again next time instead of caching a blank card
-    db.save_species_info(conn, name, data, datetime.now().replace(microsecond=0).isoformat())
+        _failed_at[name] = time.monotonic()
+        return old  # nothing found; try again later instead of caching a blank card
+    stamp = datetime.now().replace(microsecond=0).isoformat()
+    if old:
+        # A rebuild while a source is down must not wipe what the old card had: new data wins, gaps keep the old.
+        gaps = [k for k in MERGED_FIELDS if old.get(k) and not data.get(k)]
+        data = {**old, **{k: v for k, v in data.items() if v not in (None, "", [], {})}}
+        if gaps:
+            stamp = cached[1]  # keep the old date so it is rebuilt again (after the backoff) to fill the gaps
+            _failed_at[name] = time.monotonic()
+    db.save_species_info(conn, name, data, stamp)
     forget_cached_cards()
     return data
 
@@ -449,14 +508,9 @@ def prefetch(name: str) -> None:
     with _lock:
         if not has_card(name) or name in _building:
             return
-        _building.add(name)
 
-    def run():
-        try:
-            with db.session() as conn:
-                get(conn, name)
-        finally:
-            with _lock:
-                _building.discard(name)
+    def run():  # get() takes the _building guard itself
+        with db.session() as conn:
+            get(conn, name)
 
     threading.Thread(target=run, daemon=True).start()

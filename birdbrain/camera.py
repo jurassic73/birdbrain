@@ -171,8 +171,11 @@ def status() -> dict:
         s = _call("json-daynight-sensors.cgi")
         out["mode"] = s.get("mode")
         out["light"] = s.get("daynight_brightness")
-        if s.get("time_now"):
-            out["clock_off"] = int(s["time_now"] - time.time())
+        try:
+            if s.get("time_now"):
+                out["clock_off"] = int(float(s["time_now"]) - time.time())
+        except (TypeError, ValueError, OverflowError):
+            pass  # a clock we can't read is unknown, not an error
     except CameraError:
         pass
     try:
