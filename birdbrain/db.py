@@ -1,7 +1,8 @@
 import json
 import re
 import sqlite3
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -169,6 +170,26 @@ ALSO_VISITOR = "json_extract(value, '$.visitor')"
 ALSO_LABEL = f"COALESCE(json_extract(value, '$.species'), {_cap(ALSO_VISITOR)})"
 CORRECTED = ("(corrected_visitor IS NOT NULL OR corrected_species IS NOT NULL OR feedback IS NOT NULL"
              " OR corrected_also IS NOT NULL)")
+# A row of _seen that counts as a species: not "other" (an animal nobody could name) and not unlabelled. Every
+# species count (today, the day's activity, all-time totals, the weather page) uses this one filter, so they agree.
+SPECIES_ONLY = "(seen_visitor != 'other' AND label IS NOT NULL)"
+# Partial indexes for the hot filters. Each starts with captured_at (a day's range and newest-first order come from
+# the index) and carries the columns its filter and the label need, so counts and _seen never read the wide visit
+# rows (raw_json). SQLite uses a partial index only when the query's WHERE holds the index's WHERE word for word,
+# so these are built from the same fragments the queries use; test_db_speed checks the plans. Created in init_db,
+# after the columns they name exist.
+INDEXES = (
+    f"CREATE INDEX IF NOT EXISTS visits_real ON visits(captured_at, visitor, corrected_visitor, corrected_species, "
+    f"species, confidence, is_night, thumb_path, also, corrected_also) WHERE {REAL}",
+    "CREATE INDEX IF NOT EXISTS visits_review ON visits(captured_at, visitor, corrected_visitor, corrected_species) "
+    "WHERE needs_review = 1",
+    f"CREATE INDEX IF NOT EXISTS visits_false_photo ON visits(captured_at, visitor, corrected_visitor, "
+    f"corrected_species, confirmed_at) WHERE {FALSE_TRIGGER} AND {HAS_PHOTO}",
+)
+# Every column the indexes name; a visits table without them all (a test's stub) gets no indexes.
+INDEX_COLUMNS = {"captured_at", "visitor", "corrected_visitor", "corrected_species", "species", "confidence", "is_night",
+                 "thumb_path", "also", "corrected_also", "needs_review", "confirmed_at", "photo_deleted_at"}
+MAX_ID = "visits.max_id"  # settings: the highest visit id ever handed out (insert_visit), so no id is used twice
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -234,6 +255,13 @@ def init_db(conn: sqlite3.Connection) -> None:
         for col in cols:
             if col not in have:
                 _add_column(conn, table, col, "REAL")
+    if INDEX_COLUMNS <= _columns(conn, "visits"):
+        for sql in INDEXES:
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError as e:  # the other process built it between IF NOT EXISTS' look and now
+                if "already exists" not in str(e):
+                    raise
     # A species cover (yellow star) is always kept; covers picked before that rule get their keep mark here.
     picks = list(species_photos(conn).values())
     if picks:
@@ -348,28 +376,30 @@ def weather_report(conn: sqlite3.Connection, now: datetime | None = None) -> dic
     a, b = start.date().isoformat(), now.date().isoformat()
     wdays = {r["day"]: r for r in weather_days(conn, a, b)}
     whours = {r["hour"]: r for r in weather_hours(conn, a, b)}
+    days_where, days_args = _days(a, b)
     seen = [datetime.fromisoformat(t) for (t,) in conn.execute(
-        f"SELECT captured_at FROM visits WHERE {REAL} AND date(captured_at) BETWEEN ? AND ? ORDER BY captured_at", (a, b))]
+        f"SELECT captured_at FROM visits WHERE {REAL} AND {days_where} ORDER BY captured_at", days_args)]
     false = {r[0]: r[1] for r in conn.execute(
-        f"SELECT date(captured_at), COUNT(*) FROM visits WHERE {FALSE_TRIGGER} AND date(captured_at) BETWEEN ? AND ?"
-        " GROUP BY 1", (a, b))}
+        f"SELECT date(captured_at), COUNT(*) FROM visits WHERE {FALSE_TRIGGER} AND {days_where} GROUP BY 1", days_args)}
     for d, n in conn.execute("SELECT day, SUM(n) FROM counters WHERE name = 'probe_empty' AND day BETWEEN ? AND ?"
                              " GROUP BY day", (a, b)):
         false[d] = false.get(d, 0) + n
     species: dict[str, list[tuple[str, int]]] = {}
     for r in conn.execute(
             f"""SELECT date(captured_at) AS d, label, COUNT(DISTINCT id) AS n
-                FROM ({_seen(f"{REAL} AND date(captured_at) BETWEEN :a AND :b")})
-                WHERE seen_visitor != 'other' AND label IS NOT NULL
-                GROUP BY d, label ORDER BY d, n DESC, label""", {"a": a, "b": b}):
+                FROM ({_seen(f"{REAL} AND {days_where}")}) WHERE {SPECIES_ONLY}
+                GROUP BY d, label ORDER BY d, n DESC, label""", days_args * 2):
         species.setdefault(r["d"], []).append((r["label"], r["n"]))
+    seen_by_day: dict[date, list[datetime]] = {}
+    for t in seen:
+        seen_by_day.setdefault(t.date(), []).append(t)
 
     days = []
     d = start.date()
     while d <= now.date():
         key = d.isoformat()
         w = wdays.get(key)
-        mine = [t for t in seen if t.date() == d]
+        mine = seen_by_day.get(d, [])
         row = {"day": key, "date": d, "today": d == now.date(), "first": d == start.date(),
                "since": start if d == start.date() else None, "weather": dict(w) if w else None,
                "visitors": len(mine), "species": len(species.get(key, [])), "top": species.get(key, []),
@@ -443,11 +473,10 @@ def weather_report(conn: sqlite3.Connection, now: datetime | None = None) -> dic
 def seen_labels(conn: sqlite3.Connection, start: str, end: str) -> list[sqlite3.Row]:
     """Every animal seen in a real visit from day `start` through `end` ('YYYY-MM-DD', inclusive): (id, captured_at,
     label), one row per kind per photo, other animals in the photo included, "other" left out; oldest first."""
+    where, args = _days(start, end)
     return conn.execute(
-        f"""SELECT DISTINCT id, captured_at, label
-            FROM ({_seen(f"{REAL} AND date(captured_at) BETWEEN :a AND :b")})
-            WHERE seen_visitor != 'other' AND label IS NOT NULL ORDER BY captured_at, label""",
-        {"a": start, "b": end}).fetchall()
+        f"""SELECT DISTINCT id, captured_at, label FROM ({_seen(f"{REAL} AND {where}")})
+            WHERE {SPECIES_ONLY} ORDER BY captured_at, label""", args * 2).fetchall()
 
 
 def weather_findings(report: dict) -> list[str]:
@@ -617,10 +646,20 @@ def end_stay(conn: sqlite3.Connection, visit_id: int, ended_at: str, reason: str
 
 
 def insert_visit(conn: sqlite3.Connection, **fields) -> int:
-    cols = ", ".join(fields)
-    marks = ", ".join("?" for _ in fields)
-    cur = conn.execute(f"INSERT INTO visits ({cols}) VALUES ({marks})", tuple(fields.values()))
-    conn.commit()
+    """Store a visit and return its id, always above every id ever used. SQLite alone would hand a deleted newest
+    visit's id to the next one (the table isn't AUTOINCREMENT), and open pages compare ids to notice a new arrival;
+    so the highest id given out is kept in settings (MAX_ID) and read, with the write lock held, before each insert."""
+    with writing(conn):
+        if "id" not in fields:
+            top, mark = conn.execute(
+                "SELECT COALESCE((SELECT MAX(id) FROM visits), 0), "
+                "COALESCE((SELECT CAST(value AS INTEGER) FROM settings WHERE key = ?), 0)", (MAX_ID,)).fetchone()
+            fields = {"id": max(top, mark) + 1, **fields}
+        cols = ", ".join(fields)
+        marks = ", ".join("?" for _ in fields)
+        cur = conn.execute(f"INSERT INTO visits ({cols}) VALUES ({marks})", tuple(fields.values()))
+        conn.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+                     " WHERE CAST(value AS INTEGER) < CAST(excluded.value AS INTEGER)", (MAX_ID, str(cur.lastrowid)))
     return cur.lastrowid
 
 
@@ -659,13 +698,37 @@ def _where(
         where.append("is_night = 0")
     elif tod == "night":
         where.append("is_night = 1")
+    if date_from or date_to:
+        days_where, days_args = _days(date_from, date_to)
+        where.append(days_where)
+        args.extend(days_args)
+    return " AND ".join(where), args
+
+
+def _day_after(day: str) -> str | None:
+    """The 'YYYY-MM-DD' after `day`, or None when `day` isn't a date in that form (a hand-edited URL)."""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        return None
+    try:
+        return (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    except ValueError:
+        return None
+
+
+def _days(date_from: str | None = None, date_to: str | None = None) -> tuple[str, list]:
+    """WHERE terms (and their arguments) for the visits of the days `date_from` through `date_to` ('YYYY-MM-DD',
+    inclusive; None leaves that end open) as range compares on captured_at itself, which its indexes serve:
+    'YYYY-MM-DDTHH:MM:SS' text sorts by time, and 'YYYY-MM-DD' sorts just before that day's first second. A bound
+    that isn't a date gets the old date(captured_at) compare, so it filters as it always did (slowly)."""
+    terms, args = [], []
     if date_from:
-        where.append("date(captured_at) >= ?")
+        terms.append("captured_at >= ?" if _day_after(date_from) else "date(captured_at) >= ?")
         args.append(date_from)
     if date_to:
-        where.append("date(captured_at) <= ?")
-        args.append(date_to)
-    return " AND ".join(where), args
+        stop = _day_after(date_to)
+        terms.append("captured_at < ?" if stop else "date(captured_at) <= ?")
+        args.append(stop or date_to)
+    return " AND ".join(terms) or "1", args
 
 
 def _seen(where: str) -> str:
@@ -810,10 +873,11 @@ def newest_id(conn: sqlite3.Connection) -> int:
 
 def today_summary(conn: sqlite3.Connection) -> dict:
     today = clock.today().isoformat()
-    today_where = f"{REAL} AND date(captured_at) = ?"
+    day_where, day_args = _days(today, today)
     real_today = conn.execute(
-        f"SELECT COUNT(DISTINCT id) AS n, COUNT(DISTINCT label) AS species FROM ({_seen(today_where)})",
-        (today, today),
+        f"""SELECT COUNT(DISTINCT id) AS n, COUNT(DISTINCT CASE WHEN {SPECIES_ONLY} THEN label END) AS species
+            FROM ({_seen(f"{REAL} AND {day_where}")})""",
+        day_args * 2,
     ).fetchone()
     return {
         "visits": real_today["n"],
@@ -829,13 +893,8 @@ def today_summary(conn: sqlite3.Connection) -> dict:
 
 def scoreboard(conn: sqlite3.Connection, date_from: str | None = None, date_to: str | None = None) -> list:
     """Each animal seen between two dates (inclusive, None is open): label, sightings n, last_at; most seen first."""
-    where, args = REAL, []
-    if date_from:
-        where += " AND date(captured_at) >= ?"
-        args.append(date_from)
-    if date_to:
-        where += " AND date(captured_at) <= ?"
-        args.append(date_to)
+    days_where, args = _days(date_from, date_to)
+    where = f"{REAL} AND {days_where}"
     return conn.execute(
         f"SELECT label, COUNT(DISTINCT id) AS n, MAX(captured_at) AS last_at FROM ({_seen(where)})"
         f" GROUP BY label ORDER BY n DESC, last_at DESC",
@@ -845,14 +904,8 @@ def scoreboard(conn: sqlite3.Connection, date_from: str | None = None, date_to: 
 
 def scoreboard_total(conn: sqlite3.Connection, date_from: str | None = None, date_to: str | None = None) -> int:
     """Real visits (photos with an animal) between two dates, same bounds as `scoreboard`; each photo counts once."""
-    where, args = REAL, []
-    if date_from:
-        where += " AND date(captured_at) >= ?"
-        args.append(date_from)
-    if date_to:
-        where += " AND date(captured_at) <= ?"
-        args.append(date_to)
-    return conn.execute(f"SELECT COUNT(*) FROM visits WHERE {where}", args).fetchone()[0]
+    days_where, args = _days(date_from, date_to)
+    return conn.execute(f"SELECT COUNT(*) FROM visits WHERE {REAL} AND {days_where}", args).fetchone()[0]
 
 
 def plan_correction(visit: sqlite3.Row, visitor: str, species: str) -> tuple[str | None, str | None]:
@@ -1064,7 +1117,7 @@ def delete_visit(conn: sqlite3.Connection, visit_id: int) -> sqlite3.Row | None:
         with writing(conn):
             conn.execute("DELETE FROM visits WHERE id = ?", (visit_id,))
             photos = species_photos(conn)
-            if visit_id in photos.values():  # a later visit could get the same id
+            if visit_id in photos.values():  # a pick of a visit that is gone
                 _save_species_photos(conn, {k: v for k, v in photos.items() if v != visit_id})
     return row
 
@@ -1266,23 +1319,24 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
     would_keep = Claude calls the animal check would have skipped in gate mode (it judged them empty)
     """
     day = day or clock.today().isoformat()
+    day_where, day_args = _days(day, day)
     r = conn.execute(
         f"""SELECT
               SUM({REAL}) AS visitors,
-              (SELECT COUNT(DISTINCT label) FROM ({_seen(f"{REAL} AND date(captured_at) = :day")})) AS species,
+              (SELECT COUNT(DISTINCT label) FROM ({_seen(f"{REAL} AND {day_where}")}) WHERE {SPECIES_ONLY}) AS species,
               SUM({FALSE_TRIGGER}) AS stored_false,
               SUM(model IN ('yolox-tiny', 'bioclip-presence', 'bioclip-2')) AS settled_on_pi,
               SUM(model LIKE 'claude%') AS sent,
               SUM(model LIKE 'claude%'
                   AND json_extract(raw_json, '$.calls.presence.empty') = 1) AS would_keep
-            FROM visits WHERE date(captured_at) = :day""",
-        {"day": day},
+            FROM visits WHERE {day_where}""",
+        day_args * 3,
     ).fetchone()
     probes = conn.execute(
         "SELECT COALESCE(SUM(n), 0) FROM counters WHERE name = 'probe_empty' AND day = ?", (day,)
     ).fetchone()[0]
     spend = 0.0
-    for raw in conn.execute("SELECT raw_json FROM visits WHERE date(captured_at) = ? AND model LIKE 'claude%'", (day,)):
+    for raw in conn.execute(f"SELECT raw_json FROM visits WHERE {day_where} AND model LIKE 'claude%'", day_args):
         calls = (json.loads(raw[0] or "{}") or {}).get("calls") or {}
         for model, price in USD_PER_MTOK.items():
             c = calls.get(model) or {}
@@ -1306,13 +1360,39 @@ def _spend_sql(model: str) -> str:
             f"COALESCE(SUM(json_extract(raw_json, '$.calls.{model}.output_tokens')), 0) * {price['output']}")
 
 
-def totals(conn: sqlite3.Connection) -> dict:
-    """All-time counts for the About page: how far motion events got down the pipeline, and what Claude cost."""
+TOTALS_TTL = 60  # seconds the About page's all-time figures are reused: they read every visit's raw_json
+_totals_cache: dict[tuple[str, str], tuple[float, dict]] = {}  # (what, database file) -> (when, value)
+
+
+def _cached(conn: sqlite3.Connection, what: str, max_age: float, build: Callable[[], dict]) -> dict:
+    """build()'s result, kept for max_age seconds per database file (the watcher and the web app each keep their
+    own; a test's fresh database never sees another's). Nothing invalidates it but time."""
+    key = (what, conn.execute("PRAGMA database_list").fetchone()["file"])
+    hit = _totals_cache.get(key)
+    if hit and time.monotonic() - hit[0] < max_age:
+        return hit[1]
+    value = build()
+    _totals_cache[key] = (time.monotonic(), value)
+    return value
+
+
+def forget_totals() -> None:
+    """Drop the cached totals (tests)."""
+    _totals_cache.clear()
+
+
+def totals(conn: sqlite3.Connection, max_age: float = TOTALS_TTL) -> dict:
+    """All-time counts for the About page: how far motion events got down the pipeline, and what Claude cost.
+    Cached for a minute (TOTALS_TTL): the token sums parse every row's raw_json."""
+    return _cached(conn, "totals", max_age, lambda: _totals(conn, max_age))
+
+
+def _totals(conn: sqlite3.Connection, max_age: float) -> dict:
     r = conn.execute(
         f"""SELECT
               MIN(captured_at) AS since,
               SUM({REAL}) AS visitors,
-              (SELECT COUNT(DISTINCT label) FROM ({_seen(REAL)}) WHERE seen_visitor != 'other') AS species,
+              (SELECT COUNT(DISTINCT label) FROM ({_seen(REAL)}) WHERE {SPECIES_ONLY}) AS species,
               SUM({FALSE_TRIGGER}) AS stored_false,
               SUM(model IN ('yolox-tiny', 'bioclip-presence', 'bioclip-2')) AS settled_on_pi,
               SUM(model LIKE 'claude%') AS sent,
@@ -1323,7 +1403,7 @@ def totals(conn: sqlite3.Connection) -> dict:
             FROM visits"""
     ).fetchone()
     probes = conn.execute("SELECT COALESCE(SUM(n), 0) FROM counters WHERE name = 'probe_empty'").fetchone()[0]
-    checks = owner_checks_spend(conn)
+    checks = owner_checks_spend(conn, max_age)
     n = lambda k: r[k] or 0
     return {
         "since": r["since"],
@@ -1343,15 +1423,18 @@ def totals(conn: sqlite3.Connection) -> dict:
     }
 
 
-def owner_checks_spend(conn: sqlite3.Connection) -> dict:
-    """The Claude calls the owner asked for on a circle (birdbrain.circle_check): how many and what they cost."""
-    r = conn.execute(
-        """SELECT COUNT(*) AS n, COALESCE(SUM(json_extract(c.value, '$.usd')), 0) AS usd
-           FROM visits v,
-                json_each(CASE WHEN json_valid(v.raw_json) THEN v.raw_json END, '$.calls.owner_checks') c
-           WHERE json_extract(c.value, '$.source') IN ('haiku', 'sonnet')"""
-    ).fetchone()
-    return {"n": r["n"] or 0, "usd": r["usd"] or 0.0}
+def owner_checks_spend(conn: sqlite3.Connection, max_age: float = TOTALS_TTL) -> dict:
+    """The Claude calls the owner asked for on a circle (birdbrain.circle_check): how many and what they cost.
+    Cached like totals (it reads every row's raw_json too)."""
+    def build() -> dict:
+        r = conn.execute(
+            """SELECT COUNT(*) AS n, COALESCE(SUM(json_extract(c.value, '$.usd')), 0) AS usd
+               FROM visits v,
+                    json_each(CASE WHEN json_valid(v.raw_json) THEN v.raw_json END, '$.calls.owner_checks') c
+               WHERE json_extract(c.value, '$.source') IN ('haiku', 'sonnet')"""
+        ).fetchone()
+        return {"n": r["n"] or 0, "usd": r["usd"] or 0.0}
+    return _cached(conn, "owner_checks", max_age, build)
 
 
 def capture_rate(conn: sqlite3.Connection, days: int = 7) -> dict:
@@ -1359,12 +1442,14 @@ def capture_rate(conn: sqlite3.Connection, days: int = 7) -> dict:
     hour and the typical wait between real visitors. Days with no rows still count, so a quiet week reads low."""
     today = clock.today()
     since = (today - timedelta(days=days - 1)).isoformat()
+    # Each count on its own, so the all-time ones come from the indexes and the recent ones from a range on them.
     r = conn.execute(
-        f"""SELECT COUNT(*) AS photos, COALESCE(SUM({REAL}), 0) AS visitors,
-                   SUM(date(captured_at) >= ?) AS recent_photos,
-                   COALESCE(SUM({REAL} AND date(captured_at) >= ?), 0) AS recent_visitors,
-                   MIN(date(captured_at)) AS first_day, MAX(captured_at) AS last
-            FROM visits""",
+        f"""SELECT (SELECT COUNT(*) FROM visits) AS photos,
+                   (SELECT COUNT(*) FROM visits WHERE {REAL}) AS visitors,
+                   (SELECT COUNT(*) FROM visits WHERE captured_at >= ?) AS recent_photos,
+                   (SELECT COUNT(*) FROM visits WHERE {REAL} AND captured_at >= ?) AS recent_visitors,
+                   (SELECT substr(MIN(captured_at), 1, 10) FROM visits) AS first_day,
+                   (SELECT MAX(captured_at) FROM visits) AS last""",
         (since, since),
     ).fetchone()
     if not r["photos"]:
@@ -1373,11 +1458,11 @@ def capture_rate(conn: sqlite3.Connection, days: int = 7) -> dict:
     recent_days = min(days, span)
     hour = conn.execute(
         f"SELECT CAST(strftime('%H', captured_at) AS INTEGER) AS h, COUNT(*) AS n FROM visits"
-        f" WHERE {REAL} AND date(captured_at) >= ? GROUP BY h ORDER BY n DESC, h LIMIT 1",
+        f" WHERE {REAL} AND captured_at >= ? GROUP BY h ORDER BY n DESC, h LIMIT 1",
         (since,),
     ).fetchone()
     times = [datetime.fromisoformat(t) for (t,) in conn.execute(
-        f"SELECT captured_at FROM visits WHERE {REAL} AND date(captured_at) >= ? ORDER BY captured_at", (since,))]
+        f"SELECT captured_at FROM visits WHERE {REAL} AND captured_at >= ? ORDER BY captured_at", (since,))]
     gaps = sorted((b - a).total_seconds() / 60 for a, b in zip(times, times[1:]))
     return {
         "photos": r["photos"],
@@ -1403,7 +1488,7 @@ def detector_report(conn: sqlite3.Connection, days: int = 14) -> dict:
         f"""SELECT id, {LABEL} AS label, {VISITOR} AS final_visitor,
                    json_extract(raw_json, '$.calls.detector.animal') AS det_animal
             FROM visits
-            WHERE date(captured_at) >= ? AND is_night = 0 AND model LIKE 'claude%'
+            WHERE captured_at >= ? AND is_night = 0 AND model LIKE 'claude%'
               AND json_extract(raw_json, '$.calls.detector') IS NOT NULL""",
         (since,),
     ).fetchall()
@@ -1496,7 +1581,7 @@ def scenery_report(conn: sqlite3.Connection, days: int = 14) -> dict:
         f"""SELECT id, is_night, {LABEL} AS label, {REAL} AS real,
                    json_extract(raw_json, '$.calls.detector.scenery.empty') AS empty
             FROM visits
-            WHERE date(captured_at) >= ? AND model LIKE 'claude%'
+            WHERE captured_at >= ? AND model LIKE 'claude%'
               AND json_extract(raw_json, '$.calls.detector.scenery') IS NOT NULL""",
         (since,),
     ).fetchall()
@@ -1522,7 +1607,7 @@ def classifier_report(conn: sqlite3.Connection, days: int | None = None) -> dict
     "Common Raccoon", "Possum": "Virginia Opossum"). All time unless `days` is given."""
     where, args = "", ()
     if days:
-        where, args = "AND date(captured_at) >= ?", ((clock.today() - timedelta(days=days - 1)).isoformat(),)
+        where, args = "AND captured_at >= ?", ((clock.today() - timedelta(days=days - 1)).isoformat(),)
     rows = conn.execute(
         f"""SELECT id, is_night, {LABEL} AS label,
                    json_extract(raw_json, '$.calls.classifier') AS guess
@@ -1584,7 +1669,7 @@ def presence_report(conn: sqlite3.Connection, days: int = 14) -> dict:
                    (corrected_visitor IS NOT NULL OR corrected_species IS NOT NULL) AS corrected,
                    json_extract(raw_json, '$.calls.presence.empty') AS empty,
                    json_extract(raw_json, '$.calls.skipped_claude') AS skipped, model
-            FROM visits WHERE json_extract(raw_json, '$.calls.presence.score') IS NOT NULL AND date(captured_at) >= ?
+            FROM visits WHERE json_extract(raw_json, '$.calls.presence.score') IS NOT NULL AND captured_at >= ?
             ORDER BY id DESC""",
         (since,),
     ).fetchall()
