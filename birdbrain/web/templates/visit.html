@@ -87,6 +87,11 @@
         {% endif %}
         {% if request.state.admin %}{% set ms = mirror_status(visit.image_path, visit.public_ok) %}{% if ms == "person" %}<span class="confirm-pair">{{ badge("private", "private") }}<button class="link-btn" id="public-anyway" hx-post="/visit/{{ visit.id }}/public" hx-confirm="Only press this if the photo and every burst frame show no person. The next push to the public mirror then includes this visit." data-confirm-title="No person in this visit?" data-confirm-ok="Public anyway" data-tip="The Pi's person check flagged this visit, so the public mirror leaves it out. If you've looked and there's no person, this lets it go public. Undo puts it back.">Public anyway</button></span>{% elif ms == "unchecked" %}{{ badge("not public yet", "private") }}{% elif ms == "cleared" %}<span class="confirmed-pair">{{ badge("public (checked)", "public-ok") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/private">Undo</button></span>{% endif %}{% endif %}
         {% if request.state.admin %}
+        {% if visit.keep %}
+        <span class="confirmed-pair">{{ badge("keeper", "keeper") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/keep" hx-vals='{"on": 0, "where": "visit"}'>Undo</button></span>
+        {% else %}
+        <button type="button" class="keep-btn" hx-post="/visit/{{ visit.id }}/keep" hx-vals='{"on": 1, "where": "visit"}' data-tip="Keeper: this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3h11a1 1 0 0 1 1 1v17l-6.5-4.4L5.5 21V4a1 1 0 0 1 1-1z"/></svg>Keep this photo</button>
+        {% endif %}
         {% if visit.confirmed_at %}
         <span class="confirmed-pair">{{ badge("Confirmed No Animal" if visit.label == 'None' else "confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button></span>
         {% elif not (visit.corrected_species or visit.corrected_visitor) %}

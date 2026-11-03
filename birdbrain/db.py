@@ -115,7 +115,9 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  "photo_deleted_at": "TEXT",
                  # The owner saw no person in a photo the Pi's person check flagged ("Public anyway"):
                  # JSON {"at", "files": {photo: score}} pinning the scores they cleared (birdbrain.privacy).
-                 "public_ok": "TEXT"}
+                 "public_ok": "TEXT",
+                 # The owner's blue keeper mark: 1 = keep this photo forever, never thinned or deleted to save space.
+                 "keep": "INTEGER"}
 HAS_PHOTO = "photo_deleted_at IS NULL"
 EMBEDDING_ADDED_COLUMNS = {"animal_vec": "BLOB", "animal_frame": "INTEGER", "animal_score": "REAL",
                            "animal_by_owner": "INTEGER"}
@@ -862,6 +864,12 @@ def confirm_visits(conn: sqlite3.Connection, ids: list[int], on: bool = True) ->
     local animal check retrains."""
     conn.executemany("UPDATE visits SET confirmed_at = ? WHERE id = ?",
                      [(datetime.now().isoformat(timespec="seconds") if on else None, i) for i in ids])
+    conn.commit()
+
+
+def set_keep(conn: sqlite3.Connection, visit_id: int, on: bool) -> None:
+    """The blue keeper mark: this photo is never thinned or deleted to save space."""
+    conn.execute("UPDATE visits SET keep = ? WHERE id = ?", (1 if on else None, visit_id))
     conn.commit()
 
 

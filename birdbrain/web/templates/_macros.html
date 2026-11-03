@@ -14,6 +14,16 @@
 {%- endif -%}
 {%- endmacro %}
 
+{# The blue keeper mark (a bookmark) on a card; admin only, so callers check request.state.admin. htmx swaps it for
+   the server's updated copy. Lives inside the card's link, so the click must not follow the link. #}
+{% macro keeper_btn(v) -%}
+{%- set on = v.keep == 1 -%}
+<button type="button" class="keep-mark" aria-pressed="{{ 'true' if on else 'false' }}" aria-label="Keep this photo"
+  hx-post="/visit/{{ v.id }}/keep" hx-vals='{"on": {{ 0 if on else 1 }}}' hx-target="this" hx-swap="outerHTML"
+  onclick="event.preventDefault(); event.stopPropagation()"
+  data-tip="Keeper: this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3h11a1 1 0 0 1 1 1v17l-6.5-4.4L5.5 21V4a1 1 0 0 1 1-1z"/></svg></button>
+{%- endmacro %}
+
 {# A status pill. Every pill says what it means in a hover tooltip (static/tips.js); add new pills here. #}
 {% macro badge(text, cls, tag="span") -%}
 {%- set tips = {
@@ -57,6 +67,7 @@
   "shadow": "Shadow: a local model on the Pi made this guess only to be scored. Claude's answer (or yours) is the label.",
   "gate": "Gate: the Pi's answer counts. A frame it judges empty skips Claude and waits on False triggers for your check.",
   "off": "Off: this local step doesn't run.",
+  "keeper": "Keeper: you marked this photo to keep. It is never thinned or deleted to save space. Undo takes the mark off.",
   "too old": "Too old: newer lessons fill the prompt, so this one isn't sent any more. Switching newer ones off brings it back.",
 } -%}
 <{{ tag }} class="badge {{ cls }}"{% if tips[text] %} data-tip="{{ tips[text] }}"{% endif %}>{{ text }}</{{ tag }}>

@@ -8,6 +8,7 @@
   --accent-text: #ffffff;
   --high: #2f7a4f;
   --medium: #b07a17;
+  --keeper: #2563c9;
   --low: #b3412f;
   --night: #4b5a8a;
   --radius: 10px;
@@ -55,6 +56,7 @@
     --accent-text: #0f1411;
     --high: #6fb48b;
     --medium: #d9a441;
+  --keeper: #6aa8ff;
     --low: #e2735f;
     --night: #8f9fd6;
     color-scheme: dark;
@@ -70,6 +72,7 @@
   --accent-text: #0f1411;
   --high: #6fb48b;
   --medium: #d9a441;
+  --keeper: #6aa8ff;
   --low: #e2735f;
   --night: #8f9fd6;
   color-scheme: dark;
@@ -505,6 +508,24 @@ button.fav-star[aria-pressed="true"] svg { fill: currentColor; }
   .card-fav button.fav-star[aria-pressed="false"] { opacity: 0; transition: opacity .15s; }
   .card-fav:hover button.fav-star, .card-fav button.fav-star:focus-visible { opacity: 1; }
 }
+/* The blue keeper mark (a bookmark, so it differs from the yellow star by shape too): top-left of every photo
+   card for the admin. It sits inside the card's link; drawn over the photo, so its colors are fixed. */
+.card { position: relative; }
+button.keep-mark { position: absolute; top: 4px; left: 4px; width: 40px; height: 40px; padding: 0; margin: 0;
+  display: grid; place-items: center; border-radius: 50%; border: 0; background: rgba(0,0,0,.4); color: #fff; z-index: 1; }
+button.keep-mark svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; }
+button.keep-mark:hover { background: rgba(0,0,0,.6); }
+button.keep-mark:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+button.keep-mark[aria-pressed="true"] { color: #4da3ff; background: rgba(0,0,0,.55); }
+button.keep-mark[aria-pressed="true"] svg { fill: currentColor; }
+@media (hover: hover) and (pointer: fine) {
+  .card button.keep-mark[aria-pressed="false"] { opacity: 0; transition: opacity .15s; }
+  .card:hover button.keep-mark, .card button.keep-mark:focus-visible { opacity: 1; }
+}
+/* On the visit page: the button, and the pill once it's on. */
+button.keep-btn { display: inline-flex; align-items: center; gap: 6px; }
+button.keep-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.badge.keeper { color: var(--keeper); white-space: nowrap; }
 /* A visitor that arrived while the page was open: glows for a few seconds after it slides in. */
 .card.card-new { animation: card-new 6s ease-out; }
 @keyframes card-new { from { box-shadow: 0 0 0 3px var(--accent); } 70% { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
