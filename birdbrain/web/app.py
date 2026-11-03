@@ -50,16 +50,21 @@ async def read_only(request: Request, call_next):
         # with nothing at all): every change is a POST, and the browser tells us where a POST came from.
         return Response("Cross-site requests aren't accepted.", status_code=403)
     try:
-        gated = viewer.enabled() and not viewer.is_open(request.url.path) and not viewer.signed_in(request)
+        gate_on = viewer.enabled()
+        gated = gate_on and not viewer.is_open(request.url.path) and not viewer.signed_in(request)
     except viewer.Unreadable as e:
         # The gate's file is there but can't be read: shut, not open, until someone fixes the permissions.
         log.error("friends & family gate can't be read, refusing everyone: %s", e)
         return Response("Birdbrain is closed for a moment: its sign-in settings can't be read.", status_code=503)
     if gated:
-        # Friends & family gate: nothing past this point for anyone without the guest cookie.
+        # Friends & family gate: nothing past this point for anyone without the guest cookie. The redirect is
+        # never cached: a CDN in front (Cloudflare caches .jpg URLs by default, whatever cookie the request had)
+        # would otherwise keep one cookieless fetch of a photo URL and hand the redirect to every signed-in guest
+        # as that photo, for minutes, which looks like broken images.
         if request.method in ("GET", "HEAD"):
-            return RedirectResponse("/guest-login?" + urlencode({"next": request.url.path}), status_code=303)
-        return Response("Sign in first.", status_code=401)
+            return RedirectResponse("/guest-login?" + urlencode({"next": request.url.path}), status_code=303,
+                                    headers={"Cache-Control": "no-store"})
+        return Response("Sign in first.", status_code=401, headers={"Cache-Control": "no-store"})
     admin = request.state.admin = auth.is_admin(request)
     if clock.stale():
         with db.session() as conn:
@@ -75,7 +80,13 @@ async def read_only(request: Request, call_next):
             return Response("Read-only: log in as admin to change things.", status_code=403)
         if auth.admin_only(path):
             return RedirectResponse("/login?" + urlencode({"next": path}), status_code=303)
-    return await call_next(request)
+    response = await call_next(request)
+    if gate_on and not viewer.is_open(path):
+        # Behind the gate, photos and pages are for signed-in guests only: a shared cache in front must not keep
+        # them (or serve a guest's photo to someone without the cookie). The browser's own cache still may.
+        # Static files stay open and versioned, so they keep whatever caching they had.
+        response.headers.setdefault("Cache-Control", "private")
+    return response
 
 
 # Serving under a path such as somegeek.com/birdbrain/: the proxy strips the prefix on the way in, and this
