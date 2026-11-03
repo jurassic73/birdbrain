@@ -4,6 +4,7 @@ from datetime import datetime, time
 
 import pytest
 
+from conftest import FROZEN_NOW
 from birdbrain import alert, db
 
 
@@ -133,7 +134,7 @@ def test_save_and_get_settings(conn):
 
 def _card(conn, name, expected):
     db.save_species_info(conn, name, {"name": name, "local_counts": [10] * 12, "expected_months": expected},
-                         datetime.now().isoformat())
+                         FROZEN_NOW.isoformat())
 
 
 def test_reason_out_of_season(conn, add_visit):

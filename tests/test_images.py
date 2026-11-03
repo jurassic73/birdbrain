@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
+from conftest import image_size
 from birdbrain import images
 
 
@@ -21,12 +22,12 @@ def test_store_frame_writes_dated_image_and_small_thumbnail(tmp_path):
     image_rel, thumb_rel = images.store_frame(data, datetime(2026, 10, 25, 9, 26, 25), tmp_path)
     assert image_rel.startswith("2026/10/25/092625_") and image_rel.endswith(".jpg")
     assert thumb_rel.endswith("_t.jpg")
-    assert Image.open(tmp_path / image_rel).size == (1920, 1080)  # re-encoded, full resolution kept
+    assert image_size(tmp_path / image_rel) == (1920, 1080)  # re-encoded, full resolution kept
     assert images.frame_bytes(image_rel, thumb_rel, tmp_path) > 0
     assert images.frame_bytes("missing.jpg", "missing_t.jpg", tmp_path) == 0
-    thumb = Image.open(tmp_path / thumb_rel)
-    assert max(thumb.size) == images.THUMB_PX
-    assert abs(thumb.size[0] / thumb.size[1] - 1920 / 1080) < 0.01
+    w, h = image_size(tmp_path / thumb_rel)
+    assert max(w, h) == images.THUMB_PX
+    assert abs(w / h - 1920 / 1080) < 0.01
 
 
 def test_thumbnail_is_big_and_sharp_enough_for_a_retina_grid_tile(tmp_path):
@@ -36,9 +37,9 @@ def test_thumbnail_is_big_and_sharp_enough_for_a_retina_grid_tile(tmp_path):
     buf = io.BytesIO()
     Image.fromarray(frame).save(buf, "JPEG", quality=95)
     _, thumb_rel = images.store_frame(buf.getvalue(), datetime(2026, 11, 2, 10, 0), tmp_path)
-    thumb = Image.open(tmp_path / thumb_rel)
-    assert thumb.size == (800, 450)  # a 233x175 px tile is ~470x350 device px at 2x; cover from 16:9 needs ~620x350
-    assert np.asarray(thumb.convert("L")).astype(float)[225].std() > 70
+    with Image.open(tmp_path / thumb_rel) as thumb:
+        assert thumb.size == (800, 450)  # a 233x175 px tile is ~470x350 device px at 2x; cover from 16:9 needs ~620x350
+        assert np.asarray(thumb.convert("L")).astype(float)[225].std() > 70
 
 
 def old_thumb(tmp_path, stamped=False, size=(1920, 1080)):
@@ -61,7 +62,7 @@ def test_rebuild_thumb_remakes_an_old_thumbnail_and_leaves_the_photo_and_burst_a
     photo, frame = (tmp_path / image_rel).read_bytes(), (tmp_path / burst[0]).read_bytes()
     status, before, after = images.rebuild_thumb(image_rel, thumb_rel, when, tmp_path)
     assert status == "rebuilt" and after > before > 0
-    assert Image.open(tmp_path / thumb_rel).size == (800, 450)
+    assert image_size(tmp_path / thumb_rel) == (800, 450)
     assert (tmp_path / thumb_rel).stat().st_size == after
     assert (tmp_path / image_rel).read_bytes() == photo and (tmp_path / burst[0]).read_bytes() == frame
     assert sorted(p.name for p in (tmp_path / image_rel).parent.iterdir()) == sorted(
@@ -75,7 +76,7 @@ def test_rebuild_thumb_remakes_an_old_thumbnail_and_leaves_the_photo_and_burst_a
 def test_rebuild_thumb_of_a_small_false_trigger_photo_is_photo_sized(tmp_path):
     image_rel, thumb_rel, when = old_thumb(tmp_path, size=(640, 360))
     assert images.rebuild_thumb(image_rel, thumb_rel, when, tmp_path)[0] == "rebuilt"
-    assert Image.open(tmp_path / thumb_rel).size == (640, 360)  # never enlarged
+    assert image_size(tmp_path / thumb_rel) == (640, 360)  # never enlarged
     assert images.rebuild_thumb(image_rel, thumb_rel, when, tmp_path)[0] == "current"
 
 
@@ -133,7 +134,7 @@ def test_rebuild_thumbs_in_parallel_matches_serial_and_counts_a_failing_row(tmp_
     assert parallel["bytes_before"] == serial["bytes_before"]
     assert any(l.startswith("failed: a/bad_t.jpg: ") for l in lines) and lines[-1].startswith("4/4 done, 1 failed")
     for r in rows[:2]:
-        assert max(Image.open(tmp_path / r[1]).size) == images.THUMB_PX
+        assert max(image_size(tmp_path / r[1])) == images.THUMB_PX
 
 
 def test_rebuild_thumbs_command_reads_the_visits_table(tmp_path, monkeypatch, add_visit, capsys):
@@ -165,7 +166,7 @@ def test_burst_is_saved_in_order_counted_and_deleted_with_its_visit(tmp_path):
     alone = images.frame_bytes(image_rel, thumb_rel, tmp_path)
     saved = images.store_burst([jpeg()] * 11, image_rel, tmp_path, max_edge=960)
     assert images.burst_paths(image_rel, tmp_path) == saved  # _b10 and _b11 sort after _b9
-    assert saved[-1].endswith("_b11.jpg") and Image.open(tmp_path / saved[0]).size == (960, 540)
+    assert saved[-1].endswith("_b11.jpg") and image_size(tmp_path / saved[0]) == (960, 540)
     assert images.frame_bytes(image_rel, thumb_rel, tmp_path) > alone
     images.delete_frame(image_rel, thumb_rel, tmp_path)
     assert images.burst_paths(image_rel, tmp_path) == []

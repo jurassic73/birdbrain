@@ -4,9 +4,10 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
+from conftest import FROZEN_NOW
 from birdbrain import config, db
 
-TODAY = date.today()
+TODAY = FROZEN_NOW.date()
 
 
 def at(days_ago: int = 0, hour: int = 9) -> str:

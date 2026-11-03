@@ -5,6 +5,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from conftest import FROZEN_NOW
 from birdbrain import db, species_info
 from birdbrain.web import app as webapp
 
@@ -63,14 +64,14 @@ def test_get_builds_once_then_uses_cache(conn, fake_build):
 
 
 def test_get_refreshes_stale_card(conn, fake_build):
-    old = (datetime.now() - timedelta(days=45)).isoformat()
+    old = (FROZEN_NOW - timedelta(days=45)).isoformat()
     db.save_species_info(conn, "Bushtit", {**CARD, "status": "old"}, old)
     assert species_info.get(conn, "Bushtit")["status"] == "Year-round resident"
     assert fake_build == ["Bushtit"]
 
 
 def test_failed_refresh_keeps_old_card(conn, monkeypatch):
-    old = (datetime.now() - timedelta(days=45)).isoformat()
+    old = (FROZEN_NOW - timedelta(days=45)).isoformat()
     db.save_species_info(conn, "Bushtit", CARD, old)
     monkeypatch.setattr(species_info, "build", lambda name: (_ for _ in ()).throw(RuntimeError("offline")))
     assert species_info.get(conn, "Bushtit")["common"] == "Bushtit"
@@ -199,7 +200,7 @@ def test_pick_sounds_without_home_uses_quality():
 
 
 def test_cached_bird_card_gains_sounds_once_key_is_set(conn, monkeypatch):
-    db.save_species_info(conn, "Bushtit", CARD, datetime.now().isoformat())
+    db.save_species_info(conn, "Bushtit", CARD, FROZEN_NOW.isoformat())
     monkeypatch.setattr(species_info.config, "XC_API_KEY", "test-key")
     calls = []
 
@@ -214,7 +215,7 @@ def test_cached_bird_card_gains_sounds_once_key_is_set(conn, monkeypatch):
 
 
 def test_no_sounds_without_key(conn, monkeypatch):
-    db.save_species_info(conn, "Bushtit", CARD, datetime.now().isoformat())
+    db.save_species_info(conn, "Bushtit", CARD, FROZEN_NOW.isoformat())
     monkeypatch.setattr(species_info.config, "XC_API_KEY", "")
     monkeypatch.setattr(species_info, "fetch_sounds", lambda *a: pytest.fail("should not call xeno-canto"))
     assert "sounds" not in species_info.get(conn, "Bushtit")
@@ -292,7 +293,7 @@ def test_season_badge(info, month, badge):
 
 def test_cards_show_season_badge_from_cached_card(client, add_visit, conn):
     db.save_species_info(conn, "Rufous Hummingbird", {**CARD, **SUMMER, "name": "Rufous Hummingbird"},
-                         datetime.now().isoformat())
+                         FROZEN_NOW.isoformat())
     add_visit(species="Rufous Hummingbird", captured_at="2026-03-28T09:00:00")
     add_visit(species="Bushtit", captured_at="2026-03-28T10:00:00")  # no cached card: no badge
     home = client.get("/").text
@@ -303,7 +304,7 @@ def test_cards_show_season_badge_from_cached_card(client, add_visit, conn):
 
 
 def test_false_trigger_cards_get_no_season_badge(client, add_visit, conn):
-    db.save_species_info(conn, "Rufous Hummingbird", {**CARD, **SUMMER}, datetime.now().isoformat())
+    db.save_species_info(conn, "Rufous Hummingbird", {**CARD, **SUMMER}, FROZEN_NOW.isoformat())
     add_visit(visitor="none", species=None, corrected_species=None, captured_at="2026-03-28T09:00:00")
     assert 'badge out-of-season' not in client.get("/false-triggers").text
 

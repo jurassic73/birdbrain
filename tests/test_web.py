@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from conftest import FROZEN_NOW
 from birdbrain import alert, config, db, images, zones
 from birdbrain.web import app as webapp
 
@@ -25,7 +26,7 @@ def stored_visit(add_visit):
     def add(**fields) -> int:
         buf = io.BytesIO()
         Image.new("RGB", (640, 360), (90, 120, 200)).save(buf, "JPEG")
-        image_rel, thumb_rel = images.store_frame(buf.getvalue(), datetime.now())
+        image_rel, thumb_rel = images.store_frame(buf.getvalue(), FROZEN_NOW)
         return add_visit(image_path=image_rel, thumb_path=thumb_rel, **fields)
     return add
 
@@ -92,7 +93,7 @@ def test_home_lists_todays_visitors_with_counts(client, add_visit):
 
 
 def test_scoreboard_periods(client, add_visit):
-    add_visit(species="Bushtit", captured_at=(datetime.now() - timedelta(days=3)).replace(microsecond=0).isoformat())
+    add_visit(species="Bushtit", captured_at=(FROZEN_NOW - timedelta(days=3)).replace(microsecond=0).isoformat())
     assert "None yet today." in client.get("/scoreboard?range=today").text
     assert "None yesterday." in client.get("/scoreboard?range=yesterday").text
     week = client.get("/scoreboard?range=week").text
@@ -131,7 +132,7 @@ def test_load_more_pages_in_24s(client, add_visit):
 
 
 def test_home_splits_cards_into_today_and_earlier(client, add_visit):
-    old = (datetime.now() - timedelta(days=2)).replace(microsecond=0).isoformat()
+    old = (FROZEN_NOW - timedelta(days=2)).replace(microsecond=0).isoformat()
     for _ in range(20):
         add_visit(captured_at=old)
     for _ in range(26):
@@ -146,7 +147,7 @@ def test_home_splits_cards_into_today_and_earlier(client, add_visit):
 
 
 def test_home_says_no_visitors_yet_today(client, add_visit):
-    add_visit(captured_at=(datetime.now() - timedelta(days=1)).replace(microsecond=0).isoformat())
+    add_visit(captured_at=(FROZEN_NOW - timedelta(days=1)).replace(microsecond=0).isoformat())
     page = client.get("/").text
     assert "No visitors yet today." in page and page.index("grid-break grid-today") < page.index("grid-break grid-earlier")
 
