@@ -1870,3 +1870,37 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 .storage-preview ul { margin: 4px 0 8px 18px; padding: 0; }
 .settings-body h3 { margin: 18px 0 4px; font-size: 1rem; }
 .notice.error { border-color: var(--low); max-width: 860px; }
+
+/* The four components (templates/_steps.html): strips with a More, numbered cards on About, a photo's real state. */
+.badge.step-muted { color: var(--muted); white-space: nowrap; }
+.badge.step-accent { color: var(--accent); white-space: nowrap; }
+.badge.step-medium { color: var(--medium); white-space: nowrap; }
+.hs-strips { display: flex; flex-direction: column; gap: 6px; font-size: .9rem; }
+.hs-strip { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; min-width: 0; }
+.hs-head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-bottom: 4px; }
+.hs-who { font-weight: 600; }
+.hs-n { color: var(--muted); font-weight: 400; margin-right: 4px; }
+.hs-strip p { margin: 0; }
+.hs-strip details { margin-top: 4px; }
+.hs-strip summary { cursor: pointer; color: var(--accent); font-size: .85rem; }
+.hs-more { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.hs-lab { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 8px 0 2px; font-weight: 600; }
+.hs-more p, .hs-more ul, .hs-step p, .hs-step ul { margin: 0 0 4px; }
+.hs-more ul, .hs-step ul { padding-left: 18px; }
+.hs-more li, .hs-step li { margin: 2px 0; }
+.hs-bottom { border-left: 3px solid var(--accent); padding: 4px 10px; margin: 10px 0 0; font-size: .92rem; }
+.hs-flow { display: flex; flex-direction: column; align-items: stretch; font-size: .9rem; }
+.hs-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+.hs-num { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-text); font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.hs-step h3 { margin: 2px 0 6px; font-size: 1rem; }
+.hs-q { font-weight: 400; color: var(--muted); }
+.hs-conn { align-self: center; display: flex; flex-direction: column; align-items: center; color: var(--muted); font-size: .75rem; line-height: 1.1; padding: 2px 0; }
+.hs-conn::before { content: ""; width: 2px; height: 10px; background: var(--line); }
+.hs-conn::after { content: "\2193"; font-size: 1rem; }
+.hs-conn span { padding: 2px 0; text-align: center; }
+.ft-steps { margin: 0 0 12px; }
+.photo-trains { margin: 0 0 12px; }
+.photo-trains h2 { font-size: 1.05rem; margin: 0 0 6px; }
+.ft-trains-popup { width: min(94vw, 640px); max-height: 90vh; padding: 18px 20px 16px; overflow-y: auto; }
+.ft-trains-popup .popup-title { padding-right: 32px; }
+.ft-trains-popup .popup-close { position: absolute; top: 10px; right: 10px; }

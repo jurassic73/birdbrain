@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, viewer
+from . import auth, steps, viewer
 from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
@@ -187,6 +187,7 @@ templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, short_tim
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
 templates.env.globals["mirror_status"] = privacy.visit_status
 templates.env.globals["has_card"] = species_info.has_card
+templates.env.globals["steps_bottom"] = steps.bottom_line
 templates.env.globals["season_badge"] = species_info.visit_badge
 templates.env.globals["short_status"] = species_info.short_status
 # Cards show the visit's photo (the burst frame the owner picked, else the one Claude saw) with the circles drawn
@@ -507,13 +508,15 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
     prev_id, next_id = db.get_neighbors(conn, visit_id, false_triggers=is_ft, unchecked=todo, species=scope or None)
     # The arrow targets' photos, prefetched so stepping through visits paints without a blank frame.
     neighbor_images = [db.photo_rel(v) for v in (db.get_visit(conn, i) for i in (prev_id, next_id) if i) if v]
+    decision = decision_steps(visit["raw_json"])
+    teaches = presence.teaches(conn, visit_id) if request.state.admin else None
     return page(
         request,
         "visit.html",
         visit=visit,
         visitors=db.VISITORS,
         species_kinds=db.species_kinds(conn),
-        decision=decision_steps(visit["raw_json"]),
+        decision=decision,
         marks=start_marks(visit),
         prev_id=prev_id,
         next_id=next_id,
@@ -525,10 +528,22 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         burst=burst_frames(visit),
         claude_frame=db.claude_frame(visit["raw_json"]),
         photo_frame=db.photo_frame(visit),
-        teaches=presence.teaches(conn, visit_id) if request.state.admin else None,
+        teaches=teaches,
+        weight=f"{presence.CONFIRMED_WEIGHT:g}",
+        lesson_limit=db.LESSON_LIMIT,
+        trains=photo_trains(conn, visit, decision, teaches) if request.state.admin else None,
         vzones=visit_zones(visit, conn),
         pi_average=db.pi_check_average(conn),
     )
+
+
+def photo_trains(conn, visit, decision: dict, teaches: dict | None) -> list[dict]:
+    """The visit page's "What this photo trains": the four components and what this photo does to each (steps.py)."""
+    lesson = None
+    if any(visit[k] is not None for k in ("corrected_visitor", "corrected_species", "feedback", "corrected_also")):
+        lesson = next((l for l in db.all_lessons(conn) if l["visit_id"] == visit["id"]), None)
+    return steps.for_visit(visit, decision, teaches, lesson, db.settled_species(conn),
+                           visit["corrected_visitor"] or visit["visitor"], config.CLASSIFIER)
 
 
 def burst_frames(visit) -> list[dict]:
@@ -583,7 +598,7 @@ FIRED = {"rim": "the rim and rocks", "water": "the open water", "ground": "the g
 
 
 def visit_zones(visit, conn) -> dict | None:
-    """What the visit photo draws over itself: the crop box the Pi's animal check and Claude looked at, and the
+    """What the visit photo draws over itself: the crop box the Pi animal check and Claude looked at, and the
     zone whose motion fired the capture, each in its Settings color. `source` says whose zones: stored with the
     photo (since 2026-11-01), rebuilt from the calibration history at the time, or today's."""
     try:
@@ -690,7 +705,7 @@ def decision_steps(raw_json: str | None) -> dict:
     pres = calls.get("presence")
     if pres and pres.get("score") is not None:
         steps.append({
-            "model": "Local animal check",
+            "model": "Pi animal check",
             "presence": True,
             "said": "nothing there" if pres.get("empty") else "an animal",
             "score": pres["score"],
@@ -733,7 +748,7 @@ def decision_steps(raw_json: str | None) -> dict:
     guess = calls.get("classifier")
     if guess and guess.get("top") is not None:
         steps.append({
-            "model": "Local classifier",
+            "model": "BioCLIP 2 species check",
             "shadow": True,
             "gated": calls.get("settled_by") == "classifier",
             "crowd": calls.get("gate_crowd"),
@@ -1223,6 +1238,8 @@ def about(request: Request, conn=Depends(get_conn)):
         presence_min=(presence.MIN_VISITORS, presence.MIN_EMPTY),
         haiku=identify.HAIKU,
         sonnet=identify.SONNET,
+        four=steps.components(),
+        weight=f"{presence.CONFIRMED_WEIGHT:g}",
         lessons=len(db.recent_lessons(conn)),
         note_limit=db.NOTE_LIMIT,
         lesson_limit=db.LESSON_LIMIT,
@@ -1525,6 +1542,7 @@ def false_triggers(request: Request, cleared: int | None = None, confirmed: int 
         confirmed=confirmed,
         unchecked=db.count_unchecked_false_triggers(conn),
         ft_cards=True,
+        four=steps.components(),
     )
 
 

@@ -173,7 +173,7 @@ def test_visit_page_shows_the_guess_as_shadow(client, add_visit):
         "haiku": {"answer": {"visitor": "bird", "species": "Bushtit", "confidence": "high"}},
         "classifier": guess("Bushtit", "Dark-eyed Junco")}}))
     html = client.get(f"/visit/{vid}").text
-    assert "Local classifier" in html and "Bushtit (50%), Dark-eyed Junco (50%)" in html
+    assert "BioCLIP 2 species check" in html and "Bushtit (50%), Dark-eyed Junco (50%)" in html
     assert 'class="badge shadow" data-tip="Shadow:' in html
     assert "asked Sonnet" not in html  # the classifier step after Haiku isn't a second look
 

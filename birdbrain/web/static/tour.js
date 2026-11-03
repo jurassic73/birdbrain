@@ -40,7 +40,7 @@
     {part: "admin", sel: [".topbar a[href='/notes']"], title: "Claude's Notes",
      text: "Everything Claude is told about your yard lives here: what the camera sees, what to look for and ignore, and the lessons from your corrections."},
     {part: "admin", sel: [".topbar a[href='/settings']"], title: "Settings",
-     text: "Zones, camera, local checks, storage and alerts. The Run the tour again button is here too."},
+     text: "Zones, camera, the Pi animal check and BioCLIP 2 species check, storage and alerts. The Run the tour again button is here too."},
   ];
 
   let steps = [], idx = 0, parts = [], els = {}, savedFocus = null;
