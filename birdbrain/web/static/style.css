@@ -1563,7 +1563,11 @@ button.se-all { font-weight: 600; }
 .vburst-frame img { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
 .vburst-frame.on { border-color: var(--accent); }
 .vburst-at { position: absolute; left: 3px; bottom: 3px; padding: 1px 4px; border-radius: 4px; background: rgba(0, 0, 0, .6); color: #fff; font-size: .7rem; line-height: 1.3; }
-.vburst-note { margin: 6px 0 0; }
+.vburst-note { margin: 6px 0 0; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; }
+.vburst-who { white-space: nowrap; }
+.badge.your-photo { color: var(--accent); white-space: nowrap; }
+.vburst-use { display: inline; margin: 0; }
+.vburst-use .link-btn[hidden] { display: none; }
 /* A frame with circles on it: their numbers, top right. */
 .vburst-marks { position: absolute; right: 3px; top: 3px; min-width: 1.3em; padding: 1px 5px; border-radius: 999px; background: var(--accent); color: var(--accent-text); border: 1px solid var(--surface); font-size: .7rem; font-weight: 600; line-height: 1.3; text-align: center; }
 .vburst-marks[hidden] { display: none; }

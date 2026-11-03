@@ -172,6 +172,38 @@ def test_burst_is_saved_in_order_counted_and_deleted_with_its_visit(tmp_path):
     assert images.burst_paths(image_rel, tmp_path) == []
 
 
+def test_picked_burst_frame_gets_one_thumbnail_counted_and_deleted_with_the_visit(tmp_path):
+    image_rel, thumb_rel = images.store_frame(jpeg(), datetime(2026, 11, 3, 8, 0, 0), tmp_path)
+    saved = images.store_burst([jpeg()] * 4, image_rel, tmp_path, max_edge=960)
+    before = images.frame_bytes(image_rel, thumb_rel, tmp_path)
+    assert images.burst_file("x_b3.jpg") == ("x", 3, False) and images.burst_file("x_b3_t.jpg") == ("x", 3, True)
+    assert images.burst_file("x_t.jpg") is None and images.burst_file("x_b3.png") is None and images.burst_file("x_bz.jpg") is None
+    assert images.burst_path(image_rel, 3) == saved[2] and images.burst_thumb_path(image_rel, 3) == saved[2].replace(".jpg", "_t.jpg")
+    rel = images.pick_thumb(image_rel, 3, tmp_path)
+    assert rel == saved[2].replace(".jpg", "_t.jpg") and max(image_size(tmp_path / rel)) == images.THUMB_PX
+    assert images.burst_thumbs(image_rel, tmp_path) == [rel]
+    assert images.burst_paths(image_rel, tmp_path) == saved  # the thumbnail is never a frame
+    # It counts as part of the burst (the storage limit, pruning and the budget see it), and the frames are untouched.
+    photo, thumb, burst = images.frame_parts([(image_rel, thumb_rel)], tmp_path)[0]
+    assert photo + thumb + burst == before + (tmp_path / rel).stat().st_size
+    assert burst == sum((tmp_path / r).stat().st_size for r in (*saved, rel))
+    # Picking another frame swaps the thumbnail; taking the pick back removes it. The frames stay.
+    rel2 = images.pick_thumb(image_rel, 1, tmp_path)
+    assert images.burst_thumbs(image_rel, tmp_path) == [rel2] and not (tmp_path / rel).exists()
+    images.drop_burst_thumbs(image_rel, tmp_path)
+    assert images.burst_thumbs(image_rel, tmp_path) == [] and images.burst_paths(image_rel, tmp_path) == saved
+    with pytest.raises(FileNotFoundError):
+        images.pick_thumb(image_rel, 9, tmp_path)
+    # drop_photo (the photo budget) keeps every thumbnail; delete_frame removes every file, once, no error twice.
+    images.pick_thumb(image_rel, 2, tmp_path)
+    images.drop_photo(image_rel, tmp_path)
+    left = sorted(p.name for p in (tmp_path / image_rel).parent.iterdir())
+    assert left == sorted(Path(r).name for r in (thumb_rel, images.burst_thumb_path(image_rel, 2)))
+    images.delete_frame(image_rel, thumb_rel, tmp_path)
+    assert list((tmp_path / image_rel).parent.iterdir()) == []
+    images.delete_frame(image_rel, thumb_rel, tmp_path)
+
+
 def test_frames_bytes_counts_each_visit_in_a_shared_folder_once(tmp_path):
     when = datetime(2026, 10, 30, 12, 0, 0)
     a = images.store_frame(jpeg(), when, tmp_path)

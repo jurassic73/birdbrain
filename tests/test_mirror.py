@@ -82,7 +82,7 @@ def photo_tree(tmp_path, monkeypatch, conn, add_visit):
     monkeypatch.setattr(config, "IMAGES_DIR", images)
     day = images / "2026" / "11" / "03"
     day.mkdir(parents=True)
-    for name in ("a.jpg", "a_t.jpg", "a_b1.jpg", "a_b2.jpg", "a_b10.jpg", "orphan.jpg", "orphan_t.jpg",
+    for name in ("a.jpg", "a_t.jpg", "a_b1.jpg", "a_b2.jpg", "a_b2_t.jpg", "a_b10.jpg", "orphan.jpg", "orphan_t.jpg",
                  ".a.jpg.thin.tmp", "a_t.jpg.tmp", "a.jpg.tmp", "gone_t.jpg", "thumb_only_t.jpg"):
         (day / name).write_bytes(b"x")
     (day / "sub").mkdir()
@@ -99,8 +99,9 @@ def photo_tree(tmp_path, monkeypatch, conn, add_visit):
 
 def test_file_list_has_only_what_the_copy_refers_to_and_never_temp_files(photo_tree):
     files = mirror.files_of(config.DB_PATH)
-    assert files == ["2026/11/03/a.jpg", "2026/11/03/a_b1.jpg", "2026/11/03/a_b2.jpg", "2026/11/03/a_b10.jpg",
-                     "2026/11/03/a_t.jpg", "2026/11/03/gone_t.jpg"]
+    # a_b2_t.jpg: the owner picked burst frame 2 as the photo, so its thumbnail goes too (images.pick_thumb)
+    assert files == ["2026/11/03/a.jpg", "2026/11/03/a_b1.jpg", "2026/11/03/a_b2.jpg", "2026/11/03/a_b2_t.jpg",
+                     "2026/11/03/a_b10.jpg", "2026/11/03/a_t.jpg", "2026/11/03/gone_t.jpg"]
     assert not any(f.endswith(".tmp") or "orphan" in f or "thumb_only" in f or "etc" in f for f in files)
     assert mirror.inside("2026/11/03/a.jpg") and not mirror.inside("/a.jpg") and not mirror.inside("x/../../a.jpg")
     assert not mirror.inside("")

@@ -138,9 +138,12 @@ def visit_status(image_rel: str, public_ok: str | None = None, thumb_rel: str | 
 
 
 def visit_files(image_rel: str, thumb_rel: str | None = None, thumbs: bool = True) -> list[str]:
-    """A visit's photo and burst frames (and its thumbnail, which needs no check of its own)."""
+    """A visit's photo and burst frames (and its thumbnails, the photo's and a picked frame's, which need no check
+    of their own)."""
     files = [image_rel, *images.burst_paths(image_rel)]
-    return files + [thumb_rel] if thumbs and thumb_rel else files
+    if not thumbs:
+        return files
+    return files + ([thumb_rel] if thumb_rel else []) + images.burst_thumbs(image_rel)
 
 
 def files_to_check(image_rel: str, thumb_rel: str | None) -> list[str]:

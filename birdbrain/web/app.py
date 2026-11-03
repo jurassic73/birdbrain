@@ -189,12 +189,15 @@ templates.env.globals["mirror_status"] = privacy.visit_status
 templates.env.globals["has_card"] = species_info.has_card
 templates.env.globals["season_badge"] = species_info.visit_badge
 templates.env.globals["short_status"] = species_info.short_status
-# Cards show the photo Claude saw, so circles drawn on other burst frames stay on the visit page.
-templates.env.globals["photo_marks"] = lambda visit: [m for m in start_marks(visit) if not db.mark_frame(m)]
+# Cards show the visit's photo (the burst frame the owner picked, else the one Claude saw) with the circles drawn
+# on that very frame; circles on other burst frames stay on the visit page.
+templates.env.globals["photo_marks"] = lambda visit: [m for m in start_marks(visit)
+                                                     if db.mark_frame(m) == db.photo_frame(visit)]
 templates.env.globals["no_circle_note"] = lambda visit: no_circle_note(visit)
 templates.env.globals["also_of"] = db.also_of
 # The biggest photo of a visit still on disk (just the thumbnail once the photo budget cut it down).
 templates.env.globals["photo_src"] = db.photo_rel
+templates.env.globals["thumb_src"] = db.thumb_rel
 templates.env.globals["also_label"] = db.also_label
 # Templates check `request.state.admin` (set by the read_only middleware); this says whether a login exists at all.
 templates.env.globals["public"] = auth.public
@@ -509,6 +512,7 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
         claude_frame=db.claude_frame(visit["raw_json"]),
+        photo_frame=db.photo_frame(visit),
         teaches=presence.teaches(conn, visit_id) if request.state.admin else None,
         vzones=visit_zones(visit, conn),
         pi_average=db.pi_check_average(conn),
@@ -517,7 +521,8 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
 
 def burst_frames(visit) -> list[dict]:
     """A false trigger's whole burst for the visit page's filmstrip, in capture order: each frame's path,
-    seconds after the first and whether it's the one Claude saw. Empty when only the best frame was kept."""
+    seconds after the first, whether it's the one Claude saw (`best`) and whether it's the visit's photo (`on`:
+    the frame the owner picked, else Claude's). Empty when only the best frame was kept."""
     paths = images.burst_paths(visit["image_path"])
     if not paths:
         return []
@@ -526,7 +531,40 @@ def burst_frames(visit) -> list[dict]:
     except (ValueError, AttributeError):
         info = {}
     fps = info.get("fps") or config.BURST_FPS
-    return [{"path": p, "at": i / fps, "best": i == info.get("best")} for i, p in enumerate(paths)]
+    shown = db.photo_frame(visit) or db.claude_frame(visit["raw_json"])
+    return [{"path": p, "at": i / fps, "best": i == info.get("best"), "on": i + 1 == shown}
+            for i, p in enumerate(paths)]
+
+
+@app.post("/visit/{visit_id}/photo-frame")
+def set_photo_frame(visit_id: int, frame: str = Form(""), conn=Depends(get_conn)):
+    """The owner picks a burst frame as a false trigger's photo (the big photo and its card), or takes the pick
+    back (frame 0, empty or Claude's own frame). Nothing is moved or deleted: image_path stays the frame Claude
+    saw, the pick is a column, and the picked frame gets a thumbnail of its own for the cards (images.pick_thumb)."""
+    v = db.get_visit(conn, visit_id)
+    if not v:
+        raise HTTPException(404)
+    if not db.is_false_trigger(conn, visit_id):
+        raise HTTPException(400, "Only a false trigger keeps its burst, so only there can the photo be picked.")
+    if v["photo_deleted_at"] or v["photo_level"] == "thumb":
+        raise HTTPException(400, "This visit's photos were deleted to save space.")
+    try:
+        n = int(frame.strip() or 0)
+    except ValueError:
+        raise HTTPException(400, "The frame must be a number.") from None
+    if n == db.claude_frame(v["raw_json"]):
+        n = 0  # Claude's own frame: the same as no pick
+    if n:
+        if n < 0 or n > len(images.burst_paths(v["image_path"])):
+            raise HTTPException(400, "No such burst frame.")
+        try:
+            images.pick_thumb(v["image_path"], n)
+        except FileNotFoundError:
+            raise HTTPException(400, "That burst frame is no longer on disk.") from None
+    else:
+        images.drop_burst_thumbs(v["image_path"])
+    db.set_photo_frame(conn, visit_id, n or None)
+    return Response(headers=REFRESH)
 
 
 FIRED = {"rim": "the rim and rocks", "water": "the open water", "ground": "the ground"}

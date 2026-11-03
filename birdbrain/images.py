@@ -132,13 +132,70 @@ def store_burst(
     return paths
 
 
-def burst_paths(image_rel: str, images_dir: Path | None = None) -> list[str]:
-    """A visit's saved burst frames, in capture order (empty when only the best frame was kept)."""
+def burst_file(name: str) -> tuple[str, int, bool] | None:
+    """What a file in a day folder is, when it belongs to a burst: (photo stem, frame number, is it the frame's
+    thumbnail). <stem>_b3.jpg is frame 3; <stem>_b3_t.jpg is its thumbnail (made when the owner picks that frame as
+    the visit's photo, pick_thumb). Anything else is None."""
+    if not name.endswith(".jpg"):
+        return None
+    base = name.removesuffix(".jpg")
+    thumb = base.endswith("_t")
+    stem, sep, n = base.removesuffix("_t").rpartition("_b")
+    if not sep or not stem or not n.isdigit():
+        return None
+    return stem, int(n), thumb
+
+
+def burst_path(image_rel: str, n: int) -> str:
+    """Where burst frame n (1-based) of a visit's photo is saved."""
+    return f"{image_rel.removesuffix('.jpg')}_b{n}.jpg"
+
+
+def burst_thumb_path(image_rel: str, n: int) -> str:
+    """Where burst frame n's thumbnail goes once the owner picks it as the visit's photo (pick_thumb)."""
+    return f"{image_rel.removesuffix('.jpg')}_b{n}_t.jpg"
+
+
+def _burst_files(image_rel: str, images_dir: Path | None, thumbs: bool) -> list[str]:
     images_dir = images_dir or config.IMAGES_DIR
     stem = Path(image_rel.removesuffix(".jpg"))
-    found = (images_dir / stem).parent.glob(f"{stem.name}_b*.jpg")
-    nums = sorted(int(n) for p in found if (n := p.stem.rpartition("_b")[2]).isdigit())
-    return [f"{stem}_b{n}.jpg" for n in nums]
+    nums = sorted(parsed[1] for p in (images_dir / stem).parent.glob(f"{stem.name}_b*.jpg")
+                  if (parsed := burst_file(p.name)) and parsed[0] == stem.name and parsed[2] == thumbs)
+    return [(burst_thumb_path if thumbs else burst_path)(image_rel, n) for n in nums]
+
+
+def burst_paths(image_rel: str, images_dir: Path | None = None) -> list[str]:
+    """A visit's saved burst frames, in capture order (empty when only the best frame was kept). Never their
+    thumbnails (burst_thumbs)."""
+    return _burst_files(image_rel, images_dir, thumbs=False)
+
+
+def burst_thumbs(image_rel: str, images_dir: Path | None = None) -> list[str]:
+    """Thumbnails of a visit's burst frames on disk (at most one: the frame the owner picked as the photo)."""
+    return _burst_files(image_rel, images_dir, thumbs=True)
+
+
+def pick_thumb(image_rel: str, n: int, images_dir: Path | None = None) -> str:
+    """Make burst frame n's thumbnail (the card's picture once the owner picks that frame as the visit's photo)
+    and drop any other frame's, so a visit never carries more than one. The frames themselves are never touched.
+    Returns the thumbnail's path; FileNotFoundError when frame n isn't on disk."""
+    images_dir = images_dir or config.IMAGES_DIR
+    rel = burst_thumb_path(image_rel, n)
+    with Image.open(images_dir / burst_path(image_rel, n)) as im:
+        thumb = make_thumb(im.convert("RGB"))
+    tmp = (images_dir / rel).with_name(Path(rel).name + ".tmp")
+    thumb.save(tmp, "JPEG", quality=THUMB_QUALITY, optimize=True)
+    os.replace(tmp, images_dir / rel)
+    drop_burst_thumbs(image_rel, images_dir, keep=n)
+    return rel
+
+
+def drop_burst_thumbs(image_rel: str, images_dir: Path | None = None, keep: int | None = None) -> None:
+    """Remove a visit's burst-frame thumbnails (all but frame `keep`'s): the pick was taken back or changed."""
+    images_dir = images_dir or config.IMAGES_DIR
+    for rel in burst_thumbs(image_rel, images_dir):
+        if keep is None or burst_file(Path(rel).name)[1] != keep:
+            (images_dir / rel).unlink(missing_ok=True)
 
 
 def frame_bytes(image_rel: str, thumb_rel: str, images_dir: Path | None = None) -> int:
@@ -173,9 +230,8 @@ def frame_parts(visits: list[tuple[str, str]], images_dir: Path | None = None) -
                         except FileNotFoundError:
                             continue
                         sizes[e.name] = size
-                        stem, _, n = e.name.removesuffix(".jpg").rpartition("_b")
-                        if e.name.endswith(".jpg") and stem and n.isdigit():
-                            bursts[stem] = bursts.get(stem, 0) + size
+                        if parsed := burst_file(e.name):  # a frame or its thumbnail: both count as burst
+                            bursts[parsed[0]] = bursts.get(parsed[0], 0) + size
             except (FileNotFoundError, NotADirectoryError):
                 pass
             folders[parent] = (sizes, bursts)
@@ -191,8 +247,9 @@ def frame_parts(visits: list[tuple[str, str]], images_dir: Path | None = None) -
 
 
 def delete_frame(image_rel: str, thumb_rel: str, images_dir: Path | None = None) -> None:
+    """Delete every file of a visit: photo, thumbnail, burst frames and a picked frame's thumbnail."""
     images_dir = images_dir or config.IMAGES_DIR
-    for rel in (image_rel, thumb_rel, *burst_paths(image_rel, images_dir)):
+    for rel in (image_rel, thumb_rel, *burst_paths(image_rel, images_dir), *burst_thumbs(image_rel, images_dir)):
         (images_dir / rel).unlink(missing_ok=True)
 
 
@@ -238,7 +295,8 @@ def thin_photo(image_rel: str, edge: int, images_dir: Path | None = None,
 
 
 def drop_photo(image_rel: str, images_dir: Path | None = None) -> None:
-    """Delete a visit's photo and burst frames but keep its thumbnail, so its card still shows."""
+    """Delete a visit's photo and burst frames but keep its thumbnails (the photo's, and a picked frame's),
+    so its card still shows."""
     images_dir = images_dir or config.IMAGES_DIR
     for rel in (image_rel, *burst_paths(image_rel, images_dir)):
         (images_dir / rel).unlink(missing_ok=True)
