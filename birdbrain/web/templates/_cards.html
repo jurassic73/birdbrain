@@ -1,4 +1,4 @@
-{% from "_macros.html" import sp_name, badge, thumb %}
+{% from "_macros.html" import sp_name, badge, thumb, keeper_btn %}
 {# Unfiltered home page: a Today heading over the visits since midnight, then Earlier (once, also across Load more pages). #}
 {% set ns = namespace(prev=prev_day | default(none)) %}
 {% for v in visits %}
@@ -13,6 +13,7 @@
 {% if fav %}<div class="card-fav">{% endif %}
 <a class="card" href="/visit/{{ v.id }}{{ '?ft=1' if ft_cards else ('?species=' ~ (scope_species | urlencode) if scope_species is defined and scope_species else '') }}" data-id="{{ v.id }}"{% if ft_cards and not (v.confirmed_at or v.corrected_species or v.corrected_visitor) %} data-unchecked{% endif %}>
   {{ thumb(v) }}
+  {% if request.state.admin %}{{ keeper_btn(v) }}{% endif %}
   <div class="card-body">
     <div class="card-title">{{ sp_name(v.label) }}{% if v.count and v.count > 1 %} <span class="muted">x{{ v.count }}</span>{% endif %}
       {%- for a in also_of(v) %} <span class="also-name">+ {{ sp_name(also_label(a)) }}{% if a.count and a.count > 1 %} <span class="muted">x{{ a.count }}</span>{% endif %}</span>{% endfor %}</div>
