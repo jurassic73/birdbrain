@@ -886,7 +886,9 @@ def test_false_trigger_cards_refresh_after_the_pop_up(client, add_visit, conn):
 
 def test_visit_page_says_notes_are_for_claude_only(client, add_visit):
     html = client.get(f"/visit/{add_visit()}").text
-    assert "Note for Claude" in html and "Notes are not used by the Pi's local animal check" in html
+    # The note box is one short line; its info tip says the Pi never reads notes.
+    assert "Note for Claude" in html and "The Pi's local animal check never reads notes" in html
+    assert 'id="feedback" name="feedback" rows="1"' in html
     assert "The answer you pick trains the Pi's local animal check" in html
 
 

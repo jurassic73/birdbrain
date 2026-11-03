@@ -318,8 +318,8 @@
         </div>
         <input type="hidden" name="marks" id="marks">
         <div class="feedback-row">
-          <textarea id="feedback" name="feedback" rows="4"
-                    placeholder="For Claude only, read on future identifications (nothing is sent now). Notes are not used by the Pi's local animal check; it learns from the answer you pick above. What did Claude get wrong, and how can it tell next time? e.g. No bird: those are the rocks poking out after I refilled the bath.">{{ visit.feedback or '' }}</textarea>
+          <textarea id="feedback" name="feedback" rows="1"
+                    placeholder="What did Claude get wrong? e.g. No bird: rocks poking out after a refill">{{ visit.feedback or '' }}</textarea>
           <div class="feedback-actions">
             <button type="submit" class="save-btn" data-tip="{{ save_none if current_visitor == 'none' else save_animal }}">Save</button>
             {% if has_correction %}

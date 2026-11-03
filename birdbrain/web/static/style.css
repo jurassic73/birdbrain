@@ -788,6 +788,8 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .combo-list li:hover, .combo-list li.active { background: var(--bg); color: var(--accent); }
 .feedback-row { display: flex; gap: 12px; align-items: stretch; }
 .feedback-row textarea { flex: 1; }
+/* The note starts one line tall (most visits need none) and opens to four lines once clicked or filled in. */
+#feedback:focus, #feedback:not(:placeholder-shown) { min-height: calc(6em + 22px); }
 .feedback-actions { display: flex; flex-direction: column; gap: 8px; justify-content: flex-end; }
 /* Beside the photo the form is narrow: stack the note and its buttons. */
 .visit-info .review { margin-bottom: 0; }
