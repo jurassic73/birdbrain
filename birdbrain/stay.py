@@ -11,7 +11,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
-from . import config
+from . import config, zones
 
 GONE = "gone"    # nothing visitor-sized left for STAY_GAP seconds
 LIGHT = "light"  # most of the view changed (a cloud, the IR switching): can't tell, so close the visit
@@ -81,11 +81,11 @@ def like_substream(jpeg: bytes, shape: tuple[int, int]) -> np.ndarray:
 
 
 def box_mask(shape: tuple[int, int], box) -> np.ndarray:
-    """255 inside an x,y,w,h box of frame fractions (the whole frame when None)."""
-    h, w = shape
+    """255 inside an x,y,w,h box of frame fractions (the whole frame when None; nothing for a box outside it)."""
     m = np.zeros(shape, np.uint8)
-    x, y, bw, bh = box or (0, 0, 1, 1)
-    m[int(y * h):int(round((y + bh) * h)), int(x * w):int(round((x + bw) * w))] = 255
+    if px := zones.pixel_box(shape, box or (0, 0, 1, 1)):
+        x0, y0, x1, y1 = px
+        m[y0:y1, x0:x1] = 255
     return m
 
 

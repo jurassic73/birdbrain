@@ -36,7 +36,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import config, db
+from . import config, db, zones
 
 log = logging.getLogger("birdbrain.classifier")
 
@@ -249,9 +249,9 @@ def crop_for(img: np.ndarray, circle: dict | None, box, margin: float = CIRCLE_M
     if circle and circle.get("r"):
         x0, y0, side = circle_square(circle, W, H, margin)
         return img[y0:y0 + side, x0:x0 + side], "circle"
-    if box:
-        x, y, w, h = box
-        return img[int(y * H):int((y + h) * H), int(x * W):int((x + w) * W)], "box"
+    if box and (px := zones.pixel_box(img.shape, box)):
+        x0, y0, x1, y1 = px
+        return img[y0:y1, x0:x1], "box"
     return img, "frame"
 
 
@@ -321,6 +321,14 @@ def load() -> Classifier | None:
         with _load_lock:
             return _load()
     return loaded
+
+
+def usable() -> bool:
+    """Whether an embedding can be expected right now, without loading anything: on, and the model loaded or at
+    least not known to be missing (a failed download isn't tried again for RETRY_AFTER)."""
+    if config.CLASSIFIER == "off":
+        return False
+    return _classifier is not None or not (_failed_at and time.monotonic() - _failed_at < RETRY_AFTER)
 
 
 def _load() -> Classifier:

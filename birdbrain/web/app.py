@@ -1141,6 +1141,7 @@ def about(request: Request, conn=Depends(get_conn)):
         classifier=db.classifier_report(conn),
         presence=db.presence_report(conn),
         presence_mode=presence.mode(conn),
+        presence_min=(presence.MIN_VISITORS, presence.MIN_EMPTY),
         haiku=identify.HAIKU,
         sonnet=identify.SONNET,
         lessons=len(db.recent_lessons(conn)),

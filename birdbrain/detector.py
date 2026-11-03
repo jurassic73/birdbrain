@@ -143,6 +143,8 @@ def run(jpeg: bytes, crop=None) -> dict | None:
     from .watch import roi  # local import: watch imports this module
 
     img = roi(cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR), crop)
+    if img is None:
+        return None  # the crop box lies outside the frame: nothing to look at
     start = time.perf_counter()
     found, objs = _detector.detect_all(img, config.DETECTOR_MIN_SCORE)
     return verdict(found, time.perf_counter() - start, objs)

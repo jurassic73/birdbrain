@@ -382,6 +382,13 @@ def model(conn) -> dict | None:
     return current["model"]
 
 
+def trained() -> bool:
+    """Whether a trained model is in hand right now (no database, no training): the watcher's rain probes need
+    one, since without a verdict nothing would filter them."""
+    current = _model
+    return current is not None and current["model"] is not None
+
+
 def _keep_fresh(every: float, busy: threading.Event | None = None) -> None:
     while True:
         try:

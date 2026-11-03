@@ -305,13 +305,18 @@
         {% endfor %}
       </ol>
       {% if presence_mode != 'off' %}
-      <p class="muted small">During a long wait it doesn't go blind: it still takes photos every {{ cfg.COOLDOWN_NONE }} s and lets the Pi's
-        <a href="#presence">animal check</a> look. Only if it doesn't call the photo empty does Claude get asked. Empty checks aren't even saved.
+      <p class="muted small">Once the Pi's <a href="#presence">animal check</a> has learned this yard ({{ presence_min[0] }} visitors and
+        {{ presence_min[1] }} empty frames), a long wait doesn't mean going blind: it still takes photos every {{ cfg.COOLDOWN_NONE }} s and
+        lets the check look. Only if it doesn't call the photo empty does Claude get asked. Empty checks aren't even saved.
         After {{ cfg.PROBE_AFTER }} false alarms in a row it stays in this mode until a visitor turns up, with one full Claude check every
-        {{ (cfg.FULL_CHECK_EVERY / 60) | round | int }} minutes in case the local look missed something.</p>
+        {{ (cfg.FULL_CHECK_EVERY / 60) | round | int }} minutes in case the local look missed something.
+        Until the check is trained, or whenever it can't give a verdict (its model missing, or switched off), it simply waits out the
+        doubling backoff above: a probe nobody is filtering would just be asking Claude every {{ cfg.COOLDOWN_NONE }} s.</p>
       {% endif %}
       <p class="muted small">A daily cap of {{ cfg.MAX_CALLS_PER_DAY }} Claude visits guards the bill if something goes very wrong.{% if zones.ground %}
-        The ground has its own cooldown and its own cap of {{ cfg.GROUND_MAX_CALLS_PER_DAY }}, so a windy day on the lawn can't use up the birdbath's.{% endif %}</p>
+        The ground has its own cooldown and its own cap of {{ cfg.GROUND_MAX_CALLS_PER_DAY }}, so a windy day on the lawn can't use up the birdbath's,
+        and the bath's waits never hold the ground back: a cat can walk past while the bath is resting after a rainy false alarm or has
+        reached its cap for the day.{% endif %}</p>
     </article>
   </div>
 </section>

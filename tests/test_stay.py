@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 import cv2
 import numpy as np
+from conftest import FROZEN_NOW
 
 from birdbrain import stay, watch
 from birdbrain.web import app as webapp
@@ -104,7 +107,8 @@ def test_watcher_holds_triggers_during_a_stay_and_saves_the_end(monkeypatch, con
     assert feed(base, 1030.0) is True
     assert feed(base, 1040.0) is False  # gone 30 s after last seen
     row = watch.db.get_visit(conn, vid)
-    assert row["ended_at"] == watch.datetime.fromtimestamp(1010.0).isoformat()
+    # The times fed in are monotonic; the stored end is the wall clock, 30 s ago (when it was last seen moving).
+    assert row["ended_at"] == (FROZEN_NOW - timedelta(seconds=30)).isoformat()
     assert watch.json.loads(row["raw_json"])["stay_end"] == "gone"
     assert w.cooldown_until >= 1040.0 + stay.config.STAY_REARM
 

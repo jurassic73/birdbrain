@@ -322,11 +322,11 @@ class Recalibrator:
         self.reason: str | None = None  # set while sampling
         self.night: bool | None = None   # the light the sampling started in
         self.frames: list[np.ndarray] = []
-        self.started = self.last_sample = self.next_check = 0.0
+        self.started = self.last_sample = self.next_check = 0.0  # time.monotonic()
         self.working = threading.Event()
 
     def feed(self, frame: np.ndarray, night: bool, quiet: bool) -> None:
-        now = time.time()
+        now = time.monotonic()  # intervals only; the wall clock can step after boot (the Pi has no clock)
         if self.reason is None:
             if now < self.next_check or self.working.is_set():
                 return
