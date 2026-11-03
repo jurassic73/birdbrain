@@ -14,7 +14,7 @@
   <ol class="decision-flow {{ where }}" aria-label="Start to finish">
     <li class="flow-pill">Motion{% if decision.trigger %} {{ decision.trigger }}{% endif %}</li>
     {% for step in decision.steps %}
-    <li class="flow-pill {{ 'local' if step.local else 'ai' }}"><strong>{{ 'Detector' if step.local else step.model }}</strong> {% if not step.refused and step.said == visit.label %}<span class="said-same">{{ step.said }}</span>{% else %}{{ 'declined' if step.refused else step.said }}{% endif %}{% if step.confidence %} <span class="flow-conf">({{ step.confidence }})</span>{% endif %}</li>
+    <li class="flow-pill {{ 'local' if step.local else 'ai' }}"><strong>{{ 'Detector' if step.local else step.model }}</strong> {% if not step.refused and step.said == visit.label %}<span class="said-same">{{ step.said }}</span>{% else %}{{ 'no answer' if step.error else 'declined' if step.refused else step.said }}{% endif %}{% if step.confidence %} <span class="flow-conf">({{ step.confidence }})</span>{% endif %}</li>
     {% endfor %}
     {% if visit.needs_review %}<li class="flow-pill review">Your review</li>{% endif %}
     <li class="flow-pill result">{{ 'No animal' if visit.label == 'None' else visit.label }}{% for a in also_of(visit) %} + {{ also_label(a) }}{% endfor %}</li>
@@ -187,7 +187,9 @@
             <strong>{{ step.model }}</strong>
             <span class="muted">looked at {{ step.frames }} frame{{ 's' if step.frames != 1 }}{% if step.model == 'Haiku' %} (the sharpest of the burst){% endif %}</span>
           </div>
-          {% if step.refused %}
+          {% if step.error %}
+          <div>Couldn't answer: the call failed. <span class="muted">{{ step.error }}</span></div>
+          {% elif step.refused %}
           <div>Declined to answer.</div>
           {% else %}
           <div>{{ step.said }} {% if step.confidence %}{{ badge(step.confidence, "conf-" ~ step.confidence) }}{% endif %}{% if step.also %} <span class="muted">with {{ step.also | join(", ") }}</span>{% endif %}</div>
@@ -204,7 +206,8 @@
         </li>
         {% endfor %}
       </ol>
-      {% if visit.needs_review %}<p class="step-why">Still unsure, so it was sent to you for review.</p>{% endif %}
+      {% if visit.needs_review and decision.failed %}<p class="step-why">Claude couldn't answer, so the photo was kept and sent to you for review.</p>
+      {% elif visit.needs_review %}<p class="step-why">Still unsure, so it was sent to you for review.</p>{% endif %}
       {% if teach_line and not (decision.steps | selectattr("presence") | list) %}<p class="muted small" id="teaches">{{ teach_line }}</p>{% endif %}
       {% if decision.owner_checks %}
       <h3 class="owner-checks-head">Your circle checks</h3>

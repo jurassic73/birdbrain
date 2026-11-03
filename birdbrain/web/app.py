@@ -630,6 +630,9 @@ def decision_steps(raw_json: str | None) -> dict:
             "skipped_claude": bool(calls.get("skipped_claude")),
             "scenery": det.get("scenery"),
         })
+    if calls.get("error"):
+        # Claude couldn't be asked at all (identify.unanswered): the visit was kept for review with no answer.
+        calls = {**calls, "haiku": {"frames": 1, "answer": None, "error": calls["error"]}}
     for key, name in (("haiku", "Haiku"), ("sonnet", "Sonnet")):
         call = calls.get(key)
         if not call:
@@ -639,6 +642,7 @@ def decision_steps(raw_json: str | None) -> dict:
             "model": name,
             "frames": call.get("frames", 1),
             "refused": not answer,
+            "error": call.get("error") if not answer else None,  # the call failed, rather than declining
             "said": answer.get("species") or ("no animal" if answer.get("visitor") == "none" else answer.get("visitor")),
             "also": [db.also_label(a) + (f" x{a['count']}" if (a.get("count") or 1) > 1 else "")
                      for a in answer.get("also") or [] if answer.get("visitor") != "none" and a.get("visitor")],
@@ -669,7 +673,7 @@ def decision_steps(raw_json: str | None) -> dict:
             "seconds": found.get("seconds"),
         })
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),
-            "owner_checks": owner_checks(calls),
+            "owner_checks": owner_checks(calls), "failed": any(s.get("error") for s in steps),
             "skipped_sonnet": bool(calls.get("skipped_sonnet")), "asked_sonnet": bool(calls.get("sonnet")),
             "local_disagreed": calls.get("local_disagreed"), "local_agreed": bool(calls.get("local_agreed"))}
 

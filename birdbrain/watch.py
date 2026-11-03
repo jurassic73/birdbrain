@@ -397,6 +397,28 @@ def probe_passes(check: dict | None) -> bool:
 
 
 PROBE_EMPTY = "probe-empty"  # a backoff probe the local animal check found empty in: not stored, no Claude call
+UNANSWERED = "unanswered"    # Claude couldn't answer (an API error): stored as "other" for review, so neither a
+                             # visit (no stay, no alert) nor a false trigger (the rain backoff streak is left alone)
+
+_last_logged: dict[str, float] = {}
+
+
+def log_rarely(key: str, msg: str, *args, every: float = 60.0) -> None:
+    """log.exception at most once per `every` seconds per key: a locked database during a rain run would
+    otherwise fill the log on every frame."""
+    now = time.monotonic()
+    if now - _last_logged.get(key, -every) >= every:
+        _last_logged[key] = now
+        log.exception(msg, *args)
+
+
+def fail_soft(what: str, fn, *args) -> None:
+    """Run one side effect of a stored visit; a failure is logged, never allowed to turn the visit into a
+    false trigger (the visit is already saved and paid for by the time these run)."""
+    try:
+        fn(*args)
+    except Exception:
+        log.exception("%s failed", what)
 
 
 def streak_hit(motion: float) -> bool:
@@ -418,8 +440,13 @@ def presence_mode() -> str:
 
 
 def probe_ready() -> bool:
-    """Probes need the local animal check: without it a rain run just waits out its backoff."""
-    return presence_mode() != "off"
+    """Probes need the local animal check: without it a rain run just waits out its backoff. Fail-soft: if the
+    mode can't be read (a locked database), there are no probes until it can be, and the caller carries on."""
+    try:
+        return presence_mode() != "off"
+    except Exception:
+        log_rarely("presence_mode", "couldn't read the animal check's mode; no probes until it can be read")
+        return False
 
 
 def motion_action(now: float, cooldown_until: float, backoff_until: float, can_probe: bool) -> str:
@@ -473,9 +500,10 @@ def animal_check(frames: list[bytes], ranked: list[bytes], crop) -> tuple[np.nda
 
 def handle_event(motion: float | None = None, probe: bool = False, trigger: str = "rim",
                  scene: Scene | None = None) -> str | None:
-    """Capture, identify and store one visit. Returns the visitor type, None if nothing was captured, or
+    """Capture, identify and store one visit. Returns the visitor type, None if nothing was captured,
     PROBE_EMPTY for a backoff probe where the local animal check found nothing (discarded: rain shouldn't fill
-    the disk or the bill). `scene` is the empty scene from the trigger, used to count the animals in view."""
+    the disk or the bill), or UNANSWERED when Claude couldn't answer (the visit is still stored, for review).
+    `scene` is the empty scene from the trigger, used to count the animals in view."""
     captured_at = datetime.now().replace(microsecond=0)
     frames = capture_burst()
     if not frames:
@@ -527,10 +555,17 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             confirmed = db.confirmed_species(conn)
         # By day the Pi's own guess on Haiku's circle can veto skipping Sonnet (not checked on infrared yet).
         local_check = None if night else (lambda circle: classifier.run(best, circle, crop, night))
-        result = identify.identify(best, captured_at, crop, lessons, extra_frames=ranked[1:], site=site,
-                                   confirmed=confirmed, local_check=local_check)
+        try:
+            result = identify.identify(best, captured_at, crop, lessons, extra_frames=ranked[1:], site=site,
+                                       confirmed=confirmed, local_check=local_check)
+        except Exception as e:
+            # The API down, unreachable or timing out past the SDK's retries: a real bird may be in the photo, so
+            # keep it as a visit for the review queue instead of losing it (and its burst) as a false trigger.
+            log.exception("Claude couldn't answer; keeping the visit for review")
+            result = identify.unanswered(e)
         if check:
             result.raw["presence"] = check
+    unanswered = "error" in result.raw
     # When Claude answered, the classifier records its guess from Claude's circle for the Stats scorecard (already
     # made on Haiku's circle when it decided whether to ask Sonnet; again on Sonnet's circle if Sonnet answered).
     if (not pick and result.sighting.visitor != "none" and (result.escalated or "classifier" not in result.raw)
@@ -558,9 +593,10 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             log.exception("saving the burst failed")
     alert_reason = None
     also = result.raw.get("also") or []
-    # Every kind of animal in the photo: the main one first, then the others Claude listed.
-    seen = [] if false_trigger else [(s.visitor, s.species or s.visitor.capitalize()),
-                                     *((a["visitor"], db.also_label(a)) for a in also)]
+    # Every kind of animal in the photo: the main one first, then the others Claude listed (nothing when Claude
+    # couldn't answer: "other" is a placeholder there, not a sighting to alert about).
+    seen = [] if false_trigger or unanswered else [(s.visitor, s.species or s.visitor.capitalize()),
+                                                   *((a["visitor"], db.also_label(a)) for a in also)]
     global last_visit_id
     with db.session() as conn:
         # Check BEFORE inserting so the new-species count doesn't include this visit yet.
@@ -596,25 +632,34 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         if emb is not None:
             presence.store(conn, visit_id, emb)  # training data once its label is known (and corrected)
     last_visit_id = visit_id
+    # From here on the visit is stored: whatever goes wrong below is logged, and the stored visitor still returned.
     if false_trigger:
-        with db.session() as conn:
-            if pruned := retention.prune(conn):
-                log.info("false-trigger storage limit: deleted the %d oldest", pruned)
+        fail_soft("pruning false triggers", prune_false_triggers)
     # The photo budget: counts this visit and wakes its background check (cheap; any thinning happens there).
-    retention.note_stored(image_rel, thumb_rel)
+    fail_soft("noting the stored photo", retention.note_stored, image_rel, thumb_rel)
     if alert_reason:
-        with db.session() as conn:
-            topic = db.get_value(conn, "ntfy_topic") or ""
-        click = f"{config.SITE_URL}/visit/{visit_id}" if config.SITE_URL else None
-        alert.send(topic, alert_reason, f"Visit #{visit_id} at the birdbath", best, click)
+        fail_soft("sending the alert", send_alert, visit_id, alert_reason, best)
     if not false_trigger:
-        push_public()
+        fail_soft("pushing to the public mirror", push_public)
     for _, label in seen:
-        species_info.prefetch(label)  # no-op once the card is cached
+        fail_soft("prefetching the species card", species_info.prefetch, label)  # no-op once the card is cached
     det_note = "" if not check or check.get("score") is None else f", animal check {check['score']:.2f}"
     log.info("visit %d: %s %s (%s, %s%s%s)", visit_id, s.visitor, s.species or "", s.confidence,
              result.model, ", escalated" if result.escalated else "", det_note)
-    return s.visitor
+    return UNANSWERED if unanswered else s.visitor
+
+
+def prune_false_triggers() -> None:
+    with db.session() as conn:
+        if pruned := retention.prune(conn):
+            log.info("false-trigger storage limit: deleted the %d oldest", pruned)
+
+
+def send_alert(visit_id: int, reason: str, photo: bytes) -> None:
+    with db.session() as conn:
+        topic = db.get_value(conn, "ntfy_topic") or ""
+    click = f"{config.SITE_URL}/visit/{visit_id}" if config.SITE_URL else None
+    alert.send(topic, reason, f"Visit #{visit_id} at the birdbath", photo, click)
 
 
 class Watcher:
@@ -631,6 +676,7 @@ class Watcher:
         self.ground_backoff_until = 0.0
         self.ground_streak = 0
         self.budget_warned: dict[bool, date] = {}
+        self.streak = 0  # consecutive substream frames of rim motion (TRIGGER_FRAMES of them is a trigger)
         # One visit per stay: the scene just before the last trigger, and the open stay after a real visit.
         self.empty: np.ndarray | None = None
         self.scene: Scene | None = None  # the same, with its masks, for counting the animals in the photo
@@ -638,42 +684,59 @@ class Watcher:
         self.stay: stay.Stay | None = None
 
     def _work(self, motion: float, probe: bool, trigger: str) -> None:
+        """The capture thread. Whatever happens, `busy` is cleared at the end: left set, the frame loop would
+        skip every frame for good while the process stayed up (so systemd never restarted it)."""
         global last_visit_id
         visitor, empty, scene, last_visit_id = None, self.empty, self.scene, None
         try:
-            visitor = handle_event(motion, probe=probe, trigger=trigger, scene=scene)
+            try:
+                visitor = handle_event(motion, probe=probe, trigger=trigger, scene=scene)
+            except Exception:
+                log.exception("failed to handle motion event")
+            finally:
+                self._settle(visitor, trigger, empty)
         except Exception:
-            log.exception("failed to handle motion event")
+            log.exception("failed to set the cooldown after a motion event")
         finally:
-            now = time.time()
-            if config.STAY and visitor not in (None, "none", PROBE_EMPTY) and last_visit_id and empty is not None:
-                self.stay_pending = (last_visit_id, empty)
-            if trigger == "ground":
-                if visitor == PROBE_EMPTY:
-                    self.ground_until = now + config.COOLDOWN_NONE
-                else:
-                    cooldown, self.ground_streak = next_cooldown(visitor, self.ground_streak)
-                    if self.ground_streak:
-                        if self.ground_streak > 1:
-                            log.info("%d empty ground triggers in a row; ground backs off", self.ground_streak)
-                        self.ground_until, self.ground_backoff_until = after_false(
-                            now, self.ground_streak, cooldown, probe_ready())
-                    else:
-                        self.ground_until, self.ground_backoff_until = now + cooldown, 0.0
-            elif visitor == PROBE_EMPTY:
-                self.cooldown_until = now + config.COOLDOWN_NONE  # keep the backoff; probe again later
-            else:
-                cooldown, self.false_streak = next_cooldown(visitor, self.false_streak)
-                if self.false_streak:
-                    if self.false_streak > 1:
-                        log.info("%d false triggers in a row; backing off", self.false_streak)
-                    # With the animal check, keep probing every COOLDOWN_NONE during the backoff instead of going blind.
-                    self.cooldown_until, self.backoff_until = after_false(
-                        now, self.false_streak, cooldown, probe_ready())
-                else:
-                    self.backoff_until = 0.0
-                    self.cooldown_until = now + cooldown
             self.busy.clear()
+
+    def _settle(self, visitor: str | None, trigger: str, empty: np.ndarray | None) -> None:
+        """Open the stay and set the cooldowns from what the capture found."""
+        now = time.time()
+        if (config.STAY and visitor not in (None, "none", PROBE_EMPTY, UNANSWERED) and last_visit_id
+                and empty is not None):
+            self.stay_pending = (last_visit_id, empty)
+        if trigger == "ground":
+            if visitor == PROBE_EMPTY:
+                self.ground_until = now + config.COOLDOWN_NONE
+            elif visitor == UNANSWERED:
+                self.ground_until = now + config.COOLDOWN_VISIT  # neither a visit nor a false trigger
+            else:
+                cooldown, self.ground_streak = next_cooldown(visitor, self.ground_streak)
+                if self.ground_streak:
+                    if self.ground_streak > 1:
+                        log.info("%d empty ground triggers in a row; ground backs off", self.ground_streak)
+                    self.ground_until, self.ground_backoff_until = after_false(
+                        now, self.ground_streak, cooldown, probe_ready())
+                else:
+                    self.ground_until, self.ground_backoff_until = now + cooldown, 0.0
+        elif visitor == PROBE_EMPTY:
+            self.cooldown_until = now + config.COOLDOWN_NONE  # keep the backoff; probe again later
+        elif visitor == UNANSWERED:
+            # Claude couldn't answer: the photo is kept for review. It says nothing about rain, so the backoff
+            # streak is left as it was, and the usual wait after a visit keeps an outage from filling the queue.
+            self.cooldown_until = now + config.COOLDOWN_VISIT
+        else:
+            cooldown, self.false_streak = next_cooldown(visitor, self.false_streak)
+            if self.false_streak:
+                if self.false_streak > 1:
+                    log.info("%d false triggers in a row; backing off", self.false_streak)
+                # With the animal check, keep probing every COOLDOWN_NONE during the backoff instead of going blind.
+                self.cooldown_until, self.backoff_until = after_false(
+                    now, self.false_streak, cooldown, probe_ready())
+            else:
+                self.backoff_until = 0.0
+                self.cooldown_until = now + cooldown
 
     def _maybe_trigger(self, motion: float, probe: bool = False, trigger: str = "rim") -> None:
         ground = trigger == "ground"
@@ -729,7 +792,8 @@ class Watcher:
                 continue
             log.info("watching %s", redact(config.rtsp_url(config.RTSP_SUB)))
             self.detector.reset()
-            frames, streak, failures = 0, 0, 0
+            self.streak = 0
+            frames, failures = 0, 0
             while failures < 50:
                 ok, frame = cap.read()
                 if not ok:
@@ -738,46 +802,55 @@ class Watcher:
                     continue
                 failures = 0
                 frames += 1
-                if self.detector.use(zones.current()):
-                    log.info("zones recalibrated; switched to the new ones")
-                motion = self.detector.score(frame)
-                water, ground = self.detector.water_hit, self.detector.ground_hit
-                quiet = frames > WARMUP_FRAMES and not self.busy.is_set() and motion < config.MOTION_MIN_AREA \
-                    and not water and not ground and self.stay is None
-                self.recalibrator.feed(frame, self.detector.night, quiet)
-                if frames <= WARMUP_FRAMES or self.busy.is_set():
-                    streak = 0
-                    continue
-                now = time.time()
-                if self.follow_stay(now):
-                    streak = 0
-                    continue
-                action = motion_action(now, self.cooldown_until, self.backoff_until, probe_ready())
-                streak = streak + 1 if action != "wait" and motion >= config.MOTION_MIN_AREA else 0
-                if action != "wait" and (streak >= config.TRIGGER_FRAMES or water):
-                    streak = 0
-                    trigger = "rim" if streak_hit(motion) else "water"
-                    # Water-only triggers always go through the local animal check first, so a ripple that slips
-                    # past the blob rule costs a few seconds of Pi CPU, never a Claude call.
-                    probe = action == "probe" or (trigger == "water" and probe_ready())
-                    log.info("motion %.3f (%s%s)", motion, trigger, ", probe" if probe else "")
-                    self._maybe_trigger(motion, probe=probe, trigger=trigger)
-                    if self.detector.water:
-                        self.detector.water.reset()
-                elif ground and action != "wait" and (
-                        ground_action := motion_action(now, self.ground_until, self.ground_backoff_until,
-                                                       probe_ready())) != "wait":
-                    # Claude, under the ground's own limit, except during a run of empty ground triggers: then
-                    # probes, which pass unless the animal check calls them empty. Empty answers are kept as
-                    # false triggers.
-                    probe = ground_action == "probe"
-                    log.info("motion on the ground (%s%s)", "night" if self.detector.night else "day",
-                             ", probe" if probe else "")
-                    self._maybe_trigger(motion, probe=probe, trigger="ground")
-                    self.detector.ground.reset()
+                try:
+                    self.step(frame, frames)
+                except Exception:
+                    # A locked database (zones, the daily count, the recalibrator's log) must not take the process
+                    # down with the rain backoff and the open stay in it; skip this frame and carry on.
+                    log_rarely("frame", "couldn't process a frame; carrying on")
             log.warning("lost the substream; reconnecting")
             cap.release()
             time.sleep(2)
+
+    def step(self, frame: np.ndarray, frames: int) -> None:
+        """One substream frame: score the motion and, if it adds up to a trigger, start a capture."""
+        if self.detector.use(zones.current()):
+            log.info("zones recalibrated; switched to the new ones")
+        motion = self.detector.score(frame)
+        water, ground = self.detector.water_hit, self.detector.ground_hit
+        quiet = frames > WARMUP_FRAMES and not self.busy.is_set() and motion < config.MOTION_MIN_AREA \
+            and not water and not ground and self.stay is None
+        self.recalibrator.feed(frame, self.detector.night, quiet)
+        if frames <= WARMUP_FRAMES or self.busy.is_set():
+            self.streak = 0
+            return
+        now = time.time()
+        if self.follow_stay(now):
+            self.streak = 0
+            return
+        action = motion_action(now, self.cooldown_until, self.backoff_until, probe_ready())
+        self.streak = self.streak + 1 if action != "wait" and motion >= config.MOTION_MIN_AREA else 0
+        if action != "wait" and (self.streak >= config.TRIGGER_FRAMES or water):
+            self.streak = 0
+            trigger = "rim" if streak_hit(motion) else "water"
+            # Water-only triggers always go through the local animal check first, so a ripple that slips
+            # past the blob rule costs a few seconds of Pi CPU, never a Claude call.
+            probe = action == "probe" or (trigger == "water" and probe_ready())
+            log.info("motion %.3f (%s%s)", motion, trigger, ", probe" if probe else "")
+            self._maybe_trigger(motion, probe=probe, trigger=trigger)
+            if self.detector.water:
+                self.detector.water.reset()
+        elif ground and action != "wait" and (
+                ground_action := motion_action(now, self.ground_until, self.ground_backoff_until,
+                                               probe_ready())) != "wait":
+            # Claude, under the ground's own limit, except during a run of empty ground triggers: then
+            # probes, which pass unless the animal check calls them empty. Empty answers are kept as
+            # false triggers.
+            probe = ground_action == "probe"
+            log.info("motion on the ground (%s%s)", "night" if self.detector.night else "day",
+                     ", probe" if probe else "")
+            self._maybe_trigger(motion, probe=probe, trigger="ground")
+            self.detector.ground.reset()
 
 
 def main() -> None:
