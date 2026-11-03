@@ -14,14 +14,14 @@
 {%- endif -%}
 {%- endmacro %}
 
-{# The blue keeper mark (a bookmark) on a card; admin only, so callers check request.state.admin. htmx swaps it for
+{# The blue keeper mark (a star) on a card; admin only, so callers check request.state.admin. htmx swaps it for
    the server's updated copy. Lives inside the card's link, so the click must not follow the link. #}
 {% macro keeper_btn(v) -%}
 {%- set on = v.keep == 1 -%}
 <button type="button" class="keep-mark" aria-pressed="{{ 'true' if on else 'false' }}" aria-label="Keep this photo"
   hx-post="/visit/{{ v.id }}/keep" hx-vals='{"on": {{ 0 if on else 1 }}}' hx-target="this" hx-swap="outerHTML"
   onclick="event.preventDefault(); event.stopPropagation()"
-  data-tip="Keeper: this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3h11a1 1 0 0 1 1 1v17l-6.5-4.4L5.5 21V4a1 1 0 0 1 1-1z"/></svg></button>
+  data-tip="Keeper: this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg></button>
 {%- endmacro %}
 
 {# A status pill. Every pill says what it means in a hover tooltip (static/tips.js); add new pills here. #}

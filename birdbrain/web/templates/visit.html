@@ -90,7 +90,7 @@
         {% if visit.keep %}
         <span class="confirmed-pair">{{ badge("keeper", "keeper") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/keep" hx-vals='{"on": 0, "where": "visit"}'>Undo</button></span>
         {% else %}
-        <button type="button" class="keep-btn" hx-post="/visit/{{ visit.id }}/keep" hx-vals='{"on": 1, "where": "visit"}' data-tip="Keeper: this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3h11a1 1 0 0 1 1 1v17l-6.5-4.4L5.5 21V4a1 1 0 0 1 1-1z"/></svg>Keep this photo</button>
+        <button type="button" class="keep-btn" hx-post="/visit/{{ visit.id }}/keep" hx-vals='{"on": 1, "where": "visit"}' data-tip="Keeper: this photo is never thinned or deleted to save space"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z"/></svg>Keep this photo</button>
         {% endif %}
         {% if visit.confirmed_at %}
         <span class="confirmed-pair">{{ badge("Confirmed No Animal" if visit.label == 'None' else "confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button></span>
