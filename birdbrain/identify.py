@@ -10,7 +10,7 @@ from typing import Callable, Literal
 
 import anthropic
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from . import config
 
@@ -155,20 +155,31 @@ def ask(
     site: dict | None = None,
     note: str = "",
 ) -> tuple[Sighting | None, dict]:
-    response = client().beta.messages.parse(
-        model=model,
-        max_tokens=4000,
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-        output_config={"effort": "low" if model == HAIKU else "medium"},
-        system=system_prompt(lessons, site),
-        messages=[{"role": "user", "content": user_content(images_b64, captured_at, note)}],
-        output_format=Sighting,
-    )
+    """(answer, call details). The answer is None when the model declined or didn't finish: a refusal, an answer
+    cut off at max_tokens, or output the SDK couldn't parse into a Sighting (it raises before stop_reason can be
+    checked). Those escalate like a refusal; API errors (timeouts, 5xx) are left to the caller."""
+    try:
+        response = client().beta.messages.parse(
+            model=model,
+            max_tokens=4000,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={"effort": "low" if model == HAIKU else "medium"},
+            system=system_prompt(lessons, site),
+            messages=[{"role": "user", "content": user_content(images_b64, captured_at, note)}],
+            output_format=Sighting,
+        )
+    except ValidationError as e:
+        return None, {"model": model, "stop_reason": "unparsable", "error": error_text(e)}
     usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
-    if response.stop_reason == "refusal" or response.parsed_output is None:
+    if response.stop_reason in ("refusal", "max_tokens") or response.parsed_output is None:
         return None, {"model": response.model, "stop_reason": response.stop_reason, **usage}
     return response.parsed_output, {"model": response.model, **usage}
+
+
+def error_text(e: BaseException) -> str:
+    """An exception as one short line for raw_json: its type and the start of its message."""
+    return f"{type(e).__name__}: {e}".splitlines()[0][:300]
 
 
 def needs_second_look(s: Sighting | None, confirmed: set[str] = frozenset()) -> bool:
@@ -228,22 +239,39 @@ def identify(
             raw["skipped_sonnet"] = "confirmed species"
             if guess and guess.get("top"):
                 raw["local_agreed"] = True
+    unsettled = False  # Sonnet was asked and gave no answer, so whatever Haiku said stands unchecked
     if second:
         images = [image_b64, *(prepare(f, crop) for f in extra_frames)]
-        second, meta2 = ask(SONNET, images, captured_at, lessons, site)
+        try:
+            second, meta2 = ask(SONNET, images, captured_at, lessons, site)
+        except Exception as e:
+            # The second look failed (a 529 or a timeout past the SDK's retries). Haiku's answer is still good,
+            # so keep it and send the visit to review rather than lose it.
+            second, meta2 = None, {"model": SONNET, "error": error_text(e)}
         raw["sonnet"] = {**meta2, "frames": len(images), "answer": second.model_dump() if second else None}
         if second is not None:
             sighting, model, escalated = second, SONNET, True
+        else:
+            unsettled = True
     if sighting is None:
         sighting = Sighting(visitor="other", species=None, count=0, confidence="low", notes="Model declined to answer")
     also = also_rows(sighting, crop)
     needs_review = sighting.visitor != "none" and (
-        sighting.confidence == "low" or any(a["confidence"] == "low" for a in also))
+        unsettled or sighting.confidence == "low" or any(a["confidence"] == "low" for a in also))
     if circle := frame_circle(sighting, crop):
         raw["circle"] = circle
     if also:
         raw["also"] = also
     return Result(sighting, model, escalated, needs_review, raw)
+
+
+def unanswered(error: BaseException) -> Result:
+    """Claude couldn't be asked at all (the API down, unreachable or timing out past the SDK's retries, or an
+    unexpected error on the way): the visit is kept as "other" for the owner's review instead of being lost. It
+    counts as a Haiku visit for the daily budget, since Haiku is always the first call."""
+    s = Sighting(visitor="other", species=None, count=0, confidence="low",
+                 notes="Claude couldn't answer (an error, not a refusal); please check the photo.")
+    return Result(s, HAIKU, escalated=False, needs_review=True, raw={"error": error_text(error)})
 
 
 LOCAL_MODEL = "yolox-tiny"

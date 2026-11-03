@@ -330,6 +330,21 @@ def test_decision_steps_handles_refusals_and_old_or_broken_records():
     refused = json.dumps({"calls": {"haiku": {"answer": None}, "sonnet": {"frames": 3, "answer": None}}})
     steps = webapp.decision_steps(refused)["steps"]
     assert [s["refused"] for s in steps] == [True, True]
+    assert [s["error"] for s in steps] == [None, None] and not webapp.decision_steps(refused)["failed"]
+
+
+def test_visit_page_says_when_claude_could_not_answer(client, add_visit):
+    raw = json.dumps({"answer": {"visitor": "other"}, "calls": {"error": "APIConnectionError: Connection error."},
+                      "trigger": "rim"})
+    vid = add_visit(visitor="other", species=None, confidence="low", needs_review=1, raw_json=raw)
+    decision = webapp.decision_steps(raw)
+    assert decision["failed"] and [(s["model"], s["error"]) for s in decision["steps"]] == [
+        ("Haiku", "APIConnectionError: Connection error.")]
+    html = client.get(f"/visit/{vid}").text
+    assert "Couldn't answer: the call failed." in html and "APIConnectionError" in html
+    assert "Claude couldn't answer, so the photo was kept and sent to you for review." in html
+    assert "Declined to answer" not in html
+    assert f"/visit/{vid}" in client.get("/review").text
     assert webapp.decision_steps(None)["steps"] == []
     assert webapp.decision_steps('{"answer": {}}')["steps"] == []   # dev-seed rows have no trail
     assert webapp.decision_steps("not json")["steps"] == []

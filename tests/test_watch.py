@@ -1,4 +1,8 @@
+import sqlite3
+
+import anthropic
 import cv2
+import httpx
 import numpy as np
 import pytest
 
@@ -433,3 +437,148 @@ def test_probe_with_an_untrained_check_goes_to_claude(pipeline, monkeypatch):
     monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {"model": "bioclip-presence", "score": None, "empty": False})
     assert watch.handle_event(probe=True, trigger="ground") == "bird"
     assert asked == [1]
+
+
+# --- Never lose a visit: the watcher must survive Claude and database errors with the visit stored ---
+
+def locked():
+    return sqlite3.OperationalError("database is locked")
+
+
+def raise_locked(*args, **kwargs):
+    raise locked()
+
+
+def test_work_clears_busy_even_when_the_cooldown_step_raises(monkeypatch, conn):
+    w = watch.Watcher()
+    w.busy.set()
+    monkeypatch.setattr(watch, "handle_event", lambda *a, **k: "none")
+    monkeypatch.setattr(watch, "probe_ready", raise_locked)
+    w._work(0.0, probe=False, trigger="rim")
+    assert not w.busy.is_set()
+
+
+def test_probe_ready_falls_back_to_no_probes_on_a_locked_database(monkeypatch, conn):
+    w = watch.Watcher()
+    w.busy.set()
+    monkeypatch.setattr(watch, "handle_event", lambda *a, **k: "none")
+    monkeypatch.setattr(watch, "presence_mode", raise_locked)
+    assert watch.probe_ready() is False
+    w._work(0.0, probe=False, trigger="rim")
+    assert not w.busy.is_set() and w.false_streak == 1 and w.cooldown_until > watch.time.time()
+    assert w.backoff_until == w.cooldown_until  # no probes without the animal check: just wait
+
+
+def api_errors():
+    req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    return [anthropic.APIConnectionError(request=req),
+            anthropic.RateLimitError("rate limited", response=httpx.Response(429, request=req), body=None)]
+
+
+@pytest.mark.parametrize("error", api_errors(), ids=["connection", "rate limit"])
+def test_claude_error_keeps_the_visit_for_review_without_touching_the_streak(pipeline, monkeypatch, error):
+    conn, asked, set_detector = pipeline
+    set_detector(True)
+
+    def failing_identify(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(watch.identify, "identify", failing_identify)
+    alerts = []
+    monkeypatch.setattr(watch.alert, "reason", lambda *a: alerts.append(a) or "New species")
+    w = watch.Watcher()
+    w.false_streak = 2
+    w.empty = frame()[:, :, 0]
+    w.busy.set()
+    w._work(0.01, probe=False, trigger="rim")
+    assert not w.busy.is_set()
+    visit = watch.db.latest_visit(conn)
+    assert (visit["visitor"], visit["species"], visit["needs_review"], visit["model"]) == ("other", None, 1, "claude-haiku-5-5")
+    raw = watch.json.loads(visit["raw_json"])
+    assert raw["calls"]["error"].startswith(type(error).__name__)
+    assert w.false_streak == 2 and w.backoff_until == 0.0          # not a false trigger...
+    assert w.stay_pending is None and alerts == []                 # ...and not a visit to alert about or follow
+    assert w.cooldown_until > watch.time.time()
+    assert watch.calls_today() == 1                                 # the failed call still counts toward the budget
+
+
+def test_unanswered_ground_trigger_waits_without_a_ground_streak(monkeypatch, conn):
+    w = watch.Watcher()
+    monkeypatch.setattr(watch, "handle_event", lambda *a, **k: watch.UNANSWERED)
+    w._work(0.0, probe=False, trigger="ground")
+    assert w.ground_streak == 0 and w.ground_until > watch.time.time() and w.cooldown_until == 0.0
+
+
+@pytest.mark.parametrize("effect", ["note_stored", "push_public", "prune"])
+def test_an_error_after_the_save_still_returns_the_stored_visitor(pipeline, monkeypatch, effect):
+    conn, asked, set_detector = pipeline
+    set_detector(True)
+    if effect == "prune":
+        from birdbrain.identify import Result, Sighting
+        monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
+            Sighting(visitor="none", species=None, count=0, confidence="high", notes=""), "claude-haiku-5-5", False, False, {}))
+        monkeypatch.setattr(watch.retention, "prune", raise_locked)
+        expected = "none"
+    elif effect == "note_stored":
+        monkeypatch.setattr(watch.retention, "note_stored", raise_locked)
+        expected = "bird"
+    else:
+        monkeypatch.setenv("PUBLIC_DEST", "pi@mirror:/srv")
+        monkeypatch.setattr(watch.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(OSError("not executable")))
+        expected = "bird"
+    assert watch.handle_event() == expected
+    assert watch.db.latest_visit(conn, real_only=False)["visitor"] == expected
+    assert watch.last_visit_id is not None
+
+
+def test_log_rarely_logs_once_a_minute_per_key(monkeypatch, caplog):
+    monkeypatch.setattr(watch, "_last_logged", {})
+    clock = [1000.0]
+    monkeypatch.setattr(watch.time, "monotonic", lambda: clock[0])
+    with caplog.at_level("ERROR", logger="birdbrain.watch"):
+        for _ in range(3):
+            try:
+                raise locked()
+            except sqlite3.OperationalError:
+                watch.log_rarely("frame", "couldn't process a frame")
+        clock[0] += 61
+        try:
+            raise locked()
+        except sqlite3.OperationalError:
+            watch.log_rarely("frame", "couldn't process a frame")
+    assert caplog.text.count("couldn't process a frame") == 2
+
+
+class Stop(BaseException):
+    """Breaks out of Watcher.run's forever loop when the fake camera is opened a second time."""
+
+
+def test_frame_loop_survives_a_locked_database(monkeypatch, conn):
+    opened = []
+
+    class FakeCap:
+        def __init__(self, *args):
+            if opened:
+                raise Stop
+            opened.append(self)
+            self.reads = 0
+
+        def isOpened(self):
+            return True
+
+        def read(self):
+            self.reads += 1
+            return (True, frame()) if self.reads <= 5 else (False, None)
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(watch.cv2, "VideoCapture", FakeCap)
+    monkeypatch.setattr(watch.time, "sleep", lambda s: None)
+    monkeypatch.setattr(watch, "_last_logged", {})
+    w = watch.Watcher()
+    asked = []
+    monkeypatch.setattr(watch.zones, "current", lambda: asked.append(1) or raise_locked())
+    with pytest.raises(Stop):
+        w.run()
+    assert len(asked) == 5  # every frame was tried; none of the errors took the loop down

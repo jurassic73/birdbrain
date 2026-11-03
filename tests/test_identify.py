@@ -2,6 +2,9 @@ import base64
 import io
 from datetime import datetime
 
+import anthropic
+import httpx
+import pydantic
 import pytest
 from PIL import Image
 
@@ -154,6 +157,86 @@ def test_sonnet_refusal_keeps_the_haiku_answer(fake_ask):
     fake_ask({HAIKU: sighting(confidence="low"), SONNET: None})
     r = identify.identify(jpeg(), WHEN)
     assert (r.sighting.species, r.model, r.needs_review) == ("Dark-eyed Junco", HAIKU, True)
+
+
+def test_sonnet_refusal_after_a_medium_answer_goes_to_review(fake_ask):
+    fake_ask({HAIKU: sighting(species="Song Sparrow", confidence="medium"), SONNET: None})
+    r = identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"})
+    assert (r.sighting.species, r.model, r.escalated, r.needs_review) == ("Song Sparrow", HAIKU, False, True)
+
+
+def test_sonnet_error_keeps_the_haiku_answer_for_review(monkeypatch):
+    def ask(model, images_b64, captured_at, lessons=None, site=None):
+        if model == SONNET:
+            raise anthropic.APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+        return sighting(confidence="medium"), {"model": model}
+
+    monkeypatch.setattr(identify, "ask", ask)
+    r = identify.identify(jpeg(), WHEN, extra_frames=[jpeg()])
+    assert (r.sighting.species, r.model, r.escalated, r.needs_review) == ("Dark-eyed Junco", HAIKU, False, True)
+    assert r.raw["sonnet"]["answer"] is None and r.raw["sonnet"]["error"].startswith("APIConnectionError")
+    assert r.raw["haiku"]["answer"]["species"] == "Dark-eyed Junco"
+
+
+class FakeClient:
+    """client() stand-in whose parse() returns a scripted response or raises."""
+
+    def __init__(self, response=None, raises=None):
+        self.beta = self
+        self.messages = self
+        self.response, self.raises = response, raises
+
+    def parse(self, **kwargs):
+        if self.raises:
+            raise self.raises
+        return self.response
+
+
+class FakeResponse:
+    def __init__(self, stop_reason, parsed_output=None):
+        self.model, self.stop_reason, self.parsed_output = HAIKU, stop_reason, parsed_output
+        self.usage = type("Usage", (), {"input_tokens": 1200, "output_tokens": 40})()
+
+
+def truncated_output_error() -> pydantic.ValidationError:
+    """What the SDK raises when the answer was cut off at max_tokens (or a refusal came mid-output)."""
+    try:
+        pydantic.TypeAdapter(Sighting).validate_json('{"visitor": "bi')
+    except pydantic.ValidationError as e:
+        return e
+    raise AssertionError("expected a ValidationError")
+
+
+def test_ask_treats_an_unparsable_answer_like_a_refusal(monkeypatch):
+    monkeypatch.setattr(identify, "client", lambda: FakeClient(raises=truncated_output_error()))
+    answer, meta = identify.ask(HAIKU, ["abc"], WHEN)
+    assert answer is None and meta["stop_reason"] == "unparsable" and meta["model"] == HAIKU
+    assert "ValidationError" in meta["error"]
+
+
+@pytest.mark.parametrize("stop_reason, parsed", [("refusal", None), ("max_tokens", None)])
+def test_ask_returns_no_answer_when_the_model_stopped_short(monkeypatch, stop_reason, parsed):
+    monkeypatch.setattr(identify, "client", lambda: FakeClient(FakeResponse(stop_reason, parsed)))
+    answer, meta = identify.ask(HAIKU, ["abc"], WHEN)
+    assert answer is None and meta["stop_reason"] == stop_reason and meta["input_tokens"] == 1200
+
+
+def test_ask_cut_off_at_max_tokens_is_no_answer_even_if_it_parsed(monkeypatch):
+    monkeypatch.setattr(identify, "client", lambda: FakeClient(FakeResponse("max_tokens", sighting())))
+    assert identify.ask(HAIKU, ["abc"], WHEN)[0] is None
+
+
+def test_ask_lets_api_errors_through(monkeypatch):
+    err = anthropic.RateLimitError("slow down", response=httpx.Response(429, request=httpx.Request("POST", "x")), body=None)
+    monkeypatch.setattr(identify, "client", lambda: FakeClient(raises=err))
+    with pytest.raises(anthropic.RateLimitError):
+        identify.ask(HAIKU, ["abc"], WHEN)
+
+
+def test_unanswered_result_lands_in_the_review_queue_with_the_error():
+    r = identify.unanswered(TimeoutError("read timed out"))
+    assert (r.sighting.visitor, r.sighting.species, r.needs_review, r.escalated) == ("other", None, True, False)
+    assert r.model == HAIKU and r.raw == {"error": "TimeoutError: read timed out"}
 
 
 def test_system_prompt_gives_the_owners_three_boxes_in_order():
