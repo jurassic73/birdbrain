@@ -27,7 +27,8 @@ def test_visitors_browse_but_change_nothing(client, add_visit, conn, locked):
     assert "/correct" not in page.text and "Delete visit" not in page.text and 'href="/settings"' not in page.text
     assert 'href="/login' in page.text
     for path in (f"/visit/{vid}/correct", f"/visit/{vid}/delete", f"/visit/{vid}/check-circle/pi",
-                 f"/visit/{vid}/check-circle/haiku", "/notes/refine", "/settings/alerts", "/settings/zones/manual"):
+                 f"/visit/{vid}/check-circle/haiku", "/notes/refine", "/settings/alerts", "/settings/mirror",
+                 "/settings/zones/manual"):
         assert client.post(path).status_code == 403
     assert db.get_visit(conn, vid) is not None
     for path in ("/settings", "/notes", "/review", "/false-triggers", "/false-triggers/cards?after=0",

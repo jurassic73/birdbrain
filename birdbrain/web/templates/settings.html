@@ -271,6 +271,29 @@
   </div>
 </details>
 
+<details class="settings-card" id="mirror" open>
+  <summary><h2>Public mirror</h2><span class="summary-hint">{{ 'Circle checks shared' if mirror_owner_checks else 'Circle checks kept here' }}</span></summary>
+  <div class="settings-body">
+  {% if mirror_saved %}<p class="notice saved">Saved. The next push to the mirror carries the change.</p>{% endif %}
+  <p class="muted">What the read-only public copy gets, if one is set up (<code>scripts/push_public.sh</code>). Your notes for Claude, alert topics and the Pi's training data never go.</p>
+
+  <form class="settings-form" method="post" action="/settings/mirror">
+    <fieldset class="field">
+      <legend class="tip-label">Share <span class="info-tip" tabindex="0" aria-label="About sharing circle checks" data-tip="Shares your circles and the answers to Ask BioCLIP 2, Ask Haiku and Ask Sonnet, listed under How it was decided on the visit page. Your notes are never shared. Off: the checks stay on the Pi from the next push on.">i</span></legend>
+      <div class="choices">
+        <label class="choice">
+          <input type="checkbox" name="owner_checks" value="1" {% if mirror_owner_checks %}checked{% endif %}>
+          <span>Show my circle checks on the public mirror <small>Ask BioCLIP 2, Haiku and Sonnet answers</small></span>
+        </label>
+      </div>
+    </fieldset>
+    <div class="actions">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+  </div>
+</details>
+
 <script src="/static/cam-live.js?v={{ asset_version }}"></script>
 <script>
   document.getElementById("ntfy-test")?.addEventListener("click", (e) => {

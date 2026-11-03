@@ -3,7 +3,9 @@ photo files to send with it.
 
 The Pi's database holds the owner's settings, notes and training data; the mirror (BIRDBRAIN_PUBLIC=1) only
 needs what its pages read. So the copy keeps an allowlist of settings keys and tables, and the visits lose the
-owner's notes, Make public calls and the parts of raw_json nothing public shows. Only the files the trimmed,
+owner's notes, Make public calls and the parts of raw_json nothing public shows. The owner's circle checks (Ask
+BioCLIP 2 / Haiku / Sonnet on the visit page, raw_json.calls.owner_checks) go along unless Settings > Public mirror
+says not to (OWNER_CHECKS_KEY, read here on the Pi, so the data never leaves it). Only the files the trimmed,
 privacy-filtered copy refers to (each visit's photo, thumbnail and burst frames) are pushed, so a photo saved
 after the copy was made, an orphan or a temporary file never goes out. They're staged as symlinks in a folder
 rsync sends with --copy-links --delete, so whatever else is on the mirror is removed.
@@ -41,10 +43,21 @@ PRIVATE_COLUMNS = ("feedback",)
 RAW_KEYS = ("calls", "trigger", "burst", "zones")
 # Tables emptied: Ask-the-Pi timings (the admin's button) and the animal check's embeddings (its training data).
 EMPTIED_TABLES = ("pi_checks", "embeddings")
+# Settings > Public mirror: "Show my circle checks on the public mirror". "0" = off; unset or anything else = on
+# (the owner finds them helpful there). The key stays on the Pi: the mirror's pages never read it.
+OWNER_CHECKS_KEY = "mirror_owner_checks"
+OWNER_CHECKS_PATH = "owner_checks"  # under raw_json.calls (circle_check.record)
 
 
-def public_raw(text: str | None) -> str | None:
-    """A visit's raw_json cut down to RAW_KEYS (None when there's nothing readable to keep)."""
+def owner_checks_shared(conn: sqlite3.Connection) -> bool:
+    """Whether the owner's circle checks go to the mirror (the setting, on by default)."""
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (OWNER_CHECKS_KEY,)).fetchone()
+    return row is None or row[0] != "0"
+
+
+def public_raw(text: str | None, owner_checks: bool = True) -> str | None:
+    """A visit's raw_json cut down to RAW_KEYS (None when there's nothing readable to keep). With owner_checks off,
+    the owner's circle checks are dropped from calls too (Claude's own answer and circle stay)."""
     try:
         raw = json.loads(text or "")
     except ValueError:
@@ -52,17 +65,23 @@ def public_raw(text: str | None) -> str | None:
     if not isinstance(raw, dict):
         return None
     kept = {k: raw[k] for k in RAW_KEYS if k in raw}
+    if not owner_checks and isinstance(kept.get("calls"), dict) and OWNER_CHECKS_PATH in kept["calls"]:
+        kept["calls"] = {k: v for k, v in kept["calls"].items() if k != OWNER_CHECKS_PATH}
     return json.dumps(kept) if kept else None
 
 
 def trim(conn: sqlite3.Connection) -> None:
-    """Strip a copy of the database down to what the public pages read. Never run on the Pi's own database."""
+    """Strip a copy of the database down to what the public pages read. Never run on the Pi's own database.
+    Every push rebuilds the whole copy from the Pi's database (copy_db), so a setting changed on the Pi is in force
+    on the next push; nothing stale stays on the mirror."""
+    share_checks = owner_checks_shared(conn)  # read before the settings are trimmed: the key itself stays on the Pi
     keys = ", ".join("?" * len(SETTINGS_KEYS))
     like = " OR ".join("key LIKE ?" for _ in SETTINGS_PREFIXES)
     conn.execute(f"DELETE FROM settings WHERE key NOT IN ({keys}) AND NOT ({like})",
                  [*sorted(SETTINGS_KEYS), *(p + "%" for p in SETTINGS_PREFIXES)])
     rows = conn.execute("SELECT id, raw_json FROM visits WHERE raw_json IS NOT NULL").fetchall()
-    conn.executemany("UPDATE visits SET raw_json = ? WHERE id = ?", [(public_raw(raw), vid) for vid, raw in rows])
+    conn.executemany("UPDATE visits SET raw_json = ? WHERE id = ?",
+                     [(public_raw(raw, share_checks), vid) for vid, raw in rows])
     for sql in (*(f"UPDATE visits SET {col} = NULL" for col in PRIVATE_COLUMNS),
                 *(f"DELETE FROM {table}" for table in EMPTIED_TABLES),
                 "UPDATE calibrations SET summary = '', image_path = NULL"):  # the zones history stays: older

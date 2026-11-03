@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import auth, steps, viewer
-from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
+from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 log = logging.getLogger("birdbrain.web")
@@ -1624,13 +1624,15 @@ def clean_false_triggers(conn=Depends(get_conn)):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, pruned: int | None = None, limits_error: str = "", limits_saved: bool = False,
                   alerts_saved: bool = False, alerts_test: str = "", zones_saved: bool = False, presence_saved: bool = False,
-                  conn=Depends(get_conn)):
+                  mirror_saved: bool = False, conn=Depends(get_conn)):
     storage = retention.usage(conn)
     limit = storage["limit_bytes"] / 1e6
     return page(
         request,
         "settings.html",
         pruned=pruned,
+        mirror_saved=mirror_saved,
+        mirror_owner_checks=mirror.owner_checks_shared(conn),
         presence_saved=presence_saved,
         presence_mode=presence.mode(conn),
         presence_report=db.presence_report(conn),
@@ -1693,6 +1695,13 @@ def save_alerts(
         quiet_end=ntfy_quiet_end,
     )
     return RedirectResponse("/settings?alerts_saved=1#alerts", status_code=303)
+
+
+@app.post("/settings/mirror")
+def save_mirror(owner_checks: str | None = Form(None), conn=Depends(get_conn)):
+    """Settings > Public mirror: whether the owner's circle checks go with the next push (birdbrain.mirror)."""
+    db.set_value(conn, mirror.OWNER_CHECKS_KEY, "1" if owner_checks is not None else "0")
+    return RedirectResponse("/settings?mirror_saved=1#mirror", status_code=303)
 
 
 @app.post("/settings/storage")

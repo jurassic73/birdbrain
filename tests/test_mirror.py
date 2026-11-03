@@ -142,3 +142,92 @@ def test_prepare_fails_closed(tmp_path, capsys):
     assert mirror.main(["prepare", str(tmp_path / "nope.db"), str(tmp_path / "stage")]) == 2
     assert "mirror copy failed" in capsys.readouterr().err
     assert mirror.main(["bogus"]) == 2
+
+
+# The owner's circle checks (Ask BioCLIP 2 / Haiku / Sonnet on the visit page) go to the mirror unless Settings >
+# Public mirror says not to. The setting is read on the Pi while the copy is built, so an unshared check never leaves.
+CHECKED_RAW = {"calls": {"haiku": {"input_tokens": 10}, "circle": {"x": 0.5, "y": 0.5, "r": 0.1},
+                         "owner_checks": [{"source": "haiku", "say": "Haiku says Bushtit (high).", "usd": 0.001,
+                                           "circle": {"x": 0.4, "y": 0.4, "r": 0.05}, "at": "2026-11-03T10:00:00",
+                                           "answer": {"notes": "crest and tail"}}]},
+               "trigger": "rim"}
+
+
+def _mirror_calls(copy, vid) -> dict:
+    raw = sqlite3.connect(copy).execute("SELECT raw_json FROM visits WHERE id = ?", (vid,)).fetchone()[0]
+    return json.loads(raw)["calls"]
+
+
+def test_circle_checks_go_to_the_mirror_by_default(conn, add_visit, tmp_path):
+    vids = [add_visit(raw_json=json.dumps(CHECKED_RAW)) for _ in range(2)]
+    assert mirror.owner_checks_shared(conn)  # no setting stored yet
+    copy = tmp_path / "mirror.db"
+    mirror.copy_db(config.DB_PATH, copy)
+    for vid in vids:
+        assert _mirror_calls(copy, vid)["owner_checks"][0]["say"] == "Haiku says Bushtit (high)."
+
+
+def test_circle_checks_stay_on_the_pi_when_switched_off(conn, add_visit, tmp_path):
+    vids = [add_visit(raw_json=json.dumps(CHECKED_RAW)) for _ in range(3)]
+    db.set_value(conn, mirror.OWNER_CHECKS_KEY, "0")
+    assert not mirror.owner_checks_shared(conn)
+    copy = tmp_path / "mirror.db"
+    mirror.copy_db(config.DB_PATH, copy)
+    c = sqlite3.connect(copy)
+    for vid in vids:
+        calls = _mirror_calls(copy, vid)
+        assert "owner_checks" not in calls
+        assert calls["haiku"] == {"input_tokens": 10} and calls["circle"] == {"x": 0.5, "y": 0.5, "r": 0.1}  # Claude's stay
+    assert c.execute("SELECT COUNT(*) FROM visits WHERE raw_json LIKE '%owner_checks%'").fetchone()[0] == 0
+    assert c.execute("SELECT COUNT(*) FROM settings WHERE key = ?", (mirror.OWNER_CHECKS_KEY,)).fetchone()[0] == 0
+    # The Pi's own database keeps the checks.
+    assert json.loads(db.get_visit(conn, vids[0])["raw_json"])["calls"]["owner_checks"]
+    # Switched back on, the next build carries them again: nothing is remembered from the last copy.
+    db.set_value(conn, mirror.OWNER_CHECKS_KEY, "1")
+    mirror.copy_db(config.DB_PATH, copy)
+    assert _mirror_calls(copy, vids[0])["owner_checks"]
+
+
+def test_public_raw_can_drop_the_owner_checks_only():
+    text = json.dumps(CHECKED_RAW)
+    assert "owner_checks" in json.loads(mirror.public_raw(text))["calls"]
+    off = json.loads(mirror.public_raw(text, owner_checks=False))
+    assert set(off["calls"]) == {"haiku", "circle"} and off["trigger"] == "rim"
+    assert json.loads(mirror.public_raw('{"calls": {"owner_checks": []}}', owner_checks=False)) == {"calls": {}}
+    assert mirror.public_raw('{"calls": 3}', owner_checks=False) == '{"calls": 3}'  # not a dict: left as it is
+
+
+def test_mirror_visit_page_shows_the_checks_only_when_shared(conn, add_visit, tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from birdbrain.web import app as webapp
+
+    vid = add_visit(raw_json=json.dumps(CHECKED_RAW))
+    db.set_value(conn, mirror.OWNER_CHECKS_KEY, "0")
+    off, on = tmp_path / "off.db", tmp_path / "on.db"
+    mirror.copy_db(config.DB_PATH, off)
+    db.set_value(conn, mirror.OWNER_CHECKS_KEY, "1")
+    mirror.copy_db(config.DB_PATH, on)
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    for copy, shown in ((off, False), (on, True)):
+        monkeypatch.setattr(config, "DB_PATH", copy)
+        with TestClient(webapp.app) as c:
+            page = c.get(f"/visit/{vid}")
+        assert page.status_code == 200 and "Dark-eyed Junco" in page.text
+        assert ("Your circle checks" in page.text) is shown
+        assert ("Haiku says Bushtit" in page.text) is shown
+
+
+def test_settings_saves_the_mirror_toggle(conn):
+    from fastapi.testclient import TestClient
+    from birdbrain.web import app as webapp
+
+    with TestClient(webapp.app) as c:
+        page = c.get("/settings")
+        assert 'id="mirror"' in page.text and 'name="owner_checks" value="1" checked' in page.text
+        r = c.post("/settings/mirror", data={}, follow_redirects=False)  # box unticked
+        assert r.status_code == 303 and r.headers["location"] == "/settings?mirror_saved=1#mirror"
+        assert db.get_value(conn, mirror.OWNER_CHECKS_KEY) == "0" and not mirror.owner_checks_shared(conn)
+        assert 'name="owner_checks" value="1" checked' not in c.get("/settings").text
+        c.post("/settings/mirror", data={"owner_checks": "1"}, follow_redirects=False)
+        assert mirror.owner_checks_shared(conn)
+        assert 'name="owner_checks" value="1" checked' in c.get("/settings").text
