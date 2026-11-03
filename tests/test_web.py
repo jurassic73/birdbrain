@@ -1398,6 +1398,13 @@ def test_the_false_triggers_intro_shows_the_four_components_with_live_numbers(cl
     assert f"{config.TRIGGER_FRAMES} frames in a row" in html and f"{classifier.GATE_MIN_SCORE * 100:g}%" in html
     assert f"newest {db.LESSON_LIMIT} lessons" in html and "<summary>More</summary>" in html
     assert "delete confirmed photos to save space" in html and 'id="ft-delete-link"' in html
+    # The strips live in a pop-up opened from a link; the page keeps a one-line intro.
+    dialog = html[html.index('<dialog class="popup ft-trains-popup"'):html.index("</dialog>")]
+    assert 'id="ft-trains-link"' in html and ">What trains what?<" in html
+    assert all(n in dialog for n in FOUR) and len(re.findall(r'class="hs-strip"', dialog)) == 4
+    assert "Bottom line" in dialog and "popup-close" in dialog and "Escape" not in html.split("<dialog")[0]
+    assert "Motion, but no animal found. Open each photo to check it." in html
+    assert 'class="hs-strip"' not in html.replace(dialog, "")
 
 
 def test_about_has_the_four_steps_as_numbered_cards_with_live_numbers(client):

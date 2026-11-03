@@ -1901,3 +1901,6 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 .ft-steps { margin: 0 0 12px; }
 .photo-trains { margin: 0 0 12px; }
 .photo-trains h2 { font-size: 1.05rem; margin: 0 0 6px; }
+.ft-trains-popup { width: min(94vw, 640px); max-height: 90vh; padding: 18px 20px 16px; overflow-y: auto; }
+.ft-trains-popup .popup-title { padding-right: 32px; }
+.ft-trains-popup .popup-close { position: absolute; top: 10px; right: 10px; }
