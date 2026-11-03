@@ -6,6 +6,10 @@
 # rrsync in its data folder, so the path is relative to that). PUBLIC_KEY is the ssh key to use.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Cron and the watcher throw this script's output away, so anything worth knowing also goes to the system log
+# (journalctl -t push_public): a failed step and what the self-check at the end finds.
+warn() { echo "push_public: $*" >&2; if command -v logger >/dev/null 2>&1; then logger -t push_public -- "$*" || true; fi; }
+trap 'warn "failed (exit $?): $BASH_COMMAND"' ERR
 envval() { { grep -E "^$1=" .env 2>/dev/null || true; } | cut -d= -f2- | awk '{print $1}'; }
 PUBLIC_DEST="${PUBLIC_DEST:-$(envval PUBLIC_DEST)}"; : "${PUBLIC_DEST:?set PUBLIC_DEST}"
 PUBLIC_KEY="${PUBLIC_KEY:-$(envval PUBLIC_KEY)}"; PUBLIC_KEY="${PUBLIC_KEY:-$HOME/.ssh/birdbrain_push}"
@@ -45,14 +49,36 @@ if [ -f "$STAGE/live.jpg" ] && ! "$PY" -m birdbrain.privacy check "$STAGE/live.j
 # temporary name and renames it when done, so the mirror never reads half a database or frame.
 # Only the staged links are sent (-L sends the files they point at) and --delete takes everything
 # else off the mirror: a visit held back since the last push, an orphan, a leftover temporary file.
-# On the mirror the files belong to the push user, with the service reading them through its group:
-# directories 2770 (group-owned by setgid), files 660 (the app needs group write on the database), nothing
-# for anyone else. The D/F forms of --chmod need rsync 3 (the Pi); older ones and openrsync (a Mac) push
-# with plain modes.
+#
+# Who may read the files on the mirror. They belong to the push user and the service reads them through
+# its group, so the group must be the service's and the modes must let the group in:
+# - The group is never sent: -rtpz on purpose, not -a, which would add -o and -g. A push user that isn't root
+#   can't give files to another owner anyway, and -g would make rsync try the Pi's group names on the mirror.
+#   Without them every new file and folder takes the group of the folder it lands in, as Linux does for a
+#   folder with the setgid bit; so the data folder and images/ are setgid and group-owned by the service's
+#   group once, by hand (README), and the modes below keep the bit on every folder the pushes create under
+#   them (rsync makes each folder of the tree itself, images/2026, images/2026/11 and so on, and applies
+#   the D mode to each, images/ included).
+# - The modes are absolute, not relative to the Pi's: folders 2770 (setgid, group may enter), files 660 (the
+#   app needs group write on the database), nothing for anyone else. --chmod is applied here on the Pi, to
+#   the modes rsync sends, so the rrsync lock on the mirror never sees the option. Octal and the D/F forms
+#   need rsync 3 (the Pi); older ones and openrsync (a Mac) push with plain modes.
 OPTS=(-rtpz)
 if [ "$(rsync --version 2>/dev/null | sed -nE '1s/^rsync +version +([0-9]+)\..*/\1/p')" -ge 3 ] 2>/dev/null; then
-  OPTS+=(--chmod=Dg+rwxs,Do-rwx,Fg+rw,Fo-rwx)
+  OPTS+=(--chmod=D2770,F660)
 fi
 rsync "${OPTS[@]}" -L --delete "$STAGE/images/" "$PUBLIC_DEST/images/"
 rsync "${OPTS[@]}" "$STAGE/birdbrain.db" "$PUBLIC_DEST/birdbrain.db"
 [ ! -f "$STAGE/live.jpg" ] || rsync "${OPTS[@]}" "$STAGE/live.jpg" "$PUBLIC_DEST/live.jpg"
+
+# Self-check: list the mirror's photo folders (names and modes only, one small listing; rsync's listing has
+# no owner or group, and the key is locked to rsync, so the group itself can't be checked from here) and warn
+# about any folder the service's group can't enter or that lost its setgid bit, since everything made under
+# such a folder takes the push user's own group and the photos in it come up broken. Files aren't listed:
+# their mode is forced above, and rsync fails the push (exit 23) when it can't set one. Folders only, through
+# rsync's filter rules (they travel inside the connection, not as options the lock would refuse). Never fails
+# the push; its words go to stderr and the system log (journalctl -t push_public).
+LISTING="$(rsync -r --list-only --include='*/' --exclude='*' "$PUBLIC_DEST/images/" 2>/dev/null)" \
+  || { warn "self-check skipped: couldn't list the mirror's photo folders"; LISTING=""; }
+BAD="$(printf '%s\n' "$LISTING" | awk '$1 ~ /^d/ && substr($1, 5, 3) != "rws" && n < 5 { print $NF " is " $1; n++ }')"
+[ -z "$BAD" ] || warn "mirror folders the service can't read (want drwxrws---, see README, a public read-only copy): $(printf '%s' "$BAD" | tr '\n' ';')"

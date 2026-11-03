@@ -35,10 +35,31 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def images_dir() -> Path:
+    """The photo folder served as /images. The Pi's site makes it; the public mirror never does. There the push
+    user owns it and every push gives folders and files the group the service reads through (scripts/push_public.sh,
+    README "a public read-only copy"); a folder the service made itself would belong to the service's user and
+    group, with no write for the push user, and stop every push. Until the first push the mirror answers 404 for
+    photos, which is why the mount below doesn't insist on the folder existing."""
+    if not auth.public():
+        config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    return config.IMAGES_DIR
+
+
+class PhotoFiles(StaticFiles):
+    """Static files from a folder that may not exist yet (the mirror before its first push): a photo asked for
+    then is a 404, not an error, and the folder is used as soon as it appears, without a restart."""
+
+    async def check_config(self) -> None:
+        try:
+            await super().check_config()
+        except RuntimeError:  # "directory does not exist": not yet
+            pass
+
+
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
-app.mount("/images", StaticFiles(directory=config.IMAGES_DIR), name="images")
+app.mount("/images", PhotoFiles(directory=images_dir(), check_dir=False), name="images")
 templates = Jinja2Templates(directory=HERE / "templates")
 
 

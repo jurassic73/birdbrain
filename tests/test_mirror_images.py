@@ -140,3 +140,25 @@ def test_gate_redirects_and_photos_are_never_kept_by_a_shared_cache(mirror, phot
     assert mirror.post("/visit/1/delete", follow_redirects=False).headers["cache-control"] == "no-store"
     mirror.cookies.set(viewer.COOKIE, cookie)
     assert mirror.get(photo).status_code == 200
+
+
+def test_the_mirror_never_makes_the_photo_folder_itself(tmp_path, monkeypatch):
+    """On the mirror the push user owns images/ and the pushes give it the service's group through the setgid
+    bit. A folder the service made at startup would be the service's own (no write for the push user) and stop
+    every push, so only the Pi's site makes it; the mirror serves 404s until the first push fills it."""
+    folder = tmp_path / "data" / "images"
+    monkeypatch.setattr(config, "IMAGES_DIR", folder)
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    assert webapp.images_dir() == folder and not folder.exists()
+    # The mount the app uses serves a missing folder as 404s rather than erroring, and picks it up once the
+    # first push has made it, without a restart.
+    from fastapi import FastAPI
+
+    site = FastAPI()
+    site.mount("/images", webapp.PhotoFiles(directory=folder, check_dir=False), name="images")
+    c = TestClient(site)
+    assert c.get("/images/2026/11/03/a.jpg").status_code == 404
+    jpeg(folder / "2026" / "11" / "03" / "a.jpg")
+    assert c.get("/images/2026/11/03/a.jpg").status_code == 200
+    monkeypatch.delenv("BIRDBRAIN_PUBLIC")
+    assert webapp.images_dir() == folder and folder.is_dir()
