@@ -901,7 +901,8 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
             loop.call_later(circle_check.IDLE + 1, circle_check.release_if_idle)
         else:
             entry = await asyncio.to_thread(circle_check.ask_claude, conn, source, jpeg, circle,
-                                            datetime.fromisoformat(v["captured_at"]), circle_check.frame_size(jpeg))
+                                            datetime.fromisoformat(v["captured_at"]), circle_check.frame_size(jpeg),
+                                            bool(v["is_night"]))
     except Exception as e:
         if source == "pi":
             db.record_pi_check(conn, time.monotonic() - started, ok=False, visit_id=visit_id)

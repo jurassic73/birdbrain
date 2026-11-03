@@ -161,9 +161,17 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
     label = e(species) if species else ""
     if guess_step and guess_step.get("gated"):
         pill = ("pi named", "pi-only")
-        body = (f"<b>Named the animal on the Pi:</b> {e(', '.join(guess_step['guesses'][:1]))}. {CLAUDE} was not asked. " +
-                (f"You checked it, so the visit counts toward {label} being settled here." if checked else
-                 f"Press Looks right and the visit counts toward {label or 'the species'} being settled here."))
+        # Counts toward being settled as db.settled_species counts it: a species the owner named, or Looks right
+        # with the type unchanged. "No animal" or a bare type (Squirrel) takes the visit out of that count.
+        counts = bool(visit["corrected_species"]) or bool(visit["confirmed_at"] and not visit["corrected_visitor"])
+        if counts:
+            tail = f"You checked it, so the visit counts toward {label} being settled here."
+        elif checked:
+            said = "no animal" if current_visitor == "none" else e(current_visitor)
+            tail = f"You said it was {said}, so the visit does not count toward {label} being settled here."
+        else:
+            tail = f"Press Looks right and the visit counts toward {label or 'the species'} being settled here."
+        body = f"<b>Named the animal on the Pi:</b> {e(', '.join(guess_step['guesses'][:1]))}. {CLAUDE} was not asked. {tail}"
     elif skipped_empty:
         pill = ("not reached", "step-muted")
         body = f"<b>Not reached:</b> the photo was empty, so the {SPECIES} had nothing to name."
