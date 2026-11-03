@@ -92,7 +92,8 @@ def test_pi_verdicts():
     assert circle_check.pi_verdict(weak, 0.9, empty) == "empty"
     assert circle_check.pi_verdict([], None, None) == "empty"
     assert circle_check.pi_say("sure", sure) == "Looks like Dark-eyed Junco."
-    assert circle_check.pi_say("empty", []) == "The Pi didn't find an animal here."
+    assert circle_check.pi_say("unsure", sure) == "Maybe Dark-eyed Junco, but BioCLIP 2 isn't sure."
+    assert circle_check.pi_say("empty", []) == "BioCLIP 2 didn't find an animal here."
 
 
 def test_visitor_of_names_the_form_type():
@@ -266,8 +267,22 @@ def test_owner_check_spend_skips_bad_raw_json(conn, add_visit):
 def test_visit_page_offers_the_circle_check(client, photo_visit):
     vid = photo_visit()
     html = client.get(f"/visit/{vid}?ft=1").text
-    assert 'id="circle-check"' in html and "Ask the Pi" in html and 'data-source="haiku"' in html
-    assert "Ask Sonnet" in html
+    assert 'id="circle-check"' in html and "Ask BioCLIP 2" in html and 'data-source="haiku"' in html
+    assert "Ask Sonnet" in html and "Ask the Pi" not in html
+    # the section's name, and the buttons' tip while no circle of the owner's is drawn yet
+    assert "Manual circle and ask" in html and "What's in your circle" not in html
+    assert 'data-no-circle-tip="Draw a circle on the photo first' in html
+    assert "Free, runs on the Pi" in html  # the free local check still says so
+
+
+def test_visit_page_has_the_unsaved_changes_guard_for_admins_only(client, photo_visit):
+    vid = photo_visit()
+    html = client.get(f"/visit/{vid}?ft=1").text
+    assert "You have unsaved changes" in html and "window.bbUnsaved" in html
+    assert 'alt: "Discard", cancel: "Keep editing"' in html
+    # the pop-up asks the page before closing; the page answers through the guard
+    assert '"birdbrain:closing"' in client.get(f"/visit/{vid}?ft=1&embed=1").text
+    assert '"birdbrain:closing"' in client.get("/false-triggers").text
 
 
 def test_release_frees_the_model_only_when_idle(monkeypatch):
@@ -326,4 +341,4 @@ def test_visit_page_shows_the_usual_time_beside_the_timer(client, conn, photo_vi
         db.record_pi_check(conn, sec)
     html = client.get(f"/visit/{vid}?ft=1").text
     assert "(usually ~20 s)" in html
-    assert "Average of the last 3 Ask the Pi checks on this Pi (all-time 20 s over 3 checks)." in html
+    assert "Average of the last 3 Ask BioCLIP 2 checks on this Pi (all-time 20 s over 3 checks)." in html

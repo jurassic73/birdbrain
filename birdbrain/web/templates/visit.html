@@ -280,16 +280,18 @@
         </div>
       </div>
       {% if not visit.photo_deleted_at %}
-      {# What's in the owner's circle: the Pi first (free), then Haiku, then Sonnet (circle_check.py). #}
+      {# Manual circle and ask: BioCLIP 2 on the Pi first (free), then Haiku, then Sonnet (circle_check.py). The Ask
+         buttons stay off (aria-disabled, so the tip still shows) until the owner has drawn a circle: the check looks
+         at the first circle the owner drew, never Claude's dashed one or the Pi's. #}
       <div class="field circle-check" id="circle-check">
         <div class="circle-check-head">
-          <span class="field-title tip-label">What's in your circle?</span>
-          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Circle the animal (Edit circles, then drag on the photo) and ask. The Pi's own model looks at just that part of the photo: free, and 5 to 20 seconds on the Pi. If it isn't sure, ask Haiku, then Sonnet, on the same part. It looks at the frame your first circle is on. Nothing changes until you press Save; saving the right answer is what teaches the Pi's animal check (Save's tip says how).">i</span>
+          <span class="field-title tip-label">Manual circle and ask</span>
+          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Draw your own circle around the animal (Edit circles, then drag on the photo), then ask about what's inside it. BioCLIP 2, the species model on the Pi, looks at just that part of the photo: free, and 5 to 20 seconds. If it isn't sure, ask Haiku, then Sonnet, on the same part. The checks look at the first circle you drew, on the frame it's on; Claude's dashed circle doesn't count. Nothing changes until you press Save; saving the right answer is what teaches the Pi's animal check (Save's tip says how).">i</span>
         </div>
-        <div class="circle-check-btns">
-          <button type="button" class="check-btn" data-source="pi" data-tip="The Pi's local model names what's in your first circle. Free; {% if pi_average.avg %}usually about {{ pi_average.avg|round|int }} seconds on the Pi (average of {{ pi_average.n }}){% else %}takes 5 to 20 seconds on the Pi{% endif %}.">Ask the Pi</button>
+        <div class="circle-check-btns" data-no-circle-tip="Draw a circle on the photo first: Edit circles, then drag around the animal.">
+          <button type="button" class="check-btn" data-source="pi" data-tip="BioCLIP 2, the species model on the Pi, names what's in your first circle. Free, runs on the Pi; {% if pi_average.avg %}usually about {{ pi_average.avg|round|int }} seconds (average of {{ pi_average.n }}){% else %}takes 5 to 20 seconds{% endif %}.">Ask BioCLIP 2</button>
           {%- set pi_ref = pi_average.recent_avg or pi_average.avg %}
-          <span class="check-timer small muted" id="pi-timer" aria-live="off"{% if pi_ref %} data-recent="{{ pi_ref }}" data-avg="{{ pi_average.avg }}" data-n="{{ pi_average.n }}" data-tip="Average of the last {{ [pi_average.n, 20]|min }} Ask the Pi checks on this Pi (all-time {{ pi_average.avg|round|int }} s over {{ pi_average.n }} checks)."{% endif %}>{% if pi_ref %}(usually ~{{ pi_ref|round|int }} s){% endif %}</span>
+          <span class="check-timer small muted" id="pi-timer" aria-live="off"{% if pi_ref %} data-recent="{{ pi_ref }}" data-avg="{{ pi_average.avg }}" data-n="{{ pi_average.n }}" data-tip="Average of the last {{ [pi_average.n, 20]|min }} Ask BioCLIP 2 checks on this Pi (all-time {{ pi_average.avg|round|int }} s over {{ pi_average.n }} checks). Free: it runs on the Pi, not in the cloud."{% endif %}>{% if pi_ref %}(usually ~{{ pi_ref|round|int }} s){% endif %}</span>
           <button type="button" class="claude-btn check-btn" data-source="haiku" hidden data-tip="Claude Haiku looks at just your circle, with Claude's Notes and your lessons. A fraction of a cent.">{{ claude_mark() }}Ask Haiku</button>
           <button type="button" class="claude-btn check-btn" data-source="sonnet" hidden data-tip="Claude Sonnet takes a closer look at just your circle. About half a cent.">{{ claude_mark() }}Ask Sonnet</button>
         </div>
@@ -348,6 +350,80 @@
 </article>
 
 <script>
+  // Unsaved changes (admins): the correction form (visitor, species, count, Also in the photo, Note for Claude) and
+  // the circles, against what the page loaded with. Leaving with changes asks Save / Discard / Keep editing in a
+  // site dialog: any link, the arrows (bar, phone, full-screen viewer), the arrow keys, the Back link, and in the
+  // False triggers pop-up the parent's Close too (it asks this page by postMessage, see the embed script). A reload
+  // or a closed tab gets the browser's own Leave/Stay prompt, the only one browsers allow there. Save posts the
+  // form the way the Save button does, then the navigation goes on. Visitors have no form, so no guard.
+  const bbUnsaved = window.bbUnsaved = (() => {
+    const form = document.querySelector("form.review"), photo = document.getElementById("photo");
+    if (!form) return { dirty: () => false, check: async () => true, choose: async () => "discard", clean() {} };
+    const field = document.getElementById("marks");
+    const marksBase = JSON.stringify(JSON.parse(photo.dataset.marks || "[]"));  // what draw() writes untouched
+    const state = () => JSON.stringify([
+      form.querySelector('input[name="visitor"]:checked')?.value ?? "",
+      document.getElementById("species").value.trim(),
+      [...form.querySelectorAll(".also-row")].map(r => [r.querySelector('[name="also_species"]').value.trim(), r.querySelector('[name="also_count"]').value]),
+      document.getElementById("feedback").value,
+      field.value || marksBase,
+    ]);
+    let base = state(), asking = false;
+    const me = {
+      dirty: () => state() !== base,
+      clean() { base = state(); },  // saved (or discarded): what's on the page is the baseline now
+      // The same route as the Save button, without the page reload its answer asks for.
+      async save() {
+        const r = await fetch(form.getAttribute("hx-post"), { method: "POST", body: new URLSearchParams(new FormData(form)) }).catch(() => null);
+        if (r?.ok) { me.clean(); return true; }
+        const why = r ? (await r.json().catch(() => null))?.detail || `the site answered ${r.status}` : "the site couldn't be reached";
+        await birdbrain.ask({ title: "Couldn't save", ok: "Keep editing", cancel: "",
+          message: `Not saved: ${why}. Your changes are still on this page.` });
+        return false;
+      },
+      // Ask: "save" (saved already), "discard" (nothing left to keep) or null (stay). Not dirty: "discard".
+      async choose() {
+        if (!me.dirty()) return "discard";
+        if (asking) return null;  // a second press while the question is up
+        asking = true;
+        try {
+          const a = await birdbrain.ask({ title: "You have unsaved changes", ok: "Save", alt: "Discard", cancel: "Keep editing",
+            message: "Your correction or circles on this photo aren't saved yet. Save them before you go, or discard them?" });
+          if (a === false) return null;
+          if (a === true && !(await me.save())) return null;
+          me.clean();
+          return a === true ? "save" : "discard";
+        } finally { asking = false; }
+      },
+      // Before leaving: true means go on (saved, discarded, or nothing to save), false means stay.
+      check: async () => (await me.choose()) !== null,
+    };
+    // Links: asked first (capture, so the pop-up's own link handling runs after), then the click is replayed.
+    document.addEventListener("click", e => {
+      const a = e.target.closest?.("a[href]");
+      if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target) return;
+      if (a.dataset.bypass || a.querySelector(".full") || a.closest(".popup-ask")) return;  // the photo opens the viewer
+      const u = new URL(a.href, location.href);
+      if (u.pathname === location.pathname && u.search === location.search && u.hash) return;  // same page
+      if (!me.dirty()) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      me.check().then(ok => { if (!ok) return; a.dataset.bypass = "1"; a.click(); delete a.dataset.bypass; });
+    }, true);
+    // htmx actions that reload the page (Confirm, Undo, Use as photo) ask too; the form's own Save and anything
+    // with its own hx-confirm question (Delete, the mirror's privacy switch) go straight through.
+    document.addEventListener("htmx:confirm", e => {
+      const el = e.detail.elt;
+      if (!me.dirty() || el.matches?.("form.review") || el.getAttribute("hx-confirm")) return;
+      e.preventDefault();
+      me.check().then(ok => { if (ok) e.detail.issueRequest(true); });
+    });
+    document.body.addEventListener("htmx:beforeOnLoad", e => {
+      const el = e.detail.elt;
+      if (e.detail.xhr.status < 300 && (el.closest?.("form.review") || el.matches?.(".danger"))) me.clean();
+    });
+    window.addEventListener("beforeunload", e => { if (me.dirty()) { e.preventDefault(); e.returnValue = ""; } });
+    return me;
+  })();
   if (document.querySelector("form.review")) {  // visitors (read-only) have no correction form
   (() => {
     // Every Save (the form's and the one beside "Using X") says what saving teaches, for the answer picked now.
@@ -493,8 +569,8 @@
     e.currentTarget.requestSubmit();
     setTimeout(() => { save.classList.remove("sending"); save.disabled = false; }, 15000);
   });
-  // What's in your circle: the Pi looks at the first circle the owner drew (free); if it isn't sure, Haiku, then
-  // Sonnet. Each answer is added below with Use buttons that fill the form; nothing is saved until Save.
+  // Manual circle and ask: BioCLIP 2 on the Pi looks at the first circle the owner drew (free); if it isn't sure,
+  // Haiku, then Sonnet. Each answer is added below with Use buttons that fill the form; nothing is saved until Save.
   (() => {
     const box = document.getElementById("circle-check");
     if (!box) return;
@@ -506,8 +582,20 @@
     const setRef = a => {
       if (!a?.avg) return;
       timer.dataset.recent = a.recent_avg ?? a.avg; timer.dataset.avg = a.avg; timer.dataset.n = a.n;
-      timer.dataset.tip = `Average of the last ${Math.min(a.n, 20)} Ask the Pi checks on this Pi (all-time ${Math.round(a.avg)} s over ${a.n} checks).`;
+      timer.dataset.tip = `Average of the last ${Math.min(a.n, 20)} Ask BioCLIP 2 checks on this Pi (all-time ${Math.round(a.avg)} s over ${a.n} checks). Free: it runs on the Pi, not in the cloud.`;
     };
+    // No circle of the owner's own yet (Claude's dashed one and the Pi's don't count: circle_check.owner_circle
+    // skips them): the Ask buttons are dimmed and say to draw one. The circle editor's draw() reports every change.
+    const btns = box.querySelector(".circle-check-btns");
+    const ready = on => {
+      box.classList.toggle("no-circle", !on);
+      buttons.forEach(b => {
+        if (on) { b.removeAttribute("aria-disabled"); if (b.dataset.tipReady) { b.dataset.tip = b.dataset.tipReady; delete b.dataset.tipReady; } }
+        else { b.setAttribute("aria-disabled", "true"); if (!b.dataset.tipReady) { b.dataset.tipReady = b.dataset.tip; b.dataset.tip = btns.dataset.noCircleTip; } }
+      });
+    };
+    document.getElementById("photo").addEventListener("birdbrain:marks", e => ready(e.detail.owner));
+    ready(JSON.parse(document.getElementById("photo").dataset.marks || "[]").some(m => !m.claude && !m.pi));
     const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
     const add = (html, err) => {
       const p = document.createElement("div");
@@ -537,6 +625,7 @@
       if (anyway) { anyway.remove(); btn(anyway.dataset.source).hidden = false; btn(anyway.dataset.source).click(); return; }
       const b = e.target.closest(".check-btn");
       if (!b || b.disabled) return;
+      if (b.getAttribute("aria-disabled") === "true") return;  // no circle yet: the tip says to draw one
       const source = b.dataset.source;
       buttons.forEach(x => x.disabled = true); b.classList.add("sending");
       const t0 = Date.now();
@@ -555,7 +644,7 @@
         setRef(r.pi_average);
         if (r.error) timer.textContent = `failed after ${took} s${usuallyTxt()}`;
         else timer.textContent = `took ${Math.round(r.wall_seconds ?? took)} s` + usuallyTxt();
-        if (r.pi_average?.avg) b.dataset.tip = `The Pi's local model names what's in your first circle. Free; usually about ${Math.round(r.pi_average.avg)} seconds on the Pi (average of ${r.pi_average.n}).`;
+        if (r.pi_average?.avg) b.dataset.tip = `BioCLIP 2, the species model on the Pi, names what's in your first circle. Free, runs on the Pi; usually about ${Math.round(r.pi_average.avg)} seconds (average of ${r.pi_average.n}).`;
       }
       if (r.error) { scrollTo(add(esc(r.error), true)); return; }
       const where = `<span class="muted">circle ${r.circle_n}${r.frame ? `, frame ${r.frame}` : ""}${source === "pi" ? `, ${r.seconds} s` : `, ${(r.usd * 100).toFixed(2)}&cent;`}</span>`;
@@ -574,7 +663,7 @@
         else btn(after).hidden = false;
       }
       const answer = add(html);
-      // Reference photos fill in after the answer shows, so Ask the Pi stays quick.
+      // Reference photos fill in after the answer shows, so Ask BioCLIP 2 stays quick.
       // Scroll to the whole answer once every thumbnail has loaded (or failed, or has no photo), at most 4 s.
       const loaded = [...answer.querySelectorAll("li[data-guess]")].map(li => new Promise(done => { li._done = done; }));
       Promise.race([Promise.all(loaded), new Promise(r => setTimeout(r, 4000))]).then(() => scrollTo(answer));
@@ -722,6 +811,8 @@
         }
       });
       field.value = JSON.stringify(marks);
+      // The Ask buttons (and the unsaved-changes guard) follow the owner's own circles, on any frame.
+      photo.dispatchEvent(new CustomEvent("birdbrain:marks", {detail: {owner: marks.some(m => !m.claude && !m.pi)}}));
       const shown = marks.filter(here).length;
       document.getElementById("circles-toggle").hidden = editing || !shown;
       clear.hidden = !editing || !shown;
@@ -931,8 +1022,8 @@
   const stepVisit = id => {
     const a = document.getElementById(id);
     if (!a) return;
-    if (fromHome) location.href = a.href.split("#")[0] + "#from-home";
-    else a.click();
+    if (fromHome) bbUnsaved.check().then(ok => { if (ok) location.href = a.href.split("#")[0] + "#from-home"; });
+    else a.click();  // the unsaved-changes guard sees the click
   };
   document.addEventListener("keydown", e => {
     if (document.getElementById("photo-viewer").open) return;
@@ -948,7 +1039,8 @@
     const t = e.target;
     if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
     readTrail();
-    if (fromHome) location.href = (window.BB_BASE || "") + "/";  // BB_BASE: the public mirror's /birdbrain prefix
+    // BB_BASE: the public mirror's /birdbrain prefix
+    if (fromHome) bbUnsaved.check().then(ok => { if (ok) location.href = (window.BB_BASE || "") + "/"; });
   });
   // Up arrow goes home from any visit (the owner's pick, since Esc only does after the Right arrow from home), but
   // only at the top of the page, where Up has nothing left to scroll; held down, it scrolls up and stops there.
@@ -958,7 +1050,7 @@
     if (e.target.closest?.("input, textarea, select, [contenteditable]")) return;
     if (scrollY > 0) return;
     e.preventDefault();
-    location.href = (window.BB_BASE || "") + "/";
+    bbUnsaved.check().then(ok => { if (ok) location.href = (window.BB_BASE || "") + "/"; });
   });
 {% endif %}
   // On the newest visit, a visitor that arrives (tab-alert.js checks every 20 s) turns on the Newer arrows:
@@ -1011,8 +1103,11 @@
       const btn = document.getElementById("confirm-btn");
       if (!btn && !document.querySelector(".confirmed-pair")) return;  // corrected: nothing to confirm
       e.preventDefault();
+      // Unsaved changes: Save keeps the owner's answer and moves on without confirming; Discard confirms as usual.
+      const choice = await bbUnsaved.choose();
+      if (!choice) return;
       busy = true;
-      if (btn) {
+      if (btn && choice !== "save") {
         btn.classList.add("sending");
         const r = await fetch(btn.getAttribute("hx-post"), { method: "POST" }).catch(() => null);
         if (!r || !r.ok) { btn.classList.remove("sending"); busy = false; return; }
@@ -1027,8 +1122,16 @@
 {% if embed %}
 <script>
   // Inside the False triggers pop-up: Close and Esc tell the page to close it (Esc on the big photo just closes that).
+  // Every way out asks the unsaved-changes guard first: the links and arrows through its click handler, Esc and the
+  // parent's own Close (the dimmed edge, Esc with focus outside this frame) through closeAsked(): the parent sends
+  // "birdbrain:closing" and waits for "birdbrain:close"; "birdbrain:hold" tells it the owner is being asked.
   (() => {
     const close = () => parent.postMessage("birdbrain:close", location.origin);
+    const closeAsked = () => {
+      if (bbUnsaved.dirty()) parent.postMessage("birdbrain:hold", location.origin);
+      bbUnsaved.check().then(ok => { if (ok) close(); });
+    };
+    window.addEventListener("message", e => { if (e.origin === location.origin && e.data === "birdbrain:closing") closeAsked(); });
     // Moving to another visit: the page loads it out of sight and swaps it in when ready (no white flash).
     const goto = href => parent.postMessage({ goto: new URL(href, location.href).href }, location.origin);
     document.addEventListener("click", e => {
@@ -1041,7 +1144,7 @@
     });
     document.querySelectorAll("#embed-close, .embed-close").forEach(a => a.addEventListener("click", e => { e.preventDefault(); close(); }));
     document.addEventListener("keydown", e => {
-      if (e.key === "Escape" && !document.querySelector("dialog[open]")) close();
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) closeAsked();
     });
     {% if request.state.admin %}
     // C: confirmed no animal, then on to the next photo (older; newer at the end of the list).
@@ -1053,8 +1156,11 @@
       const btn = document.getElementById("confirm-btn");
       if (!btn && !document.querySelector(".confirmed-pair")) return;  // corrected to an animal: nothing to confirm
       e.preventDefault();
+      // Unsaved changes: Save keeps the owner's answer and moves on without confirming; Discard confirms as usual.
+      const choice = await bbUnsaved.choose();
+      if (!choice) return;
       busy = true;
-      if (btn) {
+      if (btn && choice !== "save") {
         btn.classList.add("sending");
         const r = await fetch(btn.getAttribute("hx-post"), { method: "POST" }).catch(() => null);
         if (!r || !r.ok) { btn.classList.remove("sending"); busy = false; return; }

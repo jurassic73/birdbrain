@@ -459,16 +459,16 @@
     You can circle things on the photo, fix the other animals in the shot, or press Ask to have Claude suggest a name
     <span data-tip="Ask costs about a cent. Species boxes suggest eBird names so one bird never gets two spellings. Claude's Notes lists every lesson exactly as Claude reads it; switch off any that don't help.">(more)</span>.
     {% if totals.corrected %}You've corrected or annotated {{ totals.corrected }} visit{{ 's' if totals.corrected != 1 }} so far.{% endif %}</p>
-  <h3 id="circle-check">Missed something? Circle it and ask, cheapest first</h3>
+  <h3 id="circle-check">Missed something? Manual circle and ask, cheapest first</h3>
   <ol class="loop ladder" aria-label="Asking about a circle">
-    <li><strong>You circle it</strong><small>Usually on a false trigger, around the animal it missed, on whichever burst frame shows it best</small></li>
-    <li><strong>The Pi looks</strong><small>Its own species model on just the circle: free</small></li>
-    <li><strong>Haiku, then Sonnet</strong><small>Only if the Pi isn't sure: a fraction of a cent, then about half a cent</small></li>
-    <li><strong>You save it</strong><small>Nothing changes until you do</small></li>
+    <li><strong>You circle it</strong><small>Usually on a false trigger, around the animal it missed, on whichever burst frame shows it best. The Ask buttons wake up once a circle of yours is on the photo</small></li>
+    <li><strong>Ask BioCLIP 2</strong><small>The species model on the Pi, on just the circle: free</small></li>
+    <li><strong>Haiku, then Sonnet</strong><small>Only if BioCLIP 2 isn't sure: a fraction of a cent, then about half a cent</small></li>
+    <li><strong>You save it</strong><small>Nothing changes until you do; leaving the page with unsaved changes asks Save, Discard or Keep editing</small></li>
   </ol>
   <p>Each answer comes with a Use button that fills in the correction form, and every check is listed on the visit
     under "How it was decided"{% if totals.owner_checks %} ({{ totals.owner_checks }} Claude check{{ 's' if totals.owner_checks != 1 }} so far, counted in the spend above){% endif %}.
-    <span data-tip="The checks look at the frame your first circle is on. Saving teaches the Pi's animal check, not its species model: it trains on the whole crop box of every photo, labelled with the final answer. Saving an animal on a false trigger flips that visit from empty to animal and counts it 3 times; if your first circle is on another burst frame, that frame's crop box is what it learns from, so the next photo like it is more likely to reach Claude.">How it teaches the Pi</span></p>
+    <span data-tip="The checks look at the first circle you drew yourself (Claude's dashed circle doesn't count), on the frame it's on. Saving teaches the Pi's animal check, not its species model: it trains on the whole crop box of every photo, labelled with the final answer. Saving an animal on a false trigger flips that visit from empty to animal and counts it 3 times; if your first circle is on another burst frame, that frame's crop box is what it learns from, so the next photo like it is more likely to reach Claude.">How it teaches the Pi</span></p>
   <p>On any photo card, on the big latest-visitor photo on the home page, and on the big photo on a visit's page, the owner can tap the star to cycle it:
     one tap makes it <strong>blue</strong>, a favorite; a second makes it <strong>yellow</strong>, the species cover (the photo shown
     for that species on the Species page, one per species); a third unsets it. Yellow waits two seconds before it's saved, so tapping

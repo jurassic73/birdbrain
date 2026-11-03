@@ -97,9 +97,21 @@
     else dlg.close();  // the visit was deleted (it sends you home)
   };
   [frame, spare].forEach(f => f.addEventListener("load", () => loaded(f)));
+  // Closing from this page (the dimmed edge, Esc with focus out here) asks the visit page first: with unsaved
+  // changes it shows Save / Discard / Keep editing and only then answers "birdbrain:close" ("birdbrain:hold" means
+  // the owner is being asked). A frame that can't answer (blank, an error page) is closed after a moment anyway.
+  // The arrows and the C key live in the visit page, so its guard covers them on its own.
+  let closeTimer = null;
+  const askClose = () => {
+    if (!dlg.open) return;
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => dlg.close(), 400);
+    try { frame.contentWindow.postMessage("birdbrain:closing", location.origin); } catch (err) { dlg.close(); }
+  };
   window.addEventListener("message", e => {
     if (e.origin !== location.origin || !dlg.open) return;
-    if (e.data === "birdbrain:close") dlg.close();
+    if (e.data === "birdbrain:close") { clearTimeout(closeTimer); dlg.close(); }
+    else if (e.data === "birdbrain:hold") clearTimeout(closeTimer);
     else if (e.data?.saved && e.source === frame.contentWindow) savedNote(e.data.last);
     else if (e.data?.goto && e.source === frame.contentWindow) spare.src = e.data.goto;
   });
@@ -117,8 +129,10 @@
     clearTimeout(noteTimer);
     noteTimer = setTimeout(() => n.remove(), 5000);
   }
-  dlg.addEventListener("click", e => { if (e.target === dlg) dlg.close(); });  // the dimmed edge
+  dlg.addEventListener("click", e => { if (e.target === dlg) askClose(); });  // the dimmed edge
+  dlg.addEventListener("cancel", e => { e.preventDefault(); askClose(); });  // Esc with focus outside the frame
   dlg.addEventListener("close", async () => {
+    clearTimeout(closeTimer);
     document.body.style.overflow = "";
     frame.src = spare.src = "about:blank";
     const ids = [...seen];

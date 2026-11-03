@@ -1,8 +1,8 @@
 """What's in the owner's circle? The visit page lets the owner circle part of a photo (often a false trigger the
 pipeline called empty) and ask, cheapest first:
 
-1. the Pi: the local species classifier (BioCLIP 2, birdbrain.classifier) on just the circle's square, plus the
-   local animal check's score (birdbrain.presence) on the same embedding. Free, ~6 to 22 s on a Pi 4.
+1. BioCLIP 2 on the Pi ("Ask BioCLIP 2"): the local species classifier (birdbrain.classifier) on just the circle's
+   square, plus the local animal check's score (birdbrain.presence) on the same embedding. Free, ~6 to 22 s on a Pi 4.
 2. Haiku, then Sonnet: the same square, with the identify prompt (Claude's Notes and the lessons), structured output.
 
 Nothing here changes a label: each answer is offered on the page with a Use button, and saving still goes through
@@ -91,11 +91,12 @@ def pi_verdict(top: list[dict], local_share: float | None, check: dict | None) -
 
 
 def pi_say(verdict: str, top: list[dict]) -> str:
+    """The Pi's answer, naming the model (the page's button says Ask BioCLIP 2)."""
     if verdict == "empty":
-        return "The Pi didn't find an animal here."
+        return "BioCLIP 2 didn't find an animal here."
     if verdict == "sure":
         return f"Looks like {top[0]['name']}."
-    return f"Maybe {top[0]['name']}, but the Pi isn't sure."
+    return f"Maybe {top[0]['name']}, but BioCLIP 2 isn't sure."
 
 
 def ask_pi(conn, jpeg: bytes, circle: dict, night: bool, clf=None, local=None) -> dict:
