@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 import threading
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
@@ -356,11 +356,12 @@ def capture_burst() -> list[bytes]:
 def calls_today(ground: bool = False) -> int:
     """Visits today that Claude was asked about (visits the Pi settled cost nothing), counted
     separately for the ground zone so passers-by can't use up the birdbath's budget."""
+    today = date.today()
     with db.session() as conn:
         return conn.execute(
-            """SELECT COUNT(*) FROM visits WHERE date(captured_at) = ? AND model LIKE 'claude%'
+            """SELECT COUNT(*) FROM visits WHERE captured_at >= ? AND captured_at < ? AND model LIKE 'claude%'
                  AND (COALESCE(json_extract(raw_json, '$.trigger'), '') = 'ground') = ?""",
-            (date.today().isoformat(), int(ground)),
+            (today.isoformat(), (today + timedelta(days=1)).isoformat(), int(ground)),
         ).fetchone()[0]
 
 
