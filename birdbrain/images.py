@@ -5,6 +5,7 @@ import time
 import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -252,29 +253,46 @@ def rebuild_thumb(image_rel: str, thumb_rel: str, when: datetime, images_dir: Pa
     return status, old_bytes, buf.tell()
 
 
+def _rebuild_row(job: tuple) -> tuple[str, str, int, int, str]:
+    """rebuild_thumb for one row, picklable for worker processes. A failure comes back as status "failed"."""
+    (image_rel, thumb_rel, captured_at), images_dir, dry_run, force = job
+    try:
+        return (thumb_rel, *rebuild_thumb(image_rel, thumb_rel, datetime.fromisoformat(captured_at), images_dir,
+                                          dry_run, force), "")
+    except Exception as e:
+        return thumb_rel, "failed", 0, 0, str(e)
+
+
 def rebuild_thumbs(rows: Iterable[tuple[str, str, str]], images_dir: Path | None = None, dry_run: bool = False,
                    force: bool = False, log: Callable[[str], None] = print, every: int = 200,
-                   seconds: float = 30) -> Counter:
-    """rebuild_thumb for (image_path, thumb_path, captured_at) rows, logging progress every `every` files or `seconds`."""
+                   seconds: float = 30, jobs: int = 1) -> Counter:
+    """rebuild_thumb for (image_path, thumb_path, captured_at) rows, logging progress every `every` files or `seconds`.
+
+    jobs > 1 spreads the files over that many worker processes (each file is independent); jobs=1 runs in this process.
+    """
     rows = list(rows)
+    images_dir = images_dir or config.IMAGES_DIR  # resolved here so workers need no config of their own
+    work = ((row, images_dir, dry_run, force) for row in rows)
     counts: Counter = Counter()
     start = last = time.monotonic()
-    for i, (image_rel, thumb_rel, captured_at) in enumerate(rows, 1):
-        try:
-            status, before, after = rebuild_thumb(image_rel, thumb_rel, datetime.fromisoformat(captured_at),
-                                                  images_dir, dry_run, force)
-        except Exception as e:
-            status, before, after = "failed", 0, 0
-            log(f"failed: {thumb_rel}: {e}")
-        counts[status] += 1
-        counts["bytes_before"] += before
-        counts["bytes_after"] += after
-        now = time.monotonic()
-        if i % every == 0 or now - last >= seconds or i == len(rows):
-            last = now
-            left = (now - start) / i * (len(rows) - i)
-            eta = f"~{left / 60:.0f} min left" if left >= 90 else f"~{left:.0f} s left"
-            log(f"{i}/{len(rows)} done, {counts['failed']} failed, {eta}")
+    pool = ProcessPoolExecutor(jobs) if jobs > 1 else None
+    try:
+        results = pool.map(_rebuild_row, work, chunksize=8) if pool else map(_rebuild_row, work)
+        for i, (thumb_rel, status, before, after, err) in enumerate(results, 1):
+            if err:
+                log(f"failed: {thumb_rel}: {err}")
+            counts[status] += 1
+            counts["bytes_before"] += before
+            counts["bytes_after"] += after
+            now = time.monotonic()
+            if i % every == 0 or now - last >= seconds or i == len(rows):
+                last = now
+                left = (now - start) / i * (len(rows) - i)
+                eta = f"~{left / 60:.0f} min left" if left >= 90 else f"~{left:.0f} s left"
+                log(f"{i}/{len(rows)} done, {counts['failed']} failed, {eta}")
+    finally:
+        if pool:  # Ctrl-C lands here too: drop the queued files; thumbnails already written are fine (idempotent)
+            pool.shutdown(wait=False, cancel_futures=True)
     return counts
 
 
@@ -286,12 +304,14 @@ def main() -> None:
                         help="remake every visit's thumbnail from its stored photo (newest first)")
     parser.add_argument("--dry-run", action="store_true", help="work out the new sizes but write nothing")
     parser.add_argument("--force", action="store_true", help="also redo thumbnails that are already THUMB_PX")
+    parser.add_argument("--jobs", type=int, default=max(1, (os.cpu_count() or 1) - 1),
+                        help="worker processes (default: CPUs - 1; 1 = one file at a time)")
     args = parser.parse_args()
     with db.session() as conn:
         rows = [tuple(r) for r in conn.execute(
             "SELECT image_path, thumb_path, captured_at FROM visits ORDER BY id DESC")]
     print(f"{len(rows)} visits in {config.IMAGES_DIR}{' (dry run: nothing is written)' if args.dry_run else ''}")
-    c = rebuild_thumbs(rows, dry_run=args.dry_run, force=args.force)
+    c = rebuild_thumbs(rows, dry_run=args.dry_run, force=args.force, jobs=args.jobs)
     mb = lambda n: f"{n / 1e6:.1f} MB"
     print(f"{'would rebuild' if args.dry_run else 'rebuilt'} {c['rebuilt'] + c['stamp']} "
           f"({c['stamp']} with the time stamp covered), {c['current']} already sharp, {c['missing']} missing, "

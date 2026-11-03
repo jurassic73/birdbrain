@@ -117,6 +117,25 @@ def test_rebuild_thumbs_counts_and_reports_progress(tmp_path):
     assert lines[-1].startswith("3/3 done, 1 failed, ~") and lines[-1].endswith(" s left")
 
 
+def test_rebuild_thumbs_in_parallel_matches_serial_and_counts_a_failing_row(tmp_path):
+    rows, lines = [], []
+    for name in ("a", "b"):
+        d = tmp_path / name
+        d.mkdir()
+        image_rel, thumb_rel, when = old_thumb(d)
+        rows += [(f"{name}/{image_rel}", f"{name}/{thumb_rel}", when.isoformat())]
+    rows += [("a/x.jpg", "a/x_t.jpg", "2026-11-01T09:00"), ("a/bad.jpg", "a/bad_t.jpg", "not a date")]
+    serial = images.rebuild_thumbs(rows, tmp_path, log=lambda s: None, dry_run=True)
+    parallel = images.rebuild_thumbs(rows, tmp_path, log=lines.append, every=2, jobs=2)
+    assert (parallel["rebuilt"], parallel["missing"], parallel["failed"]) == (2, 1, 1)
+    assert {k: v for k, v in parallel.items() if not k.startswith("bytes")} == \
+        {k: v for k, v in serial.items() if not k.startswith("bytes")}
+    assert parallel["bytes_before"] == serial["bytes_before"]
+    assert any(l.startswith("failed: a/bad_t.jpg: ") for l in lines) and lines[-1].startswith("4/4 done, 1 failed")
+    for r in rows[:2]:
+        assert max(Image.open(tmp_path / r[1]).size) == images.THUMB_PX
+
+
 def test_rebuild_thumbs_command_reads_the_visits_table(tmp_path, monkeypatch, add_visit, capsys):
     image_rel, thumb_rel, when = old_thumb(tmp_path)
     add_visit(image_path=image_rel, thumb_path=thumb_rel, captured_at=when.isoformat())
