@@ -45,12 +45,15 @@
 </nav>
 <article class="visit">
   <div class="visit-media">
+  {# Admins can always draw (no Add circles button since 2026-11-03): the note says how; a click still opens the full-size photo. #}
   <div class="photo-tools" id="photo-tools">
-    {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi's animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
-    {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards).">Hide circles</button>{% endif %}
-    <button type="button" class="photo-edit" id="mark-edit"{% if not request.state.admin or visit.photo_deleted_at %} hidden{% endif %} aria-pressed="false" data-tip-anchor=".visit-photo" data-tip="Turn on drawing (false triggers open with it already on): drag to draw a circle, drag a circle's middle to move it, its × removes it. With a burst, pick any frame below and draw on that one. Pinching with two fingers still zooms.">Add circles</button>
+    {% if request.state.admin and not visit.photo_deleted_at %}<span class="photo-note photo-draw-note muted small" id="draw-note" data-tip-anchor=".visit-photo" data-tip="Drag on the photo to draw a circle, drag a circle's middle to move it, its × removes it. A click without dragging opens the full-size photo. With a burst, pick any frame below and draw on that one. Pinching with two fingers still zooms.">Add circles: drag on the photo</span>{% endif %}
     <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
     {% set nc = no_circle_note(visit) %}{% if nc and not visit.photo_deleted_at %}<span class="photo-note muted small" data-tip="Claude wasn't asked, and the Pi's circle from the motion found nothing it was sure of (see How it was decided), so there's no circle on this photo.">{{ nc }}</span>{% endif %}
+    <span class="photo-tools-end">
+    {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards). Drawing a new circle shows them again.">Hide circles</button>{% endif %}
+    {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi's animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
+    </span>
   </div>
   {# data-frame: the burst frame shown first (the owner's pick), empty for the photo Claude saw. #}
   <div class="visit-photo" id="photo" data-marks="{{ marks | tojson | forceescape }}" data-frame="{{ photo_frame or '' }}">
@@ -292,9 +295,9 @@
       <div class="field circle-check" id="circle-check">
         <div class="circle-check-head">
           <span class="field-title tip-label">Manual circle and ask</span>
-          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Draw your own circle around the animal (Add circles, then drag on the photo), then ask about what's inside it. BioCLIP 2, the species model on the Pi, looks at just that part of the photo: free, and 5 to 20 seconds. If it isn't sure, ask Haiku, then Sonnet, on the same part. The checks look at the first circle you drew, on the frame it's on; Claude's dashed circle doesn't count. Nothing changes until you press Save; saving the right answer is what teaches the Pi's animal check (Save's tip says how).">i</span>
+          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Draw your own circle around the animal (drag on the photo), then ask about what's inside it. BioCLIP 2, the species model on the Pi, looks at just that part of the photo: free, and 5 to 20 seconds. If it isn't sure, ask Haiku, then Sonnet, on the same part. The checks look at the first circle you drew, on the frame it's on; Claude's dashed circle doesn't count. Nothing changes until you press Save; saving the right answer is what teaches the Pi's animal check (Save's tip says how).">i</span>
         </div>
-        <div class="circle-check-btns" data-no-circle-tip="Draw a circle on the photo first: Add circles, then drag around the animal.">
+        <div class="circle-check-btns" data-no-circle-tip="Draw a circle on the photo first: drag around the animal.">
           <button type="button" class="check-btn" data-source="pi" data-tip="BioCLIP 2, the species model on the Pi, names what's in your first circle. Free, runs on the Pi; {% if pi_average.avg %}usually about {{ pi_average.avg|round|int }} seconds (average of {{ pi_average.n }}){% else %}takes 5 to 20 seconds{% endif %}.">Ask BioCLIP 2</button>
           {%- set pi_ref = pi_average.recent_avg or pi_average.avg %}
           <span class="check-timer small muted" id="pi-timer" aria-live="off"{% if pi_ref %} data-recent="{{ pi_ref }}" data-avg="{{ pi_average.avg }}" data-n="{{ pi_average.n }}" data-tip="Average of the last {{ [pi_average.n, 20]|min }} Ask BioCLIP 2 checks on this Pi (all-time {{ pi_average.avg|round|int }} s over {{ pi_average.n }} checks). Free: it runs on the Pi, not in the cloud."{% endif %}>{% if pi_ref %}(usually ~{{ pi_ref|round|int }} s){% endif %}</span>
@@ -721,8 +724,14 @@
       const n = (m.pi || m.claude) ? (m.label || visitName) : (oneKind ? visitName : "");
       return n && !["none", "other"].includes(n.toLowerCase()) ? n : "";
     };
-    const edit = document.getElementById("mark-edit");
-    let marks = JSON.parse(photo.dataset.marks || "[]"), press = null, drag = null, editing = false;
+    // Admins can always draw (the note above the photo says how); visitors only look.
+    const editing = {{ 'true' if request.state.admin else 'false' }};
+    let marks = JSON.parse(photo.dataset.marks || "[]"), press = null, drag = null;
+    // The editing look (true-size rings at full strength, the × buttons) shows while the mouse is over the photo,
+    // and always on touch screens; otherwise the circles keep their roomier, faded look.
+    let pointing = false;
+    const touchOnly = matchMedia("(hover: none)").matches;
+    const looks = () => editing && (pointing || touchOnly || !!drag);
     let cur = photo.dataset.frame ? +photo.dataset.frame : null;  // the burst frame in the big photo, null for Claude's
     const here = m => (m.frame || null) === cur;
     // Fingers on the photo: a second one means a pinch, which zooms and never draws.
@@ -733,8 +742,10 @@
       const w = img.naturalWidth || 1920, h = img.naturalHeight || 1080;
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.replaceChildren();
+      const vis = looks();
+      photo.classList.toggle("drawing", vis);
       // Pills placed so far, and every ring: a pill takes the first corner that covers neither.
-      const taken = [], rings = marks.map(m => here(m) ? {x: m.x * w, y: m.y * h, r: (editing ? m.r : markRadius(m.r)) * w} : null);
+      const taken = [], rings = marks.map(m => here(m) ? {x: m.x * w, y: m.y * h, r: (vis ? m.r : markRadius(m.r)) * w} : null);
       const keepIn = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
       const hits = (b, c) => Math.hypot(c.x - keepIn(c.x, b[0], b[2]), c.y - keepIn(c.y, b[1], b[3])) < c.r;
       // The line under the photo that explains the circles.
@@ -749,7 +760,7 @@
       marks.forEach((m, i) => {
         if (!here(m)) return;
         const g = el("g", {"data-i": i, class: m.pi ? "mark claude pi" : m.claude ? "mark claude" : "mark"});
-        const cx = m.x * w, cy = m.y * h, r = (editing ? m.r : markRadius(m.r)) * w, s = w / 60;
+        const cx = m.x * w, cy = m.y * h, r = (vis ? m.r : markRadius(m.r)) * w, s = w / 60;
         g.append(el("circle", {cx, cy, r, class: "body"}), el("circle", {cx, cy, r, class: "ring-shadow"}), el("circle", {cx, cy, r, class: "ring"}));
         // The × beside the number removes the circle. On touch screens it's sized in screen pixels
         // (a 28 px button inside a 44 px tap area), since a fraction of the photo is a speck on a phone.
@@ -772,9 +783,9 @@
           const lx = cx + sx * out, ly = cy + sy * out;
           return {lx, ly, sx, dx: lx + sx * (ext + dr * 1.4)};
         };
-        // The pill's box; the × beyond it only counts while editing (it's hidden otherwise).
+        // The pill's box; the × beyond it only counts with the editing look (it's hidden otherwise).
         const box = c => {
-          const far = editing ? c.dx + Math.sign(c.dx - c.lx) * dr : c.lx + Math.sign(c.dx - c.lx) * ext, hy = editing ? Math.max(rad, dr) : rad;
+          const far = vis ? c.dx + Math.sign(c.dx - c.lx) * dr : c.lx + Math.sign(c.dx - c.lx) * ext, hy = vis ? Math.max(rad, dr) : rad;
           return [Math.min(c.lx - rad, far), c.ly - hy, Math.max(c.lx + rad, far), c.ly + hy];
         };
         const free = c => {
@@ -820,7 +831,7 @@
       // The Ask buttons (and the unsaved-changes guard) follow the owner's own circles, on any frame.
       photo.dispatchEvent(new CustomEvent("birdbrain:marks", {detail: {owner: marks.some(m => !m.claude && !m.pi)}}));
       const shown = marks.filter(here).length;
-      document.getElementById("circles-toggle").hidden = editing || !shown;
+      document.getElementById("circles-toggle").hidden = !shown;
       clear.hidden = !editing || !shown;
       // The filmstrip marks each frame that has circles with their numbers.
       document.querySelectorAll(".vburst-frame").forEach(b => {
@@ -838,17 +849,10 @@
       return {x: Math.min(Math.max((e.clientX - b.left) / b.width, 0), 1), y: Math.min(Math.max((e.clientY - b.top) / b.height, 0), 1), ratio: b.height / b.width};
     };
     clear.addEventListener("click", () => { marks = marks.filter(m => !here(m)); draw(); });  // this frame's only
-    const setEditing = on => {
-      editing = on;
-      if (editing && !bbOverlays.on("circles")) bbOverlays.set("circles", true);  // can't edit what you can't see
-      photo.classList.toggle("editing", editing);
-      edit.setAttribute("aria-pressed", editing);
-      edit.textContent = editing ? "Done" : "Add circles";
-      draw();
-    };
-    edit.addEventListener("click", () => setEditing(!editing));
-    // A false trigger opens ready to draw (admins only, and only with a photo to draw on).
-    if ({{ 'true' if (is_ft and request.state.admin and not visit.photo_deleted_at) else 'false' }}) setEditing(true);
+    photo.classList.toggle("editing", editing);
+    const point = on => { if (on !== pointing) { pointing = on; if (!drag) draw(); } };
+    photo.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") point(true); });
+    photo.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") point(false); });
     // Undo whatever the current drag did: a new circle goes away, a moved one goes back.
     const abandon = () => {
       if (drag && drag.from) Object.assign(drag.mark, drag.from);
@@ -874,6 +878,7 @@
         else if (marks.length >= 9) return;
         else { drag = {start: press.p, mark: {x: press.p.x, y: press.p.y, r: 0.04, ...(cur ? {frame: cur} : {})}}; marks.push(drag.mark); }
         photo.setPointerCapture(e.pointerId);
+        if (!bbOverlays.on("circles")) bbOverlays.set("circles", true);  // you can't draw what you can't see
       }
       const p = at(e), dx = p.x - drag.start.x, dy = (p.y - drag.start.y) * p.ratio;
       const clamp = v => Math.round(Math.min(Math.max(v, 0), 1) * 1e4) / 1e4;
@@ -981,7 +986,7 @@
     viewer.addEventListener("close", () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); });
     photo.querySelector("a").addEventListener("click", e => {
       e.preventDefault();
-      if (!photo.dataset.dragged && !photo.classList.contains("editing")) open();
+      if (!photo.dataset.dragged) open();  // a drag draws a circle; a plain click opens the photo
     });
     // The arrows (and arrow keys, and swipes) go to the next visit, which opens straight into this view (?zoom=1).
     viewer.addEventListener("click", e => { if (!e.target.closest(".photo-viewer-arrow")) viewer.close(); });

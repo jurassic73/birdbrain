@@ -251,12 +251,18 @@ def test_visit_page_arrows_step_through_false_triggers(client, add_visit):
     assert f'href="/visit/{ft_old}?ft=1" id="nav-next"' in html and 'id="nav-prev"' not in html
 
 
-def test_false_trigger_visit_opens_in_drawing_mode_for_admin_only(client, add_visit):
+def test_admins_can_always_draw_circles_without_a_button(client, add_visit):
     ft = add_visit(visitor="none", species=None)
     real = add_visit(captured_at="2026-10-24T10:00:00")
-    assert "if (true) setEditing(true);" in client.get(f"/visit/{ft}?ft=1").text
-    assert "if (true) setEditing(true);" in client.get(f"/visit/{ft}?ft=1&todo=1&embed=1").text  # the pop-up
-    assert "if (false) setEditing(true);" in client.get(f"/visit/{real}").text
+    for url in (f"/visit/{ft}?ft=1", f"/visit/{ft}?ft=1&todo=1&embed=1", f"/visit/{real}"):  # incl. the pop-up
+        html = client.get(url).text
+        assert "const editing = true;" in html
+        assert 'id="draw-note"' in html and "Add circles: drag on the photo" in html
+        assert 'id="mark-edit"' not in html  # the old Add circles / Done button is gone
+        # The overlay switches sit at the far right of the row above the photo, zones last.
+        end = html.index('class="photo-tools-end"')
+        assert end < html.index('id="circles-toggle"')
+        assert 'id="zones-toggle"' not in html or html.index('id="circles-toggle"') < html.index('id="zones-toggle"')
 
 
 def test_false_trigger_popup_skips_confirmed_photos_and_lists_its_keys(client, add_visit, conn):

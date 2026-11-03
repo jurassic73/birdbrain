@@ -150,6 +150,7 @@ def test_latest_visit_api_waiting_counts_only_for_admin(client, add_visit, locke
     assert client.get("/api/latest-visit").json()["waiting"] == zero
 
 
-def test_false_trigger_does_not_start_drawing_for_visitors(client, add_visit, locked):
+def test_visitors_cannot_draw_circles(client, add_visit, locked):
     ft = add_visit(visitor="none", species=None)
-    assert "if (false) setEditing(true);" in client.get(f"/visit/{ft}?ft=1").text
+    html = client.get(f"/visit/{ft}?ft=1").text
+    assert "const editing = false;" in html and 'id="draw-note"' not in html
