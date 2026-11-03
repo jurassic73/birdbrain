@@ -110,7 +110,7 @@ def signed_in(request: Request) -> bool:
     expires, _, sig = request.cookies.get(COOKIE, "").partition(".")
     if not expires.isdigit() or int(expires) < time.time():
         return False
-    return hmac.compare_digest(sig, hmac.new(_key(), expires.encode(), hashlib.sha256).hexdigest())
+    return sig.isascii() and hmac.compare_digest(sig, hmac.new(_key(), expires.encode(), hashlib.sha256).hexdigest())
 
 
 def is_open(path: str) -> bool:

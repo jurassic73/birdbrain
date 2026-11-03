@@ -196,7 +196,9 @@
       c.type = "button";
       c.className = "se-chip";
       c.dataset.i = li.dataset.i;
-      c.innerHTML = `<span style="background:${li.dataset.color}"></span>${Number(li.dataset.i) + 1} ${li.dataset.name}`;
+      const swatch = document.createElement("span");
+      swatch.style.background = li.dataset.color;
+      c.append(swatch, `${Number(li.dataset.i) + 1} ${li.dataset.name}`);  // the name is Claude's text: never HTML
       chips.append(c);
     });
     bar.append(chips);

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import confirm_badge with context %}
 {% block title %}{{ sp.label }} | Birdbrain{% endblock %}
-{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>{% endblock %}
+{% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
 {% block content %}
 {% if not (info or has_card(sp.label)) %}
 <div class="page-head">

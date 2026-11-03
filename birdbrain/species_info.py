@@ -192,7 +192,12 @@ def fetch_sounds(client: httpx.Client, sci_name: str | None, center: list[float]
     base = f"gen:{parts[0]} sp:{parts[1]} grp:birds"
 
     def search(query: str) -> list[dict]:
-        data = _get(client, "https://xeno-canto.org/api/3/recordings", query=query, key=config.XC_API_KEY, per_page=200)
+        try:
+            data = _get(client, "https://xeno-canto.org/api/3/recordings", query=query, key=config.XC_API_KEY, per_page=200)
+        except httpx.HTTPError as e:
+            # The API key rides in the URL, and httpx puts the URL in its error text: say only what went wrong.
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            raise RuntimeError(f"xeno-canto answered {status or type(e).__name__} for {sci_name}") from None
         return data.get("recordings") or []
 
     # Common birds have hundreds of recordings and the API returns only 200, so ask for ones near home first.

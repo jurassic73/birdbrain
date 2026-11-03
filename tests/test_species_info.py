@@ -110,7 +110,8 @@ def test_card_route_renders_full_card(client, add_visit, fake_build):
     assert 'data-taxon="14886"' in html and "ebird.org/species/bushti" in html
 
 
-def test_card_route_mini(client, fake_build):
+def test_card_route_mini(client, add_visit, fake_build):
+    add_visit(species="Bushtit")
     html = client.get("/species-info/Bushtit?mini=1").text
     assert "Click for more" in html and "<h2>" not in html
 
@@ -220,7 +221,8 @@ def test_no_sounds_without_key(conn, monkeypatch):
     assert "sounds" not in species_info.get(conn, "Bushtit")
 
 
-def test_card_shows_sounds_with_credits(client, monkeypatch):
+def test_card_shows_sounds_with_credits(client, add_visit, monkeypatch):
+    add_visit(species="Bushtit")
     sounds = [{"id": "9", "label": "Song", "file": "https://xeno-canto.org/9/download", "page": "https://xeno-canto.org/9",
                "recordist": "A Recordist", "license": "CC BY 4.0", "where": "Portland, United States", "km": 1234,
                "length": "0:30"}]
@@ -256,6 +258,38 @@ def test_fetch_sounds_falls_back_when_few_nearby(monkeypatch):
     fake = FakeXC([rec(1, "song")], [rec(1, "song"), rec(7, "call", lat=40.7, lon=-74.0)])
     picked = species_info.fetch_sounds(fake, "Junco hyemalis", HOME)
     assert [p["id"] for p in picked] == ["1", "7"] and len(fake.queries) == 2
+
+
+def test_xeno_canto_errors_never_log_the_api_key(monkeypatch, caplog):
+    """The key rides in the query string; a failed call must not put the URL in the journal."""
+    monkeypatch.setattr(species_info.config, "XC_API_KEY", "sekrit-key")
+
+    class Denied:
+        def get(self, url, params=None, headers=None, timeout=None):
+            req = httpx.Request("GET", url, params=params)
+            return httpx.Response(401, json={"error": "no"}, request=req)
+
+    with pytest.raises(RuntimeError) as err:
+        species_info.fetch_sounds(Denied(), "Junco hyemalis", HOME)
+    assert "401" in str(err.value) and "sekrit-key" not in str(err.value) and "sekrit-key" not in repr(err.value.__cause__)
+    monkeypatch.setattr(species_info, "httpx", species_info.httpx)
+    monkeypatch.setattr(species_info.httpx, "Client", lambda **kw: _Ctx(Denied()))
+    with caplog.at_level("DEBUG"):
+        with db.session() as conn:
+            db.init_db(conn)
+            species_info._add_sounds(conn, "Dark-eyed Junco", {"is_bird": True, "sci_name": "Junco hyemalis"}, "2099-01-01T00:00:00")
+    assert "xeno-canto lookup failed" in caplog.text and "401" in caplog.text and "sekrit-key" not in caplog.text
+
+
+class _Ctx:
+    def __init__(self, inner):
+        self.inner = inner
+
+    def __enter__(self):
+        return self.inner
+
+    def __exit__(self, *a):
+        return False
 
 
 def test_pick_sounds_closer_band_beats_quality_and_call_slot_is_a_call():

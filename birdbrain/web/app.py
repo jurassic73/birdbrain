@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None)
+app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 app.mount("/images", StaticFiles(directory=config.IMAGES_DIR), name="images")
@@ -41,6 +41,10 @@ templates = Jinja2Templates(directory=HERE / "templates")
 @app.middleware("http")
 async def read_only(request: Request, call_next):
     """Visitors can browse; changes, Claude calls and the admin pages need the admin login."""
+    if request.method not in ("GET", "HEAD") and auth.cross_site(request):
+        # Another site's page can't change anything here with the browser's cookies (or, with no password,
+        # with nothing at all): every change is a POST, and the browser tells us where a POST came from.
+        return Response("Cross-site requests aren't accepted.", status_code=403)
     if viewer.enabled() and not viewer.is_open(request.url.path) and not viewer.signed_in(request):
         # Friends & family gate: nothing past this point for anyone without the guest cookie.
         if request.method in ("GET", "HEAD"):
@@ -723,6 +727,8 @@ def correct(
 @app.get("/species-search")
 def species_search(q: str = "", known: list[str] = Query([])):
     """eBird species names matching q, for the correction form's species boxes (the page lists the yard's own)."""
+    if auth.public():
+        raise HTTPException(404)  # only the correction form uses it; the mirror shouldn't download eBird's list
     return JSONResponse(names.search(q, known))
 
 
@@ -804,9 +810,11 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
 
 @app.get("/species-photo")
 async def species_photo(request: Request, name: str = Query(""), conn=Depends(get_conn)):
-    """A reference photo for the Ask-the-Pi guesses. Only admins can make the site look one up; visitors get
-    what is already cached."""
-    photo = await asyncio.to_thread(species_info.reference_photo, conn, name.strip(), bool(request.state.admin))
+    """A reference photo for the Ask-the-Pi guesses. Only admins can make the site look one up, and only for an
+    animal the visits know; visitors (and any other name) get what is already cached."""
+    name = name.strip()
+    fetch = bool(request.state.admin) and name in db.known_species(conn)
+    photo = await asyncio.to_thread(species_info.reference_photo, conn, name, fetch)
     return JSONResponse({"photo": photo})
 
 
@@ -967,8 +975,9 @@ def species_cover_compare(name: str, visit_id: int, conn=Depends(get_conn)):
 @app.get("/species-info/{name}", response_class=HTMLResponse)
 def species_card(request: Request, name: str, mini: bool = False, fold: bool = False, conn=Depends(get_conn)):
     """The species info card (or its hover preview), built from outside sources on first use."""
-    # Visitors only see cards already built, so they can't make the site fetch or call Claude.
-    info = species_info.get(conn, name, fetch=request.state.admin)
+    # Visitors only see cards already built, so they can't make the site fetch or call Claude; and a card is
+    # only built for an animal the visits know, so a made-up name in the URL can't start fetches or Haiku calls.
+    info = species_info.get(conn, name, fetch=bool(request.state.admin) and name in db.known_species(conn))
     if not info:
         return HTMLResponse('<p class="muted sp-empty">No info found for this one yet.</p>')
     return page(
