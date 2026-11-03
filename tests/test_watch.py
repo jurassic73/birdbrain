@@ -6,7 +6,7 @@ import httpx
 import numpy as np
 import pytest
 
-from birdbrain import watch
+from birdbrain import stay, watch
 
 W, H = 640, 360
 # A birdbath-like ring in the middle of the frame, with a rock spot inside the water.
@@ -389,10 +389,10 @@ def test_ground_results_never_put_the_birdbath_on_cooldown(monkeypatch, conn):
     w._work(0.0, probe=False, trigger="ground")
     w._work(0.0, probe=False, trigger="ground")
     assert w.cooldown_until == 0.0 and w.backoff_until == 0.0 and w.false_streak == 0
-    assert w.ground_streak == 2 and w.ground_backoff_until > watch.time.time() + watch.config.COOLDOWN_NONE
+    assert w.ground_streak == 2 and w.ground_backoff_until > watch.time.monotonic() + watch.config.COOLDOWN_NONE
     monkeypatch.setattr(watch, "handle_event", lambda *a, **k: watch.PROBE_EMPTY)
     w._work(0.0, probe=True, trigger="ground")  # an empty probe keeps the backoff going
-    assert w.ground_streak == 2 and w.ground_backoff_until > watch.time.time()
+    assert w.ground_streak == 2 and w.ground_backoff_until > watch.time.monotonic()
     monkeypatch.setattr(watch, "handle_event", lambda *a, **k: "raccoon")
     w._work(0.0, probe=False, trigger="ground")
     assert w.ground_streak == 0 and w.cooldown_until == 0.0
@@ -412,7 +412,7 @@ def test_ground_limit_pauses_only_the_ground(monkeypatch, conn):
 
     monkeypatch.setattr(watch.threading, "Thread", FakeThread)
     w._maybe_trigger(0.0, trigger="ground")
-    assert started == [] and w.ground_until > watch.time.time() and w.cooldown_until == 0.0
+    assert started == [] and w.ground_until > watch.time.monotonic() and w.cooldown_until == 0.0
     w._maybe_trigger(0.0, trigger="rim")
     assert len(started) == 1
 
@@ -425,18 +425,204 @@ def test_long_runs_of_false_triggers_probe_for_half_an_hour():
     assert watch.after_false(1000.0, 9, 300, can_probe=False) == (1300.0, 1300.0)  # no animal check: just wait
 
 
-def test_probe_passes_unless_the_animal_check_calls_it_empty():
+def test_probe_passes_only_with_a_verdict_that_is_not_empty():
     assert watch.probe_passes({"empty": False, "score": 0.9})
     assert not watch.probe_passes({"empty": True, "score": 0.1})
-    assert watch.probe_passes(None)  # check off or failed: Claude decides
-    assert watch.probe_passes({"empty": False, "score": None})  # not trained yet
+    assert not watch.probe_passes(None)  # check off or failed: nothing filtered the probe, so it isn't one
+    assert not watch.probe_passes({"empty": False, "score": None})  # not trained yet: the same
 
 
-def test_probe_with_an_untrained_check_goes_to_claude(pipeline, monkeypatch):
+def test_a_probe_without_a_verdict_is_dropped_not_sent_to_claude(pipeline, monkeypatch):
     conn, asked, set_detector = pipeline
     monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {"model": "bioclip-presence", "score": None, "empty": False})
-    assert watch.handle_event(probe=True, trigger="ground") == "bird"
-    assert asked == [1]
+    assert watch.handle_event(probe=True, trigger="ground") == watch.PROBE_UNCHECKED
+    monkeypatch.setattr(watch.classifier, "box_embedding", raise_locked)  # the embedding failed
+    assert watch.handle_event(probe=True, trigger="rim") == watch.PROBE_UNCHECKED
+    assert asked == [] and watch.db.count_visits(conn, false_triggers=True) == 0
+    assert watch.handle_event(probe=False, trigger="rim") == "bird"  # a full check still goes to Claude
+
+
+@pytest.fixture
+def probes_on(monkeypatch):
+    """A trained animal check with its embedding model loaded, as a rainy day with a well-taught Pi has."""
+    monkeypatch.setattr(watch.presence, "trained", lambda: True)
+    monkeypatch.setattr(watch.classifier, "usable", lambda: True)
+    monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
+
+
+def test_probe_ready_needs_the_classifier_on_and_a_trained_check(monkeypatch, conn, probes_on):
+    assert watch.probe_ready() is True
+    monkeypatch.setattr(watch.presence, "trained", lambda: False)  # fewer than 10 visitors / 30 empty frames
+    assert watch.probe_ready() is False
+    monkeypatch.setattr(watch.presence, "trained", lambda: True)
+    monkeypatch.setattr(watch.classifier, "usable", lambda: False)  # CLASSIFIER=off, or its download failed
+    assert watch.probe_ready() is False
+    monkeypatch.setattr(watch.classifier, "usable", lambda: True)
+    monkeypatch.setattr(watch, "presence_mode", lambda: "off")
+    assert watch.probe_ready() is False
+
+
+def test_classifier_usable_and_presence_trained_read_their_state(monkeypatch):
+    monkeypatch.setattr(watch.config, "CLASSIFIER", "off")
+    assert watch.classifier.usable() is False
+    monkeypatch.setattr(watch.config, "CLASSIFIER", "gate")
+    monkeypatch.setattr(watch.classifier, "_classifier", None)
+    monkeypatch.setattr(watch.classifier, "_failed_at", 0.0)
+    assert watch.classifier.usable() is True  # not tried yet: the first full check loads it
+    monkeypatch.setattr(watch.classifier, "_failed_at", watch.time.monotonic())  # the 300 MB download failed
+    assert watch.classifier.usable() is False
+    monkeypatch.setattr(watch.classifier, "_classifier", object())
+    assert watch.classifier.usable() is True
+    assert watch.presence.trained() is False  # no model in this process yet
+    monkeypatch.setattr(watch.presence, "_model", {"key": (), "model": None})  # trained, but on too few frames
+    assert watch.presence.trained() is False
+    monkeypatch.setattr(watch.presence, "_model", {"key": (), "model": {"threshold": 0.1}})
+    assert watch.presence.trained() is True
+
+
+def doubling_calls(seconds: int) -> int:
+    """How many Claude calls the plain doubling backoff allows in `seconds` of steady false triggers."""
+    t = n = streak = 0
+    while t < seconds:
+        n, streak = n + 1, streak + 1
+        t += watch.config.false_trigger_wait(streak)
+    return n
+
+
+@pytest.mark.parametrize("why", ["classifier off", "check untrained"])
+def test_rain_without_a_verdict_costs_no_more_than_the_doubling_backoff(pipeline, monkeypatch, why):
+    """An hour of rain with motion on every frame. Before, probes with nothing filtering them went to Claude
+    every COOLDOWN_NONE: 180 calls an hour, the day's MAX_CALLS_PER_DAY gone by lunch."""
+    conn, asked, set_detector = pipeline
+    if why == "classifier off":
+        monkeypatch.setattr(watch.config, "CLASSIFIER", "off")  # presence keeps its default "shadow"
+    else:
+        monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {"model": "bioclip-presence", "score": None,
+                                                                         "empty": False})
+    from birdbrain.identify import Result, Sighting
+    monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: asked.append(1) or Result(
+        Sighting(visitor="none", species=None, count=0, confidence="high", notes=""), "claude-haiku-5-5", False, False, {}))
+    clock = [1000.0]
+    monkeypatch.setattr(watch.time, "monotonic", lambda: clock[0])
+    w = watch.Watcher()
+    for _ in range(3600):
+        action = watch.motion_action(clock[0], w.cooldown_until, w.backoff_until, watch.probe_ready())
+        if action != "wait":
+            w._work(0.05, probe=action == "probe", trigger="rim")
+        clock[0] += 1
+    assert len(asked) == doubling_calls(3600) <= 16
+
+
+def test_a_probe_with_no_verdict_falls_back_to_the_doubling_backoff(monkeypatch, conn, probes_on):
+    w = watch.Watcher()
+    w.false_streak, w.ground_streak = 3, 3
+    w.backoff_until = w.ground_backoff_until = watch.time.monotonic() + watch.config.FULL_CHECK_EVERY
+    monkeypatch.setattr(watch, "handle_event", lambda *a, **k: watch.PROBE_UNCHECKED)
+    for trigger, until, backoff, streak in (("rim", "cooldown_until", "backoff_until", "false_streak"),
+                                            ("ground", "ground_until", "ground_backoff_until", "ground_streak")):
+        w._work(0.0, probe=True, trigger=trigger)
+        now = watch.time.monotonic()
+        assert getattr(w, streak) == 4 and w.stay_pending is None
+        # No probes every COOLDOWN_NONE: the next trigger is a full one after the doubling wait.
+        assert getattr(w, until) == getattr(w, backoff) == pytest.approx(now + watch.config.false_trigger_wait(4), abs=1)
+        assert watch.motion_action(getattr(w, until), getattr(w, until), getattr(w, backoff), True) == "full"
+    monkeypatch.setattr(watch, "handle_event", lambda *a, **k: "none")
+    w._work(0.0, probe=False, trigger="rim")  # a verdict-less run over, the trained check probes again
+    assert w.false_streak == 5 and w.backoff_until == pytest.approx(w.cooldown_until - watch.config.COOLDOWN_NONE
+                                                                    + watch.config.FULL_CHECK_EVERY, abs=1)
+
+
+# --- Zones and boxes stay inside the frame ---
+
+def test_roi_outside_the_frame_is_none_not_an_empty_slice():
+    img = frame()
+    assert watch.roi(img, (-0.1, 0.5, 0.05, 0.3)) is None               # wholly outside: nothing, no wrapped slice
+    assert watch.roi(img, (-0.05, -0.05, 0.3, 0.3)).shape[:2] == (90, 160)  # pushed over the corner: what's left
+    assert watch.roi(img, None) is img
+    assert watch.sharpness(jpeg(img), (-0.1, 0.5, 0.05, 0.3)) == 0.0   # used to raise in cv2 on every ground trigger
+    assert watch.best_frames([jpeg(img)] * 2, (-0.1, 0.5, 0.05, 0.3), n=1) == [jpeg(img)]
+    m = stay.box_mask((H, W), (-0.05, 0.9, 0.2, 0.2))
+    assert m[H - 1, 0] == 255 and m[H - 1, W - 1] == 0 and m[0, 0] == 0 and cv2.countNonZero(m) == 96 * 36
+    assert cv2.countNonZero(stay.box_mask((H, W), (1.2, 0.5, 0.2, 0.2))) == 0
+
+
+def test_motion_detector_with_a_box_over_the_edge_still_scores():
+    d = watch.MotionDetector((-0.1, -0.1, 0.6, 0.6), 0.004)
+    assert score_after(d, with_blob(int(0.25 * W), int(0.25 * H))) > 0.004
+    assert d.stay_mask((H, W))[0, 0] == 255 and d.stay_mask((H, W))[H - 1, W - 1] == 0
+    whole = watch.MotionDetector((-1.0, -1.0, 0.5, 0.5), 0.004)  # a box with nothing in the frame: the whole frame
+    assert score_after(whole, with_blob(int(0.75 * W), int(0.75 * H))) > 0
+
+
+# --- The ground zone answers only to its own cooldown; timers run on the monotonic clock ---
+
+@pytest.fixture
+def fake_threads(monkeypatch):
+    """Capture threads never start; the triggers they would have run are listed as (trigger, probe)."""
+    started = []
+
+    class FakeThread:
+        def __init__(self, target=None, args=(), **kwargs):
+            started.append((args[2], args[1]))
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(watch.threading, "Thread", FakeThread)
+    return started
+
+
+def ground_motion(d: watch.MotionDetector):
+    """A detector whose next frames show an animal on the ground and nothing at the bath."""
+    def score(frame):
+        d.ground_hit, d.water_hit = True, False
+        return 0.0
+    return score
+
+
+def test_a_ground_trigger_fires_while_the_bath_is_cooling_down_or_over_its_limit(monkeypatch, conn, fake_threads):
+    w = watch.Watcher()
+    monkeypatch.setattr(w.detector, "score", ground_motion(w.detector))
+    w.cooldown_until = watch.time.monotonic() + 300  # the bath backing off after rainy false alarms
+    w.step(frame(), WARMUP_FRAMES_DONE)
+    assert fake_threads == [("ground", False)]
+    w.busy.clear()
+    monkeypatch.setattr(watch.config, "MAX_CALLS_PER_DAY", 0)  # the bath's daily limit reached...
+    w._maybe_trigger(0.5, trigger="rim")
+    assert len(fake_threads) == 1 and w.cooldown_until > watch.time.monotonic()
+    w.step(frame(), WARMUP_FRAMES_DONE)  # ...and the ground still fires, on its own budget
+    assert fake_threads == [("ground", False)] * 2
+    w.busy.clear()
+    w.ground_until = watch.time.monotonic() + 300  # its own cooldown is what holds it
+    w.step(frame(), WARMUP_FRAMES_DONE)
+    assert len(fake_threads) == 2
+
+
+WARMUP_FRAMES_DONE = watch.WARMUP_FRAMES + 1
+
+
+def test_cooldowns_run_on_the_monotonic_clock_not_the_wall_clock(monkeypatch, conn, fake_threads):
+    mono, wall = [5000.0], [1_700_000_000.0]
+    monkeypatch.setattr(watch.time, "monotonic", lambda: mono[0])
+    monkeypatch.setattr(watch.time, "time", lambda: wall[0])
+    w = watch.Watcher()
+    monkeypatch.setattr(w.detector, "score", lambda frame: 0.5)  # rim motion on every frame
+    monkeypatch.setattr(watch, "handle_event", lambda *a, **k: "none")
+    w._work(0.0, probe=False, trigger="rim")
+    assert w.cooldown_until == 5000.0 + watch.config.COOLDOWN_NONE
+
+    def rim_motion() -> int:
+        before = len(fake_threads)
+        for _ in range(watch.config.TRIGGER_FRAMES):
+            w.step(frame(), WARMUP_FRAMES_DONE)
+        return len(fake_threads) - before
+
+    wall[0] += 3600  # the wall clock leaps an hour ahead (NTP after boot): the cooldown must not end early
+    mono[0] += 1
+    assert rim_motion() == 0
+    wall[0] -= 7200  # ...nor must a step back stretch it
+    mono[0] += watch.config.COOLDOWN_NONE
+    assert rim_motion() == 1
 
 
 # --- Never lose a visit: the watcher must survive Claude and database errors with the visit stored ---
@@ -458,14 +644,14 @@ def test_work_clears_busy_even_when_the_cooldown_step_raises(monkeypatch, conn):
     assert not w.busy.is_set()
 
 
-def test_probe_ready_falls_back_to_no_probes_on_a_locked_database(monkeypatch, conn):
+def test_probe_ready_falls_back_to_no_probes_on_a_locked_database(monkeypatch, conn, probes_on):
     w = watch.Watcher()
     w.busy.set()
     monkeypatch.setattr(watch, "handle_event", lambda *a, **k: "none")
     monkeypatch.setattr(watch, "presence_mode", raise_locked)
     assert watch.probe_ready() is False
     w._work(0.0, probe=False, trigger="rim")
-    assert not w.busy.is_set() and w.false_streak == 1 and w.cooldown_until > watch.time.time()
+    assert not w.busy.is_set() and w.false_streak == 1 and w.cooldown_until > watch.time.monotonic()
     assert w.backoff_until == w.cooldown_until  # no probes without the animal check: just wait
 
 
@@ -498,7 +684,7 @@ def test_claude_error_keeps_the_visit_for_review_without_touching_the_streak(pip
     assert raw["calls"]["error"].startswith(type(error).__name__)
     assert w.false_streak == 2 and w.backoff_until == 0.0          # not a false trigger...
     assert w.stay_pending is None and alerts == []                 # ...and not a visit to alert about or follow
-    assert w.cooldown_until > watch.time.time()
+    assert w.cooldown_until > watch.time.monotonic()
     assert watch.calls_today() == 1                                 # the failed call still counts toward the budget
 
 
@@ -506,7 +692,7 @@ def test_unanswered_ground_trigger_waits_without_a_ground_streak(monkeypatch, co
     w = watch.Watcher()
     monkeypatch.setattr(watch, "handle_event", lambda *a, **k: watch.UNANSWERED)
     w._work(0.0, probe=False, trigger="ground")
-    assert w.ground_streak == 0 and w.ground_until > watch.time.time() and w.cooldown_until == 0.0
+    assert w.ground_streak == 0 and w.ground_until > watch.time.monotonic() and w.cooldown_until == 0.0
 
 
 @pytest.mark.parametrize("effect", ["note_stored", "push_public", "prune"])
@@ -553,14 +739,19 @@ class Stop(BaseException):
     """Breaks out of Watcher.run's forever loop when the fake camera is opened a second time."""
 
 
-def test_frame_loop_survives_a_locked_database(monkeypatch, conn):
+@pytest.fixture
+def stalled_camera(monkeypatch):
+    """A substream that delivers 5 frames, then nothing: every read takes a second and fails. Opening it a
+    second time (the reconnect) raises Stop. Returns the list of captures opened."""
     opened = []
+    clock = [100.0]
 
     class FakeCap:
         def __init__(self, *args):
             if opened:
                 raise Stop
             opened.append(self)
+            self.args = args
             self.reads = 0
 
         def isOpened(self):
@@ -568,6 +759,7 @@ def test_frame_loop_survives_a_locked_database(monkeypatch, conn):
 
         def read(self):
             self.reads += 1
+            clock[0] += 1.0
             return (True, frame()) if self.reads <= 5 else (False, None)
 
         def release(self):
@@ -575,7 +767,12 @@ def test_frame_loop_survives_a_locked_database(monkeypatch, conn):
 
     monkeypatch.setattr(watch.cv2, "VideoCapture", FakeCap)
     monkeypatch.setattr(watch.time, "sleep", lambda s: None)
+    monkeypatch.setattr(watch.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(watch, "_last_logged", {})
+    return opened
+
+
+def test_frame_loop_survives_a_locked_database(monkeypatch, conn, stalled_camera):
     w = watch.Watcher()
     asked = []
     monkeypatch.setattr(watch.zones, "current", lambda: asked.append(1) or raise_locked())
@@ -626,3 +823,16 @@ def test_push_public_skips_a_running_push_but_stops_a_hung_one(monkeypatch):
     monkeypatch.delenv("PUBLIC_DEST")
     watch.push_public()
     assert len(started) == 2  # no mirror configured: nothing to do
+
+
+def test_reconnects_after_30_s_without_a_frame(conn, stalled_camera):
+    """Counting 50 failed reads was 25 minutes blind: FFmpeg blocks each read of a stalled stream for ~30 s."""
+    with pytest.raises(Stop):
+        watch.Watcher().run()
+    cap = stalled_camera[0]
+    assert abs(cap.reads - (5 + watch.STALL_SECONDS)) <= 1
+    url, backend, *params = cap.args
+    assert backend == cv2.CAP_FFMPEG
+    if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):  # the timeouts are set at open time, where the build has them
+        assert params == [[cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, watch.STREAM_TIMEOUT_MS,
+                           cv2.CAP_PROP_READ_TIMEOUT_MSEC, watch.STREAM_TIMEOUT_MS]]

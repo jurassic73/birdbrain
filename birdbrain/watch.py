@@ -30,7 +30,12 @@ log = logging.getLogger("birdbrain.watch")
 
 WARMUP_FRAMES = 30  # let the background model settle after (re)connecting
 NIGHT_CHECK_FRAMES = 15  # how often (substream frames, ~1 s) to re-check whether the camera is in IR mode
+STALL_SECONDS = 30  # reconnect when the substream hasn't delivered a frame for this long
+STREAM_TIMEOUT_MS = 10000  # FFmpeg's open and read timeouts, so a stalled stream returns instead of blocking
 last_visit_id: int | None = None  # set by handle_event, so the watcher can keep that visit open while it stays
+# Cooldowns, backoffs, stays and the stream watchdog all run on time.monotonic(): the Pi has no hardware clock
+# and NTP steps the wall clock after boot, which would stretch a wait or hold a trigger. time.time() and
+# datetime.now() are only for timestamps that are stored or shown.
 
 
 
@@ -65,12 +70,15 @@ def redact(text: str) -> str:
     return re.sub(r"rtsp://[^@/\s]*@", "rtsp://***@", text)
 
 
-def roi(frame: np.ndarray, box) -> np.ndarray:
+def roi(frame: np.ndarray, box) -> np.ndarray | None:
+    """The box's part of the frame (all of it without a box), or None when the box lies outside the frame."""
     if not box:
         return frame
-    H, W = frame.shape[:2]
-    x, y, w, h = box
-    return frame[int(y * H):int((y + h) * H), int(x * W):int((x + w) * W)]
+    px = zones.pixel_box(frame.shape, box)
+    if px is None:
+        return None
+    x0, y0, x1, y1 = px
+    return frame[y0:y1, x0:x1]
 
 
 def motion_mask(shape: tuple[int, int], ring, spots=()) -> np.ndarray:
@@ -255,7 +263,7 @@ class MotionDetector:
             self.night = frame_is_night(frame)
         self.frames += 1
         full = cv2.GaussianBlur(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (21, 21), 0)
-        gray = roi(full, self.box)
+        gray = self.part(full)
         if self.ring and (self.mask is None or self.mask.shape != gray.shape):
             self.mask = motion_mask(gray.shape, self.ring, self.spots)
             self.water = WaterWatch(water_mask(gray.shape, self.ring, self.spots)) if config.WATER_WATCH else None
@@ -270,7 +278,7 @@ class MotionDetector:
         full_diff = cv2.absdiff(full, cv2.convertScaleAbs(self.bg))
         self.full, self.full_diff = full, full_diff
         cv2.accumulateWeighted(full, self.bg, 0.05)
-        diff = roi(full_diff, self.box)
+        diff = self.part(full_diff)
         if self.water is not None:
             if self.night:
                 self.water.reset()
@@ -285,16 +293,18 @@ class MotionDetector:
             return cv2.countNonZero(cv2.bitwise_and(changed, self.mask)) / max(cv2.countNonZero(self.mask), 1)
         return cv2.countNonZero(changed) / changed.size
 
+    def part(self, img: np.ndarray) -> np.ndarray:
+        """The watched box's part of a frame, or the whole frame when the box lies outside it (a bad hand
+        calibration; a recalibration never pushes one out)."""
+        r = roi(img, self.box)
+        return img if r is None else r
 
     def stay_mask(self, shape: tuple[int, int]) -> np.ndarray:
         """Everywhere a visitor can be, in full-frame coordinates: rim, rocks, water and ground."""
         if self.ring:
             mask = motion_mask(shape, self.ring, self.spots) | water_mask(shape, self.ring, self.spots)
         else:
-            mask = np.zeros(shape, np.uint8)
-            h, w = shape
-            x, y, bw, bh = self.box or (0, 0, 1, 1)
-            mask[int(y * h):int((y + bh) * h), int(x * w):int((x + bw) * w)] = 255
+            mask = stay.box_mask(shape, self.box)
         if self.ground_zone:
             mask |= ground_mask(shape, self.ground_zone, self.ring)
         return mask
@@ -332,8 +342,8 @@ def count_animals(scene: Scene | None, jpeg: bytes, crop) -> int | None:
 
 def sharpness(jpeg: bytes, crop=None) -> float:
     """Laplacian variance, measured only inside the crop: busy mulch around the bath shouldn't win."""
-    gray = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_GRAYSCALE)
-    return float(cv2.Laplacian(roi(gray, crop), cv2.CV_64F).var())
+    patch = roi(cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_GRAYSCALE), crop)
+    return 0.0 if patch is None else float(cv2.Laplacian(patch, cv2.CV_64F).var())
 
 
 def best_frames(frames: list[bytes], crop=None, n: int = 3) -> list[bytes]:
@@ -348,6 +358,18 @@ def frame_is_night(bgr: np.ndarray) -> bool:
 
 def is_night(jpeg: bytes) -> bool:
     return frame_is_night(cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR))
+
+
+def open_capture(url: str) -> cv2.VideoCapture:
+    """The substream, with FFmpeg's open and read timeouts set when this OpenCV build has them, so a stalled
+    stream returns from read() in STREAM_TIMEOUT_MS instead of blocking it for half a minute."""
+    params = []
+    for name in ("CAP_PROP_OPEN_TIMEOUT_MSEC", "CAP_PROP_READ_TIMEOUT_MSEC"):
+        if hasattr(cv2, name):
+            params += [getattr(cv2, name), STREAM_TIMEOUT_MS]
+    if params:
+        return cv2.VideoCapture(url, cv2.CAP_FFMPEG, params)
+    return cv2.VideoCapture(url, cv2.CAP_FFMPEG)
 
 
 def capture_burst() -> list[bytes]:
@@ -398,20 +420,29 @@ def after_false(now: float, streak: int, cooldown: int, can_probe: bool) -> tupl
     """(cooldown_until, backoff_until) after a false trigger, the streak-th in a row. During the backoff,
     triggers are probes every COOLDOWN_NONE (with the local animal check). From PROBE_AFTER in a row the backoff
     runs FULL_CHECK_EVERY, so steady rain or blowing leaves cost one Claude call per half hour, not one
-    every COOLDOWN_NONE_MAX (about 240 a night on 2026-10-26)."""
+    every COOLDOWN_NONE_MAX (about 240 a night on 2026-10-26). can_probe must mean a trained check with a real
+    verdict (probe_ready): with nothing filtering them, probes every COOLDOWN_NONE are 180 Claude calls an hour."""
     if not can_probe:
         return now + cooldown, now + cooldown
     backoff = config.FULL_CHECK_EVERY if streak >= config.PROBE_AFTER else cooldown
     return now + config.COOLDOWN_NONE, now + backoff
 
 
+def judged(check: dict | None) -> bool:
+    """Whether the local animal check actually judged the frame: a trained model gave it a score."""
+    return bool(check) and check.get("score") is not None
+
+
 def probe_passes(check: dict | None) -> bool:
-    """A rain-backoff probe goes on to Claude unless the local animal check calls it empty. With the check
-    off, or before it has enough labelled frames to train, every probe goes to Claude."""
-    return not (check and check.get("empty"))
+    """A rain-backoff probe goes on to Claude only when the local animal check judged it and didn't call it
+    empty. No verdict (the check off, not trained yet, or failed) is not a pass: nothing was filtering the
+    probe, so it is dropped and the backoff goes back to plain doubling (PROBE_UNCHECKED)."""
+    return judged(check) and not check.get("empty")
 
 
 PROBE_EMPTY = "probe-empty"  # a backoff probe the local animal check found empty in: not stored, no Claude call
+PROBE_UNCHECKED = "probe-unchecked"  # a probe with no verdict to filter it: not stored, no Claude call; the
+                                     # backoff doubles as if there were no check
 UNANSWERED = "unanswered"    # Claude couldn't answer (an API error): stored as "other" for review, so neither a
                              # visit (no stay, no alert) nor a false trigger (the rain backoff streak is left alone)
 
@@ -455,8 +486,13 @@ def presence_mode() -> str:
 
 
 def probe_ready() -> bool:
-    """Probes need the local animal check: without it a rain run just waits out its backoff. Fail-soft: if the
-    mode can't be read (a locked database), there are no probes until it can be, and the caller carries on."""
+    """Probes need a working local animal check: the embedding model on (CLASSIFIER) and loadable, the check not
+    off, and trained on enough of this yard's frames to give a verdict. Without all of that a rain run just
+    waits out its doubling backoff: unfiltered probes every COOLDOWN_NONE would ask Claude 180 times an hour
+    and use up the day's budget before lunch. Fail-soft: if the mode can't be read (a locked database), there
+    are no probes until it can be, and the caller carries on."""
+    if not classifier.usable() or not presence.trained():
+        return False
     try:
         return presence_mode() != "off"
     except Exception:
@@ -535,6 +571,9 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         emb, check, ranked = animal_check(frames, ranked, crop)
     best = ranked[0]
     night = is_night(best)
+    if probe and not judged(check):
+        log.info("probe (%s trigger): the animal check gave no verdict; discarded, backing off without probes", trigger)
+        return PROBE_UNCHECKED
     if probe and not probe_passes(check):
         log.info("probe (%s trigger): animal check found nothing; discarded", trigger)
         with db.session() as conn:
@@ -717,22 +756,25 @@ class Watcher:
 
     def _settle(self, visitor: str | None, trigger: str, empty: np.ndarray | None) -> None:
         """Open the stay and set the cooldowns from what the capture found."""
-        now = time.time()
-        if (config.STAY and visitor not in (None, "none", PROBE_EMPTY, UNANSWERED) and last_visit_id
+        now = time.monotonic()
+        if (config.STAY and visitor not in (None, "none", PROBE_EMPTY, PROBE_UNCHECKED, UNANSWERED) and last_visit_id
                 and empty is not None):
             self.stay_pending = (last_visit_id, empty)
+        # A probe nothing could filter counts as a false trigger, but the wait after it is the plain doubling one:
+        # probing on every COOLDOWN_NONE without a verdict would just be asking Claude every 20 s.
+        unchecked = visitor == PROBE_UNCHECKED
         if trigger == "ground":
             if visitor == PROBE_EMPTY:
                 self.ground_until = now + config.COOLDOWN_NONE
             elif visitor == UNANSWERED:
                 self.ground_until = now + config.COOLDOWN_VISIT  # neither a visit nor a false trigger
             else:
-                cooldown, self.ground_streak = next_cooldown(visitor, self.ground_streak)
+                cooldown, self.ground_streak = next_cooldown("none" if unchecked else visitor, self.ground_streak)
                 if self.ground_streak:
                     if self.ground_streak > 1:
                         log.info("%d empty ground triggers in a row; ground backs off", self.ground_streak)
                     self.ground_until, self.ground_backoff_until = after_false(
-                        now, self.ground_streak, cooldown, probe_ready())
+                        now, self.ground_streak, cooldown, not unchecked and probe_ready())
                 else:
                     self.ground_until, self.ground_backoff_until = now + cooldown, 0.0
         elif visitor == PROBE_EMPTY:
@@ -742,13 +784,14 @@ class Watcher:
             # streak is left as it was, and the usual wait after a visit keeps an outage from filling the queue.
             self.cooldown_until = now + config.COOLDOWN_VISIT
         else:
-            cooldown, self.false_streak = next_cooldown(visitor, self.false_streak)
+            cooldown, self.false_streak = next_cooldown("none" if unchecked else visitor, self.false_streak)
             if self.false_streak:
                 if self.false_streak > 1:
                     log.info("%d false triggers in a row; backing off", self.false_streak)
-                # With the animal check, keep probing every COOLDOWN_NONE during the backoff instead of going blind.
+                # With a trained animal check, keep probing every COOLDOWN_NONE during the backoff instead of
+                # going blind.
                 self.cooldown_until, self.backoff_until = after_false(
-                    now, self.false_streak, cooldown, probe_ready())
+                    now, self.false_streak, cooldown, not unchecked and probe_ready())
             else:
                 self.backoff_until = 0.0
                 self.cooldown_until = now + cooldown
@@ -762,9 +805,9 @@ class Watcher:
                             daily_limit(ground), zone, zone)
                 self.budget_warned[ground] = date.today()
             if ground:
-                self.ground_until = time.time() + 300
+                self.ground_until = time.monotonic() + 300
             else:
-                self.cooldown_until = time.time() + 300
+                self.cooldown_until = time.monotonic() + 300
             return
         self.empty = self.detector.empty_scene()
         self.scene = self.detector.scene()
@@ -772,7 +815,8 @@ class Watcher:
         threading.Thread(target=self._work, args=(motion, probe, trigger), daemon=True).start()
 
     def follow_stay(self, now: float) -> bool:
-        """Keep the last real visit open while its visitor is in view. True while a stay is open (no triggers)."""
+        """Keep the last real visit open while its visitor is in view. True while a stay is open (no triggers).
+        `now` is time.monotonic(); the stored end time comes from the wall clock, minus how long ago it was."""
         d = self.detector
         if self.stay is None and self.stay_pending is not None and d.full is not None:
             visit_id, empty = self.stay_pending
@@ -786,13 +830,14 @@ class Watcher:
         if reason is None:
             return True
         self.stay = None
-        ended = datetime.fromtimestamp(st.moved if reason == stay.GONE else now).replace(microsecond=0)
+        ended_at = st.moved if reason == stay.GONE else now
+        ended = (datetime.now() - timedelta(seconds=now - ended_at)).replace(microsecond=0)
         try:
             with db.session() as conn:
                 db.end_stay(conn, st.visit_id, ended.isoformat(), reason)
         except Exception:
             log.exception("could not save the end of visit %d", st.visit_id)
-        log.info("visit %d ended (%s) after %d s", st.visit_id, reason, int(ended.timestamp() - st.started))
+        log.info("visit %d ended (%s) after %d s", st.visit_id, reason, int(ended_at - st.started))
         self.cooldown_until = max(self.cooldown_until, now + config.STAY_REARM)
         self.ground_until = max(self.ground_until, now + config.STAY_REARM)
         self.detector.reset()  # start the next background from the empty scene
@@ -800,7 +845,7 @@ class Watcher:
 
     def run(self) -> None:
         while True:
-            cap = cv2.VideoCapture(config.rtsp_url(config.RTSP_SUB), cv2.CAP_FFMPEG)
+            cap = open_capture(config.rtsp_url(config.RTSP_SUB))
             if not cap.isOpened():
                 log.warning("substream unavailable; retrying in 10 s")
                 time.sleep(10)
@@ -808,14 +853,15 @@ class Watcher:
             log.info("watching %s", redact(config.rtsp_url(config.RTSP_SUB)))
             self.detector.reset()
             self.streak = 0
-            frames, failures = 0, 0
-            while failures < 50:
+            frames, last_frame = 0, time.monotonic()
+            # Reconnect once no frame has arrived for STALL_SECONDS. Counting failed reads was no good: with
+            # the FFmpeg backend each read of a stalled stream blocked for ~30 s, so 50 of them was 25 min blind.
+            while time.monotonic() - last_frame < STALL_SECONDS:
                 ok, frame = cap.read()
                 if not ok:
-                    failures += 1
                     time.sleep(0.1)
                     continue
-                failures = 0
+                last_frame = time.monotonic()
                 frames += 1
                 try:
                     self.step(frame, frames)
@@ -839,7 +885,7 @@ class Watcher:
         if frames <= WARMUP_FRAMES or self.busy.is_set():
             self.streak = 0
             return
-        now = time.time()
+        now = time.monotonic()
         if self.follow_stay(now):
             self.streak = 0
             return
@@ -855,9 +901,10 @@ class Watcher:
             self._maybe_trigger(motion, probe=probe, trigger=trigger)
             if self.detector.water:
                 self.detector.water.reset()
-        elif ground and action != "wait" and (
-                ground_action := motion_action(now, self.ground_until, self.ground_backoff_until,
-                                               probe_ready())) != "wait":
+        elif ground and (ground_action := motion_action(now, self.ground_until, self.ground_backoff_until,
+                                                        probe_ready())) != "wait":
+            # Gated only by the ground's own cooldown, backoff and budget (plus `busy` and an open stay, above):
+            # the bath resting after a rainy false alarm, or over its daily limit, must not hold a cat back.
             # Claude, under the ground's own limit, except during a run of empty ground triggers: then
             # probes, which pass unless the animal check calls them empty. Empty answers are kept as
             # false triggers.
@@ -865,7 +912,8 @@ class Watcher:
             log.info("motion on the ground (%s%s)", "night" if self.detector.night else "day",
                      ", probe" if probe else "")
             self._maybe_trigger(motion, probe=probe, trigger="ground")
-            self.detector.ground.reset()
+            if self.detector.ground:
+                self.detector.ground.reset()
 
 
 def main() -> None:

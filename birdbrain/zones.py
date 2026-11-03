@@ -42,20 +42,26 @@ class Zones:
         )
 
     def shifted(self, dx: float, dy: float) -> "Zones":
-        """Every zone moved by dx, dy (fractions of the frame), for when the camera itself has moved."""
+        """Every zone moved by dx, dy (fractions of the frame), for when the camera itself has moved. Nothing
+        leaves the frame: a box or polygon pushed over an edge keeps only the part still in view (dropped when
+        none is) and an ellipse's centre stays on the frame. A coordinate below 0 would otherwise slice the frame
+        from its far side and hand the watcher an empty image on every trigger."""
         def box(b):
-            return (round(b[0] + dx, 4), round(b[1] + dy, 4), *b[2:]) if b else None
+            return clip_box((b[0] + dx, b[1] + dy, *b[2:])) if b else None
+
+        def ellipse(e):
+            return (unit(e[0] + dx), unit(e[1] + dy), *e[2:])
 
         ring = None
         if self.ring:
             outer, inner = config.ring_ellipses(self.ring)
-            ring = config.make_ring(box(outer), box(inner))
+            ring = config.make_ring(ellipse(outer), ellipse(inner))
         return Zones(
             ring=ring,
-            spots=tuple((round(s[0] + dx, 4), round(s[1] + dy, 4), *s[2:]) for s in self.spots),
+            spots=tuple(ellipse(s) for s in self.spots),
             roi=box(self.roi),
             crop=box(self.crop),
-            ground=tuple((round(x + dx, 4), round(y + dy, 4)) for x, y in self.ground),
+            ground=clip_polygon((x + dx, y + dy) for x, y in self.ground),
             ground_crop=box(self.ground_crop),
         )
 
@@ -105,12 +111,48 @@ def manual(conn) -> Zones | None:
     return Zones.from_dict(data["manual"]) if data and data.get("manual") else None
 
 
+def unit(v) -> float:
+    """A frame fraction held to 0..1."""
+    return round(min(max(float(v), 0.0), 1.0), 4)
+
+
 def clamp_box(b):
     if not b:
         return None
     x, y, w, h = (min(max(float(v), 0.0), 1.0) for v in b)
     w, h = min(max(w, 0.02), 1 - x), min(max(h, 0.02), 1 - y)
     return (round(x, 4), round(y, 4), round(w, 4), round(h, 4))
+
+
+def clip_box(b):
+    """The part of an x,y,w,h box that lies inside the frame; None when none of it does."""
+    if not b:
+        return None
+    x, y, w, h = (float(v) for v in b)
+    x0, y0, x1, y1 = max(x, 0.0), max(y, 0.0), min(x + w, 1.0), min(y + h, 1.0)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return clamp_box((x0, y0, x1 - x0, y1 - y0))
+
+
+def clip_polygon(points) -> tuple:
+    """A polygon's corners held inside the frame; () when what is left has no area (pushed off the edge)."""
+    pts = tuple((unit(x), unit(y)) for x, y in points)
+    if len(set(pts)) < 3:
+        return ()
+    twice_area = sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]))
+    return pts if abs(twice_area) / 2 >= 1e-4 else ()
+
+
+def pixel_box(shape, box) -> tuple[int, int, int, int] | None:
+    """An x,y,w,h box of frame fractions as pixel bounds (x0, y0, x1, y1) on a frame of `shape` (H, W, ...),
+    held inside the frame; None when nothing of the box is in it. Slicing with the raw values would wrap a
+    negative edge round to the far side of the frame and return nothing."""
+    H, W = shape[:2]
+    x, y, w, h = box
+    x0, y0 = max(int(x * W), 0), max(int(y * H), 0)
+    x1, y1 = min(int(round((x + w) * W)), W), min(int(round((y + h) * H)), H)
+    return (x0, y0, x1, y1) if x1 > x0 and y1 > y0 else None
 
 
 def edited(current: Zones, d: dict) -> Zones:
