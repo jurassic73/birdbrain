@@ -1380,7 +1380,8 @@ button.save-flash { animation: save-flash 1s ease-out; }
 .lessons { list-style: none; padding: 0; margin: 16px 0; display: grid; gap: 10px; }
 .lesson { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: center;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
-.lesson-meta { display: flex; align-items: center; gap: 10px; font-size: .85rem; grid-column: 1; }
+.lesson-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: .85rem; grid-column: 1; }
+.lesson-meta .badge, .lesson-meta a { white-space: nowrap; }  /* two pills and a date: wrap between them, never inside */
 .lesson-line { grid-column: 1; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .88rem; line-height: 1.45; }
 .lesson-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: 8px; }
 .lesson-out .lesson-line { color: var(--muted); }
@@ -1428,6 +1429,17 @@ button.save-flash { animation: save-flash 1s ease-out; }
 .scene-distraction { color: #ff6b6b; }
 .htmx-indicator { display: none; }
 .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
+
+/* Claude's Notes > Lessons summary (_lessons_summary.html): the accepted points, and a draft with a textarea */
+.summary-head { margin: 18px 0 6px; font-size: 1rem; }
+.summary-text { margin: 0 0 6px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
+.summary-draft { margin: 12px 0 4px; padding: 12px; border: 1px solid var(--medium); border-radius: var(--radius); background: var(--surface); }
+.summary-draft .notice { margin: 0 0 10px; border-style: dashed; }
+.summary-draft form { margin: 0; }
+.summary-draft label { display: block; margin-bottom: 4px; }
+.summary-draft textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88rem; line-height: 1.45; }
+.summary-draft .actions { margin-top: 10px; align-items: center; }
+.summary-hint-new { align-self: center; }
 
 /* Buttons that ask Claude: a small spark before the label */
 .claude-btn { display: inline-flex; align-items: center; gap: 6px; }

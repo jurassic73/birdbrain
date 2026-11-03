@@ -1,0 +1,51 @@
+{# The Lessons summary section of Claude's Notes (birdbrain.lessons): the accepted summary, a draft waiting for the
+   owner, and Distill now. Rendered inside the #summary card and again by POST /notes/summary/distill (htmx swaps it). #}
+{% from "_macros.html" import claude_mark %}
+{% set draft = summary.draft %}
+{% set meta = summary.meta %}
+{% macro model_name(m) %}{{ 'Sonnet' if 'sonnet' in (m or '') else 'Haiku' if 'haiku' in (m or '') else (m or 'Claude') }}{% endmacro %}
+<div class="settings-body" id="summary-body">
+  <p class="muted">Claude reads all your notes and corrections, old ones too, and boils them down to short points that go with every photo for good. The newest {{ limit }} notes also go in full (Lessons, below). A draft is made on its own after every {{ summary.auto_every }} new notes; nothing changes until you accept it.</p>
+  {% if accepted %}<p class="notice saved">Accepted. Used from the next photo on.</p>{% endif %}
+  {% if summary_error %}<p class="notice">{{ summary_error }}</p>{% endif %}
+  {% if summary.failed and not draft %}<p class="notice">The last automatic distill didn't work ({{ summary.failed.at | nice_time }}): {{ summary.failed.error }} It's tried again after the next note you save.</p>{% endif %}
+
+  {% if draft %}
+  <div class="summary-draft" id="summary-draft">
+    <p class="notice">{% if distilled %}Claude's draft is below, not saved yet.{% else %}Claude distilled {{ draft.notes }} note{{ 's' if draft.notes != 1 }} into this draft{{ ' on its own' if draft.auto }} ({{ draft.at | nice_time }}).{% endif %}
+      Check it, edit if you like, then Accept.{% if draft.changes %} {{ draft.changes }}{% endif %}
+      <span class="muted small">({{ model_name(draft.model) }}, {{ draft.words.before }} to {{ draft.words.after }} words, about ${{ '%.4f' | format(draft.usd) }})</span></p>
+    <form method="post" action="/notes/summary/accept" id="summary-accept">
+      <label for="summary-text" class="small muted">Draft, one point per line. Accept saves what's in the box.</label>
+      <textarea id="summary-text" name="text" rows="{{ [draft.text.count('\n') + 2, 14] | min }}">{{ draft.text }}</textarea>
+    </form>
+    <div class="actions">
+      <button type="submit" form="summary-accept" data-tip="This text replaces the current summary and goes with every photo from the next one on.">Accept</button>
+      <form method="post" action="/notes/summary/discard" data-confirm="The draft is dropped. The current summary stays, and Claude can distill again any time." data-confirm-title="Discard this draft?" data-confirm-ok="Discard">
+        <button type="submit" class="danger" data-tip="Drop the draft and keep the current summary.">Discard</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <h3 class="summary-head">In every prompt now</h3>
+  {% if summary.text %}
+  <pre class="lesson-line summary-text">{{ summary.text }}</pre>
+  {% if meta %}<p class="muted small">Accepted {{ meta.accepted_at | nice_time }}{{ ', with your edits' if meta.edited }}; {{ meta.notes }} note{{ 's' if meta.notes != 1 }} folded in by {{ model_name(meta.model) }}.</p>{% endif %}
+  {% else %}
+  <p class="empty">No summary yet. Press Distill now, or wait: Claude drafts one on its own after {{ summary.auto_every }} notes.</p>
+  {% endif %}
+
+  <div class="actions">
+    <button type="button" class="claude-btn" hx-post="/notes/summary/distill" hx-target="#summary-body" hx-swap="outerHTML"
+            hx-disabled-elt="this" hx-indicator="#distill-busy"{% if not summary.lessons %} disabled{% endif %}
+            data-tip="Sonnet reads every lesson that isn't switched off ({{ summary.lessons }} now) and writes a new draft for you to check. Nothing changes until you accept it. Costs about a cent.">
+      {{ claude_mark() }}
+      Distill now</button>
+    <span class="muted small summary-hint-new">
+      {%- if not summary.lessons %}No lessons yet.
+      {%- elif summary.new == 0 %}No new notes since the last summary.
+      {%- else %}{{ summary.new }} new note{{ 's' if summary.new != 1 }} since the last summary.{% endif %}</span>
+    <span id="distill-busy" class="muted small htmx-indicator">Claude is distilling your notes…</span>
+  </div>
+</div>
