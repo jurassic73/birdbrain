@@ -113,7 +113,7 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  # A false trigger's photo files were deleted to save space (birdbrain.retention); the row and its
                  # embedding stay, so the Pi's animal check keeps learning from it.
                  "photo_deleted_at": "TEXT",
-                 # The owner saw no person in a photo the Pi's person check flagged ("Public anyway"):
+                 # The owner saw no person in a photo the Pi's person check flagged ("Make public"):
                  # JSON {"at", "files": {photo: score}} pinning the scores they cleared (birdbrain.privacy).
                  "public_ok": "TEXT",
                  # The owner's blue keeper mark: 1 = keep this photo forever, never thinned or deleted to save space.
@@ -897,7 +897,7 @@ def set_keep(conn: sqlite3.Connection, visit_id: int, on: bool) -> None:
 
 
 def set_public_ok(conn: sqlite3.Connection, visit_id: int, override: dict | None) -> None:
-    """Record (or with None, take back) the owner's Public anyway for a visit's flagged photos."""
+    """Record (or with None, take back) the owner's Make public for a visit's flagged photos."""
     conn.execute("UPDATE visits SET public_ok = ? WHERE id = ?",
                  (json.dumps(override) if override else None, visit_id))
     conn.commit()

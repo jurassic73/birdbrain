@@ -6,7 +6,7 @@ only keeps one photo off the mirror. Everything fails closed: a photo that can't
 
 Scores are cached per photo in DATA_DIR/privacy.json, so each file is checked once.
 
-"Public anyway": when the owner looks at a held-back visit and sees no person, the visit page pins the
+"Make public": when the owner looks at a held-back visit and sees no person, the visit page pins the
 scores its photos had then in visits.public_ok ({"at": time, "files": {photo: score}}). Only those files at
 no more than those scores are let through; a new file, or one that scores higher when checked again, holds
 the visit back again. An override that can't be read counts as none (fails closed).
@@ -89,7 +89,7 @@ def save_cache(cache: dict[str, float]) -> None:
 
 
 def parse_override(text: str | None) -> dict[str, float]:
-    """The photo scores the owner cleared with Public anyway ({} when none, or when it can't be read)."""
+    """The photo scores the owner cleared with Make public ({} when none, or when it can't be read)."""
     try:
         files = json.loads(text)["files"] if text else {}
         return {str(rel): float(score) for rel, score in files.items()}
@@ -104,7 +104,7 @@ def held_back(rel: str, score: float, override: dict[str, float]) -> bool:
 
 
 def make_override(image_rel: str, cache: dict[str, float]) -> dict | None:
-    """What Public anyway stores: the scores of the visit's photos that showed a person. None unless every
+    """What Make public stores: the scores of the visit's photos that showed a person. None unless every
     photo has been checked and at least one held the visit back (there's nothing to clear otherwise)."""
     files = {}
     for rel in visit_files(image_rel, thumbs=False):
@@ -119,7 +119,7 @@ _status: tuple[float, dict] = (0.0, {})
 
 
 def visit_status(image_rel: str, public_ok: str | None = None) -> str | None:
-    """'person', 'unchecked', 'cleared' (the owner said Public anyway) or None (clean) for a visit's
+    """'person', 'unchecked', 'cleared' (the owner said Make public) or None (clean) for a visit's
     photos, for the pill on the Pi's visit page."""
     global _status
     try:
@@ -174,7 +174,7 @@ def filter_db(db_path: Path, exclude_path: Path) -> int:
     db = sqlite3.connect(db_path)
     try:
         rows = db.execute("SELECT id, image_path, thumb_path, public_ok FROM visits ORDER BY id DESC").fetchall()
-    except sqlite3.OperationalError:  # a database from before Public anyway: no overrides
+    except sqlite3.OperationalError:  # a database from before Make public: no overrides
         rows = db.execute("SELECT id, image_path, thumb_path FROM visits ORDER BY id DESC").fetchall()
     try:
         blocked, checked = blocked_visits(rows, cache)
@@ -201,7 +201,7 @@ def filter_db(db_path: Path, exclude_path: Path) -> int:
     db.close()
     exclude_path.write_text("".join(f"{line}\n" for line in lines))
     print(f"privacy: {checked} photos checked, {len(blocked)} visits kept off the mirror, "
-          f"{cleared} let through by Public anyway")
+          f"{cleared} let through by Make public")
     return len(blocked)
 
 

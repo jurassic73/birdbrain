@@ -33,7 +33,7 @@ curl -sf --max-time 15 -o "$STAGE/live.jpg" http://127.0.0.1:8000/live.jpg || cp
 
 # No photo of a person goes public (birdbrain/privacy.py; the Pi's own site is untouched). Fails closed:
 # a live frame with a person, or one that can't be checked, isn't sent (the mirror keeps its last clean one);
-# if the visit filter fails, nothing is pushed this round. A visit the owner cleared with Public anyway on the
+# if the visit filter fails, nothing is pushed this round. A visit the owner cleared with Make public on the
 # visit page (visits.public_ok, read from the database copy and then blanked in it) goes out.
 PY="${PUBLIC_PYTHON:-venv/bin/python}"
 export BIRDBRAIN_DATA="$DATA"

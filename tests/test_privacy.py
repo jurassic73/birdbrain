@@ -187,6 +187,7 @@ def test_public_anyway_route_is_admin_only(setup, tmp_path, conn, monkeypatch, f
     with TestClient(webapp.app) as client:
         page = client.get(f"/visit/{person}").text
         assert f'hx-post="/visit/{person}/public"' in page and 'data-confirm-title="No person' in page
+        assert ">Make public</button>" in page and 'data-confirm-ok="Make public"' in page
         assert client.post(f"/visit/{clean}/public").status_code == 409
         assert client.post(f"/visit/{person}/public").status_code == 200
         assert db.get_visit(conn, person)["public_ok"]
@@ -200,4 +201,4 @@ def test_public_anyway_route_is_admin_only(setup, tmp_path, conn, monkeypatch, f
         for path in (f"/visit/{person}/public", f"/visit/{person}/private"):
             assert client.post(path).status_code == 403
         assert db.get_visit(conn, person)["public_ok"] is None
-        assert "Public anyway" not in client.get(f"/visit/{person}").text
+        assert "Make public" not in client.get(f"/visit/{person}").text

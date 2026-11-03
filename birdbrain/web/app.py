@@ -854,7 +854,7 @@ def public_anyway(visit_id: int, conn=Depends(get_conn)):
 
 @app.post("/visit/{visit_id}/private")
 def public_undo(visit_id: int, conn=Depends(get_conn)):
-    """Undo Public anyway: the visit is held back again from the next push (and taken off the mirror)."""
+    """Undo Make public: the visit is held back again from the next push (and taken off the mirror)."""
     db.set_public_ok(conn, visit_id, None)
     return Response(headers=REFRESH)
 
