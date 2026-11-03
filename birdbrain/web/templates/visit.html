@@ -70,7 +70,7 @@
   <p class="muted small mark-legend" id="mark-legend" hidden></p>
   {% if burst %}
   <section class="vburst" aria-label="Burst">
-    <h2 class="vburst-head">Burst <span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
+    <h2 class="vburst-head tip-label">Burst<span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
       <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi's animal check learns from.">i</span>
       <span class="vburst-steps"><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
     <div class="vburst-strip" style="--n: {{ burst | length }}">
@@ -236,7 +236,7 @@
     {% set save_animal = save_base ~ " An animal: if your first circle is on another burst frame, that frame becomes its example of an animal in the box, as long as the circle is mostly inside the dashed box (if not, this visit is left out). Otherwise it uses the burst frame that looks most like an animal, or this photo when the circle is inside the box. It learns whether an animal is in the box, not where, and no species names: your species and note go to Claude as lessons." %}
     <form class="review" hx-post="/visit/{{ visit.id }}/correct" data-save-none="{{ save_none }}" data-save-animal="{{ save_animal }}">
       <div class="review-head">
-        <h2>Was this right? <span class="info-tip" tabindex="0" aria-label="About corrections" data-tip="The answer you pick trains the Pi's local animal check (it counts 3 times). Your answer and your note are also shown to Claude on future identifications, so it learns from its mistakes at this birdbath.">i</span></h2>
+        <h2 class="tip-label">Was this right? <span class="info-tip" tabindex="0" aria-label="About corrections" data-tip="The answer you pick trains the Pi's local animal check (it counts 3 times). Your answer and your note are also shown to Claude on future identifications, so it learns from its mistakes at this birdbath.">i</span></h2>
         <a class="muted small" href="/notes#lessons">All lessons</a>
       </div>
       <div class="review-row">
@@ -252,7 +252,7 @@
           </div>
         </fieldset>
         <div class="field species" id="species-field">
-          <label for="species">Species <span class="info-tip" tabindex="0" aria-label="About species" data-tip="Every animal seen here so far, then every bird species on the eBird list as you type (official names, so one species never gets two spellings). Picking a type lists that kind; picking a name sets the type. Not sure of the name? Type a clue and press Ask.">i</span></label>
+          <label for="species" class="tip-label">Species <span class="info-tip" tabindex="0" aria-label="About species" data-tip="Every animal seen here so far, then every bird species on the eBird list as you type (official names, so one species never gets two spellings). Picking a type lists that kind; picking a name sets the type. Not sure of the name? Type a clue and press Ask.">i</span></label>
           <div class="ask-wrap">
           <div class="combo">
             <input id="species" name="species" autocomplete="off" role="combobox" aria-expanded="false"
@@ -272,7 +272,7 @@
       {# What's in the owner's circle: the Pi first (free), then Haiku, then Sonnet (circle_check.py). #}
       <div class="field circle-check" id="circle-check">
         <div class="circle-check-head">
-          <span class="field-title">What's in your circle?</span>
+          <span class="field-title tip-label">What's in your circle?</span>
           <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Circle the animal (Edit circles, then drag on the photo) and ask. The Pi's own model looks at just that part of the photo: free, and 5 to 20 seconds on the Pi. If it isn't sure, ask Haiku, then Sonnet, on the same part. It looks at the frame your first circle is on. Nothing changes until you press Save; saving the right answer is what teaches the Pi's animal check (Save's tip says how).">i</span>
         </div>
         <div class="circle-check-btns">
@@ -303,7 +303,7 @@
       {% endmacro %}
       <div class="field also-field" id="also-field">
         <div class="also-head">
-          <span class="field-title">Also in the photo</span>
+          <span class="field-title tip-label">Also in the photo</span>
           <span class="info-tip" tabindex="0" aria-label="About other animals" data-tip="Other kinds of animal in the same photo, with how many. They count as sightings of their own species everywhere on the site. Squirrel, Raccoon, Possum or Other name a mammal or anything else; any other name is a bird.">i</span>
         </div>
         <ul class="also-rows" id="also-rows">
@@ -314,7 +314,7 @@
       </div>
       <div class="field">
         <div class="feedback-head">
-          <label for="feedback">Note for Claude <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake. The Pi's local animal check never reads notes: it learns from the answer you pick above.">i</span></label>
+          <label for="feedback" class="tip-label">Note for Claude <span class="info-tip" tabindex="0" aria-label="About notes" data-tip="Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake. The Pi's local animal check never reads notes: it learns from the answer you pick above.">i</span></label>
         </div>
         <input type="hidden" name="marks" id="marks">
         <div class="feedback-row">

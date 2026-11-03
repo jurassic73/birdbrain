@@ -2,6 +2,8 @@
 // Mouse: hover shows it. Touch: tapping a pill that isn't inside a link shows it; tapping elsewhere hides it.
 // The tip lives on <body> so cards with overflow: hidden can't clip it.
 // data-tip-anchor="<selector>" places the tip outside that ancestor (below it, else above), e.g. off a photo.
+// Mouse only: hovering the words of a .tip-label (a heading or label) shows the tip of its own info icon (a child,
+// else the next sibling), placed over the icon; links and species names inside the words keep their own behaviour.
 // Pressing anywhere else hides the tip, so it never stays over something being used.
 (() => {
   const tip = document.createElement("div");
@@ -31,17 +33,28 @@
     tip.style.top = `${top}px`;
   }
 
+  // The element whose tip a hovered node stands for: its own data-tip, else its .tip-label's info icon.
+  function trigger(node) {
+    if (!(node instanceof Element)) return null;
+    const own = node.closest("[data-tip]");
+    if (own) return own;
+    const label = node.closest(".tip-label");
+    if (!label || node.closest("a, [data-species]")) return null;
+    const next = label.nextElementSibling;
+    return label.querySelector(".info-tip[data-tip]") || (next && next.matches(".info-tip[data-tip]") ? next : null);
+  }
+
   if (matchMedia("(hover: hover) and (pointer: fine)").matches) {
     document.addEventListener("mouseover", (e) => {
-      const el = e.target.closest("[data-tip]");
+      const el = trigger(e.target);
       if (!el || el === current) return;
       hide();
       current = el;
       timer = setTimeout(() => current === el && show(el), 200);
     });
     document.addEventListener("mouseout", (e) => {
-      const el = e.target.closest("[data-tip]");
-      if (el && !el.contains(e.relatedTarget)) hide();
+      const el = trigger(e.target);
+      if (el && el === current && trigger(e.relatedTarget) !== el) hide();
     });
   } else {
     document.addEventListener("click", (e) => {

@@ -183,6 +183,52 @@ def test_every_status_pill_explains_itself(client, add_visit):
     assert "Night: taken in infrared" in client.get("/false-triggers").text
 
 
+def test_every_tip_label_has_its_own_info_icon(client, stored_visit):
+    """Hovering a heading's words shows its info icon's tip (tips.js): the icon must be a child of the
+    .tip-label or its next element sibling, and the label must hold no data-tip of its own."""
+    from html.parser import HTMLParser
+
+    class Labels(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.depth, self.open, self.closed, self.found = 0, [], None, []  # open: (depth, index)
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            cls = a.get("class", "").split()
+            if "info-tip" in cls and "data-tip" in a:
+                if self.open:  # a child of the innermost open label
+                    self.found[self.open[-1][1]] = True
+                elif self.closed is not None:  # the first element after a label closed
+                    self.found[self.closed] = True
+            if "tip-label" in cls:
+                assert "data-tip" not in a
+                self.open.append((self.depth, len(self.found)))
+                self.found.append(False)
+            self.closed = None
+            if tag not in ("input", "img", "br", "meta", "link"):
+                self.depth += 1
+
+        def handle_endtag(self, tag):
+            self.depth -= 1
+            self.closed = None
+            if self.open and self.open[-1][0] == self.depth:
+                i = self.open.pop()[1]
+                if not self.found[i]:
+                    self.closed = i
+
+    vid = stored_visit(visitor="none", species=None, raw_json=json.dumps({"burst": {"count": 3, "best": 1, "fps": 4}}))
+    with db.session() as conn:
+        image_rel = db.get_visit(conn, vid)["image_path"]
+    buf = io.BytesIO()
+    Image.new("RGB", (640, 360)).save(buf, "JPEG")
+    images.store_burst([buf.getvalue()] * 3, image_rel)
+    for path, n in ((f"/visit/{vid}", 6), ("/false-triggers", 1)):
+        p = Labels()
+        p.feed(client.get(path).text)
+        assert len(p.found) == n and all(p.found), (path, p.found)
+
+
 def test_confirmed_pill_after_three_sure_visits(client, add_visit, monkeypatch):
     from birdbrain import species_info
     monkeypatch.setattr(species_info, "get", lambda conn, name, fetch=True: {"name": name, "common": name})

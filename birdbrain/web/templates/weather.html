@@ -46,7 +46,7 @@
   {% set mm = t.rain_mm %}
   <p class="wx-now-head">
     <span class="wx-now-icon" aria-hidden="true">{{ wx_icon(t.kind) }}</span>
-    <span><strong>{{ t.words }}</strong>{% if t.temp_c is not none %}, {{ t.temp_c | temp }} now{% endif %}.
+    <span class="tip-label"><strong>{{ t.words }}</strong>{% if t.temp_c is not none %}, {{ t.temp_c | temp }} now{% endif %}.
       {% if t.high_c is not none %}So far today: high {{ t.high_c | temp }}, low {{ t.low_c | temp }}, {% if not mm %}no rain yet{% else %}{{ '%.0f' | format(mm) if mm >= 1 else '%.1f' | format(mm) }} mm of rain{% endif %}.{% endif %}
       <span class="info-tip" tabindex="0" aria-label="About today's weather" data-tip="Open-Meteo's estimate for the yard, saved by the Pi every hour{% if t.since %}; today's high, low and rain cover midnight to {{ t.since.strftime('%-I %p') }}{% endif %}. The Pi doesn't save forecast hours, so the rest of the day isn't counted yet.{% if t.day_words %} Open-Meteo's word for the whole day, earlier hours and forecast together: {{ t.day_words | lower }}.{% endif %}{% if t.high_c is not none %} High {{ t.high_c | temp_alt }}, low {{ t.low_c | temp_alt }}{% if mm %}, {{ '%.2f' | format(mm / 25.4) }} in of rain{% endif %}.{% endif %}">i</span></span>
   </p>
@@ -54,7 +54,7 @@
   {% if today.lines %}
   <ul class="wx-now-lines">
     {% for line in today.lines %}
-    <li class="wx-now-{{ line.key }}">{% for p in line.parts %}{% if p is string %}{{ p }}{% else %}{{ sp_name(p.sp) }}{% endif %}{% endfor %}
+    <li class="wx-now-{{ line.key }} tip-label">{% for p in line.parts %}{% if p is string %}{{ p }}{% else %}{{ sp_name(p.sp) }}{% endif %}{% endfor %}
       <span class="info-tip" tabindex="0" aria-label="How this was worked out" data-tip="{{ line.tip }}">i</span></li>
     {% endfor %}
   </ul>
