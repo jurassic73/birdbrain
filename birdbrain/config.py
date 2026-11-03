@@ -232,7 +232,6 @@ PRESENCE_LAST_FRAME = _env("PRESENCE_LAST_FRAME", "1").strip() not in ("0", "fal
 CLASSIFIER_MODEL = Path(_env("CLASSIFIER_MODEL")) if _env("CLASSIFIER_MODEL").strip() else None
 
 
-REPO_URL = _env("REPO_URL", "https://github.com/jurassic73/birdbrain").strip()  # source code link on the About page; blank hides it
 SITE_URL = _env("SITE_URL").rstrip("/")  # e.g. http://192.168.1.205:8000; used in ntfy alert links
 # iNaturalist place for local seasonality on species cards (e.g. a county); unset hides that chart.
 INAT_PLACE_ID = _env("INAT_PLACE_ID").strip()
