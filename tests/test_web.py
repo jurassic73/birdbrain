@@ -117,7 +117,7 @@ def test_multiple_chip_follows_mammals_and_filters(client, add_visit):
     add_visit(species="Dark-eyed Junco", count=1)
     html = client.get("/?kind=multiple").text
     assert 'aria-current="page">Multiple<' in html and "2 matching</h2>" in html
-    assert html.index(">Multiple<") < html.index(">Mammals<") < html.index(">Night<")
+    assert html.index(">Mammals<") < html.index(">Multiple<") < html.index(">Night<")
     assert '<option value="multiple" selected>' in html
 
 
