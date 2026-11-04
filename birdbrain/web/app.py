@@ -762,10 +762,13 @@ FIRED = {"rim": "the rim and rocks", "water": "the open water", "ground": "the g
 
 
 def visit_zones(visit, conn) -> dict | None:
-    """What the visit photo draws over itself: the dashed box the Pi animal check looked at (a square around the
-    bowl, or the ground crop; classifier.presence_view_box), and the zone whose motion fired the capture, each in its
-    Settings color. `source` says whose zones: stored with the
-    photo (since 2026-11-01), rebuilt from the calibration history at the time, or today's."""
+    """What the visit photo draws over itself: the dashed box the Pi animal check looked at, and the zone whose
+    motion fired the capture, each in its Settings color. The dashed box is the view the visit's stored embedding
+    was made of: the current one (classifier.presence_view_box: a square around the bowl, the ground crop, or the
+    crop box when there's no ring), or for an embedding of the old view the middle square of the crop box it saw
+    then (classifier.old_view_box). `view` and `claude_sees` say so in words for the tip. `source` says whose
+    zones: stored with the photo (since 2026-11-01), rebuilt from the calibration history at the time, or today's.
+    Bad stored zones never break the page: a ring that can't be drawn counts as none."""
     try:
         raw = json.loads(visit["raw_json"] or "{}") or {}
     except (ValueError, AttributeError):
@@ -777,14 +780,17 @@ def visit_zones(visit, conn) -> dict | None:
                          ("history", lambda: db.zones_at(conn, visit["captured_at"]))):
         d = data()
         if isinstance(d, dict):
+            if d.get("ring") is not None and classifier.usable_ring(d["ring"]) is None:
+                d = {**d, "ring": None}
             try:
                 z = zones.Zones.from_dict(d)
+                s = zone_shapes(z)
                 break
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError, IndexError):
+                z = None
     if z is None:
         source, z = "today", zones.load(conn)
-    s = zone_shapes(z)
+        s = zone_shapes(z)
     colors, trigger = s["colors"], raw.get("trigger")
     shapes = []
     if trigger == "rim":
@@ -799,13 +805,26 @@ def visit_zones(visit, conn) -> dict | None:
         shapes = [{"d": s["water"], "color": colors.get("water", colors["ring"])}]
     elif trigger == "ground" and s["ground"]:
         shapes = [{"d": s["ground"], "color": colors.get("ground", SCENE_COLORS[0])}]
-    crop = box_rect(classifier.presence_view_box(z, trigger, ZONE_W / ZONE_H))
+    row = conn.execute("SELECT view FROM embeddings WHERE visit_id = ?", (visit["id"],)).fetchone()
+    ground = trigger == "ground"
+    claude_box = "the ground crop" if ground else "the crop box"
+    if row is not None and row["view"] != classifier.PRESENCE_VIEW:  # embedded the old way: what it saw then
+        crop = box_rect(classifier.old_view_box(z, trigger, ZONE_W / ZONE_H))
+        had_box = classifier.usable_box(z.ground_crop if ground else z.crop)
+        view = (f"the middle square of {claude_box if had_box else 'the photo'}, "
+                "all it looked at before it saw the whole bowl")
+    else:
+        kind = classifier.view_kind(z, trigger)
+        crop = box_rect(classifier.presence_view_box(z, trigger, ZONE_W / ZONE_H))
+        view = {"bowl": "a square around the whole bowl", "padded": claude_box}.get(kind)
     # The ground crop isn't a Settings shape: it takes the ground's color.
-    crop_color = colors.get("ground" if trigger == "ground" else "crop", SCENE_COLORS[0])
+    crop_color = colors.get("ground" if ground else "crop", SCENE_COLORS[0])
     if not crop and not shapes:
         return None
+    claude_sees = (f"Claude sees {claude_box} set on Settings > Zones."
+                   if (z.ground_crop if ground else z.crop) else "Claude sees the whole photo.")
     return {"w": ZONE_W, "h": ZONE_H, "shapes": shapes, "crop": crop, "crop_color": crop_color,
-            "fired": FIRED.get(trigger), "source": source}
+            "view": view if crop else None, "claude_sees": claude_sees, "fired": FIRED.get(trigger), "source": source}
 
 
 def start_marks(visit) -> list[dict]:
@@ -855,7 +874,10 @@ CIRCLE_WHY = {"nothing": "no clear patch of change near the zone that fired",
               "error": "something went wrong"}
 
 
-CLASSIFIER_CROPS = {"circle": "around Claude's circle", "box": "on the crop box", "frame": "on the whole frame"}
+# Where the species check looked: classifier.run's crops, and for a gate guess made from the Pi animal check's
+# embedding, that view's kind (classifier.view_kind; "padded" is the ground crop or the crop box, by trigger).
+CLASSIFIER_CROPS = {"circle": "around Claude's circle", "box": "on the crop box", "frame": "on the whole frame",
+                    "bowl": "on a square around the whole bowl"}
 
 
 def decision_steps(raw_json: str | None) -> dict:
@@ -918,7 +940,8 @@ def decision_steps(raw_json: str | None) -> dict:
             "crowd": calls.get("gate_crowd"),
             "guesses": [f"{g['name']} ({g['score']:.0%})" for g in guess["top"]],
             "seconds": guess.get("seconds"),
-            "crop": CLASSIFIER_CROPS.get(guess.get("crop"), ""),
+            "crop": (("on the ground crop" if raw.get("trigger") == "ground" else "on the crop box")
+                     if guess.get("crop") == "padded" else CLASSIFIER_CROPS.get(guess.get("crop"), "")),
             "night": bool(guess.get("night")),
         })
     found = calls.get("motion_circle")

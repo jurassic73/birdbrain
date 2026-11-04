@@ -267,12 +267,42 @@ def _zone_dict(z) -> dict:
     return z if isinstance(z, dict) else {}
 
 
-def _box(v):
-    return tuple(v) if v and len(v) == 4 else None
+MIN_BOX = 0.01  # a box narrower or shorter than this (of the frame) inside the frame is no box: the whole frame
+
+
+def usable_box(v) -> tuple[float, float, float, float] | None:
+    """An x, y, w, h box of frame fractions as the part of it inside the frame, or None when it can't be one:
+    not 4 finite numbers, or less than MIN_BOX of it in the frame (off the frame, zero size). view_kind,
+    presence_view_box and presence_patch all go by it, so they agree on what the Pi animal check sees."""
+    try:
+        x, y, w, h = (float(t) for t in v)
+    except (TypeError, ValueError):
+        return None
+    if not all(np.isfinite((x, y, w, h))):
+        return None
+    x0, y0, x1, y1 = max(x, 0.0), max(y, 0.0), min(x + w, 1.0), min(y + h, 1.0)
+    if x1 - x0 < MIN_BOX or y1 - y0 < MIN_BOX:
+        return None
+    if (x0, y0, x1, y1) == (x, y, x + w, y + h):
+        return x, y, w, h
+    return round(x0, 4), round(y0, 4), round(x1 - x0, 4), round(y1 - y0, 4)
+
+
+def usable_ring(v) -> tuple[float, ...] | None:
+    """A ring (config.ring_ellipses' 6 to 10 numbers) that can be drawn: finite numbers, the rim's center on the
+    frame and its radii above 0. Anything else (too short, None or NaN in it) counts as no ring everywhere."""
+    try:
+        ring = tuple(float(t) for t in v)
+    except (TypeError, ValueError):
+        return None
+    if not 6 <= len(ring) <= 10 or not all(np.isfinite(ring)):
+        return None
+    cx, cy, rx, ry = ring[:4]
+    return ring if 0 <= cx <= 1 and 0 <= cy <= 1 and rx > 0 and ry > 0 else None
 
 
 def _bowl_square(W: float, H: float, ring) -> tuple[float, float, float]:
-    """(left, top, side) of the bowl square on a W x H frame, unrounded (see presence_square)."""
+    """(left, top, side) of the bowl square on a W x H frame, unrounded (see presence_square); `ring` is usable."""
     cx, cy, rx, ry, angle = config.ring_ellipses(ring)[0]
     a, b, t = rx * W, ry * H, np.radians(angle)
     hx = float(np.hypot(a * np.cos(t), b * np.sin(t)))  # half the rotated ellipse's bounding box
@@ -289,19 +319,23 @@ def view_kind(z, trigger: str | None) -> str:
     """Which view presence_patch takes for these zones and trigger: "bowl", "padded" or "frame"."""
     d = _zone_dict(z)
     if trigger == "ground":
-        return "padded" if _box(d.get("ground_crop")) else "frame"
-    if d.get("ring"):
+        return "padded" if usable_box(d.get("ground_crop")) else "frame"
+    if usable_ring(d.get("ring")):
         return "bowl"
-    return "padded" if _box(d.get("crop")) else "frame"
+    return "padded" if usable_box(d.get("crop")) else "frame"
+
+
+def _padded_box(d: dict, trigger: str | None):
+    return usable_box(d.get("ground_crop") if trigger == "ground" else d.get("crop"))
 
 
 def presence_square(shape, z) -> tuple[int, int, int] | None:
     """The square (left, top, side in pixels) the Pi animal check sees on a birdbath trigger: the whole outer rim
     (a turned one by its bounding box) plus BIRD_BAND of the frame's height above it and beyond its left and right
     ends, VIEW_MARGIN more on each side, centered on that, slid inside the frame and at most the frame's height.
-    None without a ring."""
-    ring = _zone_dict(z).get("ring")
-    if not ring:
+    None without a (usable) ring."""
+    ring = usable_ring(_zone_dict(z).get("ring"))
+    if ring is None:
         return None
     H, W = shape[:2]
     left, top, side = _bowl_square(W, H, ring)
@@ -334,9 +368,7 @@ def presence_patch(img: np.ndarray, z, trigger: str | None) -> tuple[np.ndarray,
         x0, y0, side = presence_square(img.shape, z)
         return img[y0:y0 + side, x0:x0 + side], kind
     if kind == "padded":
-        d = _zone_dict(z)
-        box = _box(d.get("ground_crop") if trigger == "ground" else d.get("crop"))
-        if px := zones.pixel_box(img.shape, box):
+        if px := zones.pixel_box(img.shape, _padded_box(_zone_dict(z), trigger)):
             x0, y0, x1, y1 = px
             return pad_square(img[y0:y1, x0:x1]), kind
     return pad_square(img), "frame"
@@ -344,17 +376,28 @@ def presence_patch(img: np.ndarray, z, trigger: str | None) -> tuple[np.ndarray,
 
 def presence_view_box(z, trigger: str | None, aspect: float = 16 / 9) -> tuple[float, float, float, float] | None:
     """The Pi animal check's view as frame fractions (x, y, w, h), for drawing it and judging circles: the bowl
-    square (w and h differ as fractions on a wide frame), or for "padded" the box itself (padding adds nothing
-    to see). None for "frame"."""
+    square (w and h differ as fractions on a wide frame), or for "padded" the box itself, the part inside the
+    frame (padding adds nothing to see). None for "frame"."""
     kind = view_kind(z, trigger)
     d = _zone_dict(z)
     if kind == "bowl":
         W, H = float(aspect), 1.0
-        left, top, side = _bowl_square(W, H, d["ring"])
+        left, top, side = _bowl_square(W, H, usable_ring(d["ring"]))
         return (round(left / W, 4), round(top / H, 4), round(side / W, 4), round(side / H, 4))
     if kind == "padded":
-        return _box(d.get("ground_crop") if trigger == "ground" else d.get("crop"))
+        return _padded_box(d, trigger)
     return None
+
+
+def old_view_box(z, trigger: str | None, aspect: float = 16 / 9) -> tuple[float, float, float, float]:
+    """What the Pi animal check saw before PRESENCE_VIEW 2, for embeddings still of that view: the middle square of
+    the crop box (ground triggers: the ground crop; no box: the whole frame) that to_input's center cut kept, as
+    frame fractions."""
+    box = _padded_box(_zone_dict(z), trigger) or (0.0, 0.0, 1.0, 1.0)
+    x, y, w, h = box
+    side = min(w * aspect, h)  # in frame heights
+    cx, cy = x + w / 2, y + h / 2
+    return (round(cx - side / aspect / 2, 4), round(cy - side / 2, 4), round(side / aspect, 4), round(side, 4))
 
 
 def crop_for(img: np.ndarray, circle: dict | None, box, margin: float = CIRCLE_MARGIN) -> tuple[np.ndarray, str]:
@@ -487,8 +530,9 @@ GATE_MIN_LOCAL = 0.5  # share of its belief on local species; low means it saw s
 
 
 def from_embedding(emb: np.ndarray, night: bool, local=None, clf=None) -> dict | None:
-    """The stored verdict from an embedding already made of the crop box (presence's), so gate mode costs
-    nothing extra. None when off."""
+    """The stored verdict from an embedding already made (the Pi animal check's), so gate mode costs nothing
+    extra. None when off. Its "crop" says "box"; the watcher replaces it with the view the embedding was of
+    (view_kind: "bowl", "padded" or "frame")."""
     clf = clf or load()
     if clf is None:
         return None

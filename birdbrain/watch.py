@@ -569,8 +569,9 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     crop = z.ground_crop if trigger == "ground" else z.crop
     ranked = best_frames(frames, crop)
     # The local animal check: BioCLIP 2's embedding of a square around the bowl (ground triggers: the ground crop
-    # padded to a square), scored by a model trained on this yard's labelled frames. It is the only gate: in gate mode an empty verdict skips Claude (day and night; the
-    # owner reviews them), and a rain-backoff probe it calls empty is discarded in any mode but off.
+    # padded to a square), scored by a model trained on this yard's labelled frames. It is the only gate: in gate
+    # mode an empty verdict skips Claude (day and night; the owner reviews them), and a rain-backoff probe it calls
+    # empty is discarded in any mode but off.
     emb = check = None
     pmode = presence_mode()
     if pmode != "off":
@@ -593,6 +594,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         with db.session() as conn:
             settled = db.settled_species(conn)
         guess, pick = classifier.gate_check(emb, night, settled)
+        if guess:  # it reused the Pi animal check's embedding: say which view that was of
+            guess = {**guess, "crop": classifier.view_kind(z, trigger)}
         if pick and animals and animals > 1:
             # One BioCLIP guess names one animal; Claude counts them and names any other kind.
             log.info("species gate: %d animals in view, asking Claude instead of naming %s", animals, pick[0])

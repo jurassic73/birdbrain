@@ -338,3 +338,261 @@ def test_the_visit_photo_draws_the_pi_checks_view(client, add_visit):
 def client(conn):
     from fastapi.testclient import TestClient
     return TestClient(webapp.app)
+
+
+# --- round 2: the species gate's view, deleted photos, the gate during a redo, progress, bad zones -----------
+
+def test_the_species_gate_says_which_view_it_saw(monkeypatch, conn):
+    monkeypatch.setattr(config, "MOTION_RING", RING)
+    monkeypatch.setattr(config, "CROP_ROI", CROP)
+    monkeypatch.setattr(config, "CIRCLE_FROM_MOTION", False)
+    burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), 90, np.uint8))[1].tobytes()] * 3
+    monkeypatch.setattr(watch, "capture_burst", lambda: burst)
+    monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
+    monkeypatch.setattr(watch, "count_animals", lambda *a: 1)
+    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, z, trigger: np.ones(DIM))
+    monkeypatch.setattr(presence, "check", lambda conn, emb, view=None: {
+        "model": presence.MODEL_NAME, "score": 0.9, "threshold": 0.4, "empty": False})
+    monkeypatch.setattr(classifier, "gate_check", lambda emb, night, settled: (
+        {"model": classifier.MODEL_NAME, "crop": "box", "top": [{"name": "Dark-eyed Junco", "score": 0.97}]},
+        ("Dark-eyed Junco", "bird")))
+    monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: pytest.fail("Claude was asked"))
+    assert watch.handle_event(trigger="rim") == "bird"
+    raw = json.loads(db.latest_visit(conn)["raw_json"])
+    assert raw["calls"]["classifier"]["crop"] == "bowl"
+    step = webapp.decision_steps(json.dumps(raw))["steps"][-1]
+    assert step["model"] == "BioCLIP 2 species check" and step["crop"] == "on a square around the whole bowl"
+
+
+def test_the_species_check_step_names_the_padded_view_by_trigger():
+    def where(trigger, crop):
+        raw = {"trigger": trigger, "calls": {"classifier": {"top": [{"name": "Bushtit", "score": 0.9}], "crop": crop}}}
+        return webapp.decision_steps(json.dumps(raw))["steps"][-1]["crop"]
+    assert where("ground", "padded") == "on the ground crop"
+    assert where("rim", "padded") == "on the crop box"
+    assert where("rim", "frame") == "on the whole frame"
+    assert where("rim", "box") == "on the crop box"            # older visits and classifier.run keep theirs
+    assert where("rim", "circle") == "around Claude's circle"
+
+
+def test_redo_leaves_deleted_photos_alone_and_out_of_the_limit(conn, add_visit, capsys):
+    keep = stored_visits(conn, add_visit, 2)
+    deleted = stored_visits(conn, add_visit, 3)
+    thumb = stored_visits(conn, add_visit, 1)[0]
+    for vid in keep + deleted + [thumb]:
+        presence.store(conn, vid, np.zeros(DIM), view=None)
+    conn.executemany("UPDATE visits SET photo_deleted_at = '2026-11-01T00:00:00' WHERE id = ?", [(v,) for v in deleted])
+    conn.execute("UPDATE visits SET photo_level = 'thumb' WHERE id = ?", (thumb,))
+    conn.commit()
+    clf = FakeClf()
+    assert presence.backfill(limit=1, redo=True, clf=clf) == 1  # the newest with a photo, not a deleted one
+    views = dict(conn.execute("SELECT visit_id, view FROM embeddings").fetchall())
+    assert views[keep[1]] == classifier.PRESENCE_VIEW and views[keep[0]] is None
+    assert all(views[v] is None for v in deleted + [thumb])
+    out = capsys.readouterr().out.splitlines()
+    assert out[-1] == "1/1 done, 0 failed, ~0 min left, 4 photos already deleted (left as they were)"
+    assert presence.backfill(redo=True, clf=clf) == 1  # the next run does the last one, still not the deleted
+    assert "1/1 done, 0 failed" in capsys.readouterr().out
+
+
+def gate_seen(conn):
+    """A FakeClf that notes the Pi animal check's mode each time it embeds."""
+    seen = []
+
+    class Clf(FakeClf):
+        def embed(self, bgr):
+            with db.session() as c:
+                seen.append(presence.mode(c))
+            return super().embed(bgr)
+    return Clf(), seen
+
+
+def test_redo_holds_gate_mode_at_shadow_and_puts_it_back(conn, add_visit, capsys):
+    ids = stored_visits(conn, add_visit, 2)
+    for vid in ids:
+        presence.store(conn, vid, np.zeros(DIM), view=None)
+    db.set_value(conn, "presence_mode", "gate")
+    clf, seen = gate_seen(conn)
+    presence.backfill(redo=True, clf=clf)
+    assert seen == ["shadow", "shadow"] and presence.mode(conn) == "gate"
+    out = capsys.readouterr().out
+    assert "switched to shadow" in out and "back in gate mode" in out
+
+
+def test_redo_holds_gate_from_env_and_removes_the_setting_again(conn, add_visit, monkeypatch, capsys):
+    monkeypatch.setattr(config, "PRESENCE", "gate")
+    vid = stored_visits(conn, add_visit, 1)[0]
+    presence.store(conn, vid, np.zeros(DIM), view=None)
+    clf, seen = gate_seen(conn)
+    presence.backfill(redo=True, clf=clf)
+    assert seen == ["shadow"] and db.get_value(conn, "presence_mode") is None and presence.mode(conn) == "gate"
+
+
+def test_redo_puts_gate_back_even_when_it_fails_and_leaves_shadow_and_plain_backfills_alone(conn, add_visit, capsys):
+    vid = stored_visits(conn, add_visit, 1)[0]
+    presence.store(conn, vid, np.zeros(DIM), view=None)
+    db.set_value(conn, "presence_mode", "gate")
+
+    class Stop(FakeClf):
+        def embed(self, bgr):
+            raise KeyboardInterrupt  # Ctrl-C halfway
+
+    with pytest.raises(KeyboardInterrupt):
+        presence.backfill(redo=True, clf=Stop())
+    assert presence.mode(conn) == "gate" and "back in gate mode" in capsys.readouterr().out
+    # Not in gate mode, or no redo: the mode isn't touched.
+    db.set_value(conn, "presence_mode", "shadow")
+    clf, seen = gate_seen(conn)
+    presence.backfill(redo=True, clf=clf)
+    assert seen == ["shadow"] and db.get_value(conn, "presence_mode") == "shadow"
+    db.set_value(conn, "presence_mode", "gate")
+    stored_visits(conn, add_visit, 1)
+    clf, seen = gate_seen(conn)
+    presence.backfill(clf=clf)
+    assert seen == ["gate"]
+    assert "switched to shadow" not in capsys.readouterr().out
+
+
+def test_redo_leaves_the_mode_alone_if_the_owner_changed_it_meanwhile(conn, add_visit, capsys):
+    vid = stored_visits(conn, add_visit, 1)[0]
+    presence.store(conn, vid, np.zeros(DIM), view=None)
+    db.set_value(conn, "presence_mode", "gate")
+
+    class Owner(FakeClf):
+        def embed(self, bgr):
+            with db.session() as c:
+                db.set_value(c, "presence_mode", "off")
+            return super().embed(bgr)
+
+    presence.backfill(redo=True, clf=Owner())
+    assert presence.mode(conn) == "off" and "left as it is now" in capsys.readouterr().out
+
+
+def test_progress_every_30_seconds_and_the_last_line_once(conn, add_visit, capsys, monkeypatch):
+    stored_visits(conn, add_visit, 4)
+    now = [1000.0]
+    monkeypatch.setattr(presence, "_clock", lambda: now[0])
+
+    class Slow(FakeClf):
+        def embed(self, bgr):
+            now[0] += 20  # 20 s a frame: a line after frames 2 and 4 (30 s or more since the last)
+            return super().embed(bgr)
+
+    presence.backfill(clf=Slow())
+    assert capsys.readouterr().out.splitlines() == ["2/4 done, 0 failed, ~1 min left", "4/4 done, 0 failed, ~0 min left"]
+    stored_visits(conn, add_visit, 25)  # exactly 25: the 25th frame's line is the last line, printed once
+    presence.backfill(clf=FakeClf())
+    assert capsys.readouterr().out.splitlines() == ["25/25 done, 0 failed, ~0 min left"]
+
+
+def test_the_cli_refuses_redo_without_backfill(monkeypatch, conn, capsys):
+    monkeypatch.setattr(presence, "backfill", lambda *a, **k: pytest.fail("backfill ran"))
+    monkeypatch.setattr("sys.argv", ["presence", "--redo"])
+    with pytest.raises(SystemExit) as e:
+        presence.main()
+    assert e.value.code == 2 and "--redo goes with --backfill" in capsys.readouterr().err
+
+
+OFF_FRAME = [[1.2, 0.1, 0.3, 0.3], [0.2, 0.1, 0, 0.3], [0.2, 0.1, 0.3, -0.1], [0.2, 0.1, 0.3], None, "box",
+             [0.2, float("nan"), 0.3, 0.3]]
+BAD_RINGS = [RING[:5], [0.5, None, 0.1, 0.1, 0.08, 0.08], [0.5, float("nan"), 0.1, 0.1, 0.08, 0.08], "ring",
+             [0.5, 0.5, 0, 0.1, 0.08, 0.08], [1.5, 0.5, 0.1, 0.1, 0.08, 0.08], list(RING) + [0] * 5]
+
+
+@pytest.mark.parametrize("box", OFF_FRAME)
+def test_an_unusable_box_is_the_whole_frame_everywhere(box):
+    img = frame(90, 160)
+    for z, trigger in (({"crop": box}, "rim"), ({"ground_crop": box, "crop": list(CROP)}, "ground")):
+        assert classifier.view_kind(z, trigger) == "frame"
+        assert classifier.presence_view_box(z, trigger) is None
+        patch, kind = classifier.presence_patch(img, z, trigger)
+        assert kind == "frame" and patch.shape[:2] == (160, 160)
+
+
+def test_a_box_partly_off_the_frame_is_its_part_in_view():
+    z = {"crop": [0.8, 0.5, 0.4, 0.6]}
+    assert classifier.view_kind(z, "rim") == "padded"
+    assert classifier.presence_view_box(z, "rim") == (0.8, 0.5, 0.2, 0.5)
+    patch, kind = classifier.presence_patch(frame(90, 160), z, "rim")
+    assert kind == "padded" and patch.shape[:2] == (45, 45)  # 32 x 45 px of it is in the frame
+
+
+@pytest.mark.parametrize("ring", BAD_RINGS)
+def test_a_malformed_ring_is_no_ring_everywhere(ring, conn, add_visit, client):
+    z = {"ring": ring, "crop": list(CROP)}
+    assert classifier.usable_ring(ring) is None
+    assert classifier.view_kind(z, "rim") == "padded" and classifier.presence_square((90, 160), z) is None
+    assert classifier.presence_view_box(z, "rim") == CROP
+    assert classifier.presence_patch(frame(90, 160), z, "rim")[1] == "padded"
+    # Stored with a visit, it doesn't break retraining for everything else, or the visit's page.
+    raw = {"zones": z, "trigger": "rim", "calls": {"circle": {"x": 0.47, "y": 0.45, "r": 0.03}}}
+    vid = add_visit(raw_json=json.dumps(raw))
+    presence.store(conn, vid, np.ones(DIM))
+    assert presence.view_box(raw) == CROP
+    assert vid in presence.examples(conn)["ids"]
+    page = client.get(f"/visit/{vid}")
+    assert page.status_code == 200
+    x, y, w, h = CROP
+    assert f'x="{round(x * 160, 2)}" y="{round(y * 90, 2)}"' in page.text and "Dashed box" in page.text
+
+
+def test_the_visit_page_draws_the_view_its_embedding_was_made_of(conn, add_visit, client):
+    vid = add_visit(raw_json=json.dumps({"trigger": "rim", "zones": LIVE}))
+
+    def rect(box):
+        x, y, w, h = box
+        return f'x="{round(x * 160, 2)}" y="{round(y * 90, 2)}" width="{round(w * 160, 2)}" height="{round(h * 90, 2)}"'
+
+    old = classifier.old_view_box(LIVE, "rim")
+    assert abs(old[0] - 0.335) < 0.001 and abs(old[0] + old[2] - 0.615) < 0.001  # what the center cut kept
+    presence.store(conn, vid, np.ones(DIM), view=None)
+    html = client.get(f"/visit/{vid}").text
+    assert rect(old) in html and "the middle square of the crop box" in html
+    presence.store(conn, vid, np.ones(DIM))  # re-embedded
+    html = client.get(f"/visit/{vid}").text
+    assert rect(classifier.presence_view_box(LIVE, "rim")) in html and rect(old) not in html
+    assert "a square around the whole bowl" in html and "Claude sees the crop box" in html
+    # A ground visit of the old view: the middle of the ground crop; of the current view the ground crop itself.
+    gid = add_visit(visitor="none", species=None, raw_json=json.dumps({"trigger": "ground", "zones": LIVE}))
+    presence.store(conn, gid, np.ones(DIM), view=1)
+    html = client.get(f"/visit/{gid}").text
+    assert rect(classifier.old_view_box(LIVE, "ground")) in html and "the middle square of the ground crop" in html
+    assert "Claude sees the ground crop" in html
+
+
+def test_the_tip_names_the_view_for_no_ring_and_no_trigger(conn, add_visit, client):
+    vid = add_visit(raw_json=json.dumps({"trigger": "rim", "zones": {"crop": list(CROP)}}))
+    html = client.get(f"/visit/{vid}").text
+    assert "looked at, the crop box, so" in html and "whole bowl" not in html
+    vid = add_visit(raw_json=json.dumps({"zones": LIVE}))  # no trigger saved: a birdbath view
+    assert "looked at, a square around the whole bowl, so" in client.get(f"/visit/{vid}").text
+
+
+def test_backfill_falls_back_to_the_current_zones(conn, add_visit, monkeypatch):
+    monkeypatch.setattr(config, "MOTION_RING", RING)
+    monkeypatch.setattr(config, "CROP_ROI", CROP)
+    zones.forget()
+    stored_visits(conn, add_visit, 1, raw={"trigger": "rim"})  # no zones saved, no calibration history
+    clf = FakeClf()
+    assert presence.backfill(clf=clf) == 1
+    side = classifier.presence_square((540, 960), LIVE)[2]
+    assert clf.shapes == [(side, side, 3)]
+
+
+def test_pick_frames_on_a_ground_visit_embeds_the_padded_ground_crop(conn, add_visit):
+    from birdbrain import images
+
+    burst = [cv2.imencode(".jpg", frame(540, 960))[1].tobytes() for _ in range(3)]
+    image_rel, thumb_rel = images.store_frame(burst[0], FROZEN_NOW)
+    images.store_burst(burst, image_rel)
+    vid = add_visit(visitor="none", species=None, image_path=image_rel, thumb_path=thumb_rel,
+                    raw_json=json.dumps({"zones": LIVE, "trigger": "ground", "burst": {"best": 0}}))
+    presence.store(conn, vid, vec(False, np.random.default_rng(4)))
+    db.correct_visit(conn, vid, "squirrel", None, None, [{"x": 0.5, "y": 0.7, "r": 0.05, "frame": 2}])
+    clf = FakeClf()
+    assert presence.pick_frames(conn, clf=clf) == 1
+    x0, y0, x1, y1 = zones.pixel_box((540, 960), GROUND_CROP)
+    side = max(x1 - x0, y1 - y0)
+    assert clf.shapes == [(side, side, 3)]  # the owner's frame, as the padded ground crop
+    row = conn.execute("SELECT animal_frame, animal_by_owner FROM embeddings WHERE visit_id = ?", (vid,)).fetchone()
+    assert (row["animal_frame"], row["animal_by_owner"]) == (2, 1)

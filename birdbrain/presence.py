@@ -7,8 +7,9 @@ Its view (classifier.presence_patch, version classifier.PRESENCE_VIEW, saved in 
 the whole bowl, rim and a bird's height above it, for birdbath triggers; the ground crop padded to a square for
 ground ones. It used to be the crop box center-cut to a square, which cut the rim's left and right ends off (birds
 perched there were called empty). Only embeddings of the current view train or are scored; older ones wait for
-`--backfill --redo`, and until enough are redone the check gives no verdict, so nothing is gated meanwhile.
-"Inside the crop box" below means inside that view (classifier.presence_view_box).
+`--backfill --redo`, which holds gate mode at shadow while it runs (a model trained on the first few redone frames
+mustn't skip Claude). "Inside the crop box" below means inside that view (classifier.presence_view_box), the
+dashed box on the visit page.
 
 Describing "nothing" in words didn't work (BioCLIP called almost every empty frame an animal), but a logistic
 regression on the embeddings did: on the first 683 frames, 5-fold cross-validated, keeping all 55 visitors it
@@ -201,19 +202,19 @@ def animal_example(row, conn=None) -> tuple[bytes | None, str]:
             return None, f"burst frame {own} (your circle) is no longer on disk"
         cover = photo_coverage(row["marks"], raw, box, own)
         if cover is not None and cover < MIN_COVERAGE:
-            return None, f"your circle on burst frame {own} is outside the crop box"
+            return None, f"your circle on burst frame {own} is outside the dashed box"
         return row["animal_vec"], f"burst frame {own} (your circle)"
     if (row["animal_vec"] is not None and not _by_owner(row)  # an owner's pick from a circle since moved: stale
             and (row["animal_score"] or 0) >= PICK_MIN):
         return row["animal_vec"], f"burst frame {row['animal_frame']}"
     cover = photo_coverage(row["marks"], raw, box)
     if cover is not None:
-        return (row["vec"], "photo") if cover >= MIN_COVERAGE else (None, "the circle is outside the crop box")
+        return (row["vec"], "photo") if cover >= MIN_COVERAGE else (None, "the circle is outside the dashed box")
     if row["visitor"] != "none":
         return row["vec"], "photo"  # Claude (or the Pi) found the animal in this very crop
     if needs_pick(row):
         return None, "waiting for its burst to be looked through"
-    return None, "no frame shows the animal in the crop box"
+    return None, "no frame shows the animal in the dashed box"
 
 
 EXAMPLE_ROWS = f"""SELECT e.visit_id, e.vec, e.animal_vec, e.animal_frame, e.animal_score, e.animal_by_owner,
@@ -546,6 +547,7 @@ def pick_frames(conn, limit: int | None = None, busy: threading.Event | None = N
 
 
 PROGRESS_EVERY, PROGRESS_SECONDS = 25, 30  # backfill prints a progress line this often (whichever comes first)
+_clock = time.monotonic  # backfill's clock (tests move it on)
 
 
 def progress_line(n: int, total: int, failed: int, elapsed: float) -> str:
@@ -554,24 +556,65 @@ def progress_line(n: int, total: int, failed: int, elapsed: float) -> str:
     return f"{n}/{total} done, {failed} failed, ~{round(left / 60)} min left"
 
 
+def hold_gate() -> tuple[bool, str | None]:
+    """Gate mode switched to shadow for a redo: (whether it was switched, the stored presence_mode setting before,
+    None when the mode came from .env). Left at shadow if the process dies: the safe way, shown on Settings."""
+    with db.session() as conn:
+        stored = db.get_value(conn, "presence_mode")
+        if mode(conn) != "gate":
+            return False, stored
+        db.set_value(conn, "presence_mode", "shadow")
+    print("The Pi animal check was in gate mode: switched to shadow while frames are re-embedded, so a model "
+          "trained on the first few can't skip Claude. It goes back to gate at the end.", flush=True)
+    return True, stored
+
+
+def release_gate(stored: str | None) -> None:
+    """Undo hold_gate: the setting as it was (removed again when the mode came from .env), unless someone changed
+    it meanwhile."""
+    with db.session() as conn:
+        if db.get_value(conn, "presence_mode") != "shadow":
+            print("The Pi animal check's mode was changed during the redo; left as it is now.", flush=True)
+            return
+        if stored is None:
+            db.delete_value(conn, "presence_mode")
+        else:
+            db.set_value(conn, "presence_mode", stored)
+    print("The Pi animal check is back in gate mode.", flush=True)
+
+
 def backfill(limit: int | None = None, redo: bool = False, clf=None) -> int:
     """Embeddings of the current view (~6 s each on a Pi 4), newest first, for stored frames that have none and,
-    with `redo`, for frames embedded in an older view. Each visit is seen with its own zones (raw_json.zones,
-    else the zones at the time, else today's) and trigger. Prints progress as it goes; returns how many were
-    embedded."""
-    import cv2
-
+    with `redo`, for frames embedded in an older view (gate mode is held at shadow meanwhile, see hold_gate).
+    Visits whose photo is gone (deleted to save space, or only the thumbnail left) are left as they were and
+    counted apart, never in `limit`. Each visit is seen with its own zones (raw_json.zones, else the zones at the
+    time, else today's) and trigger. Prints progress as it goes; returns how many were embedded."""
     clf = clf or classifier.load()
     if clf is None:
         raise SystemExit("the classifier is off (CLASSIFIER=off)")
     old = f" OR id IN (SELECT visit_id FROM embeddings WHERE view IS NOT {classifier.PRESENCE_VIEW})" if redo else ""
     with db.session() as conn:
-        rows = conn.execute(f"""SELECT id, image_path, raw_json, captured_at FROM visits
-                                WHERE id NOT IN (SELECT visit_id FROM embeddings){old}
+        rows = conn.execute(f"""SELECT id, image_path, raw_json, captured_at, {db.FULL_FRAME} AS has_photo
+                                FROM visits WHERE id NOT IN (SELECT visit_id FROM embeddings){old}
                                 ORDER BY id DESC""").fetchall()
-    rows = rows[:limit]
+    gone = sum(1 for r in rows if not r["has_photo"])
+    rows = [r for r in rows if r["has_photo"]][:limit]
+    held, stored = hold_gate() if redo and rows else (False, None)
+    try:
+        done = _embed_rows(rows, clf, gone)
+    finally:
+        if held:
+            release_gate(stored)
+    return done
+
+
+def _embed_rows(rows: list, clf, gone: int = 0) -> int:
+    """backfill's loop: how many were embedded. Prints progress lines; the last one always, once, with the
+    `gone` visits whose photos were already deleted."""
+    import cv2
+
     total, done, failed = len(rows), 0, 0
-    start = last = time.monotonic()
+    start = last = _clock()
     for i, r in enumerate(rows, 1):
         try:
             img = cv2.imread(str(config.IMAGES_DIR / r["image_path"])) if r["image_path"] else None
@@ -587,11 +630,12 @@ def backfill(limit: int | None = None, redo: bool = False, clf=None) -> int:
         except Exception as e:
             failed += 1
             log.warning("visit %d: not embedded (%s)", r["id"], e)
-        now = time.monotonic()
-        if i % PROGRESS_EVERY == 0 or now - last >= PROGRESS_SECONDS:
+        now = _clock()
+        if i < total and (i % PROGRESS_EVERY == 0 or now - last >= PROGRESS_SECONDS):
             print(progress_line(i, total, failed, now - start), flush=True)
             last = now
-    print(progress_line(total, total, failed, time.monotonic() - start), flush=True)
+    deleted = f", {gone} photos already deleted (left as they were)" if gone else ""
+    print(progress_line(total, total, failed, _clock() - start) + deleted, flush=True)
     return done
 
 
@@ -605,6 +649,8 @@ def main() -> None:
                         help="look through the bursts of false triggers corrected to an animal, and embed the frames "
                              "the owner circled")
     args = parser.parse_args()
+    if args.redo and not args.backfill:
+        parser.error("--redo goes with --backfill (python -m birdbrain.presence --backfill --redo)")
     with db.session() as conn:
         db.init_db(conn)
     if args.backfill:
@@ -624,7 +670,7 @@ def main() -> None:
           f"trained on {m['visitors']} visitors and {m['empty']} empty frames; threshold {m['threshold']:.3f}, "
           f"cross-validated it drops {m['would_drop']:.0%} of empty frames; threshold set by visit {m['set_by']}"
           + (f", visit {m['set_aside']} set aside as an outlier" if m["set_aside"] else "")
-          + (f"; {m['left_out']} visitors left out (no frame shows them in the crop box)" if m["left_out"] else ""))
+          + (f"; {m['left_out']} visitors left out (no frame shows them in the Pi's view)" if m["left_out"] else ""))
 
 
 if __name__ == "__main__":

@@ -224,7 +224,7 @@ def test_a_corrected_false_trigger_teaches_animal_only_when_its_crop_shows_one(c
     found_animal(conn, empty[1], circle=ABOVE)  # circled above the crop box
     found_animal(conn, empty[2], circle=INSIDE)  # circled inside it: a hard example worth learning
     out = left_out(conn)
-    assert out == {empty[0]: "no frame shows the animal in the crop box", empty[1]: "the circle is outside the crop box"}
+    assert out == {empty[0]: "no frame shows the animal in the dashed box", empty[1]: "the circle is outside the dashed box"}
     assert presence.model(conn)["visitors"] == 13 and presence.model(conn)["left_out"] == 2
 
 
@@ -236,19 +236,19 @@ def test_claudes_own_visits_still_teach_animal(conn, yard):
     # The owner circling the animal outside the crop box takes it out (the crop Claude saw didn't show it).
     db.correct_visit(conn, real[1][0], None, None, None, [ABOVE])
     db.set_raw_json(conn, real[1][0], {"zones": {"crop": list(CROP)}})
-    assert left_out(conn) == {real[1][0]: "the circle is outside the crop box"}
+    assert left_out(conn) == {real[1][0]: "the circle is outside the dashed box"}
 
 
 def test_older_visits_find_their_crop_box_in_the_calibration_history(conn, yard):
     empty = conn.execute("SELECT id FROM visits WHERE visitor = 'none' LIMIT 1").fetchone()[0]
     db.correct_visit(conn, empty, "squirrel", None, None, [INSIDE])  # no zones saved with the visit
     # No crop box known, so the circle can't say anything, and nothing else shows the animal was in the crop box.
-    assert left_out(conn) == {empty: "no frame shows the animal in the crop box"}
+    assert left_out(conn) == {empty: "no frame shows the animal in the dashed box"}
     db.add_calibration(conn, ran_at="2000-01-01T00:00:00", reason="manual", status="moved", summary="",
                        after_json=json.dumps({"crop": list(CROP)}))
     assert left_out(conn) == {}
     db.correct_visit(conn, empty, "squirrel", None, None, [ABOVE])
-    assert left_out(conn) == {empty: "the circle is outside the crop box"}
+    assert left_out(conn) == {empty: "the circle is outside the dashed box"}
 
 
 class FakeClf:
@@ -279,7 +279,7 @@ def test_the_burst_frame_with_the_animal_becomes_its_training_example(conn, yard
     clf = FakeClf(yard)
     assert presence.pick_frames(conn, clf=clf) == 0  # still a false trigger: nothing to look through
     found_animal(conn, vid, circle=ABOVE)
-    assert left_out(conn) == {vid: "the circle is outside the crop box"}  # left out until its burst is looked at
+    assert left_out(conn) == {vid: "the circle is outside the dashed box"}  # left out until its burst is looked at
     key = presence.label_key(conn)
     assert presence.pick_frames(conn, clf=clf) == 1 and clf.calls == 6
     row = conn.execute("SELECT animal_frame, animal_score FROM embeddings WHERE visit_id = ?", (vid,)).fetchone()
@@ -297,7 +297,7 @@ def test_a_burst_with_no_animal_in_the_crop_box_is_left_out(conn, yard, add_visi
     found_animal(conn, vid, circle=None)
     assert left_out(conn) == {vid: "waiting for its burst to be looked through"}
     presence.pick_frames(conn, clf=FakeClf(yard))
-    assert left_out(conn) == {vid: "no frame shows the animal in the crop box"}
+    assert left_out(conn) == {vid: "no frame shows the animal in the dashed box"}
 
 
 def test_looking_through_a_burst_waits_for_a_capture(conn, yard, add_visit):
@@ -368,10 +368,10 @@ def test_a_circle_outside_the_crop_box_on_its_frame_leaves_the_visit_out(conn, y
     found_animal(conn, vid, circle=on_frame(ABOVE, 2))  # visit 693: only the tail was in the box
     presence.pick_frames(conn, clf=FakeClf(yard))
     assert pick_of(conn, vid)["animal_frame"] == 2
-    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the crop box"}
+    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the dashed box"}
     # A circle on the photo doesn't count for frame 2: only the circles on that frame do.
     db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(ABOVE, 2), INSIDE])
-    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the crop box"}
+    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the dashed box"}
     db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(ABOVE, 2), on_frame(INSIDE, 2)])
     assert left_out(conn) == {}
 
