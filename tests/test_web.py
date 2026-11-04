@@ -977,15 +977,16 @@ def test_latest_visitor_thumbnail_shows_claudes_circle(client, add_visit):
     assert "hero-photo" in html and html.count('class="marks thumb-marks"') == 2 and "0.45" in html  # big photo + grid card
 
 
-def test_latest_visitor_takes_the_big_photo_and_live_view_moves_to_today(client, add_visit):
+def test_latest_visitor_takes_the_big_photo_and_the_live_view_has_its_own_tab(client, add_visit):
     html = client.get("/").text
-    assert 'class="hero-latest"' not in html and html.index('id="live-box"') < html.index('class="today"')  # no visitor yet
+    assert 'class="hero-latest"' not in html and 'class="hero hero-empty"' in html  # no visitor yet: Today takes the row
+    assert 'id="live-box"' not in html and 'href="/live"' in html  # the live view is on /live, linked from the empty page
     vid = add_visit(species="Bushtit", count=3)
     html = client.get("/").text
     hero = html[html.index('class="hero-latest"'):html.index('class="today"')]
     assert f'href="/visit/{vid}"' in hero and "Bushtit x3" in hero and "_t.jpg" not in hero  # full-size frame
     assert "hero-kicker-top" not in html and hero.index("hero-kicker") < hero.index("hero-name") < hero.index("hero-time")  # one chip, kicker first
-    assert html.count('id="live-box"') == 1 and html.index('class="today"') < html.index('id="live-box"')
+    assert 'id="live-box"' not in html and 'id="live-viewer"' not in html and "live-view" not in html.replace("/live", "")
 
 
 def test_false_triggers_come_in_pages(client, add_visit, monkeypatch):
@@ -1182,7 +1183,7 @@ def test_only_the_latest_visitor_and_live_view_carry_a_zoom_button(client, add_v
     assert 'href="/visit/%d"' % second in hero and 'data-zoom-photo="/images/2026/11/01/b.jpg"' in hero
     assert hero.index("</a>") < hero.index("zoom-btn")  # a sibling of the link, not inside it
     assert html.count('data-zoom-photo="') == 1 and "card-zoom" not in html  # visit cards have none
-    assert "live-zoom-btn" in html and 'id="home-viewer"' in html
+    assert "live-zoom-btn" not in html and 'id="home-viewer"' in html  # the live view's magnifier is on /live now
     assert f'<a class="hero-goto" href="/visit/{second}" title="Open this visit (→)">Go to visit</a>' in hero  # after the kicker, a real link
     assert hero.index("hero-kicker") < hero.index("hero-goto") < hero.index("hero-name")
     assert 'id="home-viewer-reset"' in html and "Reset view" in html  # zoom viewer
@@ -1277,7 +1278,7 @@ def test_every_big_photo_view_closes_with_the_minus_magnifier(client, add_visit)
     vid = add_visit(image_path="2026/11/01/a.jpg", thumb_path="2026/11/01/a_t.jpg", species="Bushtit")
     for html in (client.get("/").text, client.get(f"/visit/{vid}").text):
         assert "viewer-zoom-out photo-viewer-close" in html and "&times;" not in html.split('class="viewer')[1]
-    assert "viewer-zoom-out live-viewer-close" in client.get("/").text
+    assert "viewer-zoom-out live-viewer-close" in client.get("/live").text
 
 
 def _nav(html: str) -> str:
@@ -1567,3 +1568,34 @@ def test_species_title_has_a_play_button_only_when_the_card_has_sounds(client, a
     assert 'data-src="https://xc.example/1.mp3"' in client.get("/species-info/Bushtit?fold=1").text
     card["sounds"] = []
     assert "sp-play" not in client.get("/species-info/Bushtit?fold=1").text
+
+
+def test_live_tab_sits_right_after_visits_and_renders(client, add_visit):
+    nav = _nav(client.get("/").text)
+    assert nav.index('>Visits<') < nav.index('href="/live"') < nav.index('href="/species"')
+    assert 'href="/live" aria-current="page">Live<' in _nav(client.get("/live").text)
+    html = client.get("/live").text
+    assert html.count('id="live-box"') == 1 and 'id="live-viewer"' in html and "/static/live-view.js" in html
+    assert "0</span>" in html and "Last visitor" not in html  # no visitor yet
+    vid = add_visit(species="Bushtit", count=3)
+    html = client.get("/live").text
+    panel = html[html.index('id="live-visits"'):]
+    assert "Last visitor" in panel and f'href="/visit/{vid}"' in panel and "Bushtit" in panel and " x3" in panel
+    assert "1</span>" in panel and "1 species" in panel
+
+
+def test_live_tab_reads_the_light_from_the_frame_not_the_camera(client, monkeypatch):
+    from io import BytesIO
+    from PIL import Image
+    def jpeg(color):
+        out = BytesIO(); Image.new("RGB", (64, 36), color).save(out, "JPEG"); return out.getvalue()
+    def no_camera(*a, **k):
+        raise AssertionError("the page must not call the camera API")
+    monkeypatch.setattr(webapp.camera, "_call", no_camera)
+    for color, light, other in (((120, 160, 90), "day", "night"), ((100, 100, 100), "night", "day")):
+        monkeypatch.setattr(webapp, "_live", {"jpeg": jpeg(color), "at": time.time(), "tried": 0.0})
+        html = client.get("/live").text
+        assert f'data-light="{light}">' in html and f'data-light="{other}" hidden' in html
+        assert client.get("/live/latest.jpg").headers["X-Frame-Light"] == light
+    monkeypatch.setattr(webapp, "_live", {"jpeg": b"not a picture", "at": time.time(), "tried": 0.0})
+    assert "X-Frame-Light" not in client.get("/live/latest.jpg").headers and "unknown" in client.get("/live").text

@@ -35,7 +35,7 @@ def test_visitors_browse_but_change_nothing(client, add_visit, conn, locked):
                  "/settings/camera", "/lessons"):
         r = client.get(path, follow_redirects=False)
         assert r.status_code == 303 and r.headers["location"].startswith("/login")
-    for path in ("/", "/species", "/stats", "/about"):
+    for path in ("/", "/live", "/species", "/stats", "/about"):
         assert client.get(path).status_code == 200
 
 
@@ -90,7 +90,7 @@ def test_public_mirror_has_no_admin_and_never_touches_camera(client, add_visit, 
     assert client.post(f"/visit/{vid}/delete").status_code == 403
     for path in ("/settings", "/notes", "/review", "/false-triggers", "/settings/camera", "/lessons"):
         assert client.get(path, follow_redirects=False).status_code == 404
-    for path in ("/", "/species", "/stats", "/about"):
+    for path in ("/", "/live", "/species", "/stats", "/about"):
         assert client.get(path).status_code == 200
     assert client.get("/live.jpg").status_code == 503  # no synced frame; must not reach the camera either way
     assert db.get_visit(conn, vid) is not None

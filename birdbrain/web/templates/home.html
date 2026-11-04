@@ -8,20 +8,10 @@
 <script type="speculationrules">
   {"prerender": [{"where": {"and": [{"href_matches": "/visit/*"}, {"not": {"selector_matches": ".hero-link, .hero-goto"}}]}, "eagerness": "moderate"}]}
 </script>
-{% macro live_box() %}
-<div class="live" id="live-box">
-  <img id="live" src="/live/latest.jpg" alt="Live view of the birdbath"{% if not today.latest %} fetchpriority="high"{% endif %}>
-  <button type="button" class="live-zoom" aria-label="Open the live view big"></button>
-  {{ zoom_btn() }}
-  <div class="live-badge"><span class="dot"></span><span id="live-status">Live</span> <span class="muted" id="live-age"></span></div>
-  <div class="live-title" data-tip="What the camera sees right now, refreshed every few seconds">Live view</div>
-  <div class="live-offline">Camera offline</div>
-</div>
-{% endmacro %}
-{# The latest visitor gets the big photo (the live view is mostly an empty birdbath); the live view sits in Today.
-   Until the first visitor ever, the live view stays big. #}
-<section class="hero">
-  {% set lv = today.latest %}
+{# The latest visitor gets the big photo; the live view has its own tab (/live). Until the first visitor ever
+   there is no photo, so Today takes the whole row. #}
+{% set lv = today.latest %}
+<section class="hero{{ '' if lv else ' hero-empty' }}">
   {% if lv %}
   <div class="hero-latest">
   <a class="hero-link" href="/visit/{{ lv.id }}">
@@ -43,14 +33,12 @@
   {# The same star as on the cards (admins), just left of the magnifier. #}
   {% if request.state.admin and lv.label and lv.label not in ('None', 'Other') %}{{ fav_star(lv, lv.label, star_covers(request)) }}{% endif %}
   </div>
-  {% else %}
-  {{ live_box() }}
   {% endif %}
 
   <aside class="today">
-    {% if lv %}{{ live_box() }}<hr class="today-rule">{% endif %}
     <div class="today-info">
     {% include "_scoreboard.html" %}
+    {% if not lv %}<p class="muted">No visitor photo yet. <a href="/live">See the live view</a> to check the camera.</p>{% endif %}
 
     {% if today.review and request.state.admin %}
     <a class="notice" href="/review">{{ today.review }} visit{{ 's' if today.review != 1 }} waiting for review</a>
@@ -128,14 +116,6 @@
   </div>
   {% endif %}
 </section>
-
-<dialog class="viewer live-viewer" id="live-viewer" aria-label="Live view, big">
-  <div class="live-viewer-frame">
-    <img id="live-big" alt="Live view of the birdbath">
-    <div class="live-badge"><span class="dot"></span><span id="live-big-status">Live</span> <span class="muted" id="live-big-age"></span></div>
-  </div>
-  {{ zoom_out_btn("live-viewer-close") }}
-</dialog>
 
 <dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
   <button type="button" class="viewer-reset" id="home-viewer-reset" hidden>Reset view</button>
@@ -244,84 +224,6 @@
     addEventListener("resize", () => { if (viewer.open) apply(); });
   })();
 
-  // Stale-while-revalidate: the saved frame paints instantly (img src above), then fresh frames are
-  // downloaded and decoded off-screen and swapped in only when complete, so the box never blanks.
-  (() => {
-    const REFRESH_MS = {{ live_refresh * 1000 }};
-    const STALE_S = {{ live_stale }};
-    const box = document.getElementById("live-box");
-    const img = document.getElementById("live");
-    const status = document.getElementById("live-status");
-    const age = document.getElementById("live-age");
-    // Click the live view to open it big; it keeps refreshing there. Escape, the x or a click anywhere closes it.
-    const viewer = document.getElementById("live-viewer");
-    const big = document.getElementById("live-big");
-    box.querySelectorAll(".live-zoom, .live-zoom-btn").forEach(b => b.addEventListener("click", e => {
-      e.stopPropagation();  // keeps tips.js from showing its touch tooltip behind the viewer
-      big.src = img.src;
-      viewer.showModal();
-      refresh();
-    }));
-    viewer.addEventListener("click", () => viewer.close());
-    // Say Offline only after a while with no good frame and repeated failures: one slow camera grab isn't an outage.
-    const OFFLINE_AFTER_MS = 15000;
-    let frameAge = null, receivedAt = 0, failures = 0, lastOkAt = Date.now(), busy = false;
-    const isOffline = () => failures >= 2 && Date.now() - lastOkAt > OFFLINE_AFTER_MS;
-
-    const ageNow = () => frameAge === null ? null : frameAge + (Date.now() - receivedAt) / 1000;
-    const clock = s => new Date(Date.now() - s * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-
-    function render() {
-      const a = ageNow();
-      const offline = isOffline();
-      const stale = a !== null && a > STALE_S;
-      box.classList.toggle("stale", stale && !offline);
-      box.classList.toggle("offline", offline && a === null);
-      status.textContent = offline ? "Offline" : stale ? "Last frame" : "Live";
-      age.textContent = a === null ? "" : stale ? clock(a) : `updated ${Math.round(a)} s ago`;
-      box.querySelector(".dot").classList.toggle("off", offline || stale);
-      document.getElementById("live-big-status").textContent = status.textContent;
-      document.getElementById("live-big-age").textContent = age.textContent;
-      viewer.querySelector(".dot").classList.toggle("off", offline || stale);
-    }
-
-    async function refresh() {
-      if (busy) return;
-      busy = true;
-      try {
-        const r = await fetch("/live.jpg", { cache: "no-store", signal: AbortSignal.timeout(10000) });
-        if (!r.ok) throw new Error(r.status);
-        const serverAge = parseFloat(r.headers.get("X-Frame-Age") || "0");
-        const url = URL.createObjectURL(await r.blob());
-        const next = new Image();
-        next.src = url;
-        await next.decode();  // fully decoded before it touches the page
-        const old = img.src;
-        img.src = url;
-        big.src = url;
-        if (old.startsWith("blob:")) URL.revokeObjectURL(old);
-        frameAge = serverAge; receivedAt = lastOkAt = Date.now(); failures = 0;
-      } catch (e) {
-        failures++;  // keep showing the last frame; labeled Offline only once failures add up
-      } finally {
-        busy = false;
-        render();
-      }
-    }
-
-    // Age of the instantly painted saved frame, so it is labeled honestly until the fresh one lands.
-    fetch("/live/latest.jpg", { method: "HEAD", cache: "no-store" }).then(r => {
-      if (r.ok && frameAge === null) { frameAge = parseFloat(r.headers.get("X-Frame-Age") || "0"); receivedAt = Date.now(); render(); }
-    }).catch(() => {});
-    img.addEventListener("error", () => { if (frameAge === null) { failures++; render(); } });
-
-    refresh();
-    // Not in a background tab: each fetch past the frame's max age makes the Pi grab a new one. The handler below catches up on return.
-    setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
-    setInterval(render, 1000);
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
-  })();
-
   // Visitors that arrive while the page is open (tab-alert.js checks every 20 s): fetch this page again (same
   // filters) and slide the new cards in at the top, and refresh today's numbers. Scrolled down into the cards,
   // the view stays put and a pill offers a jump back up.
@@ -363,10 +265,10 @@
         const doc = new DOMParser().parseFromString(await r.text(), "text/html");
         const tally = document.querySelector(".tally-box"), freshTally = doc.querySelector(".tally-box");
         if (tally && freshTally) tally.replaceWith(freshTally);
-        // The first visitor ever moves the live view out of the big slot: redraw the page once.
+        // The first visitor ever brings the big photo (the empty page has none): redraw the page once.
         if (!document.querySelector(".hero-latest") !== !doc.querySelector(".hero-latest")) { location.reload(); return; }
         const range = document.querySelector(".critters")?.dataset.range;
-        swap(doc, ".today-info");  // not the live view in Today, which keeps running
+        swap(doc, ".today-info");
         if (range && range !== doc.querySelector(".critters")?.dataset.range) {  // keep the period picked on the scoreboard
           const s = await fetch(`/scoreboard?range=${range}`, { cache: "no-store", signal: AbortSignal.timeout(10000) });
           const board = document.querySelector(".critters");

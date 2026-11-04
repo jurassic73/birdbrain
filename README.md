@@ -1,6 +1,6 @@
 # Birdbrain
 
-A backyard birdbath camera that spots visitors and identifies them with Claude, then shows them on a website on your home network: latest visitors, species, stats, and a live view.
+A backyard birdbath camera that spots visitors and identifies them with Claude, then shows them on a website on your home network: latest visitors, species, stats, and a Live tab with the camera's view right now.
 
 ![The home page: the latest visitor with the spot where it was found circled, a live view of the bath, today's visitors and the newest visits](docs/screenshots/home.jpg)
 
@@ -221,7 +221,7 @@ uv run python -m birdbrain.weather --days 7      # refetch the last 7 days
 
 ## Guided tour
 
-The first time a browser opens the home page, a short tour points at the latest photo, the eye button that hides circles and zones, the live view, the menus and the species cards; an admin gets three more steps (Review, Claude's Notes, Settings) once after logging in. Whether it has run is remembered in that browser's local storage (`bb_tour_seen`, `bb_tour_admin_seen`); if storage is blocked it never starts by itself. **Run the tour again** is a button in Settings and on the About page (or open `/?tour=1`). Code: `birdbrain/web/static/tour.js`.
+The first time a browser opens the home page, a short tour points at the latest photo, the eye button that hides circles and zones, today's numbers, the menus (the Live tab among them) and the species cards; an admin gets three more steps (Review, Claude's Notes, Settings) once after logging in. Whether it has run is remembered in that browser's local storage (`bb_tour_seen`, `bb_tour_admin_seen`); if storage is blocked it never starts by itself. **Run the tour again** is a button in Settings and on the About page (or open `/?tour=1`). Code: `birdbrain/web/static/tour.js`.
 
 ## Optional: read-only mode for guests
 

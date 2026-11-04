@@ -227,6 +227,11 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   .topbar { flex-wrap: nowrap; }
   .topbar nav { min-width: 0; }
 }
+/* Laptop-width windows: "False triggers" shortens to "False" so the whole admin nav fits (Visits, Live, Species, Stats, Review, False, Claude's Notes). */
+@media (max-width: 1100px) {
+  .topbar nav a[data-nav="false"] .long { display: none; }
+  .topbar nav a[data-nav="false"] .short { display: inline; }
+}
 /* Phone in landscape (short screen): a slim bar that scrolls away with the page. */
 @media (max-height: 500px) {
   .topbar { position: static; padding: 4px 12px; gap: 10px; }
@@ -242,6 +247,7 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
 }
 
 .hero { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; margin-bottom: 24px; }
+.hero.hero-empty { grid-template-columns: minmax(0, 1fr); }  /* no visitor photo yet: Today takes the row */
 @media (max-width: 800px) { .hero { grid-template-columns: 1fr; } }
 .live, .hero-latest {
   position: relative; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 16 / 9;
@@ -307,7 +313,6 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   position: absolute; top: 10px; left: 50%; transform: translateX(-50%); padding: 3px 12px; border-radius: 999px;
   background: rgba(0, 0, 0, .6); color: #fff; font-size: .8rem; font-weight: 600; white-space: nowrap;
 }
-.today-rule { width: 100%; margin: 0; border: 0; border-top: 1px solid var(--line); }
 .live-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #4cd07d; }
 .live-offline { display: none; position: absolute; inset: 0; place-items: center; color: #ddd; font-weight: 600; }
 .live img { transition: opacity .3s; }
@@ -321,7 +326,7 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
 }
 .today h2 { margin: 0; }
-.today-info { display: contents; }  /* its own box only so new visitors can swap it without touching the live view */
+.today-info { display: contents; }  /* its own box only so new visitors can swap it */
 .today-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; color: var(--muted); font-size: .85rem; }
 .today-stats a { color: var(--muted); text-decoration: none; }
 .today-stats .big { display: block; font-size: 1.6rem; font-weight: 700; color: var(--text); line-height: 1.2; }
@@ -371,14 +376,12 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 .critter-n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); text-decoration: none; }
 .critter-n:hover, .critter-n:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 /* Desktop, with a latest-visitor photo: the Today panel ends exactly where the photo does. contain: size makes the panel count as
-   0 tall when the grid sizes its row, so the photo alone sets the height and the panel stretches to match. The live view keeps its
-   16:9 shape (flex: none) and the visitors list takes what is left and scrolls inside it. It keeps at least ~2 rows; on a short
+   0 tall when the grid sizes its row, so the photo alone sets the height and the panel stretches to match. The visitors list takes
+   what is left and scrolls inside it. It keeps at least ~2 rows; on a short
    window (the owner's 1000x680 included) the rest no longer fits, so the panel scrolls rather than hide the review notice or the
    Last motion line, and its gaps are a little tighter. */
 @media (min-width: 801px) {
   .hero-latest ~ .today { contain: size; overflow-y: auto; min-height: 0; gap: 10px; }
-  .hero-latest ~ .today .live { flex: none; }
-  .hero-latest ~ .today .today-rule { flex: none; }
   .hero-latest ~ .today .critters { flex: 1 1 auto; display: flex; flex-direction: column; }
   .hero-latest ~ .today .critters .score-head { flex: none; }
   .hero-latest ~ .today .critters ul { flex: 1 1 0; min-height: 2.6em; max-height: none; }
@@ -1557,6 +1560,27 @@ button.se-all { font-weight: 600; }
 /* Native size: never stretched, only shrunk to fit the screen. */
 .live-viewer-frame { position: relative; line-height: 0; }
 .live-viewer .live-badge { top: 10px; bottom: auto; left: 10px; line-height: normal; }
+
+/* The Live tab (/live): the frame big on the left, a slim panel on the right; the panel goes under the frame on phones.
+   The frame never grows taller than the window (16:9 from the available height), so it fits without scrolling. */
+.live-page { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 20px; align-items: start; }
+.live-page .live { width: min(100%, max(480px, calc((100vh - 130px) * 16 / 9))); max-height: none; }  /* 480 px floor: a short window scrolls instead */
+.live-side { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.live-side h2 { margin: 0; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+#live-visits { display: flex; flex-direction: column; gap: 12px; }
+.live-rule { width: 100%; margin: 0; border: 0; border-top: 1px solid var(--line); }
+.live-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 1.6em; }
+.live-light { display: inline-flex; align-items: center; }
+.live-today { justify-content: flex-start; gap: 10px; }
+.live-big { font-size: 1.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.live-last { display: flex; flex-direction: column; gap: 3px; }
+.live-last-photo { display: block; border-radius: 8px; overflow: hidden; margin-bottom: 4px; }
+.live-last-photo .thumb img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; }
+.live-last-name { font-weight: 600; }
+@media (max-width: 800px) {
+  .live-page { grid-template-columns: 1fr; gap: 14px; }
+  .live-page .live { width: 100%; max-height: none; }
+}
 
 /* A false trigger's whole burst, beside its photo: tap a frame to show it big. */
 .vburst { margin: 6px 0 0; }  /* sits under the photo; .visit-media supplies the gap */

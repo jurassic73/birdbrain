@@ -40,7 +40,7 @@ def mirror(monkeypatch):
 # Every GET a visitor may make, by route template. A new route that is neither here nor under auth.ADMIN_PATHS
 # fails test_every_route_is_classified: decide where it belongs when you add it.
 PUBLIC_GETS = {
-    "/", "/about", "/api/latest-visit", "/api/photo-reminder", "/favicon.ico", "/guest-login", "/live.jpg",
+    "/", "/about", "/api/latest-visit", "/api/photo-reminder", "/favicon.ico", "/guest-login", "/live", "/live.jpg",
     "/live/latest.jpg", "/manifest.webmanifest", "/scoreboard", "/species", "/species-info/{name}",
     "/species-photo", "/species-search", "/species/{name}", "/species/{name}/cover-compare", "/species/{name}/more", "/stats",
     "/visit/{visit_id}", "/visits", "/visits/archive-more", "/visits/more", "/weather",
