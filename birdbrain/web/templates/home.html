@@ -66,9 +66,6 @@
 <section class="visits">
   {% set a = activity %}
   <div class="visits-bar">
-    <div class="tally-box tally-head" data-tip="Birds and animals identified today{% if a.species %}, {{ a.species }} species{% endif %}. The rest of today's numbers (false alarms, Pi checks, Claude calls) are on the Stats page.">
-      <span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }} today</span>
-    </div>
     {% if any_visits %}
     {{ filters_toggle(more_filters_open, "Filter by species, birds, mammals or photos with several animals, day or night, and a date range") }}
     {% endif %}
@@ -266,8 +263,6 @@
         const r = await fetch(location.href, { cache: "no-store", signal: AbortSignal.timeout(10000) });
         if (!r.ok) { failed(); return; }
         const doc = new DOMParser().parseFromString(await r.text(), "text/html");
-        const tally = document.querySelector(".tally-box"), freshTally = doc.querySelector(".tally-box");
-        if (tally && freshTally) tally.replaceWith(freshTally);
         // The first visitor ever brings the big photo (the empty page has none): redraw the page once.
         if (!document.querySelector(".hero-latest") !== !doc.querySelector(".hero-latest")) { location.reload(); return; }
         const range = document.querySelector(".critters")?.dataset.range;
@@ -305,6 +300,10 @@
           added.push(card);
         }
         if (!added.length) return;
+        // The hero shows the newest visit, so only its card is the repeat: the old one shows again (phones hide .hero-dup).
+        const dup = freshGrid.querySelector(".card.hero-dup")?.getAttribute("href");
+        g.querySelectorAll(".card.hero-dup").forEach(c => c.classList.remove("hero-dup"));
+        if (dup) added.find(c => c.getAttribute("href") === dup)?.classList.add("hero-dup");
         const scrolled = gridAbove();
         const anchor = [...g.querySelectorAll(".card")].find(c => c.getBoundingClientRect().bottom > 0);
         const before = anchor?.getBoundingClientRect().top;

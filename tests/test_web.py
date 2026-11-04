@@ -66,7 +66,7 @@ def test_home_lists_visits_with_chips_and_filters_toggle(client, add_visit):
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None)
     html = client.get("/").text
-    assert "Bushtit" in html and "tally-box" in html and "Mammals" in html
+    assert "Bushtit" in html and "tally-box" not in html and "Mammals" in html
     # More filters is a toggle on the tally row, above the chips; its boxes start hidden. The Today panel has no Last motion line any more.
     assert 'class="filters-toggle"' in html and 'aria-expanded="false"' in html and 'id="more-filters"' in html
     assert html.index('class="filters-toggle"') < html.index('class="chips"') < html.index('id="more-filters"')
@@ -222,7 +222,7 @@ def test_load_more_pages_in_24s(client, add_visit):
     for _ in range(30):
         add_visit()
     first = client.get("/").text
-    assert first.count('class="card"') == 24 and "/visits/more?before=" in first
+    assert first.count('class="card"') + first.count('class="card hero-dup"') == 24 and "/visits/more?before=" in first
     more = client.get(more_link(first)).text
     assert more.count('class="card"') == 6 and "load-more" not in more
 
@@ -688,7 +688,7 @@ def test_home_shows_visitor_count_as_text_and_stats_has_the_rest(client, add_vis
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None, raw_json=raw)
     html = client.get("/").text
-    assert 'class="tally-box tally-head"' in html and '<details class="tally-box' not in html
+    assert "tally-box" not in html and html.count("Visitor today") == 1  # the scoreboard's count only
     assert "Sent to Claude" not in html and "Kept on the Pi" not in html
     assert html.index("Visitor today") < html.index("More filters")
     stats = client.get("/stats").text
@@ -773,7 +773,7 @@ def _seed_filter_species(add_visit):
 
 def _cards(html):
     import re
-    return re.findall(r'<a class="card" href="/visit/(\d+)', html)
+    return re.findall(r'<a class="card(?: hero-dup)?" href="/visit/(\d+)', html)
 
 
 def test_species_visits_tab_has_the_home_filters_minus_species_and_kinds(client, add_visit):
@@ -1382,7 +1382,7 @@ def test_home_lists_real_visits_only(client, add_visit):
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None)
     html = client.get("/").text
-    assert html.count('class="card"') == 1 and "Bushtit" in html
+    assert html.count('class="card hero-dup"') == 1 and "Bushtit" in html
 
 
 def nav_of(html: str) -> str:
@@ -1895,3 +1895,14 @@ def test_embed_pages_have_no_keyboard_shortcuts(client, add_visit):
         html = client.get(path).text
         assert 'id="keys-btn"' not in html and 'id="keys-dialog"' not in html and "shortcuts.js" not in html, path
     assert "species-nav.js" not in client.get("/species/Song%20Sparrow?embed=1").text
+
+
+def test_home_marks_only_the_heros_card_as_a_repeat(client, add_visit):
+    assert 'class="card hero-dup"' not in client.get("/").text  # no visits: nothing marked
+    first = add_visit(species="Bushtit")
+    html = client.get("/").text
+    assert html.count('class="card hero-dup"') == 1 and f'hero-dup" href="/visit/{first}"' in html
+    second = add_visit(species="Bushtit")
+    html = client.get("/").text
+    assert html.count('class="card hero-dup"') == 1 and f'hero-dup" href="/visit/{second}"' in html
+    assert 'class="card hero-dup"' not in client.get("/?kind=bird").text  # filtered views have no hero repeat
