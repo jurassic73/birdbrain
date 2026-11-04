@@ -82,7 +82,7 @@
   <section class="vburst" aria-label="Burst">
     <h2 class="vburst-head tip-label">Burst<span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
       <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi animal check learns from.">i</span>
-      <span class="vburst-steps"><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
+      <span class="vburst-steps"><button type="button" class="vburst-step vburst-play" id="vburst-play" aria-pressed="false" aria-label="Play the burst (3 frames a second)" data-tip="Play the burst (3 frames a second)"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path class="vburst-ico-play" d="M2.5 1 L10.5 6 L2.5 11 Z" fill="currentColor"/><rect class="vburst-ico-stop" x="2" y="2" width="8" height="8" fill="currentColor"/></svg></button><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
     <div class="vburst-strip" style="--n: {{ burst | length }}">
       {% for f in burst %}
       <button type="button" class="vburst-frame{% if f.on %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
@@ -948,20 +948,39 @@
       useN.value = frame === null ? 0 : frame;
       useBtn.hidden = frame === null || frame === photoFrame;
     };
-    frames.forEach(b => b.addEventListener("click", () => {
+    const show = b => {
       frames.forEach(o => o.classList.toggle("on", o === b));
       full.src = viewerImg.src = link.href = b.dataset.src;
       const frame = b.dataset.best === "1" ? null : +b.dataset.frame;
       photo.dispatchEvent(new CustomEvent("birdbrain:frame", {detail: {frame}}));
       n.textContent = list.indexOf(b) + 1;
       offer(frame);
-    }));
-    const step = d => list[(shown() + d + list.length) % list.length].click();
-    section.querySelectorAll(".vburst-step").forEach(b => b.addEventListener("click", () => step(+b.dataset.step)));
+    };
+    const step = d => show(list[(shown() + d + list.length) % list.length]);
+    // Play: one frame every 333 ms (3 a second), looping, from the frame shown now. Any manual move stops it.
+    const playBtn = document.getElementById("vburst-play");
+    let timer = null, preloaded = false;
+    const setPlaying = on => {
+      playBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      const t = on ? "Stop" : "Play the burst (3 frames a second)";
+      playBtn.setAttribute("aria-label", t); playBtn.dataset.tip = t;
+    };
+    const stop = () => { if (timer === null) return; clearInterval(timer); timer = null; setPlaying(false); };
+    const play = () => {
+      if (!preloaded) { preloaded = true; list.forEach(o => { new Image().src = o.dataset.src; }); }
+      timer = setInterval(() => step(1), 1000 / 3);
+      setPlaying(true);
+    };
+    playBtn.addEventListener("click", () => timer === null ? play() : stop());
+    frames.forEach(b => b.addEventListener("click", () => { stop(); show(b); }));
+    photo.addEventListener("pointerdown", stop);  // drawing a circle on the photo stops the film
+    document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); });
+    section.querySelectorAll("[data-step]").forEach(b => b.addEventListener("click", () => { stop(); step(+b.dataset.step); }));
     // Inside the burst, the arrow keys step frames (wrapping) and never change visit.
     section.addEventListener("keydown", e => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       e.preventDefault(); e.stopPropagation();
+      stop();
       step(e.key === "ArrowLeft" ? -1 : 1);
     });
     n.textContent = shown() + 1;

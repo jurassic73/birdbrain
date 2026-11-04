@@ -388,8 +388,16 @@ def test_false_trigger_page_shows_its_burst_in_order_and_delete_removes_it(clien
     assert images.burst_paths(image_rel) == []
 
 
+def test_false_trigger_burst_has_a_play_button_left_of_the_arrows(client, burst_visit):
+    vid, _, _ = burst_visit()
+    html = client.get(f"/visit/{vid}").text
+    assert 'id="vburst-play"' in html and 'aria-pressed="false"' in html
+    assert html.index('id="vburst-play"') < html.index('data-step="-1"')
+
+
 def test_burst_arrows_absent_without_a_burst(client, stored_visit):
     vid = stored_visit(visitor="none", species=None)
+    assert 'id="vburst-play"' not in client.get(f"/visit/{vid}").text
     assert 'class="vburst-step"' not in client.get(f"/visit/{vid}").text
 
 
