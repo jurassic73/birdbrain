@@ -1733,7 +1733,9 @@ button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 }
 
 /* Species page photo browser (static/lightbox.js): the photo in a 95% box over a dimmed page. Drawn over photos, so fixed colors. */
-.grid-tools { display: flex; justify-content: flex-end; margin: 0 0 8px; }
+.grid-tools { display: flex; justify-content: space-between; align-items: center; margin: 0 0 8px; }
+.grid-count { color: var(--muted); }
+.grid-count .big { color: var(--text); font-size: 1.2rem; font-weight: 700; }
 button.lb-open { width: 38px; height: 38px; padding: 0; display: grid; place-items: center; background: var(--surface); color: var(--text); border: 1px solid var(--line); }
 button.lb-open:hover { border-color: var(--accent); color: var(--accent); }
 button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -1873,5 +1875,8 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
   .sp-hero-row .sp-photo img { aspect-ratio: 1; max-height: none; }
   .sp-hero-row .sp-photo figcaption { display: none; }
   .sp-hero-id h1 { font-size: 1.3rem; }
-  .sp-tabs .cam-tab { flex: 1; padding: 0 12px; }
+  .sp-tabs { margin-top: 0; margin-bottom: 8px; }
+  .sp-tabs .cam-tab { flex: 1; padding: 0 12px; min-height: 36px; font-size: .95rem; }
+  .sp-panel .grid-tools { margin-bottom: 4px; }
+  .sp-panel button.lb-open { width: 34px; height: 34px; }
 }

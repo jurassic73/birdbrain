@@ -1395,7 +1395,7 @@ def test_visits_paging_ties_and_bad_cursor(client, add_visit, monkeypatch):
 def test_species_page_without_a_card_has_title_facts_and_charts(client, add_visit):
     add_visit(species="Bushtit")
     html = client.get("/species/Bushtit").text
-    assert "<h1>Bushtit</h1>" in html and 'class="facts"' in html and "First seen" in html
+    assert "<h1>Bushtit</h1>" in html and 'class="facts' in html and "First seen" not in html and "grid-count" in html
     assert 'id="daily"' in html and 'id="hourly"' in html
 
 
