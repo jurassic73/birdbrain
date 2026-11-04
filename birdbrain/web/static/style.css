@@ -1632,6 +1632,9 @@ button.se-all { font-weight: 600; }
 .vburst-head { font-size: 1rem; margin: 0 0 6px; display: flex; align-items: baseline; gap: 8px; }
 .vburst-steps { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .vburst-step { min-width: 36px; min-height: 32px; padding: 0 8px; font-size: 1.2rem; line-height: 1; background: var(--surface); color: var(--accent); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.vburst-play { display: inline-flex; align-items: center; justify-content: center; }
+.vburst-play .vburst-ico-stop, .vburst-play[aria-pressed="true"] .vburst-ico-play { display: none; }
+.vburst-play[aria-pressed="true"] .vburst-ico-stop { display: inline; }
 .vburst-count { min-width: 3.2em; text-align: center; white-space: nowrap; }
 /* One row across the photo's width (--n frames, set in the template); phones wrap instead. */
 .vburst-strip { display: grid; grid-template-columns: repeat(var(--n, 6), minmax(0, 1fr)); gap: 6px; }
