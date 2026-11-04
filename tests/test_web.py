@@ -1512,3 +1512,16 @@ def test_home_has_rotate_hint_button_and_popup(client):
     assert 'id="rotate-dialog"' in html and "Try landscape" in html and "Got it" in html
     assert "rotate-hint.js" in html
     assert "—" not in html.split('id="rotate-dialog"')[1].split("</dialog>")[0]
+
+
+def test_theme_color_is_set_before_first_paint_and_matches_css(client):
+    import re
+    from pathlib import Path
+    html = client.get("/").text
+    # the meta exists before the early script, which sets it from the saved theme or the device scheme
+    assert html.index('id="theme-color"') < html.index("window.bbBg")
+    assert 'getElementById("theme-color").content' in html and "prefers-color-scheme: dark" in html
+    css = (Path(__file__).resolve().parent.parent / "birdbrain/web/static/style.css").read_text()
+    assert re.search(r"^html \{ background: var\(--bg\); \}", css, re.M)
+    for name, light, dark in re.findall(r'(\w+): \{ light: "(#\w+)", dark: "(#\w+)" \}', html):
+        assert light in css and dark in css, name

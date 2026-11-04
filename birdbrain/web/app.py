@@ -1966,6 +1966,8 @@ def manifest():
                "purpose": "maskable"} for n in (192, 512)]
     data = {"name": "Birdbrain", "short_name": "Birdbrain", "start_url": site_url("/"), "scope": site_url("/"),
             "display": "standalone", "background_color": "#f6f5f0", "theme_color": "#f6f5f0", "icons": icons}
+    # No per-scheme colors here: Chrome has no reliable key for it. Once a page loads, its own
+    # <meta name="theme-color"> (set from the saved theme before first paint) overrides these.
     return Response(json.dumps(data), media_type="application/manifest+json")
 
 
