@@ -12,7 +12,7 @@
       <span class="tally-n">{{ a.false_alarms }}</span> {% if request.state.admin %}<a class="tally-label" href="/false-triggers">False alarms</a>{% else %}<span class="tally-label">False alarms</span>{% endif %}
     </li>
     {% if presence_mode != 'off' %}
-    <li data-tip="False alarms the Pi's animal check screened out for free"><span class="tally-n">{{ a.kept_on_pi }}</span> <a class="tally-label" href="#presence">Kept on the Pi</a></li>
+    <li data-tip="False alarms the Pi animal check screened out for free"><span class="tally-n">{{ a.kept_on_pi }}</span> <a class="tally-label" href="#presence">Kept on the Pi</a></li>
     {% endif %}
     <li data-tip="Cost {{ a.claude_usd | usd }} today{% if presence_mode == 'shadow' and a.would_keep %}; gate mode would have kept {{ a.would_keep }} on the Pi{% endif %}">
       <span class="tally-n">{{ a.sent_to_claude }}</span> <span class="tally-label">Sent to Claude</span> <span class="tally-why">{{ a.claude_usd | usd }}</span>
@@ -23,7 +23,7 @@
   <ul class="tally-facts">
     <li>{{ (100 * a.visitors / motion) | round | int }}% of today's {{ motion }} motion events were a real animal; the rest were rain, wind, leaves or ripples.</li>
     {% if a.visitors %}<li>Each visitor cost about {{ (a.claude_usd / a.visitors) | usd }} in Claude calls.</li>{% endif %}
-    {% if a.kept_on_pi %}<li>The Pi's animal check settled {{ a.kept_on_pi }} false alarm{{ 's' if a.kept_on_pi != 1 }} on the Pi without asking Claude.</li>{% endif %}
+    {% if a.kept_on_pi %}<li>The Pi animal check settled {{ a.kept_on_pi }} false alarm{{ 's' if a.kept_on_pi != 1 }} on the Pi without asking Claude.</li>{% endif %}
     {% if presence_mode == 'shadow' and a.would_keep %}<li>Gate mode would have kept {{ a.would_keep }} more on the Pi, saving about {{ a.would_keep_usd | usd }}.</li>{% endif %}
   </ul>
   {% endif %}
@@ -53,7 +53,7 @@
 {% set p = presence %}
 {% if presence_mode != 'off' or p.frames %}
 <section class="detector-report" id="presence">
-  <h2>Local animal check <span class="muted">{{ 'gate mode: skips Claude when it judges a frame empty' if presence_mode == 'gate' else 'shadow mode: scoring, Claude still sees everything' }}</span></h2>
+  <h2>Pi animal check <span class="muted">{{ 'gate mode: skips Claude when it judges a frame empty' if presence_mode == 'gate' else 'shadow mode: scoring, Claude still sees everything' }}</span></h2>
   {% if p.frames %}
   <div class="today-stats">
     <div><span class="big">{{ p.visitors }}</span> visitors</div>
@@ -72,7 +72,7 @@
 {% endif %}
 {% if classifier_on or classifier.checked %}
 <section class="detector-report" id="classifier">
-  <h2>Local species classifier <span class="muted">{% if classifier_mode == 'gate' %}gate mode: names sure daytime regulars on the Pi, Claude names the rest{% else %}shadow mode: guesses the species on the Pi, Claude still names every visitor{% endif %}</span></h2>
+  <h2>BioCLIP 2 species check <span class="muted">{% if classifier_mode == 'gate' %}gate mode: names sure daytime regulars on the Pi, Claude names the rest{% else %}shadow mode: guesses the species on the Pi, Claude still names every visitor{% endif %}</span></h2>
   {% if classifier.checked %}
   <div class="today-stats">
     <div><span class="big">{{ (100 * classifier.top1 / classifier.checked) | round | int }}%</span> first guess right ({{ classifier.top1 }}/{{ classifier.checked }})</div>

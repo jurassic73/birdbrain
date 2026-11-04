@@ -201,3 +201,13 @@ def offline_classifier(monkeypatch):
     monkeypatch.setattr(classifier, "_place_failed_at", 0.0)
     monkeypatch.setattr(classifier, "download_model", no_network)
     monkeypatch.setattr(classifier, "fetch_place_species", no_network)
+
+
+@pytest.fixture(autouse=True)
+def viewer_files_in_tmp(monkeypatch, tmp_path_factory):
+    """The guest viewer gate reads its password and invite files from /etc/birdbrain by default. A host that has
+    them (the public mirror) must not leak into tests, so every test starts with both pointed at an empty temp dir.
+    Tests that need a password or invite file set the variables again."""
+    d = tmp_path_factory.mktemp("viewer_etc")
+    monkeypatch.setenv("VIEWER_PASSWORD_FILE", str(d / "viewer.pw"))
+    monkeypatch.setenv("VIEWER_INVITE_FILE", str(d / "viewer.invite"))

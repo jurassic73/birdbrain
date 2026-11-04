@@ -17,8 +17,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, viewer
-from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
+from . import auth, steps, viewer
+from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 log = logging.getLogger("birdbrain.web")
@@ -35,10 +35,31 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def images_dir() -> Path:
+    """The photo folder served as /images. The Pi's site makes it; the public mirror never does. There the push
+    user owns it and every push gives folders and files the group the service reads through (scripts/push_public.sh,
+    README "a public read-only copy"); a folder the service made itself would belong to the service's user and
+    group, with no write for the push user, and stop every push. Until the first push the mirror answers 404 for
+    photos, which is why the mount below doesn't insist on the folder existing."""
+    if not auth.public():
+        config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    return config.IMAGES_DIR
+
+
+class PhotoFiles(StaticFiles):
+    """Static files from a folder that may not exist yet (the mirror before its first push): a photo asked for
+    then is a 404, not an error, and the folder is used as soon as it appears, without a restart."""
+
+    async def check_config(self) -> None:
+        try:
+            await super().check_config()
+        except RuntimeError:  # "directory does not exist": not yet
+            pass
+
+
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
-app.mount("/images", StaticFiles(directory=config.IMAGES_DIR), name="images")
+app.mount("/images", PhotoFiles(directory=images_dir(), check_dir=False), name="images")
 templates = Jinja2Templates(directory=HERE / "templates")
 
 
@@ -50,16 +71,21 @@ async def read_only(request: Request, call_next):
         # with nothing at all): every change is a POST, and the browser tells us where a POST came from.
         return Response("Cross-site requests aren't accepted.", status_code=403)
     try:
-        gated = viewer.enabled() and not viewer.is_open(request.url.path) and not viewer.signed_in(request)
+        gate_on = viewer.enabled()
+        gated = gate_on and not viewer.is_open(request.url.path) and not viewer.signed_in(request)
     except viewer.Unreadable as e:
         # The gate's file is there but can't be read: shut, not open, until someone fixes the permissions.
         log.error("friends & family gate can't be read, refusing everyone: %s", e)
         return Response("Birdbrain is closed for a moment: its sign-in settings can't be read.", status_code=503)
     if gated:
-        # Friends & family gate: nothing past this point for anyone without the guest cookie.
+        # Friends & family gate: nothing past this point for anyone without the guest cookie. The redirect is
+        # never cached: a CDN in front (Cloudflare caches .jpg URLs by default, whatever cookie the request had)
+        # would otherwise keep one cookieless fetch of a photo URL and hand the redirect to every signed-in guest
+        # as that photo, for minutes, which looks like broken images.
         if request.method in ("GET", "HEAD"):
-            return RedirectResponse("/guest-login?" + urlencode({"next": request.url.path}), status_code=303)
-        return Response("Sign in first.", status_code=401)
+            return RedirectResponse("/guest-login?" + urlencode({"next": request.url.path}), status_code=303,
+                                    headers={"Cache-Control": "no-store"})
+        return Response("Sign in first.", status_code=401, headers={"Cache-Control": "no-store"})
     admin = request.state.admin = auth.is_admin(request)
     if clock.stale():
         with db.session() as conn:
@@ -75,7 +101,13 @@ async def read_only(request: Request, call_next):
             return Response("Read-only: log in as admin to change things.", status_code=403)
         if auth.admin_only(path):
             return RedirectResponse("/login?" + urlencode({"next": path}), status_code=303)
-    return await call_next(request)
+    response = await call_next(request)
+    if gate_on and not viewer.is_open(path):
+        # Behind the gate, photos and pages are for signed-in guests only: a shared cache in front must not keep
+        # them (or serve a guest's photo to someone without the cookie). The browser's own cache still may.
+        # Static files stay open and versioned, so they keep whatever caching they had.
+        response.headers.setdefault("Cache-Control", "private")
+    return response
 
 
 # Serving under a path such as somegeek.com/birdbrain/: the proxy strips the prefix on the way in, and this
@@ -85,6 +117,13 @@ _URL_ATTR = re.compile(r'(\s(?:href|src|action|formaction|hx-get|hx-post|data-[a
 # fetch() calls in the page and in static/*.js use "/..." too; this shim prefixes those.
 _FETCH_SHIM = ('<script>window.BB_BASE={base};(()=>{{const f=window.fetch;window.fetch=(u,o)=>f('
                'typeof u==="string"&&u.startsWith("/")&&!u.startsWith("//")?{base}+u:u,o)}})();</script>')
+
+
+def site_url(path: str) -> str:
+    """A site URL as the browser must ask for it: `path` ("/images/...") with the base path in front. The
+    base_path middleware rewrites HTML, but JSON isn't touched, so any route that answers a URL in JSON (for a
+    script to put in an img src or a fetch) builds it with this. BASE is read at call time (tests set it)."""
+    return BASE + path if path.startswith("/") and not path.startswith("//") else path
 
 
 @app.middleware("http")
@@ -187,6 +226,7 @@ templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, short_tim
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
 templates.env.globals["mirror_status"] = privacy.visit_status
 templates.env.globals["has_card"] = species_info.has_card
+templates.env.globals["steps_bottom"] = steps.bottom_line
 templates.env.globals["season_badge"] = species_info.visit_badge
 templates.env.globals["short_status"] = species_info.short_status
 # Cards show the visit's photo (the burst frame the owner picked, else the one Claude saw) with the circles drawn
@@ -507,13 +547,15 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
     prev_id, next_id = db.get_neighbors(conn, visit_id, false_triggers=is_ft, unchecked=todo, species=scope or None)
     # The arrow targets' photos, prefetched so stepping through visits paints without a blank frame.
     neighbor_images = [db.photo_rel(v) for v in (db.get_visit(conn, i) for i in (prev_id, next_id) if i) if v]
+    decision = decision_steps(visit["raw_json"])
+    teaches = presence.teaches(conn, visit_id) if request.state.admin else None
     return page(
         request,
         "visit.html",
         visit=visit,
         visitors=db.VISITORS,
         species_kinds=db.species_kinds(conn),
-        decision=decision_steps(visit["raw_json"]),
+        decision=decision,
         marks=start_marks(visit),
         prev_id=prev_id,
         next_id=next_id,
@@ -525,10 +567,22 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         burst=burst_frames(visit),
         claude_frame=db.claude_frame(visit["raw_json"]),
         photo_frame=db.photo_frame(visit),
-        teaches=presence.teaches(conn, visit_id) if request.state.admin else None,
+        teaches=teaches,
+        weight=f"{presence.CONFIRMED_WEIGHT:g}",
+        lesson_limit=db.LESSON_LIMIT,
+        trains=photo_trains(conn, visit, decision, teaches) if request.state.admin else None,
         vzones=visit_zones(visit, conn),
         pi_average=db.pi_check_average(conn),
     )
+
+
+def photo_trains(conn, visit, decision: dict, teaches: dict | None) -> list[dict]:
+    """The visit page's "What this photo trains": the four components and what this photo does to each (steps.py)."""
+    lesson = None
+    if any(visit[k] is not None for k in ("corrected_visitor", "corrected_species", "feedback", "corrected_also")):
+        lesson = next((l for l in db.all_lessons(conn) if l["visit_id"] == visit["id"]), None)
+    return steps.for_visit(visit, decision, teaches, lesson, db.settled_species(conn),
+                           visit["corrected_visitor"] or visit["visitor"], config.CLASSIFIER)
 
 
 def burst_frames(visit) -> list[dict]:
@@ -583,7 +637,7 @@ FIRED = {"rim": "the rim and rocks", "water": "the open water", "ground": "the g
 
 
 def visit_zones(visit, conn) -> dict | None:
-    """What the visit photo draws over itself: the crop box the Pi's animal check and Claude looked at, and the
+    """What the visit photo draws over itself: the crop box the Pi animal check and Claude looked at, and the
     zone whose motion fired the capture, each in its Settings color. `source` says whose zones: stored with the
     photo (since 2026-11-01), rebuilt from the calibration history at the time, or today's."""
     try:
@@ -690,7 +744,7 @@ def decision_steps(raw_json: str | None) -> dict:
     pres = calls.get("presence")
     if pres and pres.get("score") is not None:
         steps.append({
-            "model": "Local animal check",
+            "model": "Pi animal check",
             "presence": True,
             "said": "nothing there" if pres.get("empty") else "an animal",
             "score": pres["score"],
@@ -733,7 +787,7 @@ def decision_steps(raw_json: str | None) -> dict:
     guess = calls.get("classifier")
     if guess and guess.get("top") is not None:
         steps.append({
-            "model": "Local classifier",
+            "model": "BioCLIP 2 species check",
             "shadow": True,
             "gated": calls.get("settled_by") == "classifier",
             "crowd": calls.get("gate_crowd"),
@@ -875,7 +929,8 @@ async def check_circle(visit_id: int, source: str, marks: str = Form(""), conn=D
             loop.call_later(circle_check.IDLE + 1, circle_check.release_if_idle)
         else:
             entry = await asyncio.to_thread(circle_check.ask_claude, conn, source, jpeg, circle,
-                                            datetime.fromisoformat(v["captured_at"]), circle_check.frame_size(jpeg))
+                                            datetime.fromisoformat(v["captured_at"]), circle_check.frame_size(jpeg),
+                                            bool(v["is_night"]))
     except Exception as e:
         if source == "pi":
             db.record_pi_check(conn, time.monotonic() - started, ok=False, visit_id=visit_id)
@@ -1037,7 +1092,7 @@ def _compare_photo(v, name: str) -> dict:
     marks = [m for m in start_marks(v) if not db.mark_frame(m)]
     mark = next((m for m in marks if m.get("label") == name), None) or next((m for m in marks if not m.get("label")), None) \
         or (marks[0] if marks else None)
-    return {"id": v["id"], "src": "/images/" + db.photo_rel(v), "when": nice_time(v["captured_at"]),
+    return {"id": v["id"], "src": site_url("/images/" + db.photo_rel(v)), "when": nice_time(v["captured_at"]),
             "mark": {k: mark[k] for k in ("x", "y", "r")} if mark else None}
 
 
@@ -1175,70 +1230,30 @@ def zone_colors(z: zones.Zones) -> dict:
     return {"colors": colors, "spot_colors": spots}
 
 
-def backoff_steps() -> list[int]:
-    """Seconds waited after each false trigger in a row, until the cap."""
-    steps = []
-    while len(steps) < 8 and (not steps or steps[-1] < config.COOLDOWN_NONE_MAX):
-        steps.append(config.false_trigger_wait(len(steps) + 1))
-    return steps
-
-
-# Illustration for the season badges when no cached card has a clear season yet: a summer visitor's reports.
-EXAMPLE_COUNTS = [0, 0, 1, 6, 48, 90, 100, 74, 28, 4, 0, 0]
-
-
-def season_example(cards: dict[str, dict]) -> dict:
-    """A species card with a distinct season (or the illustration) and the badge each month would get."""
-    name, counts, expected = None, EXAMPLE_COUNTS, species_info.local_status(EXAMPLE_COUNTS)[1]
-    for label in sorted(cards):
-        card = cards[label]
-        if card.get("local_counts") and 3 <= len(card.get("expected_months") or []) <= 9:
-            name, counts, expected = label, card["local_counts"], card["expected_months"]
-            break
-    info = {"local_counts": counts, "expected_months": expected}
-    peak = max(counts) or 1
-    months = [{"name": species_info.MONTHS[m - 1], "pct": round(100 * n / peak), "expected": m in expected,
-               "badge": species_info.season_badge(info, m)} for m, n in enumerate(counts, 1)]
-    return {"name": name, "months": months, "status": species_info.local_status(counts)[0]}
-
-
 @app.get("/about", response_class=HTMLResponse)
 def about(request: Request, conn=Depends(get_conn)):
-    cards = species_info.cached_cards()
+    """The 10,000-foot view: live values only where the page states a rule or a setting."""
     return page(
         request,
         "about.html",
         cfg=config,
-        totals=db.totals(conn),
-        rate=db.capture_rate(conn),
         zones=zone_shapes(zones.load(conn)),
         recal=zones.schedule(conn),
         recal_stored=zones.stored(conn) is not None,
         has_frame=_live["jpeg"] is not None or live_file().exists(),
-        backoff=backoff_steps(),
         classifier_mode=config.CLASSIFIER,
-        classifier=db.classifier_report(conn),
-        presence=db.presence_report(conn),
         presence_mode=presence.mode(conn),
-        presence_min=(presence.MIN_VISITORS, presence.MIN_EMPTY),
         haiku=identify.HAIKU,
         sonnet=identify.SONNET,
-        lessons=len(db.recent_lessons(conn)),
-        note_limit=db.NOTE_LIMIT,
+        four=steps.components(),
+        weight=f"{presence.CONFIRMED_WEIGHT:g}",
         lesson_limit=db.LESSON_LIMIT,
         auto_every=lessons.AUTO_EVERY,
         confirmed_min=db.CONFIRMED_MIN,
         site=db.prompt_site(conn),
         avg_call=db.avg_haiku_call_usd(conn),
         alerts=alert.get_settings(conn),
-        cards=len(cards),
-        season=season_example(cards),
-        expected_pct=round(species_info.EXPECTED_SHARE * 100),
         card_days=species_info.REFRESH_AFTER.days,
-        local_km=species_info.LOCAL_KM,
-        nearby_km=species_info.NEARBY_KM,
-        min_hours=db.MIN_HOURS,
-        min_like_today=db.MIN_LIKE_TODAY,
         **storage_context(conn),
     )
 
@@ -1525,6 +1540,7 @@ def false_triggers(request: Request, cleared: int | None = None, confirmed: int 
         confirmed=confirmed,
         unchecked=db.count_unchecked_false_triggers(conn),
         ft_cards=True,
+        four=steps.components(),
     )
 
 
@@ -1566,13 +1582,15 @@ def clean_false_triggers(conn=Depends(get_conn)):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, pruned: int | None = None, limits_error: str = "", limits_saved: bool = False,
                   alerts_saved: bool = False, alerts_test: str = "", zones_saved: bool = False, presence_saved: bool = False,
-                  conn=Depends(get_conn)):
+                  mirror_saved: bool = False, conn=Depends(get_conn)):
     storage = retention.usage(conn)
     limit = storage["limit_bytes"] / 1e6
     return page(
         request,
         "settings.html",
         pruned=pruned,
+        mirror_saved=mirror_saved,
+        mirror_owner_checks=mirror.owner_checks_shared(conn),
         presence_saved=presence_saved,
         presence_mode=presence.mode(conn),
         presence_report=db.presence_report(conn),
@@ -1635,6 +1653,13 @@ def save_alerts(
         quiet_end=ntfy_quiet_end,
     )
     return RedirectResponse("/settings?alerts_saved=1#alerts", status_code=303)
+
+
+@app.post("/settings/mirror")
+def save_mirror(owner_checks: str | None = Form(None), conn=Depends(get_conn)):
+    """Settings > Public mirror: whether the owner's circle checks go with the next push (birdbrain.mirror)."""
+    db.set_value(conn, mirror.OWNER_CHECKS_KEY, "1" if owner_checks is not None else "0")
+    return RedirectResponse("/settings?mirror_saved=1#mirror", status_code=303)
 
 
 @app.post("/settings/storage")
@@ -1921,14 +1946,14 @@ def latest_visit(request: Request, conn=Depends(get_conn)):
 @app.get("/manifest.webmanifest", include_in_schema=False)
 def manifest():
     """Web app manifest: lets Android use a maskable icon (a full-bleed square it can crop to a circle) when
-    the site is added to the home screen. JSON isn't rewritten by the base_path middleware, so add BASE here."""
-    st = f"{BASE}/static"
+    the site is added to the home screen. JSON isn't rewritten by the base_path middleware, so site_url()."""
+    st = site_url("/static")
     v = templates.env.globals["asset_version"]
     icons = [{"src": f"{st}/icon-{n}.png?v={v}", "sizes": f"{n}x{n}", "type": "image/png", "purpose": "any"}
              for n in (192, 512)]
     icons += [{"src": f"{st}/icon-maskable-{n}.png?v={v}", "sizes": f"{n}x{n}", "type": "image/png",
                "purpose": "maskable"} for n in (192, 512)]
-    data = {"name": "Birdbrain", "short_name": "Birdbrain", "start_url": f"{BASE}/", "scope": f"{BASE}/",
+    data = {"name": "Birdbrain", "short_name": "Birdbrain", "start_url": site_url("/"), "scope": site_url("/"),
             "display": "standalone", "background_color": "#f6f5f0", "theme_color": "#f6f5f0", "icons": icons}
     return Response(json.dumps(data), media_type="application/manifest+json")
 

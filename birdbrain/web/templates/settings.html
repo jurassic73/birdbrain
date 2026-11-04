@@ -64,20 +64,20 @@
 </details>
 
 <details class="settings-card" id="local" open>
-  <summary><h2>Local checks</h2><span class="summary-hint">Animal check {{ presence_mode }}, species guess {{ classifier_mode if classifier_on else 'off' }}</span></summary>
+  <summary><h2>Pi checks</h2><span class="summary-hint">Pi animal check {{ presence_mode }}, BioCLIP 2 species check {{ classifier_mode if classifier_on else 'off' }}</span></summary>
   <div class="settings-body">
   {% if presence_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
-  <p class="muted">The Pi checks every photo first; Claude is asked only when it can't settle it.</p>
+  <p class="muted">The Pi checks every photo first; Claude is asked only when the Pi animal check and the BioCLIP 2 species check cannot settle the visit.</p>
   {% set a = activity %}
   <ol class="local-flow" aria-label="Today's photos, step by step">
     <li class="where-pi" data-tip="Motion events today: visitors plus false alarms"><span class="big">{{ a.visitors + a.false_alarms }}</span> photos today</li>
-    <li class="where-pi" data-tip="Judged empty by the animal check and never sent to Claude"><span class="big">{{ a.kept_on_pi }}</span> kept on the Pi</li>
+    <li class="where-pi" data-tip="Judged empty by the Pi animal check and never sent to Claude"><span class="big">{{ a.kept_on_pi }}</span> kept on the Pi</li>
     <li class="where-claude" data-tip="Cost {{ a.claude_usd | usd }} today"><span class="big">{{ a.sent_to_claude }}</span> sent to Claude</li>
   </ol>
 
   <section class="local-step" id="presence">
-    <h3><span class="step-n">1</span> Anything there? {{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') if presence_mode != 'off' }}</h3>
-    <p class="muted small">BioCLIP 2 on the Pi, trained on this yard's own frames: your corrections and checks teach it. Day and night, rainy-day probes too.</p>
+    <h3><span class="step-n">1</span> Pi animal check <span class="muted">(Anything there?)</span> {{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') if presence_mode != 'off' }}</h3>
+    <p class="muted small">The Pi animal check uses BioCLIP 2 on the Pi and is trained on this yard's own frames: your corrections and checks teach the Pi animal check. It runs day and night, rainy-day probes too.</p>
     {% set p = presence_report %}
     {% if p.frames %}
     <div class="today-stats detector-stats">
@@ -98,22 +98,22 @@
         </label>
         {% endfor %}
       </div>
-      <p class="advice">In gate mode, frames it skips are kept as false triggers marked {{ badge("pi only", "pi-only") }}: check them on <a href="/false-triggers">False triggers</a> and correct any with an animal.</p>
+      <p class="advice">In gate mode, frames the Pi animal check skips are kept as false triggers marked {{ badge("pi only", "pi-only") }}: check them on <a href="/false-triggers">False triggers</a> and correct any with an animal.</p>
       <div class="actions"><button type="submit">Save</button></div>
     </form>
   </section>
 
   <section class="local-step" id="classifier">
-    <h3><span class="step-n">2</span> What species? {% if not classifier_on %}{{ badge('off', '') }}{% elif classifier_mode == 'gate' %}{{ badge('pi named', 'pi-only') }}{% else %}{{ badge('shadow', 'shadow') }}{% endif %}</h3>
+    <h3><span class="step-n">2</span> BioCLIP 2 species check <span class="muted">(What species?)</span> {% if not classifier_on %}{{ badge('off', '') }}{% elif classifier_mode == 'gate' %}{{ badge('pi named', 'pi-only') }}{% else %}{{ badge('shadow', 'shadow') }}{% endif %}</h3>
     {% set c = classifier %}
-    <p class="muted small">BioCLIP 2 guesses the species on the Pi and records it; Claude's name still stands.
+    <p class="muted small">The BioCLIP 2 species check guesses the species on the Pi and records the guess; Claude's name still stands unless the BioCLIP 2 species check is in gate mode and sure. The BioCLIP 2 species check is not trained.
       {% if c.checked %}First guess right {{ c.top1 }}/{{ c.checked }}, within its top 3 {{ c.top3 }}/{{ c.checked }}. <a href="/stats#classifier">Details</a>{% endif %}
       {% if not classifier_on %}Switched off with <code>CLASSIFIER=off</code> in <code>.env</code>.{% endif %}</p>
   </section>
 
   <section class="local-step" id="claude-step">
-    <h3><span class="step-n claude">3</span> Ask Claude</h3>
-    <p class="muted small">Whatever the Pi doesn't settle goes to Haiku; anything short of high confidence (a doubtful "nothing there" included) goes to Sonnet with 3 frames; still unsure lands in the <a href="/review">review queue</a>.</p>
+    <h3><span class="step-n claude">3</span> Claude</h3>
+    <p class="muted small">Whatever the Pi animal check and the BioCLIP 2 species check do not settle goes to Haiku; anything short of high confidence (a doubtful "nothing there" included) goes to Sonnet with 3 frames; still unsure lands in the <a href="/review">review queue</a>.</p>
   </section>
   </div>
 </details>
@@ -267,6 +267,29 @@
     </div>
     {% if alerts_test == 'sent' %}<p class="notice saved">Test sent. Check your phone.</p>{% endif %}
     {% if alerts_test == 'no_topic' %}<p class="notice">Enter a topic first.</p>{% endif %}
+  </form>
+  </div>
+</details>
+
+<details class="settings-card" id="mirror" open>
+  <summary><h2>Public mirror</h2><span class="summary-hint">{{ 'Circle checks shared' if mirror_owner_checks else 'Circle checks kept here' }}</span></summary>
+  <div class="settings-body">
+  {% if mirror_saved %}<p class="notice saved">Saved. The next push to the mirror carries the change.</p>{% endif %}
+  <p class="muted">What the read-only public copy gets, if one is set up (<code>scripts/push_public.sh</code>). Your notes for Claude, alert topics and the Pi's training data never go.</p>
+
+  <form class="settings-form" method="post" action="/settings/mirror">
+    <fieldset class="field">
+      <legend class="tip-label">Share <span class="info-tip" tabindex="0" aria-label="About sharing circle checks" data-tip="Shares your circles and the answers to Ask BioCLIP 2, Ask Haiku and Ask Sonnet, listed under How it was decided on the visit page. Your notes are never shared. Off: the checks stay on the Pi from the next push on.">i</span></legend>
+      <div class="choices">
+        <label class="choice">
+          <input type="checkbox" name="owner_checks" value="1" {% if mirror_owner_checks %}checked{% endif %}>
+          <span>Show my circle checks on the public mirror <small>Ask BioCLIP 2, Haiku and Sonnet answers</small></span>
+        </label>
+      </div>
+    </fieldset>
+    <div class="actions">
+      <button type="submit">Save</button>
+    </div>
   </form>
   </div>
 </details>

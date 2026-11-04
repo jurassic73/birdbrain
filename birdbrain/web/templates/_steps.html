@@ -1,0 +1,51 @@
+{# The four components a photo passes through (web/steps.py): the same words on False triggers, About and a visit's
+   page. Option B, strips: a pill and one or two sentences each, the detail under More. Option A, flow: numbered cards
+   (About) with the one-line short each; what it does, training and controls under More. #}
+{% from "_macros.html" import badge %}
+
+{% macro strips(items, open=False, bottom=True) -%}
+<div class="hs-strips">
+  {% for s in items %}
+  <div class="hs-strip" id="step-{{ s.n }}">
+    <div class="hs-head"><span class="hs-who"><span class="hs-n">{{ s.n }}</span>{{ s.name }}</span>{{ badge(s.pill[0], s.pill[1]) }}</div>
+    <p>{{ s.short | safe }}</p>
+    <details{% if open %} open{% endif %}><summary>More</summary><div class="hs-more">
+      <div class="hs-lab">What the {{ s.name }} does</div>{{ s.does | safe }}
+      <div class="hs-lab">How the {{ s.name }} is trained</div>{{ s.train | safe }}
+      <div class="hs-lab">What you control</div>{{ s.control | safe }}
+    </div></details>
+  </div>
+  {% endfor %}
+</div>
+{% if bottom %}<p class="hs-bottom">{{ steps_bottom() }}</p>{% endif %}
+{%- endmacro %}
+
+{% macro flow(items) -%}
+<div class="hs-flow">
+  {% for s in items %}
+  <div class="hs-step" id="step-{{ s.n }}"><div class="hs-num">{{ s.n }}</div><div>
+    <h3>{{ s.name }} <span class="hs-q">{% if s.n == 4 %}&middot; (the easy button){% else %}&middot; &ldquo;{{ s.question }}&rdquo;{% endif %}</span> {{ badge(s.pill[0], s.pill[1]) }}</h3>
+    <p>{{ s.short | safe }}</p>
+    <details><summary>More</summary><div class="hs-more">
+      <div class="hs-lab">What the {{ s.name }} does</div>{{ s.does | safe }}
+      <div class="hs-lab">How the {{ s.name }} is trained</div>{{ s.train | safe }}
+      <div class="hs-lab">What you control</div>{{ s.control | safe }}
+    </div></details>
+  </div></div>
+  {% if s.next %}<div class="hs-conn"><span>{{ s.next }}</span></div>{% endif %}
+  {% endfor %}
+</div>
+<p class="hs-bottom">{{ steps_bottom() }}</p>
+{%- endmacro %}
+
+{# One photo's real state (steps.for_visit): a strip each, no More. #}
+{% macro photo_strips(rows) -%}
+<div class="hs-strips">
+  {% for s in rows %}
+  <div class="hs-strip">
+    <div class="hs-head"><span class="hs-who"><span class="hs-n">{{ s.n }}</span>{{ s.name }}</span>{{ badge(s.pill[0], s.pill[1]) }}</div>
+    <p>{{ s.body | safe }}</p>
+  </div>
+  {% endfor %}
+</div>
+{%- endmacro %}

@@ -2,24 +2,22 @@
 {% block title %}About | Birdbrain{% endblock %}
 {% block content %}
 {% from "_macros.html" import badge, zone_svg %}
-{# Keep this page current: any change to a feature, zone, detection rule, model step or outside source updates it. #}
+{% import "_steps.html" as steps_ui %}
+{# Keep this page current: any change to a feature, zone, detection rule, model step or outside source updates it.
+   It's the 10,000-foot view: a sentence or two per idea, live values from config and settings, details in the tips
+   and on the pages it links to. #}
 {% macro pct(v) %}{{ '%g' | format((v * 100) | round(2)) }}{% endmacro %}
 <div class="about">
 
 <header class="about-intro">
   <h1>How Birdbrain works</h1>
-  {% if cfg.REPO_URL %}<p class="about-repo"><a href="{{ cfg.REPO_URL }}" rel="noopener" data-tip="Birdbrain is open source: the code, the setup guide and the model files">Source code on GitHub ↗</a></p>{% endif %}
   <p>A camera watches the birdbath. A Raspberry Pi at home spots movement, snaps a burst of photos, and works out who came
     to visit, asking Claude only when it can't tell on its own.</p>
-  {% macro secs(n) %}{{ '%.1f' | format(n / cfg.SUB_FPS) }} s{% endmacro %}
-  <p class="about-cadence"><strong>How often it looks:</strong> every frame of the camera's small video stream,
-    <strong>{{ cfg.SUB_FPS }} times a second</strong>, day and night.
-    <span data-tip="Rim: {{ cfg.TRIGGER_FRAMES }} frames in a row (about {{ secs(cfg.TRIGGER_FRAMES) }}).{% if cfg.WATER_WATCH and zones.water %} Open water: {{ cfg.WATER_PERSIST_FRAMES }} (about {{ secs(cfg.WATER_PERSIST_FRAMES) }}).{% endif %}{% if zones.ground %} Ground: {{ cfg.GROUND_PERSIST_FRAMES }} (about {{ secs(cfg.GROUND_PERSIST_FRAMES) }}).{% endif %} The models only run after that.">Movement has to last a fraction of a second</span>
-    before it takes full-size photos and checks what's there.</p>
+  <p class="muted small">It checks the camera's small video stream {{ cfg.SUB_FPS }} times a second, day and night;
+    movement has to last a fraction of a second before anything else runs.</p>
   <nav class="chips about-toc" aria-label="On this page">
-    <a href="#flow">How it works</a><a href="#network">Network path</a>{% if totals.events or rate.photos %}<a href="#numbers">Numbers</a>{% endif %}<a href="#zones">Zones</a><a href="#rules">Detection rules</a><a href="#burst">Photos</a>
-    <a href="#local">Local model</a><a href="#claude">Claude</a><a href="#learning">Learning</a>
-    <a href="#sources">Outside sources</a><a href="#storage">Storage</a><a href="#seasons">Seasons and alerts</a><a href="#stack">Under the hood</a>
+    <a href="#flow">How it works</a><a href="#handled">Four steps</a><a href="#network">Network path</a><a href="#zones">Zones</a><a href="#rules">Detection rules</a>
+    <a href="#photos">Photos to Claude</a><a href="#learning">Learning</a><a href="#sources">Outside sources</a><a href="#storage">Storage</a><a href="#stack">Under the hood</a>
   </nav>
 </header>
 
@@ -45,53 +43,34 @@
 
 {% if login_on() %}<p class="muted small">Anyone can browse this site. Corrections, settings and anything that asks Claude need the admin login (the Admin button at the top).</p>{% endif %}
 
-
 {# ---------- 1. The pipeline at a glance ---------- #}
 <section class="about-section" id="flow">
   <h2>How a visit gets spotted, identified and shared here</h2>
   <ol class="flow">
-    <li class="flow-step where-cam">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/></svg>
-      <strong>Camera</strong><small>A small stream for watching, a full-size one for photos</small>
-    </li>
-    <li class="flow-step where-pi">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c3-6 5-6 7 0s4 6 6 0 4-6 7 0"/></svg>
-      <strong>Motion zones</strong><small>Rim, rocks and open water{{ ', plus the ground around the bath' if zones.ground }}, each with its own rule</small>
-    </li>
-    <li class="flow-step where-pi">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v14M16 5v14"/></svg>
-      <strong>Photo burst</strong><small>{{ cfg.BURST_FRAMES }} photos, the sharpest one wins</small>
-    </li>
+    <li class="flow-step where-cam"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="4"/></svg>
+      <strong>Camera</strong><small>A small stream for watching, a full-size one for photos</small></li>
+    <li class="flow-step where-pi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12c3-6 5-6 7 0s4 6 6 0 4-6 7 0"/></svg>
+      <strong>Motion detector</strong><small>Watches the rim, rocks and open water{{ ', plus the ground around the bath' if zones.ground }}, each with its own rule</small></li>
+    <li class="flow-step where-pi"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v14M16 5v14"/></svg>
+      <strong>Photo burst</strong><small>{{ cfg.BURST_FRAMES }} photos, the sharpest one wins</small></li>
     {% if presence_mode != 'off' %}
-    <li class="flow-step where-pi{% if presence_mode == 'shadow' %} shadow{% endif %}">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
-      <strong><a href="#presence">Anything there?</a></strong><small>{% if presence_mode == 'gate' %}Frames the Pi judges empty skip Claude and wait for your check{% else %}The Pi judges empty or not; only scored for now{% endif %}</small>
-    </li>
+    <li class="flow-step where-pi{% if presence_mode == 'shadow' %} shadow{% endif %}"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>
+      <strong><a href="#step-2">Pi animal check</a></strong><small>{% if presence_mode == 'gate' %}Photos it judges empty skip Claude and wait for your check{% else %}Judges empty or not; only scored for now{% endif %}</small></li>
     {% endif %}
     {% if classifier_mode == 'gate' %}
-    <li class="flow-step where-pi">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c3-1 5-4 9-4 3 0 5 2 7 2l-3 3c-2 0-3 3-7 3-3 0-5-2-6-4z"/><circle cx="15" cy="11.5" r=".6"/><path d="M8 18l-1 3M11 18l1 3"/></svg>
-      <strong><a href="#classifier">Species guess</a></strong><small>By day, a sure guess of a regular names it without Claude</small>
-    </li>
+    <li class="flow-step where-pi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c3-1 5-4 9-4 3 0 5 2 7 2l-3 3c-2 0-3 3-7 3-3 0-5-2-6-4z"/><circle cx="15" cy="11.5" r=".6"/><path d="M8 18l-1 3M11 18l1 3"/></svg>
+      <strong><a href="#step-3">BioCLIP 2 species check</a></strong><small>By day, a sure guess of a regular names it without Claude</small></li>
     {% endif %}
-    <li class="flow-step where-cloud">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/></svg>
-      <strong>Claude Haiku</strong><small>Names the visitor</small>
-    </li>
-    <li class="flow-step where-cloud">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
-      <strong>Claude Sonnet</strong><small>A second look when Haiku isn't sure</small>
-    </li>
+    <li class="flow-step where-cloud"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/></svg>
+      <strong>Claude Haiku</strong><small>Names the visitor</small></li>
+    <li class="flow-step where-cloud"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <strong>Claude Sonnet</strong><small>A second look when Haiku isn't sure</small></li>
     {% if classifier_mode == 'shadow' %}
-    <li class="flow-step where-pi shadow">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c3-1 5-4 9-4 3 0 5 2 7 2l-3 3c-2 0-3 3-7 3-3 0-5-2-6-4z"/><circle cx="15" cy="11.5" r=".6"/><path d="M8 18l-1 3M11 18l1 3"/></svg>
-      <strong><a href="#classifier">Species guess</a></strong><small>The Pi's own guess, only scored for now</small>
-    </li>
+    <li class="flow-step where-pi shadow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c3-1 5-4 9-4 3 0 5 2 7 2l-3 3c-2 0-3 3-7 3-3 0-5-2-6-4z"/><circle cx="15" cy="11.5" r=".6"/><path d="M8 18l-1 3M11 18l1 3"/></svg>
+      <strong><a href="#step-3">BioCLIP 2 species check</a></strong><small>Guesses on the Pi, only scored for now</small></li>
     {% endif %}
-    <li class="flow-step where-you">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 5-7 8-7s7 2 8 7"/></svg>
-      <strong>You</strong><small>Gallery, phone alerts, and the review queue when it's still unsure</small>
-    </li>
+    <li class="flow-step where-you"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-5 5-7 8-7s7 2 8 7"/></svg>
+      <strong>You</strong><small>Gallery, phone alerts, and the review queue when it's still unsure</small></li>
   </ol>
   <p class="flow-legend">
     <span class="where where-cam">Camera</span><span class="where where-pi">On the Pi at home</span>
@@ -99,38 +78,31 @@
   </p>
 </section>
 
-{# ---------- 1b. The hardware path ---------- #}
+{# ---------- 2. The four components, in the order a photo meets them (web/steps.py) ---------- #}
+<section class="about-section" id="handled">
+  <h2>How a photo is handled</h2>
+  <p>Four components, in this order, named the same way everywhere on this site. More under each: what it does, how it is trained, what you control.</p>
+  {{ steps_ui.flow(four) }}
+</section>
+
+{# ---------- 3. The hardware path ---------- #}
 <section class="about-section" id="network">
   <h2>The network path, from the bird to you</h2>
   <ol class="flow">
-    <li class="flow-step where-cam">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h18c0 4-4 6-9 6s-9-2-9-6z"/><path d="M12 16v4M8 21h8"/><path d="M14 7c1-2 3-2 4-1-1 0-2 1-2 2h-2z"/></svg>
-      <strong>The birdbath</strong><small>Birds land on the rim and the rocks; critters pass by on the ground</small>
-    </li>
-    <li class="flow-step where-cam">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="12" rx="2"/><circle cx="12" cy="9" r="3"/><path d="M12 15v3M8 21h8l-1-3H9z"/></svg>
-      <strong>Wyze Cam v3</strong><small>Open-source Thingino firmware; infrared after dark</small>
-    </li>
-    <li class="flow-step where-net">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1"/></svg>
-      <strong>Wi-Fi</strong><small>Two video streams: a small one for watching, a full-size one for photos</small>
-    </li>
-    <li class="flow-step where-net">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M8 13l-2-8M16 13l2-8"/></svg>
-      <strong>Home router</strong><small>Keeps the camera on the home network, never open to the internet</small>
-    </li>
-    <li class="flow-step where-pi">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
-      <strong>Raspberry Pi 4</strong><small>Watches for motion, takes the photos, runs the local checks, stores everything and serves this site</small>
-    </li>
-    <li class="flow-step where-cloud">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.5-10 6 6 0 0 1 11.5 2 4 4 0 0 1-.5 8z"/></svg>
-      <strong>Claude</strong><small>Only the hard photos go out, to name the visitor</small>
-    </li>
-    <li class="flow-step where-you">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
-      <strong>You</strong><small>This gallery on any screen, plus phone alerts</small>
-    </li>
+    <li class="flow-step where-cam"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h18c0 4-4 6-9 6s-9-2-9-6z"/><path d="M12 16v4M8 21h8"/><path d="M14 7c1-2 3-2 4-1-1 0-2 1-2 2h-2z"/></svg>
+      <strong>The birdbath</strong><small>Birds land on the rim and the rocks; critters pass by on the ground</small></li>
+    <li class="flow-step where-cam"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="12" rx="2"/><circle cx="12" cy="9" r="3"/><path d="M12 15v3M8 21h8l-1-3H9z"/></svg>
+      <strong>Wyze Cam v3</strong><small>Open-source Thingino firmware; infrared after dark</small></li>
+    <li class="flow-step where-net"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1"/></svg>
+      <strong>Wi-Fi</strong><small>Two video streams: a small one for watching, a full-size one for photos</small></li>
+    <li class="flow-step where-net"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 16.5h.01M11 16.5h.01M8 13l-2-8M16 13l2-8"/></svg>
+      <strong>Home router</strong><small>Keeps the camera on the home network, never open to the internet</small></li>
+    <li class="flow-step where-pi"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M1 9h3M1 15h3M20 9h3M20 15h3"/></svg>
+      <strong>Raspberry Pi 4</strong><small>Watches for motion, takes the photos, runs the Pi checks, stores everything and serves this site</small></li>
+    <li class="flow-step where-cloud"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.5-10 6 6 0 0 1 11.5 2 4 4 0 0 1-.5 8z"/></svg>
+      <strong>Claude</strong><small>Only the hard photos go out, to name the visitor</small></li>
+    <li class="flow-step where-you"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>
+      <strong>You</strong><small>This gallery on any screen, plus phone alerts</small></li>
   </ol>
   <p class="flow-legend">
     <span class="where where-cam">In the yard</span><span class="where where-net">Home network</span>
@@ -138,39 +110,7 @@
   </p>
 </section>
 
-{# ---------- 1c. By the numbers ---------- #}
-{% if totals.events or rate.photos %}
-<section class="about-section" id="numbers">
-  <h2>By the numbers</h2>
-{% if totals.events %}
-<div class="about-numbers" aria-label="By the numbers">
-  <div><span class="big">{{ '{:,}'.format(totals.events) }}</span> motion events checked</div>
-  <div><span class="big">{{ '{:,}'.format(totals.visitors) }}</span> real visitors</div>
-  <div><span class="big">{{ totals.species }}</span> species and mammals</div>
-  <div><span class="big">{{ '{:,}'.format(totals.false_alarms) }}</span> false alarms caught</div>
-  <div><span class="big">{{ '{:,}'.format(totals.kept_on_pi) }}</span> settled on the Pi, free</div>
-  <div><span class="big">{{ '$%.2f' | format(totals.claude_usd) if totals.claude_usd >= 0.01 or not totals.claude_usd else '< 1¢' }}</span> spent on Claude</div>
-  <p class="muted small">Since {{ totals.since | nice_date }}.</p>
-</div>
-{% endif %}
-{% if rate.photos %}
-{% macro per_day(x) %}{{ '%d' | format(x | round) if x >= 10 else '%.1f' | format(x) }}{% endmacro %}
-<h3 class="about-rate-title">How often visitors come</h3>
-<div class="about-numbers about-rate" aria-label="How often visitors come">
-  <div data-tip="Every photo kept, real visitors and false alarms, averaged over the last {{ rate.recent_days }} day{{ 's' if rate.recent_days != 1 }}. Quiet days count as zero."><span class="big">{{ per_day(rate.photos_per_day) }}</span> photos a day lately</div>
-  <div data-tip="Photos with a real animal in them, averaged over the last {{ rate.recent_days }} day{{ 's' if rate.recent_days != 1 }}."><span class="big">{{ per_day(rate.visitors_per_day) }}</span> visitors a day lately</div>
-  <div data-tip="Every photo kept since the first one, per calendar day."><span class="big">{{ per_day(rate.all_photos_per_day) }}</span> photos a day, all time</div>
-  <div data-tip="Real visitors since the first one, per calendar day."><span class="big">{{ per_day(rate.all_visitors_per_day) }}</span> visitors a day, all time</div>
-  <div data-tip="The hour of day with the most real visitors over the last {{ rate.days }} days."><span class="big">{% if rate.busiest_hour is not none %}{{ (rate.busiest_hour % 12) or 12 }} {{ 'am' if rate.busiest_hour < 12 else 'pm' }}{% else %}–{% endif %}</span> busiest hour</div>
-  <div data-tip="The middle value of the time between one real visitor and the next, over the last {{ rate.days }} days. Half the waits are shorter."><span class="big">{% if rate.median_gap_min is none %}–{% elif rate.median_gap_min < 90 %}{{ rate.median_gap_min | round | int }} min{% else %}{{ '%.1f' | format(rate.median_gap_min / 60) }} h{% endif %}</span> typical wait between visitors</div>
-  <p class="muted small">Last photo {{ rate.last | short_time }}. Each motion event keeps at most one photo; probes the Pi throws away aren't counted here.</p>
-</div>
-<p class="about-weather">Does the weather matter? <a href="/weather">Weather &amp; visits</a> shows a slim day-by-day diary (weather, high and low, rain, visitors and most seen; hover a day for its wind, humidity, species count and false alarms). Under it, a folded-away <strong>The numbers behind it</strong> section holds a rain-versus-visitors chart, what the data does and doesn't say, and visitors per hour in rainy and dry, calm and windy hours, with the number of hours behind every figure. The weather is an hourly estimate for the yard from Open-Meteo, saved by the Pi. At the top, <strong>Today at the bath</strong> sums it up in a few lines: today's weather so far, what it has meant for visitors here (this bath's own numbers once each side has {{ min_hours }} daylight hours, a hedged general rule until then), what's in season around here this month (from the species cards' iNaturalist data), and the regulars in weather like today's, learned from this bath's visits once there are {{ min_like_today }} of them (the last week's most seen until then). It's worked out from saved data on every load, with no Claude call.</p>
-{% endif %}
-</section>
-{% endif %}
-
-{# ---------- 2. Zones ---------- #}
+{# ---------- 4. Zones ---------- #}
 <section class="about-section" id="zones">
   <h2>Where it looks</h2>
   <div class="about-split">
@@ -183,371 +123,140 @@
     </figure>
     <ul class="zone-legend">
       {% if zones.rim %}
-      <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Rim</strong>The edge of the bowl, where most birds land. Watched for ordinary motion.</div></li>
-      {% if zones.spots %}<li><span class="sw-group">{% for c in zones.spot_colors %}<span class="sw sw-rim" style="color: {{ c }}"></span>{% endfor %}</span><div><strong>Rocks</strong>{{ zones.spots | length }} landing spot{{ 's' if zones.spots | length != 1 }} inside the water, treated like the rim.</div></li>{% endif %}
-      <li><span class="sw sw-water" style="color: {{ zones.colors.water }}"></span><div><strong>Open water</strong>{% if cfg.WATER_WATCH %}Ripples, rain and sky reflections live here, so it has a much stricter rule (below).{% else %}Ignored: the open-water rule is turned off.{% endif %}</div></li>
+      <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Rim</strong>The edge of the bowl, where most birds land.</div></li>
+      {% if zones.spots %}<li><span class="sw-group">{% for c in zones.spot_colors %}<span class="sw sw-rim" style="color: {{ c }}"></span>{% endfor %}</span><div><strong>Rocks</strong>{{ zones.spots | length }} landing spot{{ 's' if zones.spots | length != 1 }} inside the water, watched like the rim.</div></li>{% endif %}
+      <li><span class="sw sw-water" style="color: {{ zones.colors.water }}"></span><div><strong>Open water</strong>{% if cfg.WATER_WATCH %}Ripples, rain and sky live here, so it has a stricter rule (below).{% else %}Ignored: the open-water rule is turned off.{% endif %}</div></li>
       {% elif zones.roi %}
       <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Watched area</strong>A rectangle; no birdbath ring is calibrated yet.</div></li>
       {% else %}
       <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Whole frame</strong>No zones calibrated yet, so any motion counts.</div></li>
       {% endif %}
-      {% if zones.ground %}<li><span class="sw sw-ground" style="color: {{ zones.colors.ground }}"></span><div><strong>Ground</strong>The lawn and mulch around the bath, for critters passing by. It has its own rule (below).</div></li>{% endif %}
-      <li><span class="sw sw-crop" style="color: {{ zones.colors.crop or '#ccc' }}"></span><div><strong>Crop box</strong>{% if zones.crop %}Only this part of the photo is checked by the Pi and sent to Claude. Less background means sharper answers and fewer tokens. Every visit photo draws its crop box (dashed) and the zone whose motion took it, so an animal just outside the box shows why it was missed.{% else %}Not set, so Claude sees the whole photo.{% endif %}</div></li>
+      {% if zones.ground %}<li><span class="sw sw-ground" style="color: {{ zones.colors.ground }}"></span><div><strong>Ground</strong>The lawn and mulch around the bath, for critters passing by (its own rule below).</div></li>{% endif %}
+      <li><span class="sw sw-crop" style="color: {{ zones.colors.crop or '#ccc' }}"></span><div><strong>Crop box</strong>{% if zones.crop %}The only part of the photo the Pi checks and Claude sees.{% else %}Not set, so Claude sees the whole photo.{% endif %}</div></li>
     </ul>
   </div>
-  <div class="about-note">
-    <h3>Kept in place</h3>
-    <p>Rocks get nudged and cameras shift, so
-      {% if recal.auto and recal.times %}every day at <strong>{{ recal.labels | join(' and ') }}</strong>{% else %}when asked{% endif %}
-      the Pi re-finds the bath and the rocks and moves the zones to match.
-      <span data-tip="It blends a minute of frames so ripples, leaves and birds fade out, lines the bath's edges up with an earlier view, and moves each rock spot back onto its rocks (dark by day, bright in infrared). Day and night keep separate views.">How?</span>
-      You can also drag them by hand, or undo a change, on the <a href="/settings#zones">Settings page</a>.</p>
-  </div>
-  <div class="about-note">
-    <h3>Describing the scene</h3>
-    <p>On <a href="/notes#camera">Claude's Notes</a> you describe the yard in plain words: what the camera sees, what to
-      look for and what to ignore. Claude can tidy the text. All of it goes into every identification.
-      The zones themselves are set in one place, <a href="/settings#zones">Settings</a>; Claude's Notes shows them.</p>
-  </div>
+  <p class="about-note"><strong>Kept in place.</strong> Rocks get nudged and cameras shift, so
+    {% if recal.auto and recal.times %}every day at {{ recal.labels | join(' and ') }}{% else %}when asked{% endif %}
+    the Pi re-finds the bath and the rocks and moves the zones to match
+    <span data-tip="It blends a minute of frames so ripples, leaves and birds fade out, lines the bath's edges up with an earlier view, and moves each rock spot back onto its rocks (dark by day, bright in infrared). Day and night keep separate views.">(how)</span>.
+    Drag them by hand, or undo a change, on <a href="/settings#zones">Settings</a>; what Claude is told about the yard
+    lives on <a href="/notes#camera">Claude's Notes</a>.</p>
 </section>
 
-{# ---------- 3. Detection rules ---------- #}
+{# ---------- 5. Detection rules ---------- #}
 <section class="about-section" id="rules">
   <h2>When movement counts as a visit</h2>
   <div class="rule-grid">
     <article class="rule">
       <h3>Rim and rocks</h3>
-      <svg class="rule-chart" viewBox="0 0 240 110" role="img" aria-label="Motion score per frame; the third frame in a row above the line triggers a visit">
-        <line class="thr" x1="8" x2="232" y1="58" y2="58"/>
-        {% for h in [10, 18, 8, 64, 72, 70, 30, 12] %}
-        {% set hot = loop.index0 in [3, 4, 5] %}
-        <rect class="{{ 'mbar-hot' if hot else 'mbar' }}" x="{{ 14 + loop.index0 * 28 }}" y="{{ 96 - h }}" width="18" height="{{ h }}" rx="2"/>
-        {% endfor %}
-        <text x="178" y="20" class="lbl">visit!</text>
-        <path class="arrow" d="M176 24 L163 30"/>
-        <text x="8" y="108" class="lbl">frames →</text>
-      </svg>
-      <p>Each small-stream frame is compared with a slowly updating picture of the empty bath. A visit starts
-        when at least <strong>{{ pct(cfg.MOTION_MIN_AREA) }}%</strong> of the watched area changes for
-        <strong>{{ cfg.TRIGGER_FRAMES }} frames in a row</strong> (the dashed line). One flicker is not enough.</p>
+      <p>Each frame is compared with a slowly updating picture of the empty bath. A visit starts when at least
+        <strong>{{ pct(cfg.MOTION_MIN_AREA) }}%</strong> of the watched area changes for
+        <strong>{{ cfg.TRIGGER_FRAMES }} frames in a row</strong>; one flicker is not enough.</p>
     </article>
     {% if cfg.WATER_WATCH and zones.water %}
     <article class="rule">
       <h3>Open water</h3>
       <div class="water-pair">
         <figure>
-          <svg viewBox="0 0 110 70" role="img" aria-label="Ripples: many faint scattered specks">
-            <ellipse class="pond" cx="55" cy="35" rx="50" ry="30"/>
-            {% for x, y in [(25,30),(40,18),(62,24),(80,33),(33,46),(55,42),(72,50),(48,30),(88,40),(20,40),(66,14),(58,55)] %}<circle class="speck" cx="{{ x }}" cy="{{ y }}" r="1.6"/>{% endfor %}
-          </svg>
+          <svg viewBox="0 0 110 70" role="img" aria-label="Ripples: many faint scattered specks"><ellipse class="pond" cx="55" cy="35" rx="50" ry="30"/>
+            {% for x, y in [(25,30),(40,18),(62,24),(80,33),(33,46),(55,42),(72,50),(48,30),(88,40),(20,40),(66,14),(58,55)] %}<circle class="speck" cx="{{ x }}" cy="{{ y }}" r="1.6"/>{% endfor %}</svg>
           <figcaption><span class="no">Ignored</span> Ripples and raindrops: faint, scattered, flickering</figcaption>
         </figure>
         <figure>
-          <svg viewBox="0 0 110 70" role="img" aria-label="A bird: one solid blob that stays put">
-            <ellipse class="pond" cx="55" cy="35" rx="50" ry="30"/>
-            <circle class="ghost" cx="49" cy="37" r="7"/><circle class="ghost" cx="52" cy="36" r="7"/>
-            <ellipse class="blob" cx="56" cy="35" rx="9" ry="7"/>
-          </svg>
+          <svg viewBox="0 0 110 70" role="img" aria-label="A bird: one solid blob that stays put"><ellipse class="pond" cx="55" cy="35" rx="50" ry="30"/>
+            <circle class="ghost" cx="49" cy="37" r="7"/><circle class="ghost" cx="52" cy="36" r="7"/><ellipse class="blob" cx="56" cy="35" rx="9" ry="7"/></svg>
           <figcaption><span class="yes">Counts</span> A bird: one solid blob that stays put</figcaption>
         </figure>
       </div>
-      <p>Water sets off simple motion detectors constantly, so the open water has its own rule. It needs
-        <strong>exactly one</strong> strong, compact blob between {{ pct(cfg.WATER_MIN_BLOB) }}% and
-        {{ pct(cfg.WATER_MAX_BLOB) }}% of the water's area, staying near the same spot for
-        <strong>{{ cfg.WATER_PERSIST_FRAMES }} frames in a row</strong>. Raindrop rings fade faster than that.
-        It rests at night, when nothing flies in to land on the water.
-        {% if presence_mode != 'off' %}Even then, the Pi's <a href="#presence">animal check</a> looks first, so a drifting leaf never costs a Claude call.{% endif %}</p>
+      <p>Water never sits still, so here it takes <strong>exactly one</strong> solid, bird-sized blob near the same spot for
+        {{ cfg.WATER_PERSIST_FRAMES }} frames in a row. Off at night, when nothing flies in to land.</p>
     </article>
     {% endif %}
     {% if zones.ground %}
     <article class="rule">
       <h3>Ground around the bath</h3>
-      <div class="water-pair">
-        <figure>
-          <svg viewBox="0 0 110 70" role="img" aria-label="Leaves and rain: small specks that flicker and jump around">
-            <rect class="lawn" x="4" y="6" width="102" height="58" rx="6"/>
-            {% for x, y in [(20,20),(84,16),(36,52),(70,44),(52,22),(92,56),(14,40)] %}<circle class="speck leaf" cx="{{ x }}" cy="{{ y }}" r="2"/>{% endfor %}
-          </svg>
-          <figcaption><span class="no">Ignored</span> Blowing leaves, rain splashes, and light changing everywhere at once</figcaption>
-        </figure>
-        <figure>
-          <svg viewBox="0 0 110 70" role="img" aria-label="An animal: one sizable blob moving steadily across">
-            <rect class="lawn" x="4" y="6" width="102" height="58" rx="6"/>
-            <ellipse class="ghost" cx="30" cy="42" rx="12" ry="7"/><ellipse class="ghost" cx="44" cy="40" rx="12" ry="7"/>
-            <ellipse class="blob" cx="60" cy="38" rx="13" ry="8"/>
-          </svg>
-          <figcaption><span class="yes">Counts</span> An animal: one sizable blob walking across</figcaption>
-        </figure>
-      </div>
-      <p>The lawn moves all day, so the ground has its own rule. It needs one animal-sized blob that stays in view for
-        <strong>{{ cfg.GROUND_PERSIST_FRAMES }} frames in a row</strong> and moves at walking pace.
-        By day a ground bird is big enough ({{ pct(cfg.GROUND_MIN_BLOB) }}% of the frame);
-        at night it must be about cat-sized ({{ pct(cfg.GROUND_MIN_BLOB_NIGHT) }}%). {% if presence_mode == 'gate' %}The Pi's
-        <a href="#presence">animal check</a> looks first, and only photos with something in them go to Claude.{% else %}The photo goes to Claude.{% endif %}</p>
+      <p>The lawn moves all day, so here it takes one animal-sized blob that stays in view for
+        {{ cfg.GROUND_PERSIST_FRAMES }} frames in a row and moves at walking pace: by day a ground bird
+        ({{ pct(cfg.GROUND_MIN_BLOB) }}% of the frame), at night about cat-sized ({{ pct(cfg.GROUND_MIN_BLOB_NIGHT) }}%).
+        Blowing leaves, rain and light changing everywhere at once are ignored.</p>
     </article>
     {% endif %}
-    <article class="rule rule-wide">
-      <h3>Cooldowns and rainy days</h3>
-      {% if cfg.STAY %}
-      <p><strong>One visit per stay.</strong> While a visitor is still in view, it's the same visit, so a bird that
-        bathes for five minutes is one visit, and its card says how long it stayed
-        <span data-tip="It ends {{ cfg.STAY_GAP }} s after the visitor leaves, when the light changes, or after {{ (cfg.STAY_MAX / 60) | round | int }} minutes. Changes that sit still for {{ cfg.STAY_STILL }} s, like flipped leaves, become scenery.">(details)</span>.</p>
-      {% endif %}
-      <p>After a real visitor the camera also rests at least <strong>{{ cfg.COOLDOWN_VISIT }} s</strong>, so one splashing bird
-        is one visit, not fifty. After a false alarm it waits {{ cfg.COOLDOWN_NONE }} s, and every false alarm in a
-        row doubles the wait, up to {{ cfg.COOLDOWN_NONE_MAX }} s. A real visitor resets it.</p>
-      {% set top = backoff[-1] %}
-      <ol class="backoff" aria-label="Wait after each false alarm in a row">
-        {% for s in backoff %}
-        <li><span class="bk-n">{{ loop.index }}{{ ['st', 'nd', 'rd'][loop.index0] if loop.index0 < 3 else 'th' }}</span>
-          <span class="bk-bar"><span style="width: {{ (100 * s / top) | round | int }}%"></span></span>
-          <span class="bk-s">{{ s }} s</span></li>
-        {% endfor %}
-      </ol>
-      {% if presence_mode != 'off' %}
-      <p class="muted small">Once the Pi's <a href="#presence">animal check</a> has learned this yard ({{ presence_min[0] }} visitors and
-        {{ presence_min[1] }} empty frames), a long wait doesn't mean going blind: it still takes photos every {{ cfg.COOLDOWN_NONE }} s and
-        lets the check look. Only if it doesn't call the photo empty does Claude get asked. Empty checks aren't even saved.
-        After {{ cfg.PROBE_AFTER }} false alarms in a row it stays in this mode until a visitor turns up, with one full Claude check every
-        {{ (cfg.FULL_CHECK_EVERY / 60) | round | int }} minutes in case the local look missed something.
-        Until the check is trained, or whenever it can't give a verdict (its model missing, or switched off), it simply waits out the
-        doubling backoff above: a probe nobody is filtering would just be asking Claude every {{ cfg.COOLDOWN_NONE }} s.</p>
-      {% endif %}
-      <p class="muted small">A daily cap of {{ cfg.MAX_CALLS_PER_DAY }} Claude visits guards the bill if something goes very wrong.{% if zones.ground %}
-        The ground has its own cooldown and its own cap of {{ cfg.GROUND_MAX_CALLS_PER_DAY }}, so a windy day on the lawn can't use up the birdbath's,
-        and the bath's waits never hold the ground back: a cat can walk past while the bath is resting after a rainy false alarm or has
-        reached its cap for the day.{% endif %}</p>
-    </article>
   </div>
 </section>
 
-{# ---------- 4. Photo burst ---------- #}
-<section class="about-section" id="burst">
-  <h2>Getting a sharp photo</h2>
-  <svg width="0" height="0" class="defs" aria-hidden="true">
-    {% for b in [3, 1.6, 0, 1, 0.4, 2.4] %}<filter id="blur{{ loop.index0 }}"><feGaussianBlur stdDeviation="{{ b }}"/></filter>{% endfor %}
-  </svg>
-  {% set sharp = [30, 58, 100, 70, 88, 42] %}
-  {% set order = [2, 4, 3] %}
-  <ol class="burst" aria-label="A burst of photos ranked by sharpness">
-    {% for i in range(cfg.BURST_FRAMES) %}
-    {% set k = i % 6 %}
-    <li class="{{ 'best' if k == order[0] else 'extra' if k in order[1:] }}">
-      <svg viewBox="0 0 80 60" aria-hidden="true"><g filter="url(#blur{{ k }})">
-        <path class="bird" d="M18 38c6-10 18-14 30-10l6-6c4-2 9 0 10 4l5 2-6 2c-1 8-8 14-18 15H30l-14 6 6-9z"/></g>
-        <line class="rim-line" x1="4" y1="50" x2="76" y2="50"/>
-      </svg>
-      <span class="meter"><span style="width: {{ sharp[k] }}%"></span></span>
-      <small>{{ 'To Haiku' if k == order[0] else 'Spare for Sonnet' if k in order[1:] else '&nbsp;' | safe }}</small>
-    </li>
-    {% endfor %}
-  </ol>
-  <p>When a visit starts, the Pi records <strong>{{ cfg.BURST_FRAMES }} full-size photos at {{ cfg.BURST_FPS }} per second</strong>
-    and scores how sharp each one is{% if zones.crop %}, inside the crop box only, so busy ground around the bath can't win{% endif %}.{% if zones.ground %}
-    A ground visit uses a wider crop around the ground zone instead.{% endif %}
-    The sharpest goes to Claude; the next two are kept in case a second opinion is needed.
-    Only the sharpest is saved with a visit, except for false triggers: there the whole burst is kept, so you can
-    step through the frames before and after on the visit page (it counts toward the false-trigger storage limit),
-    and pick the frame that shows things best as that visit's photo; Claude's frame stays on record and nothing is
-    deleted, so the pick can be taken back.{% if cfg.PHOTO_STAMP %}
-    Saved photos get the time in a small pill in the bottom-left corner; Claude and the Pi's checks see the photo without it.{% endif %}
-    Night photos come from the infrared light, so they're black and white.</p>
+{# ---------- 6. From the burst to a name: the Pi first, then Claude ---------- #}
+<section class="about-section" id="photos">
+  <h2>From a burst of photos to a name</h2>
+  <ul class="stack">
+    <li><strong>A sharp photo</strong> {{ cfg.BURST_FRAMES }} full-size photos at {{ cfg.BURST_FPS }} per second; the sharpest{% if zones.crop %}, judged inside the crop box,{% endif %} wins.
+      A false trigger keeps its whole burst. Night photos are infrared, so black and white.</li>
+    <li><strong>The Pi looks first</strong> <strong>BioCLIP 2</strong>, an open model of living things, runs on the Pi for free.
+      The Pi animal check {% if presence_mode != 'off' %}{{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') }}{% endif %}
+      says whether anything is in the crop box{% if presence_mode == 'gate' %}; a photo it calls empty never leaves the house and waits under
+      <a href="/false-triggers">False triggers</a> for your check{% elif presence_mode == 'shadow' %}, but for now only keeps score{% else %}, but is switched off here{% endif %}.
+      The BioCLIP 2 species check {% if classifier_mode == 'gate' %}names sure daytime regulars itself, marked {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %}guesses the species, but for now only keeps score{% else %}is switched off here{% endif %}.
+      Modes on <a href="/settings#local">Settings &gt; Pi checks</a>, scorecards on <a href="/stats">Stats</a>.</li>
+    <li><strong>Claude Haiku</strong> sees the sharpest photo{{ ', cropped' if zones.crop }} and answers in a fixed format: kind of animal,
+      species, how sure, how many, any other animals in the shot. "Nothing there" goes to <a href="/false-triggers">False triggers</a>, hidden from the gallery.</li>
+    <li><strong>Claude Sonnet</strong> looks at the 3 sharpest photos together when Haiku isn't sure
+      <span data-tip="A fairly sure Haiku guess at a species already confirmed here {{ confirmed_min }}+ times skips Sonnet, as long as the BioCLIP 2 species check names the same species. If Claude can't answer at all, the visit is kept, labelled other, and waits in the review queue.">(mostly)</span>.
+      Still unsure: the <a href="/review">review queue</a>, where you have the final say.</li>
+    <li><strong>What Claude is told</strong> The photo, the date and time, night or day, your yard from
+      <a href="/notes#camera">Claude's Notes</a>{% if site.location %} (in {{ site.location }}){% elif not site.scene_notes %} (not filled in yet){% endif %},
+      the <a href="/notes#summary">Lessons summary</a>{{ '' if site.lessons_summary else ' (none accepted yet)' }} and the newest
+      {{ lesson_limit }} lessons from your corrections, word for word.</li>
+    <li><strong>Cost</strong> {{ haiku }} and {{ sonnet }}. A Haiku look costs {% if avg_call >= 0.001 %}about {{ avg_call | usd }}{% else %}well under a cent{% endif %},
+      a Sonnet second look under a cent; the notes are cached between calls. Each visit page shows these steps under "How it was decided".</li>
+  </ul>
 </section>
 
-{# ---------- 5. Local model ---------- #}
-<section class="about-section" id="local">
-  <h2>Checking on the Pi first</h2>
-  <p>Before anything leaves the house, the Pi asks <strong>BioCLIP 2</strong>, an open model of living things, two
-    questions: is anything there, and what is it? Each check can be off, shadow (it only keeps score) or gate (its answer counts).</p>
-  <div class="modes" role="list">
-    {% for m, title, text in [
-      ('off', 'Off', 'Not used. Claude sees every motion event.'),
-      ('shadow', 'Shadow', 'Runs and records its answer, but Claude still decides. Builds a scorecard to show whether it can be trusted.'),
-      ('gate', 'Gate', 'Its answer counts: a photo it calls empty never goes to Claude, and waits on False triggers for your check. The species guess has a gate mode too: a sure daytime name of a regular skips Claude.'),
-    ] %}
-    <div class="mode{{ ' on' if presence_mode == m }}" role="listitem">
-      <strong>{{ title }}</strong>{% if presence_mode == m %}{{ badge('in use', '') }}{% endif %}
-      <p>{{ text }}</p>
-    </div>
-    {% endfor %}
-  </div>
-  <p class="muted small">Switch modes in <a href="/settings#local">Settings &gt; Local checks</a>.</p>
-  <h3 id="presence">Anything there? A check trained on this yard{% if presence_mode != 'off' %} {{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') }}{% endif %}</h3>
-  <p>Most motion is leaves, ripples and light. A small check trained on this yard's own photos, and on your corrections,
-    decides whether anything is really there.
-    {% if presence_mode == 'gate' %}Photos it calls empty skip Claude and are marked {{ badge("pi only", "pi-only") }} under False triggers, so you can
-    correct any it got wrong (that's how it learns). Confirming the empty ones teaches it too: checked photos
-    count 3 times, and deleting their photos later keeps what it learned.{% elif presence_mode == 'shadow' %}For now it only keeps score; Claude still sees everything.{% else %}It's switched off here.{% endif %}
-    It looks at the sharpest photo of the burst{% if cfg.PRESENCE_LAST_FRAME %} and, when that one looks empty, at the last one too, since a landing
-    bird is often only in the bowl by then (if only the last one shows it, that becomes the photo Claude sees){% endif %}.
-    <span data-tip="It learns whether an animal is inside the crop box, not where. A false trigger keeps every frame of its burst, and you can circle on any of them: circle the animal on the frame that shows it best and save, and that frame becomes the example (the Pi looks at it in the background, about 6 seconds). Without a circle on another frame, the Pi looks through the burst itself for the frame where the animal is inside the crop box, or uses the photo when your circle there is mostly inside the box. A circle mostly outside the box leaves that visit out, so one photo of a tail can't make every empty frame look possible.">What it learns from your corrections</span>.
-    <span data-tip="On the first 683 frames, tested on ones it hadn't trained on, it kept all 55 visitors and caught 616 of 628 empty frames. No night visitors yet.">How well?</span>
-    Scorecard on <a href="/stats#presence">Stats</a>.</p>
-  <h3 id="classifier">A species guess of its own{% if classifier_mode == 'gate' %} {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %} {{ badge('shadow', 'shadow') }}{% endif %}</h3>
-  <p>{% if classifier_mode == 'off' %}Switched off here. When on, the{% else %}The{% endif %} Pi guesses the species itself, choosing
-    among the birds and mammals {% if cfg.INAT_PLACE_ID %}reported to iNaturalist nearby{% else %}reported nearby{% endif %}
-    <span data-tip="BioCLIP 2 turns the photo into a fingerprint of numbers and picks the species whose text fingerprint is closest. About 6 s on the Pi, free. Not tried on infrared photos yet.">(how it works)</span>.
-    {% if classifier_mode == 'gate' %}By day, when it's at least 93% sure of a species seen here 3+ times, that's the answer and Claude isn't
-    asked; those visits say {{ badge("pi named", "pi-only") }}. Anything less sure, every night photo, and any photo with
-    <span data-tip="The Pi compares the photo with the empty scene from just before the motion and counts separate animal-sized changes in the crop box. Changes only on the open water (sky reflections, drifting leaves) don't count. One guess can only name one animal, so groups go to Claude, which counts them and names any other kind.">more than one animal in view</span>
-    goes to Claude.
-    The species model says what, not where, so the Pi
-    <span data-tip="It compares the photo with the empty scene from just before the motion (for older photos: the median of nearby photos), ignoring changes that keep the scene's pattern (a patch of sun), and circles the biggest solid patch of change touching the zone that fired. Open water counts only for one small, solid patch (a bathing bird). Two patches of a similar size, or one too big for an animal, give no circle. Free, a fraction of a second.">circles the animal from the motion</span>
-    itself: the same faded white ring, or &ldquo;Named on the Pi, no circle&rdquo; when it isn't sure where.
-    {% else %}For now it only keeps score and never changes a label.{% endif %}
-    {% if classifier.checked %}So far it matched {{ classifier.top1 }} of {{ classifier.checked }} checked visits.{% endif %}
-    Scorecard on <a href="/stats#classifier">Stats</a>.</p>
-</section>
-
-{# ---------- 6. Claude ---------- #}
-<section class="about-section" id="claude">
-  <h2>Asking Claude, and asking again when unsure</h2>
-  <div class="about-split">
-    <ol class="tree" aria-label="How an answer is decided">
-      <li class="node cloud"><strong>Haiku</strong> looks at the sharpest photo{{ ', cropped' if zones.crop }}</li>
-      <li class="q" data-down="Yes"><span class="diamond">Saw an animal?</span>
-        <span class="side"><span class="tag">No</span> <span><a href="/false-triggers">False triggers</a>, hidden from the gallery. If it only thinks the photo is empty (something might be an animal), Sonnet looks too, and one still in doubt waits in the <a href="/review">review queue</a> instead of being quietly filed away</span></span></li>
-      <li class="q" data-down="No, or it declined"><span class="diamond" data-tip="Every animal in the photo counts: a guess at a second one also gets Sonnet's look.">Sure of every animal?</span>
-        <span class="side"><span class="tag">Yes</span> <span><a href="/">Gallery</a> and alerts. Also when fairly sure of a species already confirmed here {{ confirmed_min }}+ times (the Confirmed pill on <a href="/species">Species</a>), as long as the Pi's own classifier, looking at Claude's circle by day, names the same species</span></span></li>
-      <li class="node cloud"><strong>Sonnet</strong> looks at the 3 sharpest photos together, combining angles</li>
-      <li class="q" data-down="Yes"><span class="diamond">Still unsure?</span>
-        <span class="side"><span class="tag">No</span> <span><a href="/">Gallery</a> and alerts</span></span></li>
-      <li class="node you"><a href="/review">Review queue</a>: you have the final say. If Claude can't answer at all (the API is down or times out), the photo is still kept as a visit, labelled "other" with no species, and waits here for you to name it.</li>
-    </ol>
-    <div class="prompt-stack">
-      <h3>What Claude is told</h3>
-      <ol class="layers">
-        <li>Instructions: the animal types, how to name species, how sure to be (for an empty photo, "sure" means nothing in it could be an animal), that night photos are infrared</li>
-        <li class="{{ '' if site.location or site.scene_notes else 'unset' }}">Your yard from <a href="/notes#camera">Claude's Notes</a>: what the camera sees, what to look for, what to ignore{% if site.location %}, in {{ site.location }}{% elif not site.scene_notes %} (not filled in yet){% endif %}</li>
-        <li class="{{ '' if site.lessons_summary else 'unset' }}">The <a href="/notes#summary">Lessons summary</a>: every correction and note you've made, distilled by Claude into short points and accepted by you{{ '' if site.lessons_summary else ' (none accepted yet)' }}</li>
-        <li class="{{ '' if lessons else 'unset' }}">The newest lessons from your corrections, word for word: {{ lessons or 'none yet' }}{{ ' in use' if lessons }} (a long note is cut to its first {{ note_limit }} characters)</li>
-        <li>The photo (or photos), the date and time, so it knows what's in season, and whether it's a night infrared photo</li>
-      </ol>
-      <p class="small">Your notes and lessons are marked as being about this camera, so nothing in them can change the
-        answer format. The instructions and notes are the same from one visit to the next, so Anthropic keeps them cached
-        between calls and charges a fraction of the usual price for that part; the photo itself is never cached.</p>
-      <p class="small">It must answer in a fixed format. When more than one kind of animal is in the photo, the most prominent
-        is the main answer and each other kind goes under "also":</p>
-<pre class="json">{"visitor": "bird",
- "species": "Dark-eyed Junco",
- "confidence": "high", "count": 2,
- "notes": "Oregon race",
- "also": [{"visitor": "bird",
-   "species": "Bushtit", "count": 3,
-   "confidence": "medium"}]}</pre>
-      <p class="muted small">Each of those counts as a visit of its own species on the species pages, stats and first-seen
-        dates, and a first sighting among them still sends the new-species alert. Bird names are put in eBird's
-        spelling before they're saved ("black-capped chickadee" becomes "Black-capped Chickadee", and a race in
-        parentheses moves to the notes), so one species never gets two pages or two first sightings.</p>
-      <p class="muted small">Models: {{ haiku }} and {{ sonnet }}. If Sonnet declines a photo, Anthropic's fallback model answers
-        instead, and the visit records which model did.
-        {% if avg_call >= 0.001 %}A Haiku look costs about {{ avg_call | usd }}{% else %}A Haiku look costs well under a cent{% endif %}{% if totals.sent_to_claude %}, and Haiku settled {{ (100 * totals.haiku_only / totals.sent_to_claude) | round | int }}% of {{ '{:,}'.format(totals.sent_to_claude) }} visits on its own{% endif %}.
-        Every visit page shows these steps under "How it was decided".</p>
-    </div>
-  </div>
-</section>
-
-{# ---------- 7. Learning ---------- #}
+{# ---------- 7. Learning: which parts learn and which don't ---------- #}
 <section class="about-section" id="learning">
-  <h2>Learning from your corrections</h2>
-  <ol class="loop">
-    <li><strong>Claude answers</strong><small>"Dark-eyed Junco, bathing"</small></li>
-    <li><strong>You correct it</strong><small>"No animal: those are the rock tips after a refill"</small></li>
-    <li><strong>It becomes a lesson</strong><small>The latest {{ lesson_limit }} join every prompt in full; all of them feed the Lessons summary</small></li>
-    <li><strong>Next photo</strong><small>Claude gets it right, starting with the very next visit</small></li>
-  </ol>
-  <p>Claude doesn't get retrained; it simply reads your latest corrections every time (in-context learning, not fine-tuning). Older ones aren't lost: after every {{ auto_every }} new notes, Claude distills all of them into a short <a href="/notes#summary">Lessons summary</a>, which you check and accept on Claude's Notes and which then goes with every photo{% if totals.distills %} ({{ totals.distills }} summar{{ 'y' if totals.distills == 1 else 'ies' }} drafted so far, counted in the spend above){% endif %}. The Pi's animal check does retrain on them, in the background within about a minute.
-    You can circle things on the photo, fix the other animals in the shot, or press Ask to have Claude suggest a name
-    <span data-tip="Ask costs about a cent. Species boxes suggest eBird names so one bird never gets two spellings. Claude's Notes lists every lesson exactly as Claude reads it; switch off any that don't help. On a photo the Pi judged empty without asking Claude, the lesson says so; agreeing it was empty adds a lesson only with a note, circles or another animal.">(more)</span>.
-    {% if totals.corrected %}You've corrected or annotated {{ totals.corrected }} visit{{ 's' if totals.corrected != 1 }} so far.{% endif %}</p>
-  <h3 id="circle-check">Missed something? Manual circle and ask, cheapest first</h3>
-  <ol class="loop ladder" aria-label="Asking about a circle">
-    <li><strong>You circle it</strong><small>Usually on a false trigger, around the animal it missed, on whichever burst frame shows it best. The Ask buttons wake up once a circle of yours is on the photo</small></li>
-    <li><strong>Ask BioCLIP 2</strong><small>The species model on the Pi, on just the circle: free</small></li>
-    <li><strong>Haiku, then Sonnet</strong><small>Only if BioCLIP 2 isn't sure: a fraction of a cent, then about half a cent</small></li>
-    <li><strong>You save it</strong><small>Nothing changes until you do; leaving the page with unsaved changes asks Save, Discard or Keep editing</small></li>
-  </ol>
-  <p>Each answer comes with a Use button that fills in the correction form, and every check is listed on the visit
-    under "How it was decided"{% if totals.owner_checks %} ({{ totals.owner_checks }} Claude check{{ 's' if totals.owner_checks != 1 }} so far, counted in the spend above){% endif %}.
-    <span data-tip="The checks look at the first circle you drew yourself (Claude's dashed circle doesn't count), on the frame it's on. Saving teaches the Pi's animal check, not its species model: it trains on the whole crop box of every photo, labelled with the final answer. Saving an animal on a false trigger flips that visit from empty to animal and counts it 3 times; if your first circle is on another burst frame, that frame's crop box is what it learns from, so the next photo like it is more likely to reach Claude.">How it teaches the Pi</span></p>
-  <p>On any photo card, on the big latest-visitor photo on the home page, and on the big photo on a visit's page, the owner can tap the star to cycle it:
-    one tap makes it <strong>blue</strong>, a favorite; a second makes it <strong>yellow</strong>, the species cover (the photo shown
-    for that species on the Species page, one per species); a third unsets it. Yellow waits two seconds before it's saved, so tapping
-    straight through to unset leaves the cover alone. If the species already has a cover, it then asks first, showing the current
-    cover and the new pick side by side, each cropped around the animal; Keep current puts the star back to blue. Yellow and blue
-    photos are never deleted when space is cleared (they also get the blue favorite mark). A new cover leaves the old one blue.
-    A pill beside the star says which one it just became. A visit with no species has no cover, so its star just toggles blue.</p>
+  <h2>What learns from your corrections, and what doesn't</h2>
+  <table class="learn">
+    <tbody>
+      <tr><th>{{ four[0].name }}<br>{{ badge(four[0].pill[0], four[0].pill[1]) }}</th>
+        <td>Doesn't learn. Only the zones and thresholds change it (<a href="/settings#zones">Settings &gt; Zones</a>).</td></tr>
+      <tr><th>{{ four[1].name }}<br>{{ badge(four[1].pill[0], four[1].pill[1]) }}</th>
+        <td>Retrained from your labels (Confirm says empty, picking an animal says animal), which count {{ weight }} times Claude's,
+          soon after a label changes. Never reads notes or names.</td></tr>
+      <tr><th>{{ four[2].name }}<br>{{ badge(four[2].pill[0], four[2].pill[1]) }}</th>
+        <td>Not trained; the model never changes. Your confirmations grow the settled list ({{ confirmed_min }} sure visits
+          per species) it may name on the Pi without Claude.</td></tr>
+      <tr><th>{{ four[3].name }}<br>{{ badge(four[3].pill[0], four[3].pill[1]) }}</th>
+        <td>Not fine-tuned: Claude reads Claude's Notes and your lessons fresh with every photo (in-context learning, not fine-tuning),
+          so a correction counts from the very next visit; after every {{ auto_every }} new notes Claude distills them into a
+          <a href="/notes#summary">Lessons summary</a> for you to accept.</td></tr>
+    </tbody>
+  </table>
+  <p class="muted small">Missed something? Circle it on the visit page and Ask BioCLIP 2 (free), then Haiku or Sonnet; saving an animal there teaches the Pi animal check.</p>
 </section>
 
 {# ---------- 8. Outside sources ---------- #}
 <section class="about-section" id="sources">
   <h2>Outside sources that fill in the story</h2>
-  <p>Every species name on the site opens an info card. It's built the first time a species visits, saved
-    ({{ cards }} so far), and refreshed every {{ card_days }} days. Every photo and recording shows its author and license.</p>
+  <p>Every species name opens an info card, built on a species' first visit and refreshed every {{ card_days }} days;
+    <a href="/weather">Weather &amp; visits</a> lines visits up with the weather. Every photo and recording shows its author and license.</p>
+  {% set wx = cfg.WEATHER and cfg.SITE_LAT is not none and cfg.SITE_LON is not none %}
   <div class="sources">
-    <a class="source" href="https://www.inaturalist.org" target="_blank" rel="noopener">
-      <strong>iNaturalist</strong><span>Reference photos, the range map, and{% if cfg.INAT_PLACE_ID %} how often each species is reported locally, month by month, plus the local bird list that limits the Pi's own species guesses{% else %} local monthly reports once a place is set{% endif %}. Its photos are part of what trained that guesser</span></a>
-    <a class="source" href="https://imageomics.github.io/bioclip-2/" target="_blank" rel="noopener">
-      <strong>BioCLIP 2</strong><span>The Imageomics Institute's open model (MIT license) behind the Pi's own species guess</span></a>
-    <a class="source" href="https://www.wikipedia.org" target="_blank" rel="noopener">
-      <strong>Wikipedia</strong><span>The short description, and the article Claude Haiku summarizes into behavior notes (labeled as an AI summary, sticking to the article)</span></a>
-    <a class="source{{ '' if cfg.XC_API_KEY else ' off' }}" href="https://xeno-canto.org" target="_blank" rel="noopener">
-      <strong>xeno-canto</strong><span>{% if cfg.XC_API_KEY %}Songs and calls, preferring recordings within {{ local_km }} km, then {{ nearby_km }} km, so they match local dialects. Streamed, not stored{% else %}Bird songs and calls (needs a free key, not set up here){% endif %}</span></a>
-    <a class="source" href="https://ebird.org" target="_blank" rel="noopener">
-      <strong>eBird</strong><span>Its species list supplies the link to each bird's eBird page</span></a>
-    <a class="source{{ '' if cfg.WEATHER and cfg.SITE_LAT is not none and cfg.SITE_LON is not none else ' off' }}" href="https://open-meteo.com" target="_blank" rel="noopener">
-      <strong>Open-Meteo</strong><span>{% if cfg.WEATHER and cfg.SITE_LAT is not none and cfg.SITE_LON is not none %}Hourly rain, cloud, temperature, wind and humidity at the bath, kept so visits can be compared with the weather on the Weather &amp; visits page. Weather data by Open-Meteo.com (CC BY 4.0){% else %}Hourly weather to compare with visits (free, no key; needs the bath's coordinates, not set up here){% endif %}</span></a>
-    <a class="source" href="https://www.openstreetmap.org" target="_blank" rel="noopener">
-      <strong>OpenStreetMap and Leaflet</strong><span>The map under the range layer</span></a>
-    <a class="source" href="https://www.allaboutbirds.org" target="_blank" rel="noopener">
-      <strong>All About Birds and Audubon</strong><span>Linked from each bird's card for more reading (no data taken from them)</span></a>
-    <a class="source{{ '' if alerts.topic else ' off' }}" href="https://ntfy.sh" target="_blank" rel="noopener">
-      <strong>ntfy</strong><span>Phone alerts with the photo attached{{ '' if alerts.topic else ' (not set up here)' }}</span></a>
-    <a class="source" href="https://www.anthropic.com/claude" target="_blank" rel="noopener">
-      <strong>Claude by Anthropic</strong><span>Identification, second opinions and behavior notes</span></a>
+    <a class="source" href="https://www.inaturalist.org" target="_blank" rel="noopener"><strong>iNaturalist</strong><span>Reference photos, range maps and {% if cfg.INAT_PLACE_ID %}monthly local reports{% else %}local reports once a place is set{% endif %}</span></a>
+    <a class="source" href="https://imageomics.github.io/bioclip-2/" target="_blank" rel="noopener"><strong>BioCLIP 2</strong><span>The Imageomics Institute's open model (MIT) behind both Pi checks</span></a>
+    <a class="source" href="https://www.wikipedia.org" target="_blank" rel="noopener"><strong>Wikipedia</strong><span>The description, and the article behind the AI behavior notes</span></a>
+    <a class="source{{ '' if cfg.XC_API_KEY else ' off' }}" href="https://xeno-canto.org" target="_blank" rel="noopener"><strong>xeno-canto</strong><span>Songs and calls recorded nearby, streamed{{ '' if cfg.XC_API_KEY else ' (needs a free key, not set up here)' }}</span></a>
+    <a class="source" href="https://ebird.org" target="_blank" rel="noopener"><strong>eBird</strong><span>Official bird names and the link to each bird's page</span></a>
+    <a class="source{{ '' if wx else ' off' }}" href="https://open-meteo.com" target="_blank" rel="noopener"><strong>Open-Meteo</strong><span>Hourly weather at the bath (CC BY 4.0){{ '' if wx else ' (needs coordinates, not set up here)' }}</span></a>
+    <a class="source" href="https://www.openstreetmap.org" target="_blank" rel="noopener"><strong>OpenStreetMap and Leaflet</strong><span>The map under the range layer</span></a>
+    <a class="source" href="https://www.allaboutbirds.org" target="_blank" rel="noopener"><strong>All About Birds and Audubon</strong><span>Links for more reading; no data taken</span></a>
+    <a class="source{{ '' if alerts.topic else ' off' }}" href="https://ntfy.sh" target="_blank" rel="noopener"><strong>ntfy</strong><span>Phone alerts with the photo{{ '' if alerts.topic else ' (not set up here)' }}</span></a>
+    <a class="source" href="https://www.anthropic.com/claude" target="_blank" rel="noopener"><strong>Claude by Anthropic</strong><span>Identification, second opinions and behavior notes</span></a>
   </div>
 </section>
 
-{# ---------- 9. Seasons and alerts ---------- #}
-<section class="about-section" id="seasons">
-  <h2>Early, late and unusual visitors</h2>
-  <div class="about-split">
-    <figure class="season-demo">
-      <figcaption><strong>{{ season.name or 'Example: a summer visitor' }}</strong> <span class="muted">{{ season.status }}</span></figcaption>
-      <div class="season" role="img" aria-label="Local reports by month, with expected months highlighted">
-        {% for m in season.months %}
-        <div class="season-col{{ ' expected' if m.expected }}{{ ' early' if m.badge == 'Early arrival' }}{{ ' late' if m.badge == 'Late departure' }}" title="{{ m.name }}{{ ': ' ~ m.badge if m.badge }}">
-          <span class="ours">{{ 'E' if m.badge == 'Early arrival' else 'L' if m.badge == 'Late departure' else '' }}</span>
-          <div class="bar-wrap"><div class="bar" style="height: {{ m.pct }}%"></div></div>
-          <span class="m">{{ m.name[0] }}</span>
-        </div>
-        {% endfor %}
-      </div>
-      <p class="muted small">Bars: local reports by month{{ '' if season.name else ' (illustration)' }}. Green: expected months. E: Early arrival. L: Late departure.</p>
-    </figure>
-    <div>
-      <p>A month counts as <strong>expected</strong> when it has at least {{ expected_pct }}% of the busiest month's local reports.
-        A visit outside those months gets a badge: {{ badge('Early arrival', 'out-of-season') }} just before the usual run,
-        {{ badge('Late departure', 'out-of-season') }} just after, otherwise
-        {{ badge('Unusual this time of year', 'out-of-season') }}.</p>
-      <h3>Phone alerts</h3>
-      <ul class="alert-list">
-        <li>{{ badge('on', 'conf-high', key='alert on') if alerts.new_species else badge('off', 'muted', key='alert off') }} A species seen here for the first time (a bird Claude couldn't name never counts)</li>
-        <li>{{ badge('on', 'conf-high', key='alert on') if alerts.mammals else badge('off', 'muted', key='alert off') }} Any raccoon or possum</li>
-        <li>{{ badge('on', 'conf-high', key='alert on') if alerts.unusual else badge('off', 'muted', key='alert off') }} Early, late or unusual for the season</li>
-      </ul>
-      <p class="muted small">{% if alerts.quiet_start and alerts.quiet_end %}Quiet from {{ alerts.quiet_start }} to {{ alerts.quiet_end }}. {% endif %}{% if not alerts.topic %}Alerts aren't set up yet. {% endif %}Common repeat visitors never buzz your phone.
-        When Claude was only guessing, or the visit is waiting in the <a href="/review">review queue</a>, a new-species or raccoon alert
-        says "Possible … (needs your check)" instead, and season alerts wait for a sure answer. Change these in <a href="/settings#alerts">Settings</a>.</p>
-    </div>
-  </div>
-</section>
-
-{# ---------- Storage ---------- #}
+{# ---------- 9. Storage ---------- #}
 {% set so = bd.options %}
 <section class="about-section" id="storage">
   <h2>Storage</h2>
-  <p>Birdbrain never deletes a visit. Counts, first-seen dates, lessons, the Pi's learning and every thumbnail stay forever.
+  <p>Birdbrain never deletes a visit: counts, first-seen dates, lessons, the Pi's learning and every thumbnail stay.
     Only photo files get smaller, and only when they need to. All photos share one budget{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% endif %}:</p>
   <div class="sbar-wrap">
     <div class="sbar{{ ' over' if bar.over }}" role="img" aria-label="Photo use by kind">
@@ -559,11 +268,10 @@
     {% include "_storage_forecast.html" %}
   </div>
   <ul class="stack">
-    <li><strong>Thinning</strong>{% if so.thin_on and so.thin_edge < 1920 %} After {{ so.full_days }} days, older real visits are saved once at {{ so.thin_edge }} px, except each species' {{ so.full_per_day }} sharpest photos of each day (sharpness inside the crop box, then confidence).{% else %} Off: photos stay full size unless the budget runs short.{% endif %}</li>
-    <li><strong>Never thinned</strong> Favorites (blue star), species covers (yellow star), visits you corrected or wrote a note on, the first sighting of each species, and every visit of a species seen fewer than {{ so.rare_under }} times. The star on a photo card cycles: unset, blue favorite, yellow cover.</li>
-    <li><strong>When space runs short</strong> Over the budget{% if so.disk_floor_mb %}, or with less than {{ (so.disk_floor_mb * 1000000) | mb }} of disk free,{% endif %} the oldest false-trigger photos go first, then more visits are thinned, then the oldest keep only their thumbnail.</li>
-    <li><strong>Alerts</strong> {% if so.warn_pct %}A phone alert goes out at {{ '%g' | format(so.warn_pct) }}% of the budget, and another if protected photos alone fill it.{% else %}Warnings are off; set a percentage in Settings to get a phone alert as the budget fills.{% endif %}</li>
-    <li><strong>False triggers</strong> Also capped on their own (oldest first, confirmed-empty ones before the rest); ones you corrected are lessons and stay.</li>
+    <li><strong>Thinning</strong>{% if so.thin_on and so.thin_edge < 1920 %} After {{ so.full_days }} days, older real visits are saved once at {{ so.thin_edge }} px, except each species' {{ so.full_per_day }} sharpest photos of each day.{% else %} Off: photos stay full size unless the budget runs short.{% endif %}</li>
+    <li><strong>Never thinned</strong> Starred photos (favorites and species covers), visits you corrected or noted, each species' first sighting, and species seen fewer than {{ so.rare_under }} times.</li>
+    <li><strong>When space runs short</strong> Oldest false-trigger photos first, then more thinning, then the oldest keep only their thumbnail.{% if so.warn_pct %} A phone alert goes out at {{ '%g' | format(so.warn_pct) }}% of the budget.{% endif %}</li>
+    <li><strong>False triggers</strong> Capped on their own, oldest and confirmed-empty first; corrected ones are lessons and stay.</li>
   </ul>
 </section>
 
@@ -571,13 +279,10 @@
 <section class="about-section" id="stack">
   <h2>Under the hood</h2>
   <ul class="stack">
-    <li><strong>Camera</strong> Any camera with two RTSP streams; this project uses an inexpensive Wi-Fi camera with open-source firmware. Its picture and day/night settings can be changed from Settings &gt; Camera, through the camera's own web API; every change is logged and can be undone.</li>
-    <li><strong>Computer</strong> A Raspberry Pi on the home network runs the watcher, the local model, the database and this site.</li>
-    <li><strong>Software</strong> Python with OpenCV for motion, ONNX Runtime for the local models, FastAPI and htmx for the pages, SQLite for the visits, Chart.js and Leaflet for charts and maps.</li>
-    <li><strong>Privacy</strong> Photos and records stay on the Pi. Only the photos Claude is asked about leave the house (plus alert photos to ntfy,
-      and species names to the info sources). A public copy, if set up, never gets a photo where the Pi's person check fires,
-      unless you've looked, seen no one and pressed Make public on that visit.</li>
-    <li><strong>Storage</strong> Every visit is kept; older photos may be thinned to fit the budget. See <a href="#storage">Storage</a>.</li>
+    <li><strong>Camera</strong> Any camera with two RTSP streams; here an inexpensive Wi-Fi camera with open-source firmware, its picture and day/night settings changed from Settings &gt; Camera (logged, undoable).</li>
+    <li><strong>Computer</strong> A Raspberry Pi on the home network runs the watcher, both Pi checks, the database and this site.</li>
+    <li><strong>Software</strong> Python with OpenCV for motion, ONNX Runtime for BioCLIP 2, FastAPI and htmx for the pages, SQLite for the visits, Chart.js and Leaflet for charts and maps.</li>
+    <li><strong>Privacy</strong> Photos and records stay on the Pi. Only the photos Claude is asked about leave the house (plus alert photos to ntfy and species names to the info sources). A public copy, if set up, never gets a photo where the Pi's person check fires unless you've looked and pressed Make public; it never gets your notes for Claude, and your circle checks only while Settings &gt; Public mirror shares them.</li>
   </ul>
 </section>
 

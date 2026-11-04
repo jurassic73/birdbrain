@@ -1,7 +1,7 @@
 """Disk space for photos: the false-trigger limit, and the photo budget that thins older real visits.
 
 False triggers: deleting one here deletes only its photo files (photo, thumbnail, burst). The row and its BioCLIP
-embedding stay (`visits.photo_deleted_at` is set), so the Pi's animal check keeps learning from it.
+embedding stay (`visits.photo_deleted_at` is set), so the Pi animal check keeps learning from it.
 False triggers the owner corrected or wrote a note on keep their photos too: they carry the lessons Claude
 learns from (db.recent_lessons). So do the ones marked as keepers.
 

@@ -1,16 +1,33 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge %}
+{% import "_steps.html" as steps_ui %}
 {% block title %}False triggers | Birdbrain{% endblock %}
 {% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
 {% block content %}
 <div class="page-head ft-head"><h1>False triggers <span class="muted ft-count" id="ft-unchecked" data-tip="Photos listed below. Confirmed ones are hidden unless Show confirmed is on.">{{ total if show_all else unchecked }}</span></h1>
 {% if total > unchecked or not show_all %}<a class="link-btn" id="ft-show"{% if total == unchecked %} hidden{% endif %} href="/false-triggers{{ '' if show_all else '?show=all' }}" data-tip="Photos you already confirmed (or corrected but still empty) are hidden so the list is only what's left to check. Show them dimmed, or hide them again.">{{ 'Hide confirmed' if show_all else 'Show confirmed (' ~ (total - unchecked) ~ ')' }}</a>{% endif %}</div>
-<p class="muted">Birdbrain saw motion and took these photos, but found no animal in them. Now it's your turn to look. Open a photo to check it on its own: if it's empty, press <b>Confirm</b>; if there's an animal, pick what it was. Either way the animal check model on the Pi learns from it, and the photo leaves this list. Once confirmed, a photo has done its job: the Pi has already learned from it and doesn't need it again for training, so <a href="#ft-storage" id="ft-delete-link">delete confirmed photos to save space</a>{% if storage.confirmed_count %} ({{ storage.confirmed_count }} photo{{ 's' if storage.confirmed_count != 1 }}, {{ storage.confirmed_bytes | mb }}){% else %} (none waiting yet){% endif %}.</p>
-{% if confirmed is not none %}<p class="notice saved">Confirmed {{ confirmed }} as empty. The Pi's animal check trains on them.</p>{% endif %}
+<p class="muted">Motion, but no animal found. Open each photo to check it. <a href="#" id="ft-trains-link" data-tip="Which of the Motion detector, Pi animal check, BioCLIP 2 species check and Claude does what, and which ones learn from your answers">What trains what?</a></p>
+<dialog class="popup ft-trains-popup" id="ft-trains" aria-labelledby="ft-trains-title">
+  <button type="button" class="popup-close" aria-label="Close" data-tip="Close"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M3 3 13 13M13 3 3 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  <h2 class="popup-title" id="ft-trains-title">What trains what</h2>
+  <p class="muted small">If a photo is empty, press <b>Confirm</b>; if there is an animal, pick what it was. The Pi animal check learns from your answer and the photo leaves this list.</p>
+  {{ steps_ui.strips(four) }}
+  <div class="popup-actions"><button type="button" class="popup-cancel">Close</button></div>
+</dialog>
+<script>
+  (() => {
+    const dlg = document.getElementById("ft-trains");
+    document.getElementById("ft-trains-link").addEventListener("click", (e) => { e.preventDefault(); dlg.showModal(); });
+    dlg.querySelectorAll(".popup-close, .popup-cancel").forEach((b) => b.addEventListener("click", () => dlg.close()));
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+  })();
+</script>
+<p class="muted small">Confirmed photos have done their job: the Pi animal check has already learned from them, so <a href="#ft-storage" id="ft-delete-link">delete confirmed photos to save space</a>{% if storage.confirmed_count %} ({{ storage.confirmed_count }} photo{{ 's' if storage.confirmed_count != 1 }}, {{ storage.confirmed_bytes | mb }}){% else %} (none waiting yet){% endif %}.</p>
+{% if confirmed is not none %}<p class="notice saved">Confirmed {{ confirmed }} as empty. The Pi animal check trains on them.</p>{% endif %}
 {% if request.state.admin and (unchecked or total > unchecked) %}
 <form class="ft-confirm" method="post" action="/false-triggers/confirm" id="ft-confirm">
   <input type="hidden" name="ids">
-  {% if unchecked and not show_all %}<button type="submit" data-tip="Marks every photo loaded below as empty, in one go (more load as you scroll; only loaded ones count). The Pi's animal check counts confirmed photos 3 times when it learns, so open and correct any photo with an animal first.">Confirm all shown false triggers have no animals</button>{% endif %}
+  {% if unchecked and not show_all %}<button type="submit" data-tip="Marks every photo loaded below as empty, in one go (more load as you scroll; only loaded ones count). The Pi animal check counts confirmed photos 3 times when it learns, so open and correct any photo with an animal first.">Confirm all shown false triggers have no animals</button>{% endif %}
 </form>
 <script>
   document.getElementById("ft-confirm").addEventListener("submit", e => {
@@ -21,7 +38,7 @@
     birdbrain.confirmSubmit(e, {
       title: one ? "Confirm this photo is empty?" : `Confirm all ${n} photos are empty?`,
       message: `You are confirming that ${one ? "this photo does" : `all ${n} photos shown here do`} not contain an animal.\n\n`
-        + `The Pi's animal check will train on ${one ? "it" : "them"} as empty photo${s}. If any has an animal, press Cancel and correct ${one ? "it" : "that one"} first.`,
+        + `The Pi animal check will train on ${one ? "it" : "them"} as empty photo${s}. If any has an animal, press Cancel and correct ${one ? "it" : "that one"} first.`,
       ok: one ? "Confirm empty" : `Confirm ${n} empty`,
     });
   });

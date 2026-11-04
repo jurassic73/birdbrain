@@ -555,7 +555,7 @@ def test_settings_sections_collapse_and_show_a_status_when_closed(client, conn):
     html = client.get("/settings").text
     for section in ("local", "storage", "alerts"):
         assert f'<details class="settings-card" id="{section}" open>' in html
-    assert ">Animal check shadow, species guess gate<" in html and ">Off<" in html
+    assert ">Pi animal check shadow, BioCLIP 2 species check gate<" in html and ">Off<" in html
     notes = client.get("/notes").text
     for section in ("camera", "lessons"):
         assert f'<details class="settings-card" id="{section}" open>' in notes
@@ -776,7 +776,7 @@ def test_settings_shows_the_local_checks_as_one_flow(client, conn, monkeypatch):
     monkeypatch.setattr(config, "PRESENCE", "shadow")
     html = client.get("/settings").text
     assert 'id="local"' in html and 'id="detector"' not in html and 'value="shadow" checked' in html
-    steps = ["Anything there?", "What species?", "Ask Claude"]
+    steps = ["(Anything there?)", "(What species?)", "3</span> Claude"]
     assert [html.index(s) for s in steps] == sorted(html.index(s) for s in steps)
     assert "kept on the Pi" in html and "sent to Claude" in html
     r = client.post("/settings/presence", data={"mode": "gate"}, follow_redirects=False)
@@ -798,7 +798,7 @@ def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, co
     db.set_value(conn, "presence_mode", "gate")
     html = client.get("/about").text
     assert "How Birdbrain works" in html and 'href="/about"' in html
-    assert f'href="{config.REPO_URL}"' in html and "Source code on GitHub" in html
+    assert "Source code on GitHub" not in html
     assert "2%</strong> of the watched area" in html                            # MOTION_MIN_AREA, live
     assert f"{config.BURST_FRAMES} full-size photos" in html
     assert html.count('class="z-rim"') == 1 and html.count('class="z-spot"') == 1
@@ -808,16 +808,23 @@ def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, co
     for cls, color in zip(("z-rim", "z-water", "z-spot", "z-crop"), colors):
         assert f'class="{cls}" style="color: {color}"' in html
     assert "1 landing spot inside the water" in html
-    assert re.search(r'mode on" role="listitem">\s*<strong>Gate</strong><span class="badge', html)  # mode marked
+    assert re.search(r'The Pi animal check <span class="badge pi-only"[^>]*>gate</span>', html)  # mode marked, live
     assert "claude-haiku-5-5" in html and "claude-sonnet-5-5" in html
-    assert "2</span> motion events checked" in html and "Example: a summer visitor" in html
     assert "—" not in html
-    # diagrams first, then the numbers with visible titles, then the zones
+    # the 10,000-foot view: no numbers, seasons, cooldowns or JSON; diagrams first, then the zones and rules
+    for gone in ("motion events checked", "How often visitors come", "Example: a summer visitor", "Cooldowns and rainy days",
+                 '"visitor": "bird"', 'id="numbers"', 'id="seasons"', 'href="#numbers"', 'href="#seasons"'):
+        assert gone not in html, gone
     assert "How a visit gets spotted, identified and shared here" in html
     assert "The network path, from the bird to you" in html
-    assert "How often visitors come" in html
-    pos = [html.index(f'id="{i}"') for i in ("flow", "network", "numbers", "zones")]
-    assert pos == sorted(pos) and '<a href="#numbers">Numbers</a>' in html
+    pos = [html.index(f'id="{i}"') for i in ("flow", "handled", "network", "zones", "rules", "photos", "learning", "sources",
+                                             "storage", "stack")]
+    assert pos == sorted(pos) and '<a href="#photos">Photos to Claude</a>' in html
+    # which parts learn and which don't, one row each with its pill
+    learn = html[html.index('id="learning"'):html.index('id="sources"')]
+    assert learn.count("<tr>") == 4 and all(n in learn for n in FOUR)
+    assert ">can&#39;t be trained<" in learn or ">can't be trained<" in learn
+    assert "in-context learning, not fine-tuning" in learn and f"{db.CONFIRMED_MIN} sure visits" in learn
 
 
 def test_about_page_without_calibration_or_data(client, monkeypatch):
@@ -828,15 +835,13 @@ def test_about_page_without_calibration_or_data(client, monkeypatch):
     assert "Whole frame" in html and "Claude sees the whole photo" in html
     assert 'class="z-water"' not in html and "Open water</h3>" not in html
     assert 'class="z-ground"' not in html and "Ground around the bath" not in html
-    assert "motion events checked" not in html
-    assert 'id="numbers"' not in html and 'href="#numbers"' not in html
 
 
 def test_about_page_explains_the_ground_zone(client, calibrated, monkeypatch):
     monkeypatch.setattr(config, "GROUND_ZONE", ((0.1, 0.5), (0.9, 0.5), (0.9, 1), (0.1, 1)))
     html = client.get("/about").text
     assert 'class="z-ground"' in html and "Ground around the bath</h3>" in html
-    assert f"own cap of {config.GROUND_MAX_CALLS_PER_DAY}" in html and "plus the ground around the bath" in html
+    assert "plus the ground around the bath" in html
     assert "0.6%</strong>" not in html and "about cat-sized (0.6%)" in html     # GROUND_MIN_BLOB_NIGHT, live
 
 
@@ -905,22 +910,6 @@ def test_visit_photo_without_any_zones_draws_nothing(client, add_visit, monkeypa
     vid = add_visit(raw_json=json.dumps({"trigger": "rim"}))
     html = client.get(f"/visit/{vid}").text
     assert 'class="zones-overlay"' not in html and 'id="zones-toggle"' not in html
-
-
-def test_backoff_steps_stop_at_the_cap(monkeypatch):
-    monkeypatch.setattr(config, "COOLDOWN_NONE", 20)
-    monkeypatch.setattr(config, "COOLDOWN_NONE_MAX", 300)
-    assert webapp.backoff_steps() == [20, 40, 80, 160, 300]
-
-
-def test_season_example_prefers_a_real_card_with_a_season():
-    year_round = {"local_counts": [50] * 12, "expected_months": list(range(1, 13))}
-    summer = {"local_counts": [0, 0, 2, 10, 60, 90, 100, 80, 30, 5, 0, 0], "expected_months": [5, 6, 7, 8, 9]}
-    ex = webapp.season_example({"American Robin": year_round, "Black-headed Grosbeak": summer})
-    assert ex["name"] == "Black-headed Grosbeak" and ex["status"] == "Summer visitor"
-    badges = {m["name"]: m["badge"] for m in ex["months"]}
-    assert badges["Apr"] == "Early arrival" and badges["Oct"] == "Late departure" and badges["Jun"] is None
-    assert webapp.season_example({})["name"] is None
 
 
 def test_visit_page_says_which_zone_saw_the_motion(client, add_visit):
@@ -1070,9 +1059,9 @@ def test_false_trigger_cards_refresh_after_the_pop_up(client, add_visit, conn):
 def test_visit_page_says_notes_are_for_claude_only(client, add_visit):
     html = client.get(f"/visit/{add_visit()}").text
     # The note box is one short line; its info tip says the Pi never reads notes.
-    assert "Note for Claude" in html and "The Pi's local animal check never reads notes" in html
+    assert "Note for Claude" in html and "The Pi animal check never reads notes" in html
     assert 'id="feedback" name="feedback" rows="1"' in html
-    assert "The answer you pick trains the Pi's local animal check" in html
+    assert "The answer you pick trains the Pi animal check" in html
 
 
 def _flows(html):
@@ -1096,7 +1085,7 @@ def test_local_only_steps_get_no_claude_mark(client, add_visit):
     raw = json.dumps({"calls": {"presence": {"empty": True, "score": 0.02, "threshold": 0.5, "trained_on": 40}, "skipped_claude": True}})
     html = client.get(f"/visit/{add_visit(visitor='none', species=None, model='presence', raw_json=raw)}").text
     flows = _flows(html)
-    assert flows and all("Detection path" in f and "Local animal check" in f and "claude-mark" not in f for f in flows)
+    assert flows and all("Detection path" in f and "Pi animal check" in f and "claude-mark" not in f for f in flows)
 
 
 def test_note_for_claude_label_has_the_mark(client, add_visit):
@@ -1388,6 +1377,46 @@ def test_review_heading_shows_the_real_total(client, add_visit, monkeypatch):
     assert "Showing the oldest 2 of 3" in html
 
 
-def test_alert_pills_and_the_local_off_pill_have_their_own_tooltips(client):
+FOUR = ("Motion detector", "Pi animal check", "BioCLIP 2 species check", "Claude")
+
+
+def test_the_false_triggers_intro_shows_the_four_components_with_live_numbers(client):
+    from birdbrain import classifier, db
+    html = client.get("/false-triggers").text
+    strips = re.findall(r'<div class="hs-strip" id="step-\d">', html)
+    assert len(strips) == 4 and all(n in html for n in FOUR)
+    assert f"{config.TRIGGER_FRAMES} frames in a row" in html and f"{classifier.GATE_MIN_SCORE * 100:g}%" in html
+    assert f"newest {db.LESSON_LIMIT} lessons" in html and "<summary>More</summary>" in html
+    assert "delete confirmed photos to save space" in html and 'id="ft-delete-link"' in html
+    # The strips live in a pop-up opened from a link; the page keeps a one-line intro.
+    dialog = html[html.index('<dialog class="popup ft-trains-popup"'):html.index("</dialog>")]
+    assert 'id="ft-trains-link"' in html and ">What trains what?<" in html
+    assert all(n in dialog for n in FOUR) and len(re.findall(r'class="hs-strip"', dialog)) == 4
+    assert "Bottom line" in dialog and "popup-close" in dialog and "Escape" not in html.split("<dialog")[0]
+    assert "Motion, but no animal found. Open each photo to check it." in html
+    assert 'class="hs-strip"' not in html.replace(dialog, "")
+
+
+def test_about_has_the_four_steps_as_numbered_cards_with_live_numbers(client):
+    from birdbrain import classifier, db, lessons
     html = client.get("/about").text
-    assert "this alert is switched" in html and "this local step doesn" not in html
+    start = html.index('id="handled"')
+    section = html[start:html.index("</section>", start)]
+    assert "How a photo is handled" in section and len(re.findall(r'class="hs-step"', section)) == 4
+    for name in FOUR:
+        assert f"What the {name} does" in section and f"How the {name} is trained" in section
+    assert "What you control" in section
+    assert f"{config.TRIGGER_FRAMES} frames in a row" in section and f"{classifier.GATE_MIN_SCORE * 100:g}%" in section
+    assert f"at least {db.CONFIRMED_MIN} earlier visits" in section and f"newest {db.LESSON_LIMIT} lessons" in section
+    assert f"After every {lessons.AUTO_EVERY} new lessons" in section
+    assert len(re.findall(r"<summary>More</summary>", section)) == 4  # training and controls fold under More
+    assert "Anything there?" not in html  # the page says Pi animal check, never the Settings sub-label
+
+
+def test_no_page_calls_the_pi_animal_check_by_an_old_name(client, add_visit):
+    vid = add_visit(visitor="none", species=None)
+    for path in ("/false-triggers", "/about", "/settings", "/stats", f"/visit/{vid}"):
+        html = client.get(path).text
+        for old in ("Local animal check", "local animal check", "Local classifier", "Local checks", "the Pi's animal check",
+                    "The Pi's animal check"):
+            assert old not in html, (path, old)

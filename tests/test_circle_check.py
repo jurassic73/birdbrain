@@ -152,7 +152,7 @@ def test_a_circle_on_a_burst_frame_is_checked_on_that_frame(client, conn, photo_
     # Haiku crops the same frame, using that frame's own size.
     sizes = []
 
-    def ask(model, images_b64, captured_at, lessons=None, site=None, note=""):
+    def ask(model, images_b64, captured_at, lessons=None, site=None, note="", night=False):
         return None, {"model": model, "input_tokens": 1, "output_tokens": 0}
     monkeypatch.setattr(identify, "ask", ask)
     monkeypatch.setattr(circle_check, "square", lambda c, w, h, margin=circle_check.MARGIN: sizes.append((w, h)) or (0, 0, 1, 1))
@@ -197,7 +197,7 @@ def test_ask_haiku_then_sonnet_on_just_the_circle(client, conn, photo_visit, mon
     vid = photo_visit()
     seen = []
 
-    def ask(model, images_b64, captured_at, lessons=None, site=None, note=""):
+    def ask(model, images_b64, captured_at, lessons=None, site=None, note="", night=False):
         import base64
         seen.append((model, Image.open(io.BytesIO(base64.b64decode(images_b64[0]))).size, note))
         if model == identify.HAIKU:
@@ -342,3 +342,45 @@ def test_visit_page_shows_the_usual_time_beside_the_timer(client, conn, photo_vi
     html = client.get(f"/visit/{vid}?ft=1").text
     assert "(usually ~20 s)" in html
     assert "Average of the last 3 Ask BioCLIP 2 checks on this Pi (all-time 20 s over 3 checks)." in html
+
+
+def test_claude_checks_say_when_the_frame_is_infrared(client, conn, photo_visit, monkeypatch):
+    """A night visit's crop goes to Haiku or Sonnet with the same night note every identification sends."""
+    seen = []
+
+    def ask(model, images_b64, captured_at, lessons=None, site=None, note="", night=False):
+        seen.append(night)
+        return None, {"model": model, "input_tokens": 1, "output_tokens": 0}
+    monkeypatch.setattr(identify, "ask", ask)
+    client.post(f"/visit/{photo_visit(is_night=1)}/check-circle/haiku", data={"marks": MARKS})
+    client.post(f"/visit/{photo_visit(is_night=0)}/check-circle/sonnet", data={"marks": MARKS})
+    assert seen == [True, False]
+
+
+def test_a_visit_cut_down_to_its_thumbnail_is_checked_on_the_thumbnail(client, conn, photo_visit, monkeypatch):
+    """The photo budget may leave a real visit with only its thumbnail (photo_level 'thumb', not deleted): the page
+    still shows it with the Ask buttons, so the check crops the thumbnail, as Ask (ask-species) does."""
+    import base64
+
+    from birdbrain import config
+
+    vid = photo_visit(visitor="bird", species="Bushtit", model="claude-haiku-5-5", confidence="medium")
+    v = db.get_visit(conn, vid)
+    (config.IMAGES_DIR / v["image_path"]).unlink()
+    conn.execute("UPDATE visits SET photo_level = 'thumb' WHERE id = ?", (vid,))
+    conn.commit()
+    v = db.get_visit(conn, vid)
+    jpeg, frame = circle_check.jpeg_of(v)
+    assert jpeg is not None and frame is None
+    sizes = []
+
+    def ask(model, images_b64, captured_at, lessons=None, site=None, note="", night=False):
+        sizes.append(Image.open(io.BytesIO(base64.b64decode(images_b64[0]))).size)
+        return None, {"model": model, "input_tokens": 1, "output_tokens": 0}
+    monkeypatch.setattr(identify, "ask", ask)
+    r = client.post(f"/visit/{vid}/check-circle/haiku", data={"marks": MARKS}).json()
+    assert "error" not in r and r["frame"] is None and sizes and sizes[0][0] >= classifier.MIN_SIDE
+    # A photo that really is gone still says so.
+    conn.execute("UPDATE visits SET photo_deleted_at = '2026-11-01' WHERE id = ?", (vid,))
+    conn.commit()
+    assert "deleted" in client.post(f"/visit/{vid}/check-circle/haiku", data={"marks": MARKS}).json()["error"]

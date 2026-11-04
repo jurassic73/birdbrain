@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, claude_mark, confirm_badge, zoom_out_btn, fav_star with context %}
+{% import "_steps.html" as steps_ui %}
 {% block title %}{{ 'No animal' if visit.label == 'None' else visit.label }} | Birdbrain{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block head %}
@@ -28,8 +29,8 @@
 {# The Pi judged the frame empty and Claude wasn't asked (the note box says so). #}
 {% set claude_skipped = visit.visitor == 'none' and decision.steps | selectattr("skipped_claude") | list %}
 {# Block sets: their apostrophes stay as typed, as they were inline. #}
-{% set note_tip %}{% if claude_skipped %}Claude wasn't asked about this visit: the Pi judged it empty. A note is saved to Claude's Notes as a lesson and read on future identifications.{% else %}Saved to Claude's Notes as a lesson. Nothing is sent to Claude now; it is read on future identifications so Claude can avoid the same mistake.{% endif %} The Pi's local animal check never reads notes: it learns from the answer you pick above.{% endset %}
-{% set note_placeholder %}{% if claude_skipped %}Claude didn't look at this one. Optional: what set off the motion? e.g. wind ripples on the rim{% else %}What did Claude get wrong? e.g. No bird: rocks poking out after a refill{% endif %}{% endset %}
+{% set note_tip %}{% if claude_skipped %}Claude wasn't asked about this visit: the Pi judged it empty. {% else %}Nothing is sent to Claude now.{% endif %} A Note for Claude becomes a lesson on Claude's Notes: sent word for word with every photo while it is among the newest {{ lesson_limit }} lessons, and folded into the Lessons summary. The Pi animal check never reads notes: it learns only from the answer you pick above.{% endset %}
+{% set note_placeholder %}{% if claude_skipped %}Claude didn't look at this one. Describe each numbered circle, e.g. 1: spiderweb moving in the wind{% else %}Describe each numbered circle, e.g. 1: spiderweb moving in the wind{% endif %}{% endset %}
 {% set embed = request.query_params.get('embed') == '1' %}
 {# In the False triggers pop-up every link keeps embed=1 (and todo=1, unconfirmed only), so the arrows stay inside it. #}
 {% set ft_args = (['ft=1'] if is_ft else []) + (['todo=1'] if todo else []) + (['embed=1'] if embed else []) + (['species=' ~ (scope | urlencode)] if scope else []) %}
@@ -47,18 +48,18 @@
   <div class="visit-media">
   {# Admins can always draw (no Add circles button since 2026-11-03): the note says how; a click still opens the full-size photo. #}
   <div class="photo-tools" id="photo-tools">
-    {% if request.state.admin and not visit.photo_deleted_at %}<span class="photo-note photo-draw-note muted small" id="draw-note" data-tip-anchor=".visit-photo" data-tip="Drag on the photo to draw a circle, drag a circle's middle to move it, its × removes it. A click without dragging opens the full-size photo. With a burst, pick any frame below and draw on that one. Pinching with two fingers still zooms.">Add circles: drag on the photo</span>{% endif %}
+    {% if request.state.admin and not visit.photo_deleted_at %}<span class="photo-note photo-draw-note muted small" id="draw-note" data-tip-anchor=".visit-photo" data-tip="Drag on the photo to draw a circle, drag a circle's middle to move it, its × removes it. A click without dragging opens the full-size photo. With a burst, pick any frame below and draw on that one. Pinching with two fingers still zooms. On an empty photo, circles plus a Note for Claude become a lesson for Claude about where the false alarm was; the Pi animal check learns only from the answer you pick, never from circles or names. On a photo with an animal, the first circle picks the burst frame the Pi animal check learns from.">Add circles: drag on the photo</span>{% endif %}
     <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
     {% set nc = no_circle_note(visit) %}{% if nc and not visit.photo_deleted_at %}<span class="photo-note muted small" data-tip="Claude wasn't asked, and the Pi's circle from the motion found nothing it was sure of (see How it was decided), so there's no circle on this photo.">{{ nc }}</span>{% endif %}
     <span class="photo-tools-end">
     {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards). Drawing a new circle shows them again.">Hide circles</button>{% endif %}
-    {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi's animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
+    {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
     </span>
   </div>
   {# data-frame: the burst frame shown first (the owner's pick), empty for the photo Claude saw. #}
   <div class="visit-photo" id="photo" data-marks="{{ marks | tojson | forceescape }}" data-frame="{{ photo_frame or '' }}">
     {% if visit.photo_deleted_at %}
-    <div class="photo-gone" data-tip="Deleted on {{ visit.photo_deleted_at[:10] }} to save space. The record stays, and so does what the Pi's animal check learned from it.">Photo deleted to save space</div>
+    <div class="photo-gone" data-tip="Deleted on {{ visit.photo_deleted_at[:10] }} to save space. The record stays, and so does what the Pi animal check learned from it.">Photo deleted to save space</div>
     {% else %}
     <a href="/images/{{ photo_src(visit) }}" draggable="false"><img class="full" draggable="false" src="/images/{{ photo_src(visit) }}" width="1920" height="1080" alt="{{ visit.label }}"></a>
     {% endif %}
@@ -81,7 +82,7 @@
   {% if burst %}
   <section class="vburst" aria-label="Burst">
     <h2 class="vburst-head tip-label">Burst<span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
-      <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi's animal check learns from.">i</span>
+      <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi animal check learns from.">i</span>
       <span class="vburst-steps"><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
     <div class="vburst-strip" style="--n: {{ burst | length }}">
       {% for f in burst %}
@@ -130,7 +131,7 @@
         {% if visit.confirmed_at %}
         <span class="confirmed-pair">{{ badge("Confirmed No Animal" if visit.label == 'None' else "confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button></span>
         {% elif not (visit.corrected_species or visit.corrected_visitor) %}
-        <span class="confirm-pair">{% if visit.label == 'None' %}<span class="confirm-hint">No animal in image:</span>{% endif %}<button hx-post="/visit/{{ visit.id }}/reviewed" id="confirm-btn" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the local animal check on the Pi trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi). Press C to confirm and go to the next older visit.">Confirm</button></span>
+        <span class="confirm-pair">{% if visit.label == 'None' %}<span class="confirm-hint">No animal in image:</span>{% endif %}<button hx-post="/visit/{{ visit.id }}/reviewed" id="confirm-btn" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the Pi animal check trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi). Press C to confirm and go to the next older visit.">Confirm</button></span>
         {% endif %}
         {% if settled %}<button type="button" class="m-only secondary" id="correct-open">Not right? Correct it</button>{% endif %}
         <button class="danger m-hide" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Its photo is deleted too. This can't be undone." data-confirm-title="Delete this visit?" data-confirm-ok="Delete">Delete visit</button>
@@ -145,9 +146,14 @@
       {% if visit.model %}<dt>Identified by</dt><dd>{{ visit.model }}{% if visit.escalated %} (escalated){% endif %}</dd>{% endif %}
     </dl>
     {{ flow("in-info") }}
-    {# What this visit teaches the Pi's animal check (presence.teaches; admins only). #}
-    {% set teach_line %}{% if teaches %}{% if not teaches.animal %}Teaches the Pi's animal check an empty frame.{% if teaches.checked %} Counts 3 times: you checked it.{% endif %}{% elif teaches.used %}Teaches the Pi's animal check what an animal in the dashed box looks like, from {{ teaches.why }}.{% if teaches.checked %} Counts 3 times: you checked it.{% endif %}{% else %}Left out of the Pi's animal check's training: {{ teaches.why }}.{% endif %}{% endif %}{% endset %}
-    {% if decision.steps or decision.owner_checks or teaches %}
+    {# What this photo does to each of the four components (steps.for_visit; admins only). #}
+    {% if trains %}
+    <section class="photo-trains" id="trains">
+      <h2>What this photo trains</h2>
+      {{ steps_ui.photo_strips(trains) }}
+    </section>
+    {% endif %}
+    {% if decision.steps or decision.owner_checks %}
     <details class="decision">
       <summary><h2>How it was decided</h2></summary>
       {% if decision.trigger %}<p class="muted small">Spotted moving {{ decision.trigger }}.</p>{% endif %}
@@ -156,7 +162,7 @@
         <li{% if step.shadow %} class="step-shadow"{% endif %}>
           {% if step.shadow %}
           <div class="step-head">
-            <strong>Local classifier</strong> {{ badge("pi named", "pi-only") if step.gated else badge("shadow", "shadow") }}
+            <strong>BioCLIP 2 species check</strong> {{ badge("pi named", "pi-only") if step.gated else badge("shadow", "shadow") }}
             <span class="muted">on the Pi, {{ step.crop }}{% if step.seconds is not none %}, {{ step.seconds }} s{% endif %}</span>
           </div>
           <div>{% if step.guesses %}{{ step.guesses | join(", ") }}{% else %}no local species{% endif %}</div>
@@ -169,7 +175,7 @@
           {% endif %}
           {% elif step.presence %}
           <div class="step-head">
-            <strong>Local animal check</strong>
+            <strong>Pi animal check</strong>
             <span class="muted">on the Pi, trained on {{ step.trained_on }} of this yard's frames</span>
           </div>
           <div>{{ step.said | capitalize }} <span class="muted">(score {{ '%.3f' | format(step.score) }}, empty below {{ '%.3f' | format(step.threshold) }})</span></div>
@@ -179,7 +185,6 @@
           {% if step.skipped_claude %}
           <div class="step-why">Judged empty, so Claude wasn't asked. If there is an animal, correct it below: the check learns from it.</div>
           {% endif %}
-          {% if teach_line %}<div class="muted step-notes" id="teaches">{{ teach_line }}</div>{% endif %}
           {% elif step.motion_circle %}
           <div class="step-head">
             <strong>Circle from the motion</strong> {{ badge("pi circle", "pi-only") }}
@@ -216,11 +221,11 @@
           {% if step.notes %}<div class="muted step-notes">{{ step.notes }}</div>{% endif %}
           {% endif %}
           {% if step.model == 'Haiku' and decision.asked_sonnet and decision.local_disagreed %}
-          <div class="step-why">Fairly sure, but the Pi's classifier said {{ decision.local_disagreed }}, so it asked Sonnet for a second look with more frames.</div>
+          <div class="step-why">Fairly sure, but the BioCLIP 2 species check said {{ decision.local_disagreed }}, so it asked Sonnet for a second look with more frames.</div>
           {% elif step.model == 'Haiku' and decision.asked_sonnet %}
           <div class="step-why">Not confident enough, so it asked Sonnet for a second look with more frames.</div>
           {% elif step.model == 'Haiku' and decision.skipped_sonnet %}
-          <div class="step-why">A species already confirmed here several times{% if decision.local_agreed %}, and the Pi's classifier agreed{% endif %}, so Sonnet wasn't asked.</div>
+          <div class="step-why">A species already confirmed here several times{% if decision.local_agreed %}, and the BioCLIP 2 species check agreed{% endif %}, so Sonnet wasn't asked.</div>
           {% endif %}
           {% endif %}
         </li>
@@ -228,7 +233,6 @@
       </ol>
       {% if visit.needs_review and decision.failed %}<p class="step-why">Claude couldn't answer, so the photo was kept and sent to you for review.</p>
       {% elif visit.needs_review %}<p class="step-why">Still unsure, so it was sent to you for review.</p>{% endif %}
-      {% if teach_line and not (decision.steps | selectattr("presence") | list) %}<p class="muted small" id="teaches">{{ teach_line }}</p>{% endif %}
       {% if decision.owner_checks %}
       <h3 class="owner-checks-head">Your circle checks</h3>
       <ol class="owner-checks">
@@ -251,12 +255,12 @@
     <details class="review-fold" open {% if settled %}data-m-closed{% endif %}>
     <summary class="m-hide-summary">Correct it</summary>
     {# What Save teaches (presence.py): the tip on every Save follows the answer picked. #}
-    {% set save_base = "Saving teaches the Pi's \"Anything there?\" check, which looks only at the dashed box: it retrains within about a minute, and your answer counts 3 times." %}
+    {% set save_base = "Saving teaches the Pi animal check (\"Anything there?\"), which looks only at the dashed box: it retrains within about a minute, and your answer counts " ~ weight ~ " times." %}
     {% set save_none = save_base ~ " No animal: this photo becomes a checked example of an empty box. Your note goes to Claude as a lesson." %}
     {% set save_animal = save_base ~ " An animal: if your first circle is on another burst frame, that frame becomes its example of an animal in the box, as long as the circle is mostly inside the dashed box (if not, this visit is left out). Otherwise it uses the burst frame that looks most like an animal, or this photo when the circle is inside the box. It learns whether an animal is in the box, not where, and no species names: your species and note go to Claude as lessons." %}
     <form class="review" hx-post="/visit/{{ visit.id }}/correct" data-save-none="{{ save_none }}" data-save-animal="{{ save_animal }}">
       <div class="review-head">
-        <h2 class="tip-label">Was this right? <span class="info-tip" tabindex="0" aria-label="About corrections" data-tip="The answer you pick trains the Pi's local animal check (it counts 3 times). Your answer and your note are also shown to Claude on future identifications, so it learns from its mistakes at this birdbath.">i</span></h2>
+        <h2 class="tip-label">Was this right? <span class="info-tip" tabindex="0" aria-label="About corrections" data-tip="The answer you pick trains the Pi animal check (your answer counts {{ weight }} times). Your answer and your Note for Claude also become a lesson that Claude reads on future identifications.">i</span></h2>
         <a class="muted small" href="/notes#lessons">All lessons</a>
       </div>
       <div class="review-row">
@@ -295,7 +299,7 @@
       <div class="field circle-check" id="circle-check">
         <div class="circle-check-head">
           <span class="field-title tip-label">Manual circle and ask</span>
-          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Draw your own circle around the animal (drag on the photo), then ask about what's inside it. BioCLIP 2, the species model on the Pi, looks at just that part of the photo: free, and 5 to 20 seconds. If it isn't sure, ask Haiku, then Sonnet, on the same part. The checks look at the first circle you drew, on the frame it's on; Claude's dashed circle doesn't count. Nothing changes until you press Save; saving the right answer is what teaches the Pi's animal check (Save's tip says how).">i</span>
+          <span class="info-tip" tabindex="0" aria-label="About circle checks" data-tip="Draw your own circle around the animal (drag on the photo), then ask about what's inside it. The BioCLIP 2 species check on the Pi looks at just that part of the photo: free, and 5 to 20 seconds. If it isn't sure, ask Haiku, then Sonnet, on the same part. The checks look at the first circle you drew, on the frame it's on; Claude's dashed circle doesn't count. Nothing changes until you press Save; saving the right answer is what teaches the Pi animal check (Save's tip says how).">i</span>
         </div>
         <div class="circle-check-btns" data-no-circle-tip="Draw a circle on the photo first: drag around the animal.">
           <button type="button" class="check-btn" data-source="pi" data-tip="BioCLIP 2, the species model on the Pi, names what's in your first circle. Free, runs on the Pi; {% if pi_average.avg %}usually about {{ pi_average.avg|round|int }} seconds (average of {{ pi_average.n }}){% else %}takes 5 to 20 seconds{% endif %}.">Ask BioCLIP 2</button>
