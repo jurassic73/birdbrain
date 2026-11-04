@@ -435,11 +435,11 @@ section.visits { border-top: 1px solid var(--line); padding-top: 16px; }
 .today-facts li { position: relative; padding-left: 12px; }
 .today-facts li::before { content: ""; position: absolute; left: 1px; top: .55em; width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
 @media (max-width: 800px), (orientation: landscape) and (max-height: 500px) { .today-facts { display: none; } }
-/* Today's visitor count: plain text on the row with More filters; the other numbers live on Stats. */
-.tally-box { margin: 0; }
-.tally-box.tally-head { font-size: 1rem; white-space: nowrap; }
+/* The bar above the cards holds just More filters (the Today count is in the scoreboard beside the photo). */
+/* On phones the hero photo already shows the latest visit, so its card under Today is hidden (_cards.html marks it). */
+@media (max-width: 640px) { .card.hero-dup { display: none; } }
 .visits-bar .filters-toggle { margin-left: auto; flex: none; }
-.visits-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; margin-bottom: 8px; }
+.visits-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 16px; margin-bottom: 8px; }
 .today-visits { margin: 0 0 8px; }
 .today-visits h2 { margin: 0; font-size: 1.1rem; }
 .today-visits h2 .tally-n { margin-left: 6px; }
