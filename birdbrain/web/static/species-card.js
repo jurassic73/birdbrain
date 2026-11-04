@@ -107,7 +107,7 @@
     addEventListener("scroll", hideTip, { passive: true });
   }
 
-  // The title's Song button: one shared Audio so only one thing plays; the card's own <audio> players pause it (and it pauses them).
+  // The title's song/call buttons: one shared Audio so only one thing plays; the card's own <audio> players pause it (and it pauses them).
   const song = new Audio();
   song.preload = "none";
   let songBtn = null;
