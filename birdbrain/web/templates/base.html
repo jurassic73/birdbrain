@@ -91,6 +91,7 @@
   <script src="/static/save-feedback.js?v={{ asset_version }}" defer></script>
   <script src="/static/scene-edit.js?v={{ asset_version }}" defer></script>
   {% if not embed %}<script src="/static/tour.js?v={{ asset_version }}" defer></script>{% endif %}
+  {% if not embed %}<script src="/static/shortcuts.js?v={{ asset_version }}" defer></script>{% endif %}
   {% block head %}{% endblock %}
 </head>
 {# Phone swipe between the top nav tabs (static/swipe.js). "nav" on the top-level pages; a page can set
@@ -111,7 +112,7 @@
       {% set waiting = nav_waiting(request) %}
       <a href="/review" data-nav="review" {% if request.url.path == '/review' %}aria-current="page"{% endif %}{% if waiting.review %} class="waiting" title="{{ waiting.review }} waiting for review" aria-label="Review, {{ waiting.review }} waiting for review"{% endif %}>Review{% if waiting.review %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.review) }}</span>{% endif %}</a>
       <a href="/false-triggers" data-nav="false" {% if request.url.path == '/false-triggers' %}aria-current="page"{% endif %}{% if waiting.false %} class="waiting" title="{{ waiting.false }} false triggers to check" aria-label="False triggers, {{ waiting.false }} to check"{% endif %}><span class="long">False triggers</span><span class="short">False</span>{% if waiting.false %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.false) }}</span>{% endif %}</a>
-      <a href="/notes" {% if request.url.path == '/notes' %}aria-current="page"{% endif %}>Claude's<span class="long"> Notes</span></a>
+      <a href="/notes" {% if request.url.path == '/notes' %}aria-current="page" {% endif %}aria-label="Claude's Notes"><span class="who">Claude's</span><span class="long"> Notes</span></a>
       {% endif %}
     </nav>
     <button type="button" class="icon-btn rotate-btn" id="rotate-btn" aria-label="Turn sideways for a bigger view" title="Turn sideways for a bigger view" data-tip="Turn sideways for a bigger view" aria-haspopup="dialog">
@@ -122,6 +123,10 @@
     </div>
     <div class="topbar-actions">
     {% block topbar_extra %}{% endblock %}
+    {# Desktop only (hidden at 820px and under); the ? key opens the same pop-up at any width (static/shortcuts.js). #}
+    <button type="button" class="icon-btn keys-btn" id="keys-btn" aria-label="Keyboard shortcuts" title="Keyboard shortcuts" data-tip="Keyboard shortcuts (?)" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8"/></svg>
+    </button>
     <a class="icon-btn" href="/about" aria-label="How it works" title="How it works" {% if request.url.path == '/about' %}aria-current="page"{% endif %}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="9.5"/><path d="M12 11v6M12 7.5v.01"/>
@@ -188,6 +193,26 @@
     // Phones start with secondary sections folded (<details data-m-closed>); wider screens keep them open.
     if (matchMedia("(max-width: 640px)").matches) document.querySelectorAll("details[data-m-closed]").forEach(d => d.open = false);
   </script>
+  {% if not embed %}
+  {# "Keyboard shortcuts" (static/shortcuts.js): a page lists its own keys in {% block keys_page %} as <li><kbd>key</kbd><span>what it does</span></li> rows; the site-wide keys follow. #}
+  <dialog class="popup popup-ask popup-keys" id="keys-dialog" aria-labelledby="keys-title">
+    <h2 class="popup-title" id="keys-title">Keyboard shortcuts</h2>
+    {% set page_keys %}{% block keys_page %}{% endblock %}{% endset %}
+    <div class="popup-msg">
+      <ul class="keys-list">
+        {% if page_keys|trim %}<li class="keys-head">This page</li>{{ page_keys }}<li class="keys-head">Everywhere</li>{% endif %}
+        <li><kbd>?</kbd><span>This list</span></li>
+        <li><kbd>1</kbd><span>Visits</span></li>
+        <li><kbd>2</kbd><span>Species</span></li>
+        <li><kbd>3</kbd><span>Live</span></li>
+        <li><kbd>4</kbd><span>Stats</span></li>
+        <li><kbd>T</kbd><span>Light or dark</span></li>
+        <li><kbd>P</kbd><span>Change colors</span></li>
+      </ul>
+    </div>
+    <div class="popup-actions"><button type="button" id="keys-ok">Got it</button></div>
+  </dialog>
+  {% endif %}
   <dialog class="popup popup-ask popup-rotate" id="rotate-dialog" aria-labelledby="rotate-title">
     <h2 class="popup-title" id="rotate-title">Try landscape</h2>
     <div class="popup-msg">

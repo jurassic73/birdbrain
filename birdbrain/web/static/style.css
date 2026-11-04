@@ -231,11 +231,22 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   .topbar { flex-wrap: nowrap; }
   .topbar nav { min-width: 0; }
 }
-/* Laptop-width windows: "False triggers" shortens to "False" so the whole admin nav fits (Visits, Species, Live, Stats, Review, False, Claude's Notes). */
-@media (max-width: 1100px) {
+/* Laptop-width windows (to 1180px): "False triggers" shortens to "False" so the whole admin nav fits (Visits, Species, Live, Stats, Review, False, Claude's Notes). */
+@media (max-width: 1180px) {
   .topbar nav a[data-nav="false"] .long { display: none; }
   .topbar nav a[data-nav="false"] .short { display: inline; }
 }
+/* Laptop widths, admin (7 tabs, up to 7 buttons): the species arrows, the keyboard button and the Log out button
+   come on top of the nav, so each of these was needed (measured at 1000px to 1400px, with and without the Log out
+   button): "Claude's Notes" reads "Notes", and the tabs and buttons sit a little closer. The position counter
+   (.sp-pill .pos) and the keyboard button (.keys-btn; the ? key still opens its pop-up) only show from 1280px
+   (rules at the end of the file). Phones keep their own rules above. */
+@media (min-width: 641px) and (max-width: 1180px) {
+  .topbar nav a { padding-left: 7px; padding-right: 7px; }
+  .topbar { gap: 10px; }
+  .topbar-actions { gap: 6px; }
+}
+@media (min-width: 641px) and (max-width: 1180px) and (min-height: 501px) { .topbar nav .who { display: none; } }
 /* Phone in landscape (short screen): a slim bar that scrolls away with the page. */
 @media (max-height: 500px) {
   .topbar { position: static; padding: 4px 12px; gap: 10px; }
@@ -2020,7 +2031,7 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 }
 
 /* Species page, desktop only (phones swipe; same 820px as swipe.js): previous/next species as a joined pill with the
-   position between the chevrons, and a keyboard button (static/species-nav.js) that opens .popup-keys. Sits left of the About icon. */
+   position between the chevrons (static/species-nav.js). Sits left of the keyboard button and the About icon. */
 .sp-nav { display: none; align-items: center; gap: 8px; }
 @media (min-width: 821px) { .sp-nav { display: flex; } }
 .sp-pill { display: inline-flex; align-items: center; height: 38px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; color: var(--text); }
@@ -2030,8 +2041,15 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 .sp-pill .seg.dis { opacity: .4; }
 .sp-pill .seg svg { width: 20px; height: 20px; }
 .sp-pill .pos { display: grid; place-items: center; height: 100%; min-width: 3.2em; padding: 0 4px; box-sizing: border-box; font-size: .8rem; font-weight: 600; line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; text-box: trim-both cap alphabetic; }
-/* "Keyboard shortcuts": rows of a key and what it does; add rows as shortcuts appear. */
-.popup-keys { width: min(92vw, 340px); }
-.keys-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 12px; align-items: center; text-align: left; }
+/* The keyboard button (every page, static/shortcuts.js): wide desktop windows only; the ? key opens its pop-up at any width. */
+.keys-btn { display: none; }
+@media (min-width: 1280px) { .keys-btn { display: grid; } }  /* below that the bar has no room for it */
+@media (max-width: 1279px) { .sp-pill .pos { display: none; } }  /* chevrons only; the tooltips name the neighbours */
+/* "Keyboard shortcuts": rows of a key and what it does, under a small heading for the page's keys and the site's;
+   add rows in base.html (site) or the page's keys_page block. */
+.popup-keys { width: min(92vw, 380px); }
+.keys-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; align-items: center; text-align: left; }
 .keys-list li { display: contents; }
-.keys-list kbd { display: inline-grid; place-items: center; min-width: 34px; height: 30px; padding: 0 8px; margin: 0; box-sizing: border-box; border-bottom-width: 3px; border-radius: 6px; background: var(--bg); font-weight: 600; line-height: 1; }
+.keys-list li.keys-head { display: block; grid-column: 1 / -1; margin-top: 6px; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.keys-list li.keys-head:first-child { margin-top: 0; }
+.keys-list kbd { display: inline-grid; place-items: center; min-width: 34px; height: 28px; padding: 0 8px; margin: 0; box-sizing: border-box; border-bottom-width: 3px; border-radius: 6px; background: var(--bg); font-weight: 600; line-height: 1; }

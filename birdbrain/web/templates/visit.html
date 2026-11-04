@@ -8,6 +8,13 @@
   {% endfor %}{% for path in neighbor_images %}<link rel="prefetch" href="/images/{{ path }}" as="image">
   {% endfor %}
 {% endblock %}
+{% block keys_page %}
+<li><kbd>←</kbd><span>Newer visit</span></li>
+<li><kbd>→</kbd><span>Older visit</span></li>
+<li><kbd>↑</kbd><span>Home (at the top of the page)</span></li>
+<li><kbd>Esc</kbd><span>Back home (if you came by →)</span></li>
+{% if request.state.admin %}<li><kbd>C</kbd><span>Confirm no animal, then next</span></li>{% endif %}
+{% endblock %}
 {% block content %}
 {# The start-to-finish step pills: beside the arrows on wide screens, under the details on phones. #}
 {% macro flow(where) %}
