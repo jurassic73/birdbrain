@@ -364,9 +364,22 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   }
 }
 .critters li { display: grid; grid-template-columns: minmax(0, 1fr) 2.2em; align-items: center; gap: 10px; padding: 3px 4px; border-bottom: 1px solid var(--line); border-radius: 4px; }
-.critters li > span:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; min-width: 0; }
-/* The seasonal status (Year-round, Summer, ...) is a soft tinted pill right after the info icon, quieter than the species page's solid one. */
-.critters .badge.sp-status { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 500; font-size: .68rem; padding: 0 6px; line-height: 1.4; margin-left: 6px; white-space: nowrap; }
+.critters li > span:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; column-gap: 6px; min-width: 0; }
+/* The seasonal status (Year-round, Summer, ...) is muted hint text at the right end of the name, just left of the count; the full tinted pill returns on row hover. The species page keeps the solid pill. */
+.critters .badge.sp-status {
+  margin-left: auto;
+  color: var(--muted);
+  background: none;
+  border-color: transparent;
+  font-weight: 500; font-size: .64rem; padding: 0 6px; line-height: 1.4; white-space: nowrap;
+  opacity: .6;
+}
+.critters li:hover .badge.sp-status {
+  opacity: 1;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: currentColor;
+}
 .critters li .critter-n { text-align: right; }
 .critters li:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .critters li:last-child { border-bottom: 0; }
