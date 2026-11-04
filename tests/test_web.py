@@ -92,6 +92,81 @@ def test_home_lists_todays_visitors_with_counts(client, add_visit):
     assert ">2</a>" in critters and ">1</a>" in critters and "None" not in critters
 
 
+def _card(conn, name, **fields):
+    db.save_species_info(conn, name, {"name": name, "links": [], **fields}, datetime.now().isoformat())
+
+
+def test_home_facts_box_shows_the_latest_species_facts_with_a_link(client, conn, add_visit):
+    add_visit(species="Dark-eyed Junco")
+    add_visit(species="Bushtit", captured_at=(FROZEN_NOW - timedelta(minutes=5)).isoformat())
+    _card(conn, "Dark-eyed Junco", facts=["Juncos flash white tail feathers.", "Flocks keep a pecking order.", "A third.", "A fourth."])
+    _card(conn, "Bushtit", facts=["Bushtits travel in noisy flocks."])
+    box = client.get("/").text.split('class="today-facts"')[1].split("</section>")[0]
+    assert '<a href="/species/Dark-eyed%20Junco">Dark-eyed Junco</a>' in box
+    assert "Juncos flash white tail feathers." in box and "Flocks keep a pecking order." in box
+    assert box.count("<li>") == 3 and "Bushtits travel" not in box  # at most 3, only the latest visitor's species
+    assert client.get("/").text.count('class="today-facts"') == 1
+
+
+def test_home_facts_box_is_left_out_without_a_card_or_facts(client, conn, add_visit):
+    assert 'class="today-facts"' not in client.get("/").text  # no visitors at all
+    add_visit(species="Dark-eyed Junco")
+    assert 'class="today-facts"' not in client.get("/").text  # no card cached
+    _card(conn, "Dark-eyed Junco", facts=[])
+    assert 'class="today-facts"' not in client.get("/").text  # card without facts
+    _card(conn, "Dark-eyed Junco", description="A sparrow.")
+    assert 'class="today-facts"' not in client.get("/").text  # old card from before facts existed
+    _card(conn, "Dark-eyed Junco", facts=["", "  ", 5])
+    assert 'class="today-facts"' not in client.get("/").text  # blanks don't count
+
+
+def test_home_facts_box_handles_dict_and_plain_string_facts(client, conn, add_visit):
+    add_visit(species="Dark-eyed Junco")
+    _card(conn, "Dark-eyed Junco", facts=[
+        {"lead": "Tail flash", "text": "Juncos flash white tail feathers."},
+        {"lead": "", "text": "   "},                      # blank text is skipped
+        {"lead": "Pecking order", "text": ""},
+        "An old plain-string fact.",                      # cards saved before the {lead, text} change
+        {"lead": "Ground feeders", "text": "They hop along the ground."},
+        {"lead": "Fourth", "text": "Cut by the limit of three."},
+    ])
+    box = client.get("/").text.split('class="today-facts"')[1].split("</section>")[0]
+    assert "Juncos flash white tail feathers." in box and "An old plain-string fact." in box
+    assert "They hop along the ground." in box and "Cut by the limit" not in box
+    assert "Tail flash" not in box and "Ground feeders" not in box  # the lead isn't shown, only the sentence
+    assert box.count("<li>") == 3
+
+
+def test_cached_facts_returns_texts_for_both_formats(conn):
+    from birdbrain import species_info
+    _card(conn, "Bushtit", facts=[{"lead": "Flocks", "text": "Bushtits travel in noisy flocks."}, "Old string.", {"text": " "}, 5])
+    assert species_info.cached_facts(conn, "Bushtit") == ["Bushtits travel in noisy flocks.", "Old string."]
+    assert species_info.cached_facts(conn, "Bushtit", limit=1) == ["Bushtits travel in noisy flocks."]
+    assert species_info.cached_facts(conn, "Other") == [] and species_info.cached_facts(conn, None) == []
+
+
+def test_home_facts_box_skips_labels_without_a_card(client, conn, add_visit):
+    add_visit(visitor="squirrel", species=None)
+    _card(conn, "Squirrel", facts=["Squirrels bury thousands of nuts."])
+    assert "Squirrels bury" in client.get("/").text
+    _card(conn, "Other", facts=["Never shown."])
+    add_visit(visitor="other", species="Other", captured_at=(FROZEN_NOW + timedelta(minutes=1)).isoformat())
+    assert "Never shown." not in client.get("/").text
+
+
+def test_home_facts_box_reads_the_cache_only(client, conn, add_visit, monkeypatch):
+    from birdbrain import species_info
+    def boom(*a, **k):
+        raise AssertionError("the home page must not build or fetch a card")
+    monkeypatch.setattr(species_info, "build", boom)
+    monkeypatch.setattr(species_info, "_rebuild", boom)
+    add_visit(species="Dark-eyed Junco")
+    assert 'class="today-facts"' not in client.get("/").text  # nothing cached, nothing built
+    # A card older than the monthly refresh is still shown (visitors never trigger the rebuild).
+    db.save_species_info(conn, "Dark-eyed Junco", {"name": "Dark-eyed Junco", "facts": ["Old but fine."]}, "2020-01-01T00:00:00")
+    assert "Old but fine." in client.get("/").text
+
+
 def test_scoreboard_periods(client, add_visit):
     add_visit(species="Bushtit", captured_at=(FROZEN_NOW - timedelta(days=3)).replace(microsecond=0).isoformat())
     assert "None yet today." in client.get("/scoreboard?range=today").text

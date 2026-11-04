@@ -150,6 +150,8 @@ uv run python -m birdbrain.species_info --facts --dry-run   # list the cards tha
 uv run python -m birdbrain.species_info --facts             # add them (--redo for all, --name "House Finch" for one)
 ```
 
+The home page shows up to 3 of the latest visitor's facts at the bottom of the Today panel, from the cached card only (it never fetches). The box hides itself when the visitors list needs the room, and on phones.
+
 ## BioCLIP 2 species check
 
 A second small model guesses each bird's species on the Pi, so you can see whether birds could one day be named without Claude. It's [BioCLIP 2](https://huggingface.co/imageomics/bioclip-2) (Imageomics Institute, MIT), with its image encoder converted to an 8-bit ONNX file (300 MB) and its names precomputed for every species in the eBird list; set `CLASSIFIER_RELEASE_URL` in `.env` to the folder URL where the model files are hosted (only needed once; without it, and with the files missing, the classifier logs a clear message and stays off, and you can copy the files into the data folder's `models` directory instead). It downloads itself into the data folder the first time it's needed (checked by SHA-256), takes about 6 seconds per photo on a Pi 4 and uses about 400 MB of RAM. Guesses are limited to birds reported to iNaturalist in your `INAT_PLACE_ID` (the list is cached and refreshed monthly).

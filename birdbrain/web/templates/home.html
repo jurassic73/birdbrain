@@ -45,6 +45,17 @@
     <a class="notice" href="/review">{{ today.review }} visit{{ 's' if today.review != 1 }} waiting for review</a>
     {% endif %}
 
+    {# Interesting facts about the latest visitor's species, from its cached card. static/home-facts.js hides the whole box
+       when the visitors list leaves no room for it beside the photo (the panel never grows past the photo). #}
+    {% if lv and latest_facts %}
+    <section class="today-facts" aria-label="Facts about the {{ lv.label }}">
+      <h3>About the <a href="/species/{{ lv.label | urlencode }}">{{ lv.label }}</a></h3>
+      <ul>
+        {% for f in latest_facts %}<li>{{ f }}</li>{% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
     </div>
   </aside>
 </section>
@@ -103,6 +114,8 @@
   </div>
   {% endif %}
 </section>
+
+<script src="/static/home-facts.js?v={{ asset_version }}"></script>
 
 <dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
   <button type="button" class="viewer-reset" id="home-viewer-reset" hidden>Reset view</button>
