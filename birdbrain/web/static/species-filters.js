@@ -29,10 +29,9 @@
       if (mine !== token) return;  // a later tap won
       const fresh = doc.getElementById("panel-visits"), freshForm = doc.getElementById("more-filters");
       if (!fresh || !freshForm) throw new Error("page shape");
-      // The chips, the count, the tab's count and the grid (or empty note) are replaced; the open or closed More
+      // The chips, the tab's count and the grid (or empty note) are replaced; the open or closed More
       // filters form keeps its state and takes the new values.
       panel.querySelector(".visits-head .chips").replaceWith(fresh.querySelector(".visits-head .chips"));
-      panel.querySelector(".grid-count").replaceWith(fresh.querySelector(".grid-count"));
       const tabCount = document.querySelector("#tab-visits .tab-count"), freshCount = doc.querySelector("#tab-visits .tab-count");
       if (tabCount && freshCount) tabCount.replaceWith(freshCount);
       form.innerHTML = freshForm.innerHTML;

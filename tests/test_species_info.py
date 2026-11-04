@@ -144,7 +144,7 @@ def test_species_page_has_info_and_visits_tabs(client, add_visit, fake_build):
     # Facts, charts and the card's sections live in the Info panel; the grid and its tools in the Visits panel.
     visits, info = html.index('id="panel-visits"'), html.index('id="panel-info"')
     assert "First seen" not in html
-    assert visits < html.index("grid-count") < html.index('class="lb-open"', visits) < info  # the count sits left of the expand button
+    assert "grid-count" not in html and html.index('class="tab-count"') < visits < html.index('class="lb-open"', visits) < info  # the count is in the Visits tab only
     assert re.search(r'data-sp-tab="info">Info</button>\s*<button[^>]*lb-tab', html)  # phones: count in the tab, expand button after it
     lb_tab = re.search(r'<button[^>]*lb-tab[^>]*>', html).group(0)
     assert "aria-disabled" not in lb_tab and "tabindex" not in lb_tab  # Visits is the default tab: the expand button starts enabled
