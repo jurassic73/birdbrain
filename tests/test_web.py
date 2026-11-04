@@ -800,14 +800,14 @@ def test_species_visits_tab_has_the_home_filters_minus_species_and_kinds(client,
     assert ">Birds<" not in chips and ">Mammals<" not in chips
     form = panel[panel.index('id="more-filters"'):panel.index("</form>")]
     assert 'name="tod"' in form and 'name="date_from"' in form and 'name="date_to"' in form and 'name="species"' not in form
-    assert "data-filtered" not in panel[:panel.index(">")] and ">5</span> visits" in panel and "(5)" in html
+    assert "data-filtered" not in panel[:panel.index(">")] and "(5)" in html
     assert len(_cards(html)) == 5  # the Bushtit photo with a junco in it counts as a junco visit
 
 
 def test_species_visits_filter_by_night_multiple_and_dates_and_open_on_the_visits_tab(client, add_visit):
     _seed_filter_species(add_visit)
     night = client.get("/species/Dark-eyed%20Junco?tod=night").text
-    assert len(_cards(night)) == 1 and 'aria-current="page">Night<' in night and ">1</span> of 5 visits" in night
+    assert len(_cards(night)) == 1 and 'aria-current="page">Night<' in night and "(1 of 5)" in night
     assert "(1 of 5)" in night and 'id="panel-visits"' in night and "data-filtered" in night and ">Clear<" in night
     day = client.get("/species/Dark-eyed%20Junco?tod=day").text
     assert len(_cards(day)) == 4 and 'id="more-filters"' in day and 'aria-expanded="true"' in day
@@ -1581,7 +1581,7 @@ def test_visits_paging_ties_and_bad_cursor(client, add_visit, monkeypatch):
 def test_species_page_without_a_card_has_title_facts_and_charts(client, add_visit):
     add_visit(species="Bushtit")
     html = client.get("/species/Bushtit").text
-    assert "<h1>Bushtit</h1>" in html and 'class="facts' in html and "First seen" not in html and "grid-count" in html
+    assert "<h1>Bushtit</h1>" in html and 'class="facts' in html and "First seen" not in html and "grid-count" not in html and 'class="tab-count"' in html
     assert 'id="daily"' in html and 'id="hourly"' in html
 
 
