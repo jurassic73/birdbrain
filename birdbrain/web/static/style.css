@@ -191,7 +191,22 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
 }
 /* On phones the nav drops to its own row so the toggle stays in the top-right corner. */
 @media (max-width: 640px) {
+  .topbar { padding: 8px 10px; gap: 6px 8px; }
   .topbar nav { order: 4; flex-basis: 100%; }
+  /* Brand on the left, every button on the right, all on the first row (admin has the most buttons). */
+  .brand { font-size: 1rem; gap: 5px; min-width: 0; }
+  .brand img, .home-link img { width: 28px; height: 28px; }
+  .topbar-actions { gap: 3px; flex: none; }
+  .topbar-actions .icon-btn { width: 30px; height: 30px; }
+  .topbar-actions .icon-btn svg { width: 17px; height: 17px; }
+}
+/* Narrow phones (360 and under): shave a few more pixels so admin's row still fits. */
+@media (max-width: 380px) {
+  .topbar { padding-left: 6px; padding-right: 6px; gap: 6px 4px; }
+  .brand { font-size: .95rem; gap: 4px; }
+  .brand img, .home-link img { width: 24px; height: 24px; }
+  .topbar-actions .icon-btn { width: 28px; height: 28px; }
+  .topbar-actions .icon-btn svg { width: 16px; height: 16px; }
 }
 /* Wider than a phone held upright: always one row; the nav slides sideways instead of wrapping. */
 @media (min-width: 641px) {
@@ -1486,6 +1501,18 @@ button.se-all { font-weight: 600; }
 .topbar-actions .admin-btn { text-box: trim-both cap alphabetic; white-space: nowrap; }
 @supports not (text-box: trim-both cap alphabetic) {
   .topbar-actions .admin-btn { padding: 3px 12px 0; }
+}
+/* Phones: a slimmer Admin / Log out so the whole header fits on one row. */
+@media (max-width: 640px) {
+  .topbar-actions .admin-btn { height: 30px; padding: 0 9px; margin-left: 2px; font-size: .8rem; }
+}
+@media (max-width: 380px) {
+  .topbar-actions .admin-btn { height: 28px; padding: 0 8px; margin-left: 0; }
+}
+@media (max-width: 640px) {
+  @supports not (text-box: trim-both cap alphabetic) {
+    .topbar-actions .admin-btn { padding: 3px 10px 0; }
+  }
 }
 .login-box { max-width: 360px; margin: 48px auto; padding: 24px; background: var(--surface);
   border: 1px solid var(--line); border-radius: 12px; display: flex; flex-direction: column; gap: 10px; }
