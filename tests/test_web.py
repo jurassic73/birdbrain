@@ -1423,3 +1423,14 @@ def test_no_page_calls_the_pi_animal_check_by_an_old_name(client, add_visit):
         for old in ("Local animal check", "local animal check", "Local classifier", "Local checks", "the Pi's animal check",
                     "The Pi's animal check"):
             assert old not in html, (path, old)
+
+
+def test_false_triggers_page_with_nothing_unchecked_has_no_count_or_confirm_all(client, conn, add_visit):
+    vid = add_visit(visitor="none", species=None)
+    html = client.get("/false-triggers").text
+    assert 'id="ft-unchecked"' in html and "ft-confirm" in html
+    db.confirm_visits(conn, [vid])
+    html = client.get("/false-triggers").text
+    assert 'id="ft-unchecked"' not in html
+    assert 'id="ft-confirm"' not in html and "Confirm all shown" not in html
+    assert "Nothing left to check" in html
