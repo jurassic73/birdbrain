@@ -120,6 +120,31 @@ def test_home_facts_box_is_left_out_without_a_card_or_facts(client, conn, add_vi
     assert 'class="today-facts"' not in client.get("/").text  # blanks don't count
 
 
+def test_home_facts_box_handles_dict_and_plain_string_facts(client, conn, add_visit):
+    add_visit(species="Dark-eyed Junco")
+    _card(conn, "Dark-eyed Junco", facts=[
+        {"lead": "Tail flash", "text": "Juncos flash white tail feathers."},
+        {"lead": "", "text": "   "},                      # blank text is skipped
+        {"lead": "Pecking order", "text": ""},
+        "An old plain-string fact.",                      # cards saved before the {lead, text} change
+        {"lead": "Ground feeders", "text": "They hop along the ground."},
+        {"lead": "Fourth", "text": "Cut by the limit of three."},
+    ])
+    box = client.get("/").text.split('class="today-facts"')[1].split("</section>")[0]
+    assert "Juncos flash white tail feathers." in box and "An old plain-string fact." in box
+    assert "They hop along the ground." in box and "Cut by the limit" not in box
+    assert "Tail flash" not in box and "Ground feeders" not in box  # the lead isn't shown, only the sentence
+    assert box.count("<li>") == 3
+
+
+def test_cached_facts_returns_texts_for_both_formats(conn):
+    from birdbrain import species_info
+    _card(conn, "Bushtit", facts=[{"lead": "Flocks", "text": "Bushtits travel in noisy flocks."}, "Old string.", {"text": " "}, 5])
+    assert species_info.cached_facts(conn, "Bushtit") == ["Bushtits travel in noisy flocks.", "Old string."]
+    assert species_info.cached_facts(conn, "Bushtit", limit=1) == ["Bushtits travel in noisy flocks."]
+    assert species_info.cached_facts(conn, "Other") == [] and species_info.cached_facts(conn, None) == []
+
+
 def test_home_facts_box_skips_labels_without_a_card(client, conn, add_visit):
     add_visit(visitor="squirrel", species=None)
     _card(conn, "Squirrel", facts=["Squirrels bury thousands of nuts."])
