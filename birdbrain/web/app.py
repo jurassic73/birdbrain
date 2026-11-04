@@ -479,9 +479,12 @@ def home(request: Request, conn=Depends(get_conn)):
     active = {k: v for k, v in filters.items() if v}
     visits = db.list_visits(conn, **filters, limit=PAGE_SIZE)
     chips = [(name, f"/?{query_string(f)}" if f else "/", f == active) for name, f in quick_filters()]
+    today = db.today_summary(conn)
     return page(
         request,
         "home.html",
+        # Facts about the latest visitor's species for the bottom of the Today panel; the cached card only.
+        latest_facts=species_info.cached_facts(conn, today["latest"]["label"]) if today["latest"] else [],
         visits=visits,
         filters=filters,
         filtered=bool(active),
@@ -489,7 +492,7 @@ def home(request: Request, conn=Depends(get_conn)):
         chips=chips,
         total=db.count_visits(conn, **filters),
         any_visits=db.latest_visit(conn) is not None,
-        today=db.today_summary(conn),
+        today=today,
         presence_mode=presence.mode(conn),
         activity=db.activity(conn),
         species_names=db.species_names(conn),

@@ -447,6 +447,15 @@ SHORT_STATUS = {"Year-round resident": "Year-round", "Summer visitor": "Summer",
                 "Passes through in spring and fall": "Migrant", "Rarely reported here": "Rare here"}
 
 
+def cached_facts(conn: sqlite3.Connection, label: str | None, limit: int = 3) -> list[str]:
+    """The header facts of a species' cached card, for a small box on another page. Cache only: it never builds a card,
+    fetches, or calls Haiku, so a visitor's page view can't cost anything. Empty for None/Other, no card, or no facts."""
+    if not has_card(label):
+        return []
+    card = get(conn, label, fetch=False) or {}
+    return [f for f in card.get("facts") or [] if isinstance(f, str) and f.strip()][:limit]
+
+
 def short_status(label: str | None) -> tuple[str, str] | None:
     """(short, full) local status for a cached card, for tight lists; never the network."""
     if not has_card(label):
