@@ -364,8 +364,9 @@
     });
   })();
 
-  // Quick filter chips: swap the filtered parts in place (no page load, so no jump to the top) and keep the URL in
-  // step, so Back/Forward and the visit page's Back link return to the same filters. Anything that goes wrong falls
+  // Quick filter chips and the More filters form (Apply, Clear): swap the filtered parts in place (no page load, so no
+  // jump to the top) and keep the URL in step, so Back/Forward and the visit page's Back link return to the same
+  // filters. The chips row stays where it was on screen. Anything that goes wrong falls
   // back to a normal page load. The new-visitor refresh and Load more use location.href / the swapped grid, so they
   // follow the filters on their own.
   (() => {
@@ -374,10 +375,11 @@
     remember();
     addEventListener("pageshow", remember);  // a page restored from the back/forward cache
     let token = 0;
-    async function show(url, push, chip) {
-      const mine = ++token, y = scrollY;
+    const chipsTop = () => document.querySelector(".chips")?.getBoundingClientRect().top;
+    async function show(url, push, chip, busy = chip) {
+      const mine = ++token, y = scrollY, top = chipsTop();
       const nav = document.querySelector(".chips");
-      chip?.classList.add("sending");
+      busy?.classList.add("sending");
       if (chip) { nav.querySelectorAll("a").forEach(a => a.removeAttribute("aria-current")); chip.setAttribute("aria-current", "page"); }
       try {
         const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10000) });
@@ -399,12 +401,31 @@
         if (g) { window.htmx?.process(g); g.dispatchEvent(new CustomEvent("birdbrain:cards", { bubbles: true })); }
         if (push) history.pushState(null, "", url);
         remember();
-        scrollTo(0, y);  // the page may have been shorter for a moment
+        // Keep the chips row where it was on screen (the count line above it can appear or go, and a browser that
+        // anchors scrolling may have moved the page). The page scrolls smoothly (style.css), so say "instant".
+        const now = chipsTop();
+        if (top === undefined || now === undefined) scrollTo({ top: y, behavior: "instant" });
+        else if (Math.abs(now - top) >= 0.5) scrollBy({ top: now - top, behavior: "instant" });
       } catch (e) {
         if (mine === token) location.href = url;
-      } finally { chip?.classList.remove("sending"); }
+      } finally { busy?.classList.remove("sending"); }
     }
+    // More filters: Apply and Clear fetch in place like the chips (a full page load jumped to the top).
+    document.addEventListener("submit", e => {
+      const f = e.target;
+      if (f.id !== "more-filters" || e.defaultPrevented) return;
+      e.preventDefault();
+      const q = new URLSearchParams();
+      for (const [k, v] of new FormData(f)) if (v) q.append(k, v);
+      show(q.size ? `/?${q}` : "/", true, null, f.querySelector("button[type=submit]"));
+    });
     document.addEventListener("click", e => {
+      const clear = e.target.closest?.("#more-filters a.clear");
+      if (clear && !e.defaultPrevented && !e.button && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        show(clear.href, true, null, null);
+        return;
+      }
       const a = e.target.closest?.(".chips a");
       if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target) return;
       e.preventDefault();

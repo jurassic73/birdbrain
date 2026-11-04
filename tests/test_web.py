@@ -121,6 +121,20 @@ def test_multiple_chip_follows_mammals_and_filters(client, add_visit):
     assert '<option value="multiple" selected>' in html
 
 
+def test_more_filters_form_is_fetched_in_place_and_empty_fields_are_optional(client, add_visit):
+    """Apply and Clear swap the page in place (home.html builds /?kind=bird without the empty boxes), so the
+    URL it fetches must give the same page as the form's own GET with empty fields, and the script must hook the form."""
+    add_visit(species="Bushtit")
+    add_visit(visitor="raccoon", species=None)
+    plain, full = client.get("/?kind=mammal"), client.get("/?species=&kind=mammal&tod=&date_from=&date_to=")
+    assert 'aria-current="page">Mammals<' in plain.text and 'aria-current="page">Mammals<' in full.text
+    assert "1 matching</h2>" in plain.text and "1 matching</h2>" in full.text
+    html = plain.text
+    assert 'id="more-filters"' in html and 'a class="clear"' in html
+    assert 'f.id !== "more-filters"' in html and '#more-filters a.clear' in html
+    assert 'behavior: "instant"' in html  # the page scrolls smoothly; restoring the view must not animate
+
+
 def more_link(html: str) -> str:
     """The Load more button's URL in a page or fragment."""
     import html as htmllib
