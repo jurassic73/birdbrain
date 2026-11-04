@@ -596,8 +596,11 @@ def test_home_shows_visitor_count_as_text_and_stats_has_the_rest(client, add_vis
     assert "Sent to Claude" not in html and "Kept on the Pi" not in html
     assert html.index("Visitor today") < html.index("More filters")
     stats = client.get("/stats").text
-    rows = ["Visitor", "False alarms", "Kept on the Pi", "Sent to Claude"]
-    start = stats.index("Today's motion")
+    rows = ["False alarms", "Kept on the Pi", "Sent to Claude"]
+    assert "Today's Visits" in stats and "Today's motion" not in stats
+    assert 'id="presence"' not in stats and "#presence" not in stats
+    assert "visits</span>" in stats and stats.index("Today's Visits") < stats.index("Most frequent")
+    start = stats.index("New to the yard")
     assert [stats.index(r, start) for r in rows] == sorted(stats.index(r, start) for r in rows)
     assert "gate mode would have kept 1 on the Pi" in stats
     assert "50% of today's 2 motion events were a real animal" in stats

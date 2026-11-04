@@ -349,7 +349,11 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 .tally-box { margin: 0; }
 .tally-box.tally-head { font-size: 1rem; white-space: nowrap; }
 .visits-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; margin-bottom: 8px; }
-.today-motion { margin: 0 0 18px; }
+.today-visits { margin: 0 0 8px; }
+.today-visits h2 { margin: 0; font-size: 1.1rem; }
+.today-visits h2 .tally-n { margin-left: 6px; }
+.page-total { white-space: nowrap; }
+.today-motion { margin: 18px 0; }
 .today-motion h2 { margin: 0 0 8px; font-size: 1.1rem; }
 .tally-facts { margin: 8px 0 0; padding: 0 0 0 18px; color: var(--muted); font-size: .85rem; }
 .tally-facts li { margin: 2px 0; }

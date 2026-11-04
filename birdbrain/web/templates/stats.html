@@ -2,31 +2,10 @@
 {% block title %}Stats | Birdbrain{% endblock %}
 {% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Stats <span class="muted">{{ total }} visits</span></h1></div>
+<div class="page-head"><h1>Stats</h1><span class="muted page-total">{{ total }} visits</span></div>
 {% set a = activity %}
-<section class="today-motion" id="today-motion">
-  <h2>Today's motion</h2>
-  <ol class="tally" aria-label="Today's numbers">
-    <li data-tip="Birds and animals identified today"><span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }}</span></li>
-    <li data-tip="Motion with no animal: rain, wind, ripples">
-      <span class="tally-n">{{ a.false_alarms }}</span> {% if request.state.admin %}<a class="tally-label" href="/false-triggers">False alarms</a>{% else %}<span class="tally-label">False alarms</span>{% endif %}
-    </li>
-    {% if presence_mode != 'off' %}
-    <li data-tip="False alarms the Pi animal check screened out for free"><span class="tally-n">{{ a.kept_on_pi }}</span> <a class="tally-label" href="#presence">Kept on the Pi</a></li>
-    {% endif %}
-    <li data-tip="Cost {{ a.claude_usd | usd }} today{% if presence_mode == 'shadow' and a.would_keep %}; gate mode would have kept {{ a.would_keep }} on the Pi{% endif %}">
-      <span class="tally-n">{{ a.sent_to_claude }}</span> <span class="tally-label">Sent to Claude</span> <span class="tally-why">{{ a.claude_usd | usd }}</span>
-    </li>
-  </ol>
-  {% set motion = a.visitors + a.false_alarms %}
-  {% if motion %}
-  <ul class="tally-facts">
-    <li>{{ (100 * a.visitors / motion) | round | int }}% of today's {{ motion }} motion events were a real animal; the rest were rain, wind, leaves or ripples.</li>
-    {% if a.visitors %}<li>Each visitor cost about {{ (a.claude_usd / a.visitors) | usd }} in Claude calls.</li>{% endif %}
-    {% if a.kept_on_pi %}<li>The Pi animal check settled {{ a.kept_on_pi }} false alarm{{ 's' if a.kept_on_pi != 1 }} on the Pi without asking Claude.</li>{% endif %}
-    {% if presence_mode == 'shadow' and a.would_keep %}<li>Gate mode would have kept {{ a.would_keep }} more on the Pi, saving about {{ a.would_keep_usd | usd }}.</li>{% endif %}
-  </ul>
-  {% endif %}
+<section class="today-visits" id="today-visits">
+  <h2 data-tip="Birds and animals identified today">Today's Visits <span class="tally-n good">{{ a.visitors }}</span></h2>
 </section>
 <div class="charts">
   <figure><figcaption>Visits per day, last 30 days <a class="fig-link" href="/weather">How weather changes visits</a></figcaption><canvas id="daily"></canvas></figure>
@@ -50,26 +29,28 @@
     </ul>
   </section>
 </div>
-{% set p = presence %}
-{% if presence_mode != 'off' or p.frames %}
-<section class="detector-report" id="presence">
-  <h2>Pi animal check <span class="muted">{{ 'gate mode: skips Claude when it judges a frame empty' if presence_mode == 'gate' else 'shadow mode: scoring, Claude still sees everything' }}</span></h2>
-  {% if p.frames %}
-  <div class="today-stats">
-    <div><span class="big">{{ p.visitors }}</span> visitors</div>
-    <div><span class="big {{ 'bad' if p.missed }}">{{ p.missed | length }}</span> it called empty</div>
-    <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames {{ 'kept from Claude' if presence_mode == 'gate' else 'it would keep from Claude' }}</div>
-    {% if p.skipped %}<div><span class="big">{{ p.unchecked }}</span> skipped frames not confirmed yet</div>{% endif %}
-  </div>
-  <p class="muted">Last {{ p.days }} days, judged against the final answer: your correction if there is one, else Claude's (a frame skipped in gate mode counts as empty until you correct it).
-    <span data-tip="BioCLIP 2 looks at the crop box only. A small model trained on this yard's own frames, with the ones you checked counting 3 times, calls it empty or not. It screens every trigger that reaches the Pi (rim, water, ground, probes), day and night. It needs 10 visitors and 30 empty frames before it judges anything. Frames it skips are marked pi only on False triggers.">How it works</span>
-    {% if p.missed %}Missed: {% for m in p.missed %}<a href="/visit/{{ m.id }}">{{ m.label }}</a>{{ ' (night)' if m.night }}{{ ', ' if not loop.last }}{% endfor %}. Correcting them teaches it.{% endif %}
-    {% if p.unchecked %}Check skipped frames on <a href="/false-triggers">False triggers</a>.{% endif %}</p>
-  {% else %}
-  <p class="muted">No frames judged yet.</p>
+<section class="today-motion" id="today-motion">
+  <ol class="tally" aria-label="Today's numbers">
+    <li data-tip="Motion with no animal: rain, wind, ripples">
+      <span class="tally-n">{{ a.false_alarms }}</span> {% if request.state.admin %}<a class="tally-label" href="/false-triggers">False alarms</a>{% else %}<span class="tally-label">False alarms</span>{% endif %}
+    </li>
+    {% if presence_mode != 'off' %}
+    <li data-tip="False alarms the Pi animal check screened out for free"><span class="tally-n">{{ a.kept_on_pi }}</span> <span class="tally-label">Kept on the Pi</span></li>
+    {% endif %}
+    <li data-tip="Cost {{ a.claude_usd | usd }} today{% if presence_mode == 'shadow' and a.would_keep %}; gate mode would have kept {{ a.would_keep }} on the Pi{% endif %}">
+      <span class="tally-n">{{ a.sent_to_claude }}</span> <span class="tally-label">Sent to Claude</span> <span class="tally-why">{{ a.claude_usd | usd }}</span>
+    </li>
+  </ol>
+  {% set motion = a.visitors + a.false_alarms %}
+  {% if motion %}
+  <ul class="tally-facts">
+    <li>{{ (100 * a.visitors / motion) | round | int }}% of today's {{ motion }} motion events were a real animal; the rest were rain, wind, leaves or ripples.</li>
+    {% if a.visitors %}<li>Each visitor cost about {{ (a.claude_usd / a.visitors) | usd }} in Claude calls.</li>{% endif %}
+    {% if a.kept_on_pi %}<li>The Pi animal check settled {{ a.kept_on_pi }} false alarm{{ 's' if a.kept_on_pi != 1 }} on the Pi without asking Claude.</li>{% endif %}
+    {% if presence_mode == 'shadow' and a.would_keep %}<li>Gate mode would have kept {{ a.would_keep }} more on the Pi, saving about {{ a.would_keep_usd | usd }}.</li>{% endif %}
+  </ul>
   {% endif %}
 </section>
-{% endif %}
 {% if classifier_on or classifier.checked %}
 <section class="detector-report" id="classifier">
   <h2>BioCLIP 2 species check <span class="muted">{% if classifier_mode == 'gate' %}gate mode: names sure daytime regulars on the Pi, Claude names the rest{% else %}shadow mode: guesses the species on the Pi, Claude still names every visitor{% endif %}</span></h2>
