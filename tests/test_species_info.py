@@ -367,3 +367,137 @@ def test_short_status_for_tight_lists(monkeypatch):
     assert species_info.short_status("Bushtit") == ("Year-round", "Year-round resident")
     assert species_info.short_status("Raccoon") is None
     assert species_info.short_status("None") is None
+
+
+# --- header facts (one Haiku call with the notes) ---
+
+class FakeHaiku:
+    """identify.client() stand-in: parse() returns the scripted CardText and keeps the request."""
+
+    def __init__(self, notes, facts):
+        self.beta = self
+        self.messages = self
+        self.parsed = species_info.CardText(notes=notes, facts=facts)
+        self.requests = []
+
+    def parse(self, **kwargs):
+        self.requests.append(kwargs)
+        return type("R", (), {"parsed_output": self.parsed})()
+
+
+def test_clean_facts_guard():
+    notes = ["Eats seeds on the ground.", "Travels in flocks in winter."]
+    facts = [
+        "",                                                                   # blank
+        "   ",                                                                # blank
+        "Weighs about as much as three quarters.",                            # kept
+        "Eats seeds on the ground.",                                          # repeats a note
+        "Flocks travel together in winter.",                                  # mostly the same words as a note
+        " ".join(["word"] * 21),                                              # too long
+        "Weighs about as much as three quarters!",                            # repeats an earlier fact
+        "Males sing from the tops of tall trees.",
+        "Some live over ten years in the wild.",
+        "Its name means snow bird.",
+        "Pairs stay together all season.",
+        "Sixth good fact is cut off by the cap.",
+    ]
+    got = species_info.clean_facts(facts, notes)
+    assert got[0] == "Weighs about as much as three quarters."
+    assert "Eats seeds on the ground." not in got and "Flocks travel together in winter." not in got
+    assert len(got) == species_info.MAX_FACTS
+    assert got == [f for f in got if f.strip()] and not any(len(f.split()) > species_info.MAX_FACT_WORDS for f in got)
+    assert species_info.clean_facts(None, notes) == []
+
+
+def test_card_text_parses_both_lists_and_guards_them(monkeypatch):
+    from birdbrain import identify
+    fake = FakeHaiku(["Eats seeds.", "", "Lives in flocks."] + ["Note"] * 5,
+                     ["A tiny bird that weighs less than a deck of cards.", "Eats seeds.", ""])
+    monkeypatch.setattr(identify, "client", lambda: fake)
+    out = species_info.card_text("Bushtit", "Article text " * 10)
+    assert len(out["notes"]) == species_info.MAX_NOTES and out["notes"][:2] == ["Eats seeds.", "Lives in flocks."]
+    assert out["facts"] == ["A tiny bird that weighs less than a deck of cards."]
+    sent = fake.requests[0]
+    assert sent["output_format"] is species_info.CardText and "facts" in sent["system"]
+    assert "Animal: Bushtit" in sent["messages"][0]["content"]
+
+
+def test_card_text_without_a_parsed_answer(monkeypatch):
+    from birdbrain import identify
+    fake = FakeHaiku([], [])
+    fake.parsed = None
+    monkeypatch.setattr(identify, "client", lambda: fake)
+    assert species_info.card_text("Bushtit", "x") == {"notes": [], "facts": []}
+
+
+class FakeWiki:
+    """httpx.Client stand-in for the two Wikipedia calls (summary, then plain text)."""
+
+    def __init__(self, fail=()):
+        self.urls, self.headers_seen, self.fail = [], [], fail
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.urls.append(url)
+        self.headers_seen.append(headers)
+        req = httpx.Request("GET", url)
+        if any(f in url for f in self.fail):
+            return httpx.Response(500, request=req)
+        if "rest_v1" in url:
+            return httpx.Response(200, request=req, json={"type": "standard", "title": "Bushtit"})
+        return httpx.Response(200, request=req, json={"query": {"pages": {"1": {"extract": "The bushtit is tiny."}}}})
+
+
+def cached_card(conn, name, **extra):
+    card = {**CARD, "name": name, "common": name, "wiki_url": "https://en.wikipedia.org/wiki/" + name.replace(" ", "_"), **extra}
+    db.save_species_info(conn, name, card, "2026-10-01T00:00:00")
+    return card
+
+
+def test_backfill_facts_updates_only_notes_and_facts(conn, monkeypatch):
+    from birdbrain import identify
+    cached_card(conn, "Bushtit")
+    cached_card(conn, "Has Facts", facts=["Already here."])
+    cached_card(conn, "No Wiki", wiki_url=None)
+    fake = FakeHaiku(["New note."], ["Weighs less than a deck of cards."])
+    monkeypatch.setattr(identify, "client", lambda: fake)
+    wiki = FakeWiki()
+    monkeypatch.setattr(species_info.httpx, "Client", lambda **kw: wiki)
+    lines = []
+    assert species_info.backfill_facts(conn, out=lines.append) == (1, 0)
+    card, stamp = db.get_species_info(conn, "Bushtit")
+    assert card["facts"] == ["Weighs less than a deck of cards."] and card["notes"] == ["New note."]
+    assert card["photo"] == CARD["photo"] and card["description"] == CARD["description"]  # nothing else touched
+    assert stamp == "2026-10-01T00:00:00"
+    assert db.get_species_info(conn, "Has Facts")[0]["facts"] == ["Already here."]
+    assert "facts" not in db.get_species_info(conn, "No Wiki")[0]
+    assert lines == ["1/1 done, 0 failed"] and len(fake.requests) == 1
+    assert all(h["Accept-Encoding"] == "gzip" and "Birdbrain" in h["User-Agent"] for h in wiki.headers_seen)
+    # --redo takes the card that already has facts too
+    assert species_info.backfill_facts(conn, redo=True, only="has facts", out=lines.append) == (1, 0)
+
+
+def test_backfill_facts_dry_run_and_failure_keep_old_cards(conn, monkeypatch):
+    from birdbrain import identify
+    cached_card(conn, "Bushtit")
+    monkeypatch.setattr(identify, "client", lambda: FakeHaiku(["n"], ["Weighs less than a deck of cards."]))
+    lines = []
+    assert species_info.backfill_facts(conn, dry_run=True, out=lines.append) == (0, 0)
+    assert "Bushtit" in lines[0] and "facts" not in db.get_species_info(conn, "Bushtit")[0]
+    monkeypatch.setattr(species_info.httpx, "Client", lambda **kw: FakeWiki(fail=("w/api.php",)))
+    lines.clear()
+    assert species_info.backfill_facts(conn, out=lines.append) == (0, 1)
+    assert lines == ["1/1 done, 1 failed"]
+    assert db.get_species_info(conn, "Bushtit")[0]["notes"] == CARD["notes"]  # the old card survives
+
+
+def test_rebuild_keeps_old_facts_when_new_build_has_none(conn, monkeypatch):
+    cached = ({**CARD, "facts": ["Old fact that stays."]}, "2026-01-01T00:00:00")
+    monkeypatch.setattr(species_info, "build", lambda name: {"name": name, "inat_id": 1, "links": []})
+    out = species_info._rebuild(conn, "Bushtit", cached)
+    assert out["facts"] == ["Old fact that stays."]
