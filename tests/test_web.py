@@ -1809,3 +1809,27 @@ def test_live_tab_reads_the_light_from_the_frame_not_the_camera(client, monkeypa
         assert client.get("/live/latest.jpg").headers["X-Frame-Light"] == light
     monkeypatch.setattr(webapp, "_live", {"jpeg": b"not a picture", "at": time.time(), "tried": 0.0})
     assert "X-Frame-Light" not in client.get("/live/latest.jpg").headers and "unknown" in client.get("/live").text
+
+
+def test_species_page_has_desktop_arrows_counter_and_keyboard_hint(client, add_visit):
+    _seed_swipe_species(add_visit)
+    html = client.get("/species/Song%20Sparrow").text
+    assert '<span class="pos" aria-label="Species 2 of 3">2/3</span>' in html
+    assert 'id="sp-prev" href="/species/Bushtit"' in html
+    assert 'id="sp-next" href="/species/Anna%27s%20Hummingbird"' in html
+    assert 'Next species (→): Anna&#39;s Hummingbird' in html and 'Previous species (←): Bushtit' in html
+    assert 'id="keys-btn"' in html and 'id="keys-dialog"' in html and "species-nav.js" in html
+    # the list's sort is kept on the arrows
+    assert 'id="sp-next" href="/species/Song%20Sparrow?sort=name"' in client.get("/species/Bushtit?sort=name").text
+
+
+def test_species_arrows_dim_at_the_ends_and_stay_off_other_pages(client, add_visit):
+    _seed_swipe_species(add_visit)
+    first = client.get("/species/Bushtit").text
+    assert 'id="sp-prev"' not in first and 'id="sp-next"' in first and ">1/3<" in first
+    assert 'aria-label="No previous species"' in first
+    last = client.get("/species/Anna's%20Hummingbird").text
+    assert 'id="sp-next"' not in last and 'id="sp-prev"' in last and ">3/3<" in last
+    for path in ("/", "/species", "/about"):
+        page = client.get(path).text
+        assert "sp-nav" not in page.replace(".sp-nav", "") and 'id="keys-btn"' not in page and "species-nav.js" not in page
