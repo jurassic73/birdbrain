@@ -194,7 +194,7 @@
       The Pi animal check {% if presence_mode != 'off' %}{{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') }}{% endif %}
       says whether anything is in the crop box{% if presence_mode == 'gate' %}; a photo it calls empty never leaves the house and waits under
       <a href="/false-triggers">False triggers</a> for your check{% elif presence_mode == 'shadow' %}, but for now only keeps score{% else %}, but is switched off here{% endif %}.
-      The BioCLIP 2 species check {% if classifier_mode == 'gate' %}names sure daytime regulars itself, marked {{ badge('pi named', 'pi-only') }}{% elif classifier_mode != 'off' %}guesses the species, but for now only keeps score{% else %}is switched off here{% endif %}.
+      The BioCLIP 2 species check {% if classifier_mode == 'gate' %}names sure daytime regulars itself, marked {{ badge('RPi', 'pi-only') }}{% elif classifier_mode != 'off' %}guesses the species, but for now only keeps score{% else %}is switched off here{% endif %}.
       Modes on <a href="/settings#local">Settings &gt; Pi checks</a>, scorecards on <a href="/stats">Stats</a>.</li>
     <li><strong>Claude Haiku</strong> sees the sharpest photo{{ ', cropped' if zones.crop }} and answers in a fixed format: kind of animal,
       species, how sure, how many, any other animals in the shot. "Nothing there" goes to <a href="/false-triggers">False triggers</a>, hidden from the gallery.</li>

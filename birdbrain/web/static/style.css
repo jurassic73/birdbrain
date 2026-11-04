@@ -554,7 +554,10 @@ dialog.popup[open] { animation: popup-in .14s ease-out; }
 .card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--line); }
 .card-body { padding: 8px 10px 10px; }
 .card-title { font-weight: 600; }
-.card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--muted); font-size: .85rem; }
+.card-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; color: var(--muted); font-size: .85rem; }
+.card-when { white-space: nowrap; }
+.card-stay { color: var(--muted); font-size: .75rem; margin-top: 2px; }
+@media (max-width: 480px) { .card-meta { font-size: .8rem; gap: 4px 5px; } .card-body { padding: 8px 8px 10px; } }
 /* Cards (admin): a star in the photo's top corner: species cover, favorite or unset. It's drawn over the photo,
    so its colors are fixed; small, so it doesn't hide the animal, but a 40px tap target. */
 button.fav-star { position: absolute; top: 4px; right: 4px; width: 40px; height: 40px; padding: 0; margin: 0; z-index: 1;
@@ -621,6 +624,9 @@ button.fav-star[data-pending] { background: conic-gradient(rgba(255, 211, 77, .5
 /* Reads as a label for the Confirm button, so it matches the page text, not the small action row. */
 .confirm-hint { color: var(--text); font-size: 1rem; font-weight: 600; white-space: nowrap; }
 .badge.pi-only { color: var(--medium); white-space: nowrap; }
+/* The RPi pill: a small raspberry (fixed colors, drawn for this site) left of the word. */
+.badge.has-rpi { display: inline-flex; align-items: center; gap: 4px; }
+.badge.has-rpi .rpi-icon { width: .95em; height: .95em; flex: none; }
 .ft-confirm { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px; }
 /* With Show confirmed on, the confirmed photos stay in the grid but step back. */
 .ft-grid .card:not([data-unchecked]) { opacity: .45; transition: opacity .15s; }

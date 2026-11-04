@@ -166,7 +166,7 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
     # 3. BioCLIP 2 species check
     label = e(species) if species else ""
     if guess_step and guess_step.get("gated"):
-        pill = ("pi named", "pi-only")
+        pill = ("RPi", "pi-only")
         # Counts toward being settled as db.settled_species counts it: a species the owner named, or Looks right
         # with the type unchanged. "No animal" or a bare type (Squirrel) takes the visit out of that count.
         counts = bool(visit["corrected_species"]) or bool(visit["confirmed_at"] and not visit["corrected_visitor"])

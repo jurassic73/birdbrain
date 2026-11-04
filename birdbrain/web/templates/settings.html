@@ -104,7 +104,7 @@
   </section>
 
   <section class="local-step" id="classifier">
-    <h3><span class="step-n">2</span> BioCLIP 2 species check <span class="muted">(What species?)</span> {% if not classifier_on %}{{ badge('off', '') }}{% elif classifier_mode == 'gate' %}{{ badge('pi named', 'pi-only') }}{% else %}{{ badge('shadow', 'shadow') }}{% endif %}</h3>
+    <h3><span class="step-n">2</span> BioCLIP 2 species check <span class="muted">(What species?)</span> {% if not classifier_on %}{{ badge('off', '') }}{% elif classifier_mode == 'gate' %}{{ badge('RPi', 'pi-only') }}{% else %}{{ badge('shadow', 'shadow') }}{% endif %}</h3>
     {% set c = classifier %}
     <p class="muted small">The BioCLIP 2 species check guesses the species on the Pi and records the guess; Claude's name still stands unless the BioCLIP 2 species check is in gate mode and sure. The BioCLIP 2 species check is not trained.
       {% if c.checked %}First guess right {{ c.top1 }}/{{ c.checked }}, within its top 3 {{ c.top3 }}/{{ c.checked }}. <a href="/stats#classifier">Details</a>{% endif %}
