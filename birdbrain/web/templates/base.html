@@ -104,8 +104,8 @@
     <div class="nav-row">
     <nav>
       <a href="/" {% if request.url.path == '/' or request.url.path.startswith('/visit/') %}aria-current="page"{% endif %}>Visits</a>
-      <a href="/live" {% if request.url.path == '/live' %}aria-current="page"{% endif %}>Live</a>
       <a href="/species" {% if request.url.path.startswith('/species') %}aria-current="page"{% endif %}>Species</a>
+      <a href="/live" {% if request.url.path == '/live' %}aria-current="page"{% endif %}>Live</a>
       <a href="/stats" {% if request.url.path in ('/stats', '/weather') %}aria-current="page"{% endif %}>Stats</a>
       {% if request.state.admin %}
       {% set waiting = nav_waiting(request) %}

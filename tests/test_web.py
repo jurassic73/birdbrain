@@ -1780,9 +1780,9 @@ def test_species_title_has_a_play_button_only_when_the_card_has_sounds(client, a
     assert "sp-play" not in client.get("/species-info/Bushtit?fold=1").text
 
 
-def test_live_tab_sits_right_after_visits_and_renders(client, add_visit):
+def test_live_tab_sits_right_after_species_and_renders(client, add_visit):
     nav = _nav(client.get("/").text)
-    assert nav.index('>Visits<') < nav.index('href="/live"') < nav.index('href="/species"')
+    assert nav.index('>Visits<') < nav.index('href="/species"') < nav.index('href="/live"') < nav.index('href="/stats"')
     assert 'href="/live" aria-current="page">Live<' in _nav(client.get("/live").text)
     html = client.get("/live").text
     assert html.count('id="live-box"') == 1 and 'id="live-viewer"' in html and "/static/live-view.js" in html
