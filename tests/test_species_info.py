@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 
 import httpx
@@ -142,7 +143,8 @@ def test_species_page_has_info_and_visits_tabs(client, add_visit, fake_build):
     # Facts, charts and the card's sections live in the Info panel; the grid and its tools in the Visits panel.
     info, visits = html.index('id="panel-info"'), html.index('id="panel-visits"')
     assert "First seen" not in html
-    assert visits < html.index("grid-count") < html.index("lb-open")  # the count sits left of the expand button
+    assert visits < html.index("grid-count") < html.index('class="lb-open"', visits)  # the count sits left of the expand button
+    assert re.search(r'data-sp-tab="visits">Visits<span class="tab-count"> \(\d+\)</span></button>\s*<button[^>]*lb-tab', html)  # phones: count in the tab, expand button after it
     assert html.index("Year-round resident") < html.index('role="tablist"')  # the status pill sits with the bird
     assert info < html.index('id="daily"') < visits and info < html.index('class="sp-map"') < visits
     assert visits < html.index('class="grid-tools"') < html.index('id="visits"')

@@ -1892,13 +1892,19 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 .sp-tabs { margin-top: 4px; margin-bottom: 18px; }
 .sp-tabs .cam-tab { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 26px; font-size: 1rem; }
 .sp-body { gap: 20px; }
+.sp-tabs .tab-count, .sp-tabs .lb-tab { display: none; }  /* phones only, see below */
 @media (max-width: 640px) {
   .sp-hero-row { grid-template-columns: 110px 1fr; gap: 12px; }
   .sp-hero-row .sp-photo img { aspect-ratio: 1; max-height: none; }
   .sp-hero-row .sp-photo figcaption { display: none; }
   .sp-hero-id h1 { font-size: 1.3rem; }
+  .sp-inline { margin-bottom: 8px; }  /* the card above the tabs: 20px was a wide gap on a phone */
   .sp-tabs { margin-top: 0; margin-bottom: 8px; }
   .sp-tabs .cam-tab { flex: 1; padding: 0 12px; min-height: 36px; font-size: .95rem; }
-  .sp-panel .grid-tools { margin-bottom: 4px; }
-  .sp-panel button.lb-open { width: 34px; height: 34px; }
+  .sp-panel .grid-tools { display: none; }  /* the count moved into the Visits tab, the expand button into the tab row */
+  .sp-tabs .tab-count { display: inline; white-space: pre; }
+  .sp-tabs { align-items: center; }
+  .sp-tabs .lb-tab { width: 34px; height: 34px; flex: none; margin-left: 4px; }
+  .sp-tabs:not(:has(#tab-visits[aria-selected=true])) .lb-tab { display: none; }  /* it opens the visit photos: only with that tab */
+  .sp-tabs:has(#tab-visits[aria-selected=true]) .lb-tab { display: grid; }
 }
