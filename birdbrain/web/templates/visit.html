@@ -38,7 +38,7 @@
 {% set settled = not visit.needs_review and visit.confidence == 'high' and not has_correction %}
 <nav class="visit-nav" aria-label="Visit navigation">
   {% if prev_id %}<a class="visit-nav-btn" href="/visit/{{ prev_id }}{{ ft_param }}" id="nav-prev" title="Newer (←)">&#8592;</a>{% else %}<span class="visit-nav-btn disabled">&#8592;</span>{% endif %}
-  {% if not embed %}{% if scope %}<a class="visit-nav-back" href="/species/{{ scope | urlencode }}" data-tip="The arrows only step through {{ scope }} visits. Back to its page.">Browsing: {{ scope }}</a>{% else %}<a class="visit-nav-back" href="{{ '/false-triggers' if is_ft else '/' }}">{{ 'False triggers' if is_ft else 'All visits' }}</a>{% endif %}{% endif %}
+  {% if not embed %}{% if scope %}<a class="visit-nav-back" href="/species/{{ scope | urlencode }}" data-tip="The arrows only step through {{ scope }} visits. Back to its page.">Browsing: {{ scope }}</a>{% else %}{% if is_ft %}<a class="visit-nav-back" href="/false-triggers">False triggers</a>{% else %}<a class="visit-nav-back back-home" href="/" data-back-home><svg class="back-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg><span>Back</span></a>{% endif %}{% endif %}{% endif %}
   {% if next_id %}<a class="visit-nav-btn" href="/visit/{{ next_id }}{{ ft_param }}" id="nav-next" title="Older (→)">&#8594;</a>{% else %}<span class="visit-nav-btn disabled">&#8594;</span>{% endif %}
   {% if embed %}<p class="embed-keys muted">Keys: <kbd>&#8592;</kbd> newer <kbd>&#8594;</kbd> older{% if request.state.admin %} · <kbd>C</kbd> confirmed no animal, next photo{% endif %} · <kbd>Esc</kbd> close</p>{% endif %}
   {% if embed %}<a class="visit-nav-back embed-close-btn" href="/false-triggers" id="embed-close" title="Close (Esc)">&times; Close</a>{% endif %}
@@ -1048,6 +1048,22 @@
     if (e.key === "ArrowRight") stepVisit("nav-next");
   });
 {% if not embed %}
+  // Back goes to the Visits tab as the owner last had it (filters in the URL), even after stepping through visits with
+  // the arrows. home.html keeps that URL in sessionStorage; read when the link is used (a prerendered copy of this
+  // page may hold an older storage), and falling back to the plain home page. Window capture runs before the
+  // unsaved-changes guard's document handler, which replays the click on the same link.
+  (() => {
+    const base = window.BB_BASE || "";
+    const aim = () => {
+      let u = "";
+      try { u = sessionStorage.getItem("bb-home-url") || ""; } catch (e) {}
+      const ok = u.startsWith(base + "/") && !u.startsWith(base + "/visit") && !u.startsWith("//");
+      document.querySelectorAll("[data-back-home]").forEach(a => { a.href = ok ? u : base + "/"; });
+    };
+    aim();
+    for (const ev of ["pointerdown", "focusin", "touchstart", "mouseover"]) addEventListener(ev, e => { if (e.target.closest?.("[data-back-home]")) aim(); }, true);
+    addEventListener("click", e => { if (e.target.closest?.("[data-back-home]")) aim(); }, true);
+  })();
   document.addEventListener("keydown", e => {
     if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.altKey || e.ctrlKey || e.shiftKey) return;
     if (document.documentElement.dataset.tour || document.querySelector("dialog[open]")) return;
