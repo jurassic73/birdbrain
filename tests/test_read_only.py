@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import FROZEN_NOW
-from birdbrain import db, species_info
+from birdbrain import db, images, species_info
 from birdbrain.web import app as webapp
 from birdbrain.web import auth
 
@@ -152,13 +152,50 @@ def test_latest_visit_api_waiting_counts_only_for_admin(client, add_visit, locke
 
 
 def test_visitors_cannot_draw_circles(client, add_visit, locked):
-    ft = add_visit(visitor="none", species=None)
-    html = client.get(f"/visit/{ft}?ft=1").text
+    vid = add_visit(visitor="bird", species="Bushtit")  # a false trigger isn't shown to visitors at all
+    html = client.get(f"/visit/{vid}").text
     assert "const editing = false;" in html and 'id="draw-note"' not in html
 
 
 def test_visitors_keyboard_popup_has_no_admin_only_confirm_key(client, add_visit, locked):
-    vid = add_visit(visitor="none", species=None)
+    vid = add_visit(visitor="bird", species="Bushtit")
+    add_visit(visitor="bird", species="Bushtit")
     html = client.get(f"/visit/{vid}").text
     assert 'id="keys-dialog"' in html and "Newer visit" in html
     assert "Confirm no animal" not in html
+
+
+def _false_trigger(add_visit, **fields):
+    return add_visit(visitor="none", species=None, image_path="2026/11/03/ft.jpg", thumb_path="2026/11/03/ft_t.jpg",
+                     **fields)
+
+
+def test_visitors_get_404_for_a_false_trigger_but_admin_sees_it_with_its_burst(client, add_visit, locked, monkeypatch):
+    real = add_visit(visitor="bird", species="Bushtit")
+    ft = _false_trigger(add_visit)
+    other_ft = _false_trigger(add_visit)
+    monkeypatch.setattr(images, "burst_paths", lambda rel: ["2026/11/03/ft_b1.jpg", "2026/11/03/ft_b2.jpg"] if "ft" in rel else [])
+    # A visitor: the same 404 as for an id that doesn't exist, however the page is asked for.
+    for path in (f"/visit/{ft}", f"/visit/{ft}?ft=1", f"/visit/{ft}?todo=1", f"/visit/{other_ft}", "/visit/99999"):
+        assert client.get(path).status_code == 404
+    # The ft flag can't turn a real visit's arrows into a walk through false triggers.
+    page = client.get(f"/visit/{real}?ft=1")
+    assert page.status_code == 200 and f"/visit/{ft}" not in page.text and f"/visit/{other_ft}" not in page.text
+    assert "ft_b1.jpg" not in page.text
+    # The admin keeps everything: the page, the burst strip and the arrows through the other false triggers.
+    assert client.post("/login", data={"password": "s3cret!"}, follow_redirects=False).status_code == 303
+    page = client.get(f"/visit/{ft}")
+    assert page.status_code == 200 and "ft_b1.jpg" in page.text and "ft_b2.jpg" in page.text
+    assert f"/visit/{other_ft}" in page.text
+    assert client.get(f"/visit/{real}?ft=1").status_code == 200
+
+
+def test_no_password_means_everyone_is_admin_and_sees_false_triggers(client, add_visit):
+    ft = _false_trigger(add_visit)
+    assert client.get(f"/visit/{ft}").status_code == 200
+
+
+def test_the_public_mirror_has_no_false_trigger_pages(client, add_visit, monkeypatch):
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    ft = _false_trigger(add_visit)
+    assert client.get(f"/visit/{ft}").status_code == 404

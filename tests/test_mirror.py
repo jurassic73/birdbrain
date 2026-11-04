@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -231,3 +232,33 @@ def test_settings_saves_the_mirror_toggle(conn):
         c.post("/settings/mirror", data={"owner_checks": "1"}, follow_redirects=False)
         assert mirror.owner_checks_shared(conn)
         assert 'name="owner_checks" value="1" checked' in c.get("/settings").text
+
+
+def test_copy_drops_false_triggers_and_keeps_real_visits(conn, add_visit, tmp_path):
+    real = add_visit(visitor="bird", species="Bushtit")
+    empty = add_visit(visitor="none", species=None, image_path="2026/11/03/ft.jpg", thumb_path="2026/11/03/ft_t.jpg")
+    # corrected to an animal by the owner: a real visit now, whatever Claude first said
+    fixed = add_visit(visitor="none", species=None, corrected_visitor="bird", corrected_species="Junco")
+    # an older row corrected before corrected_visitor existed only set corrected_species
+    old_fix = add_visit(visitor="none", species=None, corrected_species="Bushtit")
+    copy = tmp_path / "mirror.db"
+    mirror.copy_db(config.DB_PATH, copy)
+    kept = [r[0] for r in sqlite3.connect(copy).execute("SELECT id FROM visits ORDER BY id")]
+    assert kept == [real, fixed, old_fix] and empty not in kept
+    assert db.get_visit(conn, empty) is not None  # the Pi's own database is untouched
+
+
+def test_file_list_has_no_false_trigger_photo_thumbnail_or_burst(photo_tree, tmp_path, add_visit):
+    day = photo_tree / "2026" / "11" / "03"
+    for name in ("ft.jpg", "ft_t.jpg", "ft_b1.jpg", "ft_b2.jpg", "ft_b3.jpg"):
+        (day / name).write_bytes(b"x")
+    add_visit(visitor="none", species=None, image_path="2026/11/03/ft.jpg", thumb_path="2026/11/03/ft_t.jpg")
+    # even a copy that was never trimmed lists none of them
+    assert not any("ft" in f for f in mirror.files_of(config.DB_PATH))
+    copy = tmp_path / "mirror.db"
+    mirror.copy_db(config.DB_PATH, copy)
+    files = mirror.files_of(copy)
+    assert not any("ft" in Path(f).name for f in files)
+    assert "2026/11/03/a.jpg" in files and "2026/11/03/a_b1.jpg" in files  # real visits keep theirs
+    stage = mirror.stage_files(files, tmp_path / "stage")
+    assert not any("ft" in p.name for p in stage.rglob("*"))

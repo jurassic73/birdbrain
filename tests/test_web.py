@@ -426,12 +426,10 @@ def test_picking_a_burst_frame_as_the_photo_is_admin_only_and_false_triggers_onl
         assert client.post(f"/visit/{vid}/photo-frame", data={"frame": bad}).status_code == 400, bad
     assert client.post(f"/visit/{vid}/photo-frame", data={"frame": "1"}).headers["HX-Refresh"] == "true"
     assert client.post("/visit/999999/photo-frame", data={"frame": "1"}).status_code == 404
-    # Visitors: the change is refused and the page shows no controls, but it does show the picked photo.
+    # Visitors: the change is refused, and a false trigger's page isn't theirs to see at all.
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
     assert client.post(f"/visit/{vid}/photo-frame", data={"frame": "0"}).status_code == 403
-    html = client.get(f"/visit/{vid}").text
-    assert 'id="use-frame"' not in html and 'id="use-claude"' not in html and "photo-frame" not in html
-    assert f'src="/images/{saved[0]}"' in html and "your photo" in html
+    assert client.get(f"/visit/{vid}").status_code == 404
     with db.session() as conn:
         assert db.get_visit(conn, vid)["photo_frame"] == 1
 
