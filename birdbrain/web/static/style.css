@@ -403,8 +403,8 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
   .critter-status { display: none; }
 }
 .info-tip.card-tip { cursor: pointer; }
-/* The Today list's info icons, 50% bigger than elsewhere (owner: too small to see or tap). */
-.critters .info-tip { font-size: 1.125em; }
+/* The Today list's info icons: made 50% bigger, then scaled down 20% (owner, 2026-11-04). */
+.critters .info-tip { font-size: 0.9em; }
 .info-tip.card-tip:hover, .info-tip.card-tip:focus-visible { color: var(--accent); }
 .critter-n { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); text-decoration: none; }
 .critter-n:hover, .critter-n:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
