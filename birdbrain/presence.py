@@ -244,7 +244,7 @@ EXAMPLE_ROWS = f"""SELECT e.visit_id, e.vec, e.animal_vec, e.animal_frame, e.ani
                           {db.REAL} AS real, {CHECKED} AS confirmed, v.visitor, v.marks, v.raw_json,
                           v.photo_deleted_at, v.is_night, v.captured_at,
                           COALESCE(v.corrected_visitor, v.visitor) AS final,
-                          json_extract(v.raw_json, '$.burst') IS NOT NULL AS has_burst
+                          json_extract({db.valid_json("v.raw_json")}, '$.burst') IS NOT NULL AS has_burst
                    FROM embeddings e JOIN visits v ON v.id = e.visit_id
                    WHERE e.view = {classifier.PRESENCE_VIEW}"""
 
@@ -484,7 +484,8 @@ def pending_picks(conn) -> list:
     rows = conn.execute(
         f"""SELECT v.id, v.image_path, v.raw_json, v.captured_at, v.marks, v.visitor, e.animal_frame, e.animal_by_owner
             FROM embeddings e JOIN visits v ON v.id = e.visit_id
-            WHERE {db.REAL} AND v.photo_deleted_at IS NULL AND json_extract(v.raw_json, '$.burst') IS NOT NULL
+            WHERE {db.REAL} AND v.photo_deleted_at IS NULL
+              AND json_extract({db.valid_json("v.raw_json")}, '$.burst') IS NOT NULL
               AND e.view = {classifier.PRESENCE_VIEW}
               AND ((v.visitor = 'none' AND e.animal_frame IS NULL) OR e.animal_by_owner
                    OR v.marks LIKE '%"frame"%')

@@ -542,6 +542,25 @@ def test_a_malformed_ring_is_no_ring_everywhere(ring, conn, add_visit, client):
     assert f'x="{round(x * 160, 2)}" y="{round(y * 90, 2)}"' in page.text and "Dashed box" in page.text
 
 
+def test_stored_json_no_sqlite_can_read_breaks_nothing(conn, add_visit, client):
+    """A visit whose stored JSON isn't JSON (here truncated, so no SQLite version reads it; a bare NaN from
+    json.dumps is the same on the Pi's SQLite 3.40) must not raise "malformed JSON" out of the SQL json functions,
+    which would take retraining and the visit page down for every visit, not just this one."""
+    good = add_visit(raw_json=json.dumps({"trigger": "rim", "zones": LIVE}))
+    presence.store(conn, good, np.ones(DIM))
+    bad = add_visit(species="Bushtit", also='[{"visitor": "raccoon"', raw_json='{"zones": {"ring": [0.5, ',
+                    marks='[{"x": 0.5, "y": 0.5, "r": 0.1, "frame": 2')
+    presence.store(conn, bad, np.ones(DIM))
+    ex = presence.examples(conn)
+    assert good in ex["ids"] and bad in ex["ids"]  # its photo still teaches "animal": Claude's crop showed it
+    assert presence.retrain(conn)["key"] == presence.label_key(conn)
+    assert presence.pending_picks(conn) == []  # no burst anyone can read, so nothing to look through
+    assert presence.teaches(conn, bad)["used"]
+    assert db.species_kinds(conn) == [("Bushtit", "bird"), ("Dark-eyed Junco", "bird")]
+    for vid in (good, bad):
+        assert client.get(f"/visit/{vid}").status_code == 200
+
+
 def test_the_visit_page_draws_the_view_its_embedding_was_made_of(conn, add_visit, client):
     vid = add_visit(raw_json=json.dumps({"trigger": "rim", "zones": LIVE}))
 
