@@ -1525,3 +1525,16 @@ def test_theme_color_is_set_before_first_paint_and_matches_css(client):
     assert re.search(r"^html \{ background: var\(--bg\); \}", css, re.M)
     for name, light, dark in re.findall(r'(\w+): \{ light: "(#\w+)", dark: "(#\w+)" \}', html):
         assert light in css and dark in css, name
+
+
+def test_visit_page_back_link_replaces_all_visits(client, add_visit):
+    vid = add_visit(species="Bushtit")
+    html = client.get(f"/visit/{vid}").text
+    assert "All visits" not in html
+    assert html.count('href="/" data-back-home>') == 2 and "<span>Back</span>" in html
+
+
+def test_home_chips_are_swappable_in_place(client, add_visit):
+    add_visit(species="Bushtit")
+    html = client.get("/?kind=bird").text
+    assert 'aria-current="page"' in html and 'id="more-filters"' in html and "bb-home-url" in html

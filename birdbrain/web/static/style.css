@@ -656,6 +656,9 @@ main.wide { max-width: 1600px; }
 .visit-nav-btn.disabled { color: var(--muted); cursor: default; }
 .visit-nav-back { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
 .visit-nav-back:hover { text-decoration: underline; }
+/* Back with a left chevron: the chevron and the word sit centred together. */
+.back-home { display: inline-flex; align-items: center; gap: 3px; }
+.back-home .back-chev { width: 1.15em; height: 1.15em; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; margin-left: -4px; }
 /* Stepping between visits swaps pages in one paint instead of flashing a half-built page. */
 @view-transition { navigation: auto; }
 /* Photo and details (with the review form) share a height cap so the page fits a laptop window. */
@@ -1284,6 +1287,7 @@ details.review-fold > summary { display: none; }
   .label-block h1 .title-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .label-block h1 .title-count { flex: none; }
   .label-block h1 .title-back { flex: none; margin: 0 0 0 auto; white-space: nowrap; }
+  .label-block h1 .back-home { align-self: center; }
   .visit-head .label-block { flex: 1 1 100%; }
   .photo-arrow { display: flex; }
   /* Steps move under "Identified by" and wrap: smaller pills, and a step that agrees with the result shows only its confidence. */
