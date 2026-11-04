@@ -1518,13 +1518,55 @@ def test_theme_color_is_set_before_first_paint_and_matches_css(client):
     import re
     from pathlib import Path
     html = client.get("/").text
-    # the meta exists before the early script, which sets it from the saved theme or the device scheme
+    # the metas exist before the early script, which sets the one it keeps from the saved theme or the device scheme
     assert html.index('id="theme-color"') < html.index("window.bbBg")
-    assert 'getElementById("theme-color").content' in html and "prefers-color-scheme: dark" in html
+    assert "window.bbTheme.apply();" in html and "prefers-color-scheme: dark" in html
     css = (Path(__file__).resolve().parent.parent / "birdbrain/web/static/style.css").read_text()
     assert re.search(r"^html \{ background: var\(--bg\); \}", css, re.M)
-    for name, light, dark in re.findall(r'(\w+): \{ light: "(#\w+)", dark: "(#\w+)" \}', html):
-        assert light in css and dark in css, name
+    pairs = re.findall(r'(\w+): \{ light: "(#\w+)", dark: "(#\w+)" \}', html)
+    assert [name for name, _, _ in pairs] == ["forest", "ocean", "sunset", "plum"]
+    # each palette's light and dark --bg in style.css, by selector
+    light_bg = {"forest": re.search(r"^:root \{\s*--bg: (#\w+)", css, re.M).group(1),
+                "forest_dark": re.search(r'^:root\[data-theme="dark"\] \{\s*--bg: (#\w+)', css, re.M).group(1)}
+    for name, light, dark in pairs:
+        if name == "forest":
+            assert (light, dark) == (light_bg["forest"], light_bg["forest_dark"])
+            continue
+        assert re.search(rf':root\[data-palette="{name}"\] \{{\s*--bg: {light};', css), name
+        assert re.search(rf':root\[data-palette="{name}"\]\[data-theme="dark"\] \{{\s*--bg: {dark};', css), name
+        assert re.search(rf':root\[data-palette="{name}"\]:not\(\[data-theme="light"\]\) \{{\s*--bg: {dark};', css), name
+
+
+def test_theme_color_html_never_gives_a_dark_device_the_light_color(client, add_visit):
+    """The Android bar went light on a dark page after opening a visit: the HTML's only theme-color was the light
+    fallback. Every page now carries a device-scheme pair (right even before or without the script), and the
+    script keeps exactly one."""
+    import re
+    vid = add_visit(species="Bushtit")
+    for url in ("/", "/?kind=bird", f"/visit/{vid}", f"/visit/{vid}?embed=1", "/species", "/stats"):
+        html = client.get(url).text
+        metas = re.findall(r'<meta name="theme-color"[^>]*>', html)
+        assert metas == ['<meta name="theme-color" id="theme-color" content="#f6f5f0" '
+                         'media="(prefers-color-scheme: light)">',
+                         '<meta name="theme-color" content="#141815" media="(prefers-color-scheme: dark)">'], url
+        assert html.index("window.bbTheme.apply();") < html.index('<link rel="stylesheet"'), url
+
+
+def test_theme_color_is_reapplied_however_a_page_is_shown():
+    """Prerendered visit pages (home's speculation rules), back/forward cache restores, a returning tab, the end of
+    full screen, another tab's toggle and htmx swaps all re-apply the theme and bar color; the shown cases also
+    nudge Chrome so it hears the colors again."""
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "birdbrain/web"
+    js = (root / "static/theme.js").read_text()
+    for hook in ('addEventListener("pageshow", refresh)', '"prerenderingchange", refresh', '"visibilitychange"',
+                 '"fullscreenchange"', 'addEventListener("storage"', '"htmx:afterSettle"'):
+        assert hook in js, hook
+    assert "window.bbTheme.nudge()" in js and "window.bbTheme.apply(read)" in js
+    base = (root / "templates/base.html").read_text()
+    # one meta kept, the rest removed; the nudge restores the real color and drops its inline background
+    assert 'querySelectorAll(\'meta[name="theme-color"]\').forEach(x => { if (x !== m) x.remove(); })' in base
+    assert 'root.style.removeProperty("background-color")' in base and "document.prerendering" in base
 
 
 def test_visit_page_back_link_replaces_all_visits(client, add_visit):
