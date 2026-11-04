@@ -59,7 +59,7 @@
     {% set nc = no_circle_note(visit) %}{% if nc and not visit.photo_deleted_at %}<span class="photo-note muted small" data-tip="Claude wasn't asked, and the Pi's circle from the motion found nothing it was sure of (see How it was decided), so there's no circle on this photo.">{{ nc }}</span>{% endif %}
     <span class="photo-tools-end">
     {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards). Drawing a new circle shows them again.">Hide circles</button>{% endif %}
-    {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="Dashed box: the only part of the photo the Pi animal check and Claude looked at, so an animal outside it isn't seen.{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
+    {% if vzones and not visit.photo_deleted_at %}<button type="button" class="photo-zones" id="zones-toggle" aria-pressed="true" data-tip-anchor=".visit-photo" data-tip="{% if vzones.view %}Dashed box: what the Pi animal check looked at, {{ vzones.view }}, so an animal outside it isn't seen by it. {% endif %}{{ vzones.claude_sees }}{% if vzones.fired %} Solid outline: {{ vzones.fired }}, the zone whose motion took this photo. Motion is only watched inside the zones (Settings &gt; Zones).{% endif %}{% if vzones.source == 'history' %} Zones as they were then, from the calibration history (this photo is older than zone logging).{% elif vzones.source == 'today' %} Drawn with today&#39;s zones: this photo is older than zone logging.{% endif %}">Hide zones</button>{% endif %}
     </span>
   </div>
   {# data-frame: the burst frame shown first (the owner's pick), empty for the photo Claude saw. #}
@@ -70,7 +70,7 @@
     <a href="/images/{{ photo_src(visit) }}" draggable="false"><img class="full" draggable="false" src="/images/{{ photo_src(visit) }}" width="1920" height="1080" alt="{{ visit.label }}"></a>
     {% endif %}
     {% if vzones and not visit.photo_deleted_at %}
-    {# The crop box the Pi and Claude looked at, and the zone whose motion fired this capture (app.visit_zones). #}
+    {# The dashed box the Pi animal check looked at, and the zone whose motion fired this capture (app.visit_zones). #}
     <svg class="zones-overlay" viewBox="0 0 {{ vzones.w }} {{ vzones.h }}" preserveAspectRatio="none" aria-hidden="true">
       {% for s in vzones.shapes %}<path class="vz-zone" style="color: {{ s.color }}" d="{{ s.d }}" fill-rule="evenodd"/>{% endfor %}
       {% if vzones.crop %}<rect class="vz-crop" style="color: {{ vzones.crop_color }}" x="{{ vzones.crop.x | round(2) }}" y="{{ vzones.crop.y | round(2) }}" width="{{ vzones.crop.w | round(2) }}" height="{{ vzones.crop.h | round(2) }}"/>{% endif %}

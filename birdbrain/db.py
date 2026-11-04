@@ -59,9 +59,12 @@ CREATE TABLE IF NOT EXISTS calibrations (
     after_json TEXT,
     image_path TEXT         -- the median frame with the old and new zones drawn, under DATA_DIR/calibration
 );
-CREATE TABLE IF NOT EXISTS embeddings (  -- BioCLIP 2 embedding of each frame's crop box (birdbrain.presence)
+CREATE TABLE IF NOT EXISTS embeddings (  -- BioCLIP 2 embedding of each frame's view (birdbrain.presence)
     visit_id INTEGER PRIMARY KEY REFERENCES visits(id) ON DELETE CASCADE,
     vec BLOB NOT NULL,      -- float16
+    -- Which view vec (and animal_vec) is of: classifier.PRESENCE_VIEW (the bowl square or padded ground crop);
+    -- NULL = the old center-cut crop box. Only the current view trains the Pi animal check.
+    view INTEGER,
     -- For a false trigger later corrected to an animal: the saved burst frame whose crop box looks most like one
     -- (birdbrain.presence.pick_frames). animal_frame is 1-based; 0 = looked, no burst frames to look at.
     -- animal_by_owner = 1: the frame the owner's first circle is on, embedded because they circled it there.
@@ -151,7 +154,7 @@ HAS_PHOTO = "photo_deleted_at IS NULL"
 # The photo itself is there, full size or thinned, not just the thumbnail: for checks that look at the frame.
 FULL_FRAME = f"({HAS_PHOTO} AND photo_level IS NOT 'thumb')"
 EMBEDDING_ADDED_COLUMNS = {"animal_vec": "BLOB", "animal_frame": "INTEGER", "animal_score": "REAL",
-                           "animal_by_owner": "INTEGER"}
+                           "animal_by_owner": "INTEGER", "view": "INTEGER"}
 
 # How many corrections and notes join each identify prompt.
 LESSON_LIMIT = 15

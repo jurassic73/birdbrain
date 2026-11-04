@@ -117,7 +117,7 @@ def test_gate_skips_claude_and_keeps_the_frame_for_review(monkeypatch, conn, yar
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
     monkeypatch.setattr(watch, "presence_mode", lambda: "gate")
     emb = vec(False, yard)
-    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: emb)
+    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, zones, trigger: emb)
     asked = []
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: asked.append(1))
     assert watch.handle_event() == "none"
@@ -134,7 +134,7 @@ def test_shadow_records_the_score_and_still_asks_claude(monkeypatch, conn, yard)
     burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), 90, np.uint8))[1].tobytes()] * 3
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
     monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
-    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: vec(False, yard))
+    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, zones, trigger: vec(False, yard))
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
         Sighting(visitor="none", species=None, count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
     assert watch.handle_event() == "none"
@@ -224,7 +224,7 @@ def test_a_corrected_false_trigger_teaches_animal_only_when_its_crop_shows_one(c
     found_animal(conn, empty[1], circle=ABOVE)  # circled above the crop box
     found_animal(conn, empty[2], circle=INSIDE)  # circled inside it: a hard example worth learning
     out = left_out(conn)
-    assert out == {empty[0]: "no frame shows the animal in the crop box", empty[1]: "the circle is outside the crop box"}
+    assert out == {empty[0]: "no frame shows the animal in the dashed box", empty[1]: "the circle is outside the dashed box"}
     assert presence.model(conn)["visitors"] == 13 and presence.model(conn)["left_out"] == 2
 
 
@@ -236,19 +236,19 @@ def test_claudes_own_visits_still_teach_animal(conn, yard):
     # The owner circling the animal outside the crop box takes it out (the crop Claude saw didn't show it).
     db.correct_visit(conn, real[1][0], None, None, None, [ABOVE])
     db.set_raw_json(conn, real[1][0], {"zones": {"crop": list(CROP)}})
-    assert left_out(conn) == {real[1][0]: "the circle is outside the crop box"}
+    assert left_out(conn) == {real[1][0]: "the circle is outside the dashed box"}
 
 
 def test_older_visits_find_their_crop_box_in_the_calibration_history(conn, yard):
     empty = conn.execute("SELECT id FROM visits WHERE visitor = 'none' LIMIT 1").fetchone()[0]
     db.correct_visit(conn, empty, "squirrel", None, None, [INSIDE])  # no zones saved with the visit
     # No crop box known, so the circle can't say anything, and nothing else shows the animal was in the crop box.
-    assert left_out(conn) == {empty: "no frame shows the animal in the crop box"}
+    assert left_out(conn) == {empty: "no frame shows the animal in the dashed box"}
     db.add_calibration(conn, ran_at="2000-01-01T00:00:00", reason="manual", status="moved", summary="",
                        after_json=json.dumps({"crop": list(CROP)}))
     assert left_out(conn) == {}
     db.correct_visit(conn, empty, "squirrel", None, None, [ABOVE])
-    assert left_out(conn) == {empty: "the circle is outside the crop box"}
+    assert left_out(conn) == {empty: "the circle is outside the dashed box"}
 
 
 class FakeClf:
@@ -279,7 +279,7 @@ def test_the_burst_frame_with_the_animal_becomes_its_training_example(conn, yard
     clf = FakeClf(yard)
     assert presence.pick_frames(conn, clf=clf) == 0  # still a false trigger: nothing to look through
     found_animal(conn, vid, circle=ABOVE)
-    assert left_out(conn) == {vid: "the circle is outside the crop box"}  # left out until its burst is looked at
+    assert left_out(conn) == {vid: "the circle is outside the dashed box"}  # left out until its burst is looked at
     key = presence.label_key(conn)
     assert presence.pick_frames(conn, clf=clf) == 1 and clf.calls == 6
     row = conn.execute("SELECT animal_frame, animal_score FROM embeddings WHERE visit_id = ?", (vid,)).fetchone()
@@ -297,7 +297,7 @@ def test_a_burst_with_no_animal_in_the_crop_box_is_left_out(conn, yard, add_visi
     found_animal(conn, vid, circle=None)
     assert left_out(conn) == {vid: "waiting for its burst to be looked through"}
     presence.pick_frames(conn, clf=FakeClf(yard))
-    assert left_out(conn) == {vid: "no frame shows the animal in the crop box"}
+    assert left_out(conn) == {vid: "no frame shows the animal in the dashed box"}
 
 
 def test_looking_through_a_burst_waits_for_a_capture(conn, yard, add_visit):
@@ -368,10 +368,10 @@ def test_a_circle_outside_the_crop_box_on_its_frame_leaves_the_visit_out(conn, y
     found_animal(conn, vid, circle=on_frame(ABOVE, 2))  # visit 693: only the tail was in the box
     presence.pick_frames(conn, clf=FakeClf(yard))
     assert pick_of(conn, vid)["animal_frame"] == 2
-    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the crop box"}
+    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the dashed box"}
     # A circle on the photo doesn't count for frame 2: only the circles on that frame do.
     db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(ABOVE, 2), INSIDE])
-    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the crop box"}
+    assert left_out(conn) == {vid: "your circle on burst frame 2 is outside the dashed box"}
     db.correct_visit(conn, vid, "squirrel", None, None, [on_frame(ABOVE, 2), on_frame(INSIDE, 2)])
     assert left_out(conn) == {}
 
@@ -427,8 +427,8 @@ def test_training_sets_the_outlier_aside_and_says_which_visit(conn, yard, add_vi
 def scored_frames(monkeypatch, scores: dict[bytes, float], threshold=0.3):
     """box_embedding returns the frame itself; presence.check scores it from the table."""
     looked = []
-    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: looked.append(jpeg) or np.array([scores[jpeg]]))
-    monkeypatch.setattr(presence, "check", lambda conn, emb: {
+    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, zones, trigger: looked.append(jpeg) or np.array([scores[jpeg]]))
+    monkeypatch.setattr(presence, "check", lambda conn, emb, view=None: {
         "model": presence.MODEL_NAME, "score": float(emb[0]), "threshold": threshold, "empty": bool(emb[0] < threshold)})
     return looked
 
@@ -460,7 +460,7 @@ def test_the_last_frame_check_can_be_switched_off_and_fails_soft(monkeypatch, co
     assert watch.animal_check([b"a", b"z"], [b"a", b"z"], CROP)[1]["empty"] and looked == [b"a"]
     monkeypatch.setattr(watch.config, "PRESENCE_LAST_FRAME", True)
 
-    def broken(jpeg, box):
+    def broken(jpeg, zones, trigger):
         if jpeg == b"z":
             raise RuntimeError("out of memory")
         return np.array([0.01])

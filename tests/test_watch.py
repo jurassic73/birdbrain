@@ -172,11 +172,11 @@ def pipeline(monkeypatch, conn):
     monkeypatch.setattr(watch.identify, "identify", fake_identify)
 
     monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
-    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, box: None)
+    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, zones, trigger: None)
 
     def set_detector(animal):
         """animal=True: the animal check sees something; False: it calls the frame empty."""
-        monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {
+        monkeypatch.setattr(watch.presence, "check", lambda conn, emb, view=None: {
             "model": "bioclip-presence", "score": 0.9 if animal else 0.1, "threshold": 0.4, "empty": not animal})
 
     return conn, asked, set_detector
@@ -406,9 +406,9 @@ def test_ground_calls_have_their_own_daily_count(conn, add_visit):
 
 def test_ground_events_use_the_ground_crop(pipeline, monkeypatch):
     conn, asked, set_detector = pipeline
-    crops = []
+    views = []
     set_detector(True)
-    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, crop: crops.append(crop))
+    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, z, trigger: views.append((trigger, z)))
     monkeypatch.setattr(watch.config, "GROUND_CROP", (0.0, 0.5, 1.0, 0.5))
     watch.handle_event(trigger="ground")
     raw = watch.json.loads(watch.db.latest_visit(conn)["raw_json"])
@@ -416,7 +416,8 @@ def test_ground_events_use_the_ground_crop(pipeline, monkeypatch):
     # The zones in use are stored with the visit, for the visit page's drawing.
     assert watch.zones.Zones.from_dict(raw["zones"]).ground_crop == (0.0, 0.5, 1.0, 0.5)
     watch.handle_event(trigger="rim")
-    assert crops == [(0.0, 0.5, 1.0, 0.5), watch.config.CROP_ROI]
+    assert [t for t, _ in views] == ["ground", "rim"]
+    assert views[0][1].ground_crop == (0.0, 0.5, 1.0, 0.5) and views[1][1].crop == watch.config.CROP_ROI
 
 
 def test_ground_results_never_put_the_birdbath_on_cooldown(monkeypatch, conn):
@@ -470,7 +471,7 @@ def test_probe_passes_only_with_a_verdict_that_is_not_empty():
 
 def test_a_probe_without_a_verdict_is_dropped_not_sent_to_claude(pipeline, monkeypatch):
     conn, asked, set_detector = pipeline
-    monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {"model": "bioclip-presence", "score": None, "empty": False})
+    monkeypatch.setattr(watch.presence, "check", lambda conn, emb, view=None: {"model": "bioclip-presence", "score": None, "empty": False})
     assert watch.handle_event(probe=True, trigger="ground") == watch.PROBE_UNCHECKED
     monkeypatch.setattr(watch.classifier, "box_embedding", raise_locked)  # the embedding failed
     assert watch.handle_event(probe=True, trigger="rim") == watch.PROBE_UNCHECKED
@@ -533,7 +534,7 @@ def test_rain_without_a_verdict_costs_no_more_than_the_doubling_backoff(pipeline
     if why == "classifier off":
         monkeypatch.setattr(watch.config, "CLASSIFIER", "off")  # presence keeps its default "shadow"
     else:
-        monkeypatch.setattr(watch.presence, "check", lambda conn, emb: {"model": "bioclip-presence", "score": None,
+        monkeypatch.setattr(watch.presence, "check", lambda conn, emb, view=None: {"model": "bioclip-presence", "score": None,
                                                                          "empty": False})
     from birdbrain.identify import Result, Sighting
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: asked.append(1) or Result(

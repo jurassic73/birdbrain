@@ -485,19 +485,44 @@ def presence_mode() -> str:
     return mode
 
 
+_hold_cache: tuple[float, bool] = (0.0, False)  # (read at, held)
+
+
+def presence_held() -> bool:
+    """Whether a `--backfill --redo` is holding the animal check (presence.held), re-read at most every 15 s like
+    the mode."""
+    global _hold_cache
+    read_at, held = _hold_cache
+    if time.monotonic() - read_at > 15:
+        with db.session() as conn:
+            held = presence.held(conn)
+        _hold_cache = (time.monotonic(), held)
+    return held
+
+
 def probe_ready() -> bool:
     """Probes need a working local animal check: the embedding model on (CLASSIFIER) and loadable, the check not
-    off, and trained on enough of this yard's frames to give a verdict. Without all of that a rain run just
+    off, not held by a redo (its model is then trained on part of the frames, so a probe it called empty could be
+    a bird: as with no model, probes wait), and trained on enough of this yard's frames to give a verdict. Without all of that a rain run just
     waits out its doubling backoff: unfiltered probes every COOLDOWN_NONE would ask Claude 180 times an hour
     and use up the day's budget before lunch. Fail-soft: if the mode can't be read (a locked database), there
     are no probes until it can be, and the caller carries on."""
     if not classifier.usable() or not presence.trained():
         return False
     try:
-        return presence_mode() != "off"
+        return presence_mode() != "off" and not presence_held()
     except Exception:
         log_rarely("presence_mode", "couldn't read the animal check's mode; no probes until it can be read")
         return False
+
+
+def _held_now() -> bool:
+    """presence_held, fail-soft the safe way: if it can't be read, a probe counts as held (unchecked)."""
+    try:
+        return presence_held()
+    except Exception:
+        log_rarely("presence_hold", "couldn't read whether a redo holds the animal check; probes count as unchecked")
+        return True
 
 
 def motion_action(now: float, cooldown_until: float, backoff_until: float, can_probe: bool) -> str:
@@ -510,21 +535,27 @@ def motion_action(now: float, cooldown_until: float, backoff_until: float, can_p
     return "full"
 
 
-def _scored(jpeg: bytes, crop) -> tuple[np.ndarray | None, dict | None]:
-    emb = classifier.box_embedding(jpeg, crop)
+def _scored(jpeg: bytes, z, trigger: str) -> tuple[np.ndarray | None, dict | None]:
+    """The Pi animal check on one frame: its view of the zones in use for this trigger (classifier.presence_patch:
+    the bowl square, or the padded ground crop), and the verdict, which records the view's kind."""
+    emb = classifier.box_embedding(jpeg, z, trigger)
+    kind = classifier.view_kind(z, trigger)
     with db.session() as conn:
-        return emb, presence.check(conn, emb)
+        check = presence.check(conn, emb, view=kind)
+    return emb, None if check is None else {**check, "view": kind}
 
 
-def animal_check(frames: list[bytes], ranked: list[bytes], crop) -> tuple[np.ndarray | None, dict | None, list[bytes]]:
+def animal_check(frames: list[bytes], ranked: list[bytes], z, trigger: str = "rim"
+                 ) -> tuple[np.ndarray | None, dict | None, list[bytes]]:
     """(embedding, verdict, ranked frames) from the local animal check, fail-soft (no verdict on any problem).
+    `z` is the zones in use and `trigger` what fired, which together decide what the check looks at.
 
     It scores the sharpest frame and, when that looks empty and PRESENCE_LAST_FRAME is on, the burst's last frame
     too: a landing bird is usually in the bowl by then, while sharpness can favour ripples or mulch. The higher
     score counts (so the verdict is the max of the two), and its embedding is the one stored for training. When
     only the last frame shows an animal it becomes the photo, so Claude sees what the Pi saw."""
     try:
-        emb, check = _scored(ranked[0], crop)
+        emb, check = _scored(ranked[0], z, trigger)
     except Exception:
         log.exception("local animal check failed; asking Claude")
         return None, None, ranked
@@ -533,7 +564,7 @@ def animal_check(frames: list[bytes], ranked: list[bytes], crop) -> tuple[np.nda
             or last is ranked[0]):
         return emb, check, ranked
     try:
-        emb2, check2 = _scored(last, crop)
+        emb2, check2 = _scored(last, z, trigger)
     except Exception:
         log.exception("animal check on the burst's last frame failed; going by the sharpest frame")
         return emb, check, ranked
@@ -562,17 +593,21 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     z = zones.current()
     crop = z.ground_crop if trigger == "ground" else z.crop
     ranked = best_frames(frames, crop)
-    # The local animal check: BioCLIP 2's embedding of the crop box, scored by a model trained on this yard's
-    # labelled frames. It is the only gate: in gate mode an empty verdict skips Claude (day and night; the
-    # owner reviews them), and a rain-backoff probe it calls empty is discarded in any mode but off.
+    # The local animal check: BioCLIP 2's embedding of a square around the bowl (ground triggers: the ground crop
+    # padded to a square), scored by a model trained on this yard's labelled frames. It is the only gate: in gate
+    # mode an empty verdict skips Claude (day and night; the owner reviews them), and a rain-backoff probe it calls
+    # empty is discarded in any mode but off.
     emb = check = None
     pmode = presence_mode()
     if pmode != "off":
-        emb, check, ranked = animal_check(frames, ranked, crop)
+        emb, check, ranked = animal_check(frames, ranked, z, trigger)
     best = ranked[0]
     night = is_night(best)
     if probe and not judged(check):
         log.info("probe (%s trigger): the animal check gave no verdict; discarded, backing off without probes", trigger)
+        return PROBE_UNCHECKED
+    if probe and _held_now():
+        log.info("probe (%s trigger): a redo holds the animal check; discarded, backing off without probes", trigger)
         return PROBE_UNCHECKED
     if probe and not probe_passes(check):
         log.info("probe (%s trigger): animal check found nothing; discarded", trigger)
@@ -587,6 +622,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         with db.session() as conn:
             settled = db.settled_species(conn)
         guess, pick = classifier.gate_check(emb, night, settled)
+        if guess:  # it reused the Pi animal check's embedding: say which view that was of
+            guess = {**guess, "crop": classifier.view_kind(z, trigger)}
         if pick and animals and animals > 1:
             # One BioCLIP guess names one animal; Claude counts them and names any other kind.
             log.info("species gate: %d animals in view, asking Claude instead of naming %s", animals, pick[0])
