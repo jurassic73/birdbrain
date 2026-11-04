@@ -46,7 +46,7 @@ def test_visit_escape_goes_home_only_after_arrow_trail(client, add_visit):
     assert '"#from-home"' in home and "sessionStorage.setItem" not in home.split('e.key !== "ArrowRight"')[1].split("</script>")[0]
     # The latest-visitor photo isn't prerendered: a prerender swapped in by the arrow key may lack focus and lose the first Esc.
     rules = json.loads(re.search(r'<script type="speculationrules">(.*?)</script>', home, re.S).group(1))
-    assert {"not": {"selector_matches": ".hero-link, .hero-goto"}} in rules["prerender"][0]["where"]["and"]
+    assert {"not": {"selector_matches": ".hero-link"}} in rules["prerender"][0]["where"]["and"]
     html = client.get(f"/visit/{vid}").text
     assert 'location.hash !== "#from-home"' in html and "history.replaceState" in html
     assert 'addEventListener("hashchange", readTrail)' in html
@@ -1269,8 +1269,7 @@ def test_only_the_latest_visitor_and_live_view_carry_a_zoom_button(client, add_v
     assert hero.index("</a>") < hero.index("zoom-btn")  # a sibling of the link, not inside it
     assert html.count('data-zoom-photo="') == 1 and "card-zoom" not in html  # visit cards have none
     assert "live-zoom-btn" not in html and 'id="home-viewer"' in html  # the live view's magnifier is on /live now
-    assert f'<a class="hero-goto" href="/visit/{second}" title="Open this visit (→)">Go to visit</a>' in hero  # after the kicker, a real link
-    assert hero.index("hero-kicker") < hero.index("hero-goto") < hero.index("hero-name")
+    assert "hero-goto" not in hero and "Go to visit" not in html  # the photo link is the only way in
     assert 'id="home-viewer-reset"' in html and "Reset view" in html  # zoom viewer
     # Load more cards and the other pages have none
     more = client.get(more_link(html)).text
