@@ -5,7 +5,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Birdbrain{% endblock %}</title>
-  <meta name="theme-color" id="theme-color" content="#f6f5f0">
+  {# Without the script below these two still follow the device (Forest colors), so the HTML itself never
+     hands a dark device the light bar color; the script then keeps exactly one, for the saved theme and palette. #}
+  <meta name="theme-color" id="theme-color" content="#f6f5f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141815" media="(prefers-color-scheme: dark)">
   <script>
     // Apply a saved theme before the first paint so the page never flashes the wrong one, and set the
     // browser's bar color (Android's navigation bar too) to match right away, not after theme.js loads.
@@ -16,15 +19,57 @@
       sunset: { light: "#faf5ef", dark: "#1a1512" },
       plum: { light: "#f7f4f8", dark: "#17131a" },
     };
-    try {
+    window.bbTheme = (() => {
       const root = document.documentElement;
-      const t = localStorage.getItem("theme");
-      if (t === "light" || t === "dark") root.dataset.theme = t;
-      const p = localStorage.getItem("palette");
-      if (p === "ocean" || p === "sunset" || p === "plum") root.dataset.palette = p;
-      const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-      document.getElementById("theme-color").content = window.bbBg[root.dataset.palette || "forest"][dark ? "dark" : "light"];
-    } catch (e) {}
+      let nudging = 0;
+      const color = () => {
+        const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+        return window.bbBg[root.dataset.palette || "forest"][dark ? "dark" : "light"];
+      };
+      // The one theme-color meta, without a media query; any other copy (the device-scheme pair above, or one
+      // that arrived with swapped-in HTML) is removed so it can never win.
+      const meta = () => {
+        let m = document.getElementById("theme-color");
+        if (!m) { m = document.createElement("meta"); m.name = "theme-color"; m.id = "theme-color"; document.head.prepend(m); }
+        m.removeAttribute("media");
+        document.querySelectorAll('meta[name="theme-color"]').forEach(x => { if (x !== m) x.remove(); });
+        return m;
+      };
+      return {
+        color,
+        // Read the saved theme and palette (another tab, or a page kept in the back/forward cache, may be out
+        // of date) and set the bar color. If storage can't be read (or read is false), the page's choice stands.
+        apply(read = true) {
+          if (read) try {
+            const t = localStorage.getItem("theme"), p = localStorage.getItem("palette");
+            if (t === "light" || t === "dark") root.dataset.theme = t; else delete root.dataset.theme;
+            if (p === "ocean" || p === "sunset" || p === "plum") root.dataset.palette = p; else delete root.dataset.palette;
+          } catch (e) {}
+          const m = meta(), c = color();
+          if (!nudging && m.content !== c) m.content = c;
+          return c;
+        },
+        // Chrome on Android colors its navigation bar from the page background (and the toolbar from
+        // theme-color), and only hears about them when they change. After a prerendered page is shown, a page
+        // comes back from the cache, full screen ends or the tab returns, step both one shade off for a frame
+        // and back, so Chrome is told the current colors again. One unit of one channel: invisible.
+        nudge() {
+          if (document.visibilityState !== "visible" || document.prerendering) return;
+          const c = window.bbTheme.apply();
+          const off = "#" + c.slice(1, 5) + (parseInt(c.slice(5), 16) ^ 1).toString(16).padStart(2, "0");
+          const m = meta();
+          nudging++;
+          m.content = off;
+          root.style.setProperty("background-color", off);
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            if (--nudging) return;
+            root.style.removeProperty("background-color");
+            m.content = color();
+          }));
+        },
+      };
+    })();
+    window.bbTheme.apply();
   </script>
   <link rel="manifest" href="/manifest.webmanifest?v={{ asset_version }}">
   <link rel="icon" href="/favicon.ico" sizes="any">
