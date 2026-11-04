@@ -390,7 +390,7 @@ def test_redo_leaves_deleted_photos_alone_and_out_of_the_limit(conn, add_visit, 
     assert views[keep[1]] == classifier.PRESENCE_VIEW and views[keep[0]] is None
     assert all(views[v] is None for v in deleted + [thumb])
     out = capsys.readouterr().out.splitlines()
-    assert out[-1] == "1/1 done, 0 failed, ~0 min left, 4 photos gone (left as they were)"
+    assert out[-2] == "1/1 done, 0 failed, ~0 min left, 4 photos gone (left as they were)"
     assert presence.backfill(redo=True, clf=clf) == 1  # the next run does the last one, still not the deleted
     assert "1/1 done, 0 failed" in capsys.readouterr().out
 
@@ -439,11 +439,13 @@ def test_redo_stopped_halfway_stays_in_shadow_and_leaves_shadow_and_plain_backfi
 
     with pytest.raises(KeyboardInterrupt):
         presence.backfill(redo=True, clf=Stop())
-    # A12: a partial redo leaves gate in shadow (the frame is still to redo) and removes the hold.
+    # A12/A18: a partial redo leaves gate in shadow (the frame is still to redo) and keeps the hold.
     out = capsys.readouterr().out
     assert presence.mode(conn) == "shadow" and "back in gate mode" not in out
-    assert "left in shadow: 1 frame still to redo; run --backfill --redo again to finish" in out
-    assert db.get_value(conn, presence.HOLD_KEY) is None
+    assert "Not finished: 1 frame still to redo. The Pi animal check stays in shadow" in out
+    assert db.get_value(conn, presence.HOLD_KEY) is not None
+    for key in (presence.HOLD_KEY, presence.RESTORE_KEY):
+        db.delete_value(conn, key)
     # Not in gate mode, or no redo: the mode isn't touched.
     db.set_value(conn, "presence_mode", "shadow")
     clf, seen = gate_seen(conn)
@@ -712,13 +714,18 @@ def test_a_redo_with_a_limit_stays_in_shadow_until_a_later_one_finishes(conn, ad
     db.set_value(conn, "presence_mode", "gate")
     presence.backfill(limit=1, redo=True, clf=FakeClf())
     out = capsys.readouterr().out
-    assert presence.mode(conn) == "shadow" and db.get_value(conn, presence.HOLD_KEY) is None
-    assert out.splitlines()[-1] == ("The Pi animal check is left in shadow: 2 frames still to redo; "
-                                    "run --backfill --redo again to finish.")
+    assert presence.mode(conn) == "shadow" and db.get_value(conn, presence.HOLD_KEY) is not None
+    assert out.splitlines()[-1] == (
+        "Not finished: 2 frames still to redo. The Pi animal check stays in shadow until a redo finishes, and the "
+        "watcher sends no rain probes and picks no burst frames for 3 hours from now, when the hold lapses "
+        "(shadow stays). Run --backfill --redo again to finish and put gate back.")
     assert "back in gate mode" not in out
-    # The next run starts in shadow, so it has no gate to put back: the owner switches it (Settings).
+    # The next run starts in the shadow the first one left, and puts gate back when it finishes.
     presence.backfill(redo=True, clf=FakeClf())
-    assert presence.mode(conn) == "shadow" and presence.still_to_redo(conn) == 0
+    out = capsys.readouterr().out
+    assert presence.mode(conn) == "gate" and presence.still_to_redo(conn) == 0
+    assert "left the Pi animal check in shadow" in out and out.splitlines()[-1] == "The Pi animal check is back in gate mode."
+    assert db.get_value(conn, presence.HOLD_KEY) is None and db.get_value(conn, presence.RESTORE_KEY) is None
 
 
 def test_a_complete_redo_with_an_unreadable_file_still_puts_gate_back(conn, add_visit, capsys):
@@ -762,13 +769,15 @@ def test_the_dashed_box_goes_by_the_verdicts_view_first_then_the_embedding(conn,
     unnamed = {"presence": {"model": presence.MODEL_NAME, "score": 0.9, "threshold": 0.4, "empty": False}}
     # 1. The verdict names its view: the new box, whatever the embedding (or none, as on the mirror).
     assert dashed(page(named)) == new and dashed(page(named, view=None)) == new
-    # 2. No view in the verdict, an embedding of the current view (a redone visit): the new box.
-    assert dashed(page(unnamed, view=classifier.PRESENCE_VIEW)) == new
-    # 3. An embedding of the old view, or a verdict from before views had names: the old square.
-    html = page({}, view=None)
+    # 2. A verdict from before views had names: the old square (it was made on it), even after a redo.
+    html = page(unnamed, view=classifier.PRESENCE_VIEW)
     assert dashed(html) == old and "the middle square of the crop box" in html
     html = page(unnamed)  # the mirror: no embeddings, the verdict kept in raw_json
     assert dashed(html) == old and "the middle square of the crop box" in html
+    # 3. No verdict: the embedding's view, old or current.
+    html = page({}, view=None)
+    assert dashed(html) == old and "the middle square of the crop box" in html
+    assert dashed(page({}, view=classifier.PRESENCE_VIEW)) == new
     # 4. Nothing about the Pi animal check at all: the new box.
     html = page({})
     assert dashed(html) == new and "a square around the whole bowl" in html
@@ -779,9 +788,161 @@ def test_the_mirror_draws_the_same_box_as_the_pi_for_new_and_old_visits(conn, ad
         "presence": {"model": presence.MODEL_NAME, "score": 0.9, "threshold": 0.4, "empty": False, "view": "bowl"}}}))
     unnamed = add_visit(raw_json=json.dumps({"trigger": "rim", "zones": LIVE, "calls": {
         "presence": {"model": presence.MODEL_NAME, "score": 0.9, "threshold": 0.4, "empty": False}}}))
+    redone = add_visit(raw_json=json.dumps({"trigger": "rim", "zones": LIVE, "calls": {
+        "presence": {"model": presence.MODEL_NAME, "score": 0.9, "threshold": 0.4, "empty": False}}}))
     presence.store(conn, named, np.ones(DIM))
     presence.store(conn, unnamed, np.ones(DIM), view=None)
-    on_pi = {vid: dashed(client.get(f"/visit/{vid}").text) for vid in (named, unnamed)}
+    presence.store(conn, redone, np.ones(DIM))  # a verdict from before views had names, re-embedded since
+    visits = (named, unnamed, redone)
+    on_pi = {vid: dashed(client.get(f"/visit/{vid}").text) for vid in visits}
+    assert on_pi[redone] == on_pi[unnamed] == rect_of(classifier.old_view_box(LIVE, "rim"))
     conn.execute("DELETE FROM embeddings")  # what mirror.trim does
     conn.commit()
-    assert {vid: dashed(client.get(f"/visit/{vid}").text) for vid in (named, unnamed)} == on_pi
+    assert {vid: dashed(client.get(f"/visit/{vid}").text) for vid in visits} == on_pi
+
+
+# --- round 4: picks before gate comes back, the mode to restore across runs, the hold kept after a partial run ---
+
+def burst_false_trigger(conn, add_visit, owner_frame=None, view=None):
+    """A false trigger corrected to a bird, its burst on disk, embedded in `view` (None: the old way)."""
+    from birdbrain import images
+
+    burst = [cv2.imencode(".jpg", frame(540, 960))[1].tobytes() for _ in range(3)]
+    image_rel, thumb_rel = images.store_frame(burst[0], FROZEN_NOW)
+    images.store_burst(burst, image_rel)
+    vid = add_visit(visitor="none", species=None, image_path=image_rel, thumb_path=thumb_rel,
+                    raw_json=json.dumps({"zones": LIVE, "trigger": "rim", "burst": {"best": 0}}))
+    circle = {"x": 0.31, "y": 0.5, "r": 0.03, **({"frame": owner_frame} if owner_frame else {})}
+    db.correct_visit(conn, vid, "bird", "Dark-eyed Junco", None, [circle])
+    presence.store(conn, vid, vec(False, np.random.default_rng(vid)), view=view)
+    return vid
+
+
+def test_a_redo_picks_the_bursts_it_forgot_before_gate_comes_back(conn, add_visit, capsys):
+    rng = np.random.default_rng(7)
+    yard(conn, add_visit, classifier.PRESENCE_VIEW, rng)  # a model can be trained
+    corrected = burst_false_trigger(conn, add_visit)
+    circled = burst_false_trigger(conn, add_visit, owner_frame=2)
+    db.set_value(conn, "presence_mode", "gate")
+    order = []
+
+    class Clf(FakeClf):
+        def embed(self, bgr):
+            with db.session() as c:
+                order.append((presence.mode(c), presence.held(c),
+                              c.execute("SELECT COUNT(*) FROM embeddings WHERE view IS NOT ?",
+                                        (classifier.PRESENCE_VIEW,)).fetchone()[0]))
+            return super().embed(bgr)
+
+    clf = Clf()
+    presence.backfill(redo=True, clf=clf)
+    picks = dict(conn.execute("SELECT visit_id, animal_frame FROM embeddings WHERE visit_id IN (?, ?)",
+                              (corrected, circled)).fetchall())
+    assert picks[circled] == 2 and picks[corrected] in (1, 2, 3)  # both picked by the redo itself
+    assert presence.pending_picks(conn) == []
+    # 2 re-embeds, then 1 owner frame and 3 burst frames, all in shadow under the hold, none of it old by then.
+    assert len(order) == 6 and all(m == "shadow" and h for m, h, _ in order) and [o[2] for o in order[2:]] == [0] * 4
+    out = capsys.readouterr().out.splitlines()
+    assert out[-2] == "bursts: 2/2 visits looked through, ~0 min left"
+    assert out[-1] == "The Pi animal check is back in gate mode." and presence.mode(conn) == "gate"
+    assert presence.label_key(conn) == presence._model["key"]  # retrained with the picks before gate came back
+
+
+def test_a_redo_stopped_during_the_picks_keeps_the_hold_and_shadow(conn, add_visit, capsys):
+    yard(conn, add_visit, classifier.PRESENCE_VIEW, np.random.default_rng(8))
+    burst_false_trigger(conn, add_visit, owner_frame=2)
+    burst_false_trigger(conn, add_visit, owner_frame=3)
+    db.set_value(conn, "presence_mode", "gate")
+
+    class Stop(FakeClf):
+        def embed(self, bgr):
+            if len(self.shapes) == 3:
+                raise KeyboardInterrupt  # Ctrl-C on the second pick, after both re-embeds and one pick
+            return super().embed(bgr)
+
+    with pytest.raises(KeyboardInterrupt):
+        presence.backfill(redo=True, clf=Stop())
+    out = capsys.readouterr().out
+    assert "Not finished: 1 burst still to look through. The Pi animal check stays in shadow" in out
+    assert presence.mode(conn) == "shadow" and presence.held(conn) and presence.still_to_redo(conn) == 0
+    # Nothing left to re-embed, but the next redo still finishes the picks and puts gate back.
+    clf = FakeClf()
+    presence.backfill(redo=True, clf=clf)
+    assert len(clf.shapes) == 1 and presence.pending_picks(conn) == []
+    assert presence.mode(conn) == "gate" and not presence.held(conn)
+
+
+def test_a_redo_in_shadow_leaves_the_picks_to_the_watcher(conn, add_visit, capsys):
+    yard(conn, add_visit, classifier.PRESENCE_VIEW, np.random.default_rng(9))
+    vid = burst_false_trigger(conn, add_visit)
+    clf = FakeClf()
+    presence.backfill(redo=True, clf=clf)
+    assert len(clf.shapes) == 1 and [r["id"] for r in presence.pending_picks(conn)] == [vid]
+    assert not presence.held(conn)  # released: the watcher picks it within a few minutes
+    assert capsys.readouterr().out.splitlines()[-1] == "The Pi animal check is now in shadow mode."
+
+
+def test_gate_from_env_survives_a_partial_run(conn, add_visit, monkeypatch, capsys):
+    monkeypatch.setattr(config, "PRESENCE", "gate")
+    for vid in stored_visits(conn, add_visit, 2):
+        presence.store(conn, vid, np.zeros(DIM), view=None)
+    presence.backfill(limit=1, redo=True, clf=FakeClf())
+    assert presence.mode(conn) == "shadow" and db.get_value(conn, presence.RESTORE_KEY) == "env"
+    presence.backfill(redo=True, clf=FakeClf())
+    assert db.get_value(conn, "presence_mode") is None and presence.mode(conn) == "gate"
+    assert capsys.readouterr().out.splitlines()[-1] == "The Pi animal check is back in gate mode."
+
+
+@pytest.mark.parametrize("between", ["off", "gate"])
+def test_the_owners_change_between_runs_wins(conn, add_visit, capsys, between):
+    for vid in stored_visits(conn, add_visit, 3):
+        presence.store(conn, vid, np.zeros(DIM), view=None)
+    db.set_value(conn, "presence_mode", "gate")
+    presence.backfill(limit=1, redo=True, clf=FakeClf())
+    db.set_value(conn, "presence_mode", between)  # Settings > Pi checks
+    presence.backfill(limit=1, redo=True, clf=FakeClf())
+    out = capsys.readouterr().out
+    if between == "off":
+        assert "mode was changed to off since an earlier redo; left as it is" in out
+        assert db.get_value(conn, presence.RESTORE_KEY) is None and presence.mode(conn) == "off"
+        presence.backfill(redo=True, clf=FakeClf())
+        assert presence.mode(conn) == "off"
+        assert capsys.readouterr().out.splitlines()[-1] == "The Pi animal check is now in off mode."
+    else:  # gate again: held at shadow again, gate back at the end
+        assert "switched to shadow" in out and presence.mode(conn) == "shadow"
+        presence.backfill(redo=True, clf=FakeClf())
+        assert presence.mode(conn) == "gate"
+
+
+def test_the_owners_change_during_a_partial_run_wins(conn, add_visit, capsys):
+    for vid in stored_visits(conn, add_visit, 3):
+        presence.store(conn, vid, np.zeros(DIM), view=None)
+    db.set_value(conn, "presence_mode", "gate")
+
+    class Owner(FakeClf):
+        def embed(self, bgr):
+            with db.session() as c:
+                db.set_value(c, "presence_mode", "off")
+            return super().embed(bgr)
+
+    presence.backfill(limit=1, redo=True, clf=Owner())
+    out = capsys.readouterr().out
+    assert "left as it is now" in out and "stays in shadow" not in out and presence.mode(conn) == "off"
+    assert db.get_value(conn, presence.RESTORE_KEY) is None
+
+
+def test_a_partial_run_keeps_probes_and_picks_paused_until_the_hold_lapses(monkeypatch, conn, add_visit, hold_unread):
+    for vid in stored_visits(conn, add_visit, 2):
+        presence.store(conn, vid, np.zeros(DIM), view=None)
+    now = [1_000_000.0]
+    monkeypatch.setattr(presence, "_now", lambda: now[0])
+    presence.backfill(limit=1, redo=True, clf=FakeClf())
+    monkeypatch.setattr(watch.presence, "trained", lambda: True)
+    monkeypatch.setattr(watch.classifier, "usable", lambda: True)
+    monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
+    now[0] += presence.HOLD_MAX - 60
+    hold_unread()
+    assert presence.held(conn) and watch.probe_ready() is False  # still paused, nearly 3 h on
+    now[0] += 120
+    hold_unread()
+    assert not presence.held(conn) and watch.probe_ready() is True  # lapsed

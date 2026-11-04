@@ -762,18 +762,17 @@ FIRED = {"rim": "the rim and rocks", "water": "the open water", "ground": "the g
 
 
 def old_view(raw: dict, visit_id: int, conn) -> bool:
-    """Whether the Pi animal check saw this visit in the old view (the crop box's middle square), in this order:
-    its verdict names a view (raw_json.calls.presence.view, newer visits): no; an embedding of the current view:
-    no; an embedding of an old view, or a verdict without a view (made before views had names): yes; nothing
-    about it at all: no. raw_json comes first so the public mirror, which has no embeddings, mostly agrees."""
+    """Whether the dashed box is the old view (the crop box's middle square), in this order: (1) its verdict names
+    a view (raw_json.calls.presence.view, newer visits): no; (2) a verdict without a view (made before views had
+    names): yes, the verdict shown was made on the old square, even if the frame was re-embedded since; (3) no
+    verdict, an embedding: old view yes, current view no; (4) nothing about it at all: no. The verdict comes
+    first so the public mirror, which has no embeddings, gives the same answer whenever there is one."""
     calls = raw.get("calls")
     verdict = calls.get("presence") if isinstance(calls, dict) else None
-    if isinstance(verdict, dict) and verdict.get("view"):
-        return False
+    if isinstance(verdict, dict):
+        return not verdict.get("view")
     row = conn.execute("SELECT view FROM embeddings WHERE visit_id = ?", (visit_id,)).fetchone()
-    if row is not None:
-        return row["view"] != classifier.PRESENCE_VIEW
-    return isinstance(verdict, dict)
+    return row is not None and row["view"] != classifier.PRESENCE_VIEW
 
 
 def visit_zones(visit, conn) -> dict | None:

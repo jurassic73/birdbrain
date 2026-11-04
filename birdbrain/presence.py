@@ -8,9 +8,11 @@ the whole bowl, rim and a bird's height above it, for birdbath triggers; the gro
 ground ones. It used to be the crop box center-cut to a square, which cut the rim's left and right ends off (birds
 perched there were called empty). Only embeddings of the current view train or are scored; older ones wait for
 `--backfill --redo`, which holds the check while it runs (HOLD_KEY: gate mode at shadow, no rain probes, no burst
-picks; a model trained on the first few redone frames mustn't skip Claude or drop a probe) and puts gate back only
-once every frame with a photo is redone. "Inside the crop box" below means inside that view (classifier.presence_view_box), the
-dashed box on the visit page.
+picks; a model trained on the first few redone frames mustn't skip Claude or drop a probe). Only a complete redo
+lets go: every frame with a photo redone and, when gate is to come back, the bursts waiting to be looked through
+picked too (redoing a row forgets its pick), retrained, and then gate restored (RESTORE_KEY remembers it across
+partial runs). A partial run leaves the hold on until a later redo finishes or it lapses (HOLD_MAX). "Inside the
+crop box" below means inside that view (classifier.presence_view_box), the dashed box on the visit page.
 
 Describing "nothing" in words didn't work (BioCLIP called almost every empty frame an animal), but a logistic
 regression on the embeddings did: on the first 683 frames, 5-fold cross-validated, keeping all 55 visitors it
@@ -83,11 +85,16 @@ OUTLIER_GAP = 2.0  # log-odds below the next visitor (7x less likely) for the lo
 OUTLIER_PEERS = 10  # ...and only with this many others of its kind (visitor type, day or night) in training
 RETRAIN_CHECK = 60  # seconds between the watcher's label checks (birdbrain.watch runs start_background())
 BACKGROUND = True  # retrain in a thread; tests set False to train synchronously (no stray threads)
-# Set while `--backfill --redo` runs (the time it last checked in, epoch seconds): the model in hand then is trained
-# on part of the frames, so the watcher sends no rain probes (watch.probe_ready) and picks no burst frames. A redo
-# checks in with every progress line; a hold older than HOLD_MAX (a killed redo) counts as gone.
+# Set while `--backfill --redo` runs and kept after a partial one (the time it last checked in, epoch seconds): the
+# model in hand then is trained on part of the frames, so the watcher sends no rain probes (watch.probe_ready) and
+# picks no burst frames. A redo checks in with every progress line, and a partial run once more as it stops; a hold
+# older than HOLD_MAX (no complete redo since) counts as gone.
 HOLD_KEY = "presence_hold"
 HOLD_MAX = 3 * 3600
+# The mode a redo put at shadow, to restore once a redo completes (kept across partial runs): "gate" (the Settings
+# value) or "env" (gate came from .env: the setting is removed again).
+RESTORE_KEY = "presence_hold_restore"
+RESTORES = ("gate", "env")
 _now = time.time  # the hold's clock (tests move it on)
 # {"key": label key, "model": train()'s result}. Replaced whole (an atomic swap), never changed in place.
 _model: dict | None = None
@@ -514,10 +521,6 @@ def pick_frames(conn, limit: int | None = None, busy: threading.Event | None = N
     - an owner's pick whose circle went back to the photo: forget it (a false trigger then gets looked through
       as above on a later round).
     Stops (and tries again later) while `busy` is set. Returns how many visits were done."""
-    import cv2
-
-    from . import images
-
     rows = pending_picks(conn)
     if not rows or (busy is not None and busy.is_set()):
         return 0
@@ -529,39 +532,50 @@ def pick_frames(conn, limit: int | None = None, busy: threading.Event | None = N
         rows = [r for r in rows if r["owner_frame"] is not None or r["animal_by_owner"]]
     done = 0
     for r in rows[:limit]:
-        if r["owner_frame"] is None and r["animal_by_owner"]:  # the circle left its burst frame: back to the automatic pick
-            _save_pick(conn, r["id"], None, None, None, False)
-            log.info("visit %d: your circle is back on the photo, so its burst frame is forgotten", r["id"])
-            done += 1
-            continue
-        raw = json.loads(r["raw_json"] or "{}") or {}
-        z = visit_zones(raw, conn, r["captured_at"])
-        paths = images.burst_paths(r["image_path"])
-        want = [r["owner_frame"]] if r["owner_frame"] is not None else range(1, len(paths) + 1)
-        emb, best, n = None, -1.0, 0
-        for i in want:
-            if busy is not None and busy.is_set():
-                return done
-            img = cv2.imread(str(config.IMAGES_DIR / paths[i - 1])) if i <= len(paths) else None
-            if img is None:
-                continue
-            e = clf.embed(classifier.presence_patch(img, z, raw.get("trigger"))[0])
-            s = score(m, e) if m is not None else None
-            if s is None or s > best:
-                emb, best, n = e, (-1.0 if s is None else s), i
-        if r["owner_frame"] is not None:
-            # Recorded even when the frame is gone (vec None), so it isn't tried again until the circle moves.
-            _save_pick(conn, r["id"], emb, r["owner_frame"], best if emb is not None and m is not None else None, True)
-            log.info("visit %d: burst frame %d (the owner's circle) %s", r["id"], r["owner_frame"],
-                     "embedded" if emb is not None else "is gone")
-        else:
-            _save_pick(conn, r["id"], emb, n, None if emb is None else best, False)
-            if n:
-                log.info("visit %d: burst frame %d shows the animal best (score %.3f)", r["id"], n, best)
-            else:
-                log.info("visit %d: no burst frames to look through", r["id"])
+        if not _pick_one(conn, r, m, clf, busy):
+            return done
         done += 1
     return done
+
+
+def _pick_one(conn, r: dict, m: dict | None, clf, busy: threading.Event | None = None) -> bool:
+    """pick_frames for one pending visit (a pending_picks row), scored with model `m` (or None). False when `busy`
+    stopped it before anything was saved."""
+    import cv2
+
+    from . import images
+
+    if r["owner_frame"] is None and r["animal_by_owner"]:  # the circle left its burst frame: back to the automatic pick
+        _save_pick(conn, r["id"], None, None, None, False)
+        log.info("visit %d: your circle is back on the photo, so its burst frame is forgotten", r["id"])
+        return True
+    raw = json.loads(r["raw_json"] or "{}") or {}
+    z = visit_zones(raw, conn, r["captured_at"])
+    paths = images.burst_paths(r["image_path"])
+    want = [r["owner_frame"]] if r["owner_frame"] is not None else range(1, len(paths) + 1)
+    emb, best, n = None, -1.0, 0
+    for i in want:
+        if busy is not None and busy.is_set():
+            return False
+        img = cv2.imread(str(config.IMAGES_DIR / paths[i - 1])) if i <= len(paths) else None
+        if img is None:
+            continue
+        e = clf.embed(classifier.presence_patch(img, z, raw.get("trigger"))[0])
+        s = score(m, e) if m is not None else None
+        if s is None or s > best:
+            emb, best, n = e, (-1.0 if s is None else s), i
+    if r["owner_frame"] is not None:
+        # Recorded even when the frame is gone (vec None), so it isn't tried again until the circle moves.
+        _save_pick(conn, r["id"], emb, r["owner_frame"], best if emb is not None and m is not None else None, True)
+        log.info("visit %d: burst frame %d (the owner's circle) %s", r["id"], r["owner_frame"],
+                 "embedded" if emb is not None else "is gone")
+    else:
+        _save_pick(conn, r["id"], emb, n, None if emb is None else best, False)
+        if n:
+            log.info("visit %d: burst frame %d shows the animal best (score %.3f)", r["id"], n, best)
+        else:
+            log.info("visit %d: no burst frames to look through", r["id"])
+    return True
 
 
 PROGRESS_EVERY, PROGRESS_SECONDS = 25, 30  # backfill prints a progress line this often (whichever comes first)
@@ -574,19 +588,44 @@ def progress_line(n: int, total: int, failed: int, elapsed: float) -> str:
     return f"{n}/{total} done, {failed} failed, ~{round(left / 60)} min left"
 
 
-def hold_gate() -> tuple[bool, str | None]:
-    """Hold the check for a redo: HOLD_KEY set (no rain probes, no burst picks) and gate mode switched to shadow.
-    (whether the mode was switched, the stored presence_mode setting before, None when the mode came from .env).
-    Left at shadow if the process dies: the safe way, shown on Settings; the hold runs out after HOLD_MAX."""
+def pick_line(n: int, total: int, elapsed: float) -> str:
+    """"bursts: 3/20 visits looked through, ~2 min left" (a redo's picks before gate comes back)."""
+    left = elapsed / n * (total - n) if n else 0.0
+    return f"bursts: {n}/{total} visits looked through, ~{round(left / 60)} min left"
+
+
+def _restore(conn) -> str | None:
+    value = db.get_value(conn, RESTORE_KEY)
+    return value if value in RESTORES else None
+
+
+def hold_gate() -> str | None:
+    """Hold the check for a redo: HOLD_KEY set (no rain probes, no burst picks) and gate mode switched to shadow,
+    RESTORE_KEY saying what to put back ("gate", or "env" when gate came from .env). A redo that starts in the
+    shadow an earlier partial one left keeps that earlier record; one whose mode the owner changed since (not
+    shadow any more) drops it. Returns what a complete redo will restore, or None. Left at shadow if the process
+    dies: the safe way, shown on Settings; the hold runs out after HOLD_MAX."""
     with db.session() as conn:
         db.set_value(conn, HOLD_KEY, str(_now()))
-        stored = db.get_value(conn, "presence_mode")
-        if mode(conn) != "gate":
-            return False, stored
-        db.set_value(conn, "presence_mode", "shadow")
-    print("The Pi animal check was in gate mode: switched to shadow while frames are re-embedded, so a model "
-          "trained on the first few can't skip Claude. It goes back to gate once every frame is redone.", flush=True)
-    return True, stored
+        restore, now = _restore(conn), mode(conn)
+        if now == "gate":
+            restore = "gate" if db.get_value(conn, "presence_mode") == "gate" else "env"
+            db.set_value(conn, RESTORE_KEY, restore)
+            db.set_value(conn, "presence_mode", "shadow")
+            print("The Pi animal check was in gate mode: switched to shadow while frames are re-embedded, so a model "
+                  "trained on the first few can't skip Claude. It goes back to gate once every frame is redone "
+                  "and the bursts waiting to be looked through are picked.", flush=True)
+            return restore
+        if restore is None:
+            db.delete_value(conn, RESTORE_KEY)
+            return None
+        if now == "shadow":
+            print("An earlier redo that didn't finish left the Pi animal check in shadow; it goes back to gate once "
+                  "this one finishes.", flush=True)
+            return restore
+        db.delete_value(conn, RESTORE_KEY)
+    print(f"The Pi animal check's mode was changed to {now} since an earlier redo; left as it is.", flush=True)
+    return None
 
 
 def check_in() -> None:
@@ -604,35 +643,87 @@ def still_to_redo(conn, failed: set[int] = frozenset()) -> int:
     return sum(1 for r in rows if r["id"] not in failed)
 
 
-def release_gate(stored: str | None, switched: bool = True, left: int = 0) -> None:
-    """Undo hold_gate: the hold removed, and (when it `switched` the mode) the setting as it was (removed again when
-    the mode came from .env), but only after a complete redo (`left` == 0) and unless someone changed it
-    meanwhile. After a partial run (Ctrl-C, --limit) the check stays in shadow."""
+def gate_due(conn) -> bool:
+    """Whether a complete redo would put gate back: a mode to restore and the shadow the hold set still in place."""
+    return _restore(conn) is not None and db.get_value(conn, "presence_mode") == "shadow"
+
+
+def pick_all(conn, clf, beat=None) -> set[int]:
+    """A redo's picks before gate comes back: retrain on the redone frames, then pick_frames each pending visit
+    once (new ones that turn up meanwhile too), with progress lines (calling `beat`), then retrain again, so no
+    visitor whose pick the redo forgot is missing from the model gate mode starts with. With no model to score a
+    false trigger's burst it's looked at and left for the watcher. Returns the ids looked at."""
+    m = retrain(conn)["model"]
+    tried: set[int] = set()
+    start = last = _clock()
+    while True:
+        todo = [r for r in pending_picks(conn) if r["id"] not in tried]
+        if not todo:
+            break
+        r = todo[0]
+        tried.add(r["id"])
+        if m is not None or r["owner_frame"] is not None or r["animal_by_owner"]:
+            _pick_one(conn, r, m, clf)
+        n, total, now = len(tried), len(tried) + len(todo) - 1, _clock()
+        if n < total and (n % PROGRESS_EVERY == 0 or now - last >= PROGRESS_SECONDS):
+            print(pick_line(n, total, now - start), flush=True)
+            if beat is not None:
+                beat()
+            last = now
+    if tried:
+        print(pick_line(len(tried), len(tried), _clock() - start), flush=True)
+        retrain(conn)
+    return tried
+
+
+def release_gate(left: int = 0, picks_left: int = 0) -> None:
+    """The end of a redo. Complete (`left` frames still to redo and `picks_left` bursts still to look through
+    both 0): the hold removed, the mode in RESTORE_KEY put back unless someone changed it meanwhile (the setting
+    is no longer shadow), and the mode it's now in printed. Partial (Ctrl-C, --limit, an error): the hold kept
+    (from now, for HOLD_MAX) and the record too, and a line says what stays paused and how to finish."""
     with db.session() as conn:
-        db.delete_value(conn, HOLD_KEY)
-        if not switched:
-            return
-        if db.get_value(conn, "presence_mode") != "shadow":
+        restore = _restore(conn)
+        changed = restore is not None and db.get_value(conn, "presence_mode") != "shadow"
+        if changed:
+            db.delete_value(conn, RESTORE_KEY)
             print("The Pi animal check's mode was changed during the redo; left as it is now.", flush=True)
+            restore = None
+        if left or picks_left:
+            db.set_value(conn, HOLD_KEY, str(_now()))
+            todo = []
+            if left:
+                todo.append(f"{left} frame{'s' * (left != 1)} still to redo")
+            if picks_left:
+                todo.append(f"{picks_left} burst{'s' * (picks_left != 1)} still to look through")
+            hours = f"{HOLD_MAX / 3600:g} hour{'s' * (HOLD_MAX != 3600)}"
+            paused = (f"the watcher sends no rain probes and picks no burst frames for {hours} from now, "
+                      "when the hold lapses")
+            if restore:
+                print(f"Not finished: {' and '.join(todo)}. The Pi animal check stays in shadow until a redo "
+                      f"finishes, and {paused} (shadow stays). Run --backfill --redo again to finish and put gate "
+                      "back.", flush=True)
+            else:
+                print(f"Not finished: {' and '.join(todo)}. Until a redo finishes, {paused}. Run --backfill --redo "
+                      "again to finish.", flush=True)
             return
-        if left:
-            print(f"The Pi animal check is left in shadow: {left} frame{'s' * (left != 1)} still to redo; "
-                  "run --backfill --redo again to finish.", flush=True)
-            return
-        if stored is None:
+        db.delete_value(conn, HOLD_KEY)
+        db.delete_value(conn, RESTORE_KEY)
+        if restore == "gate":
+            db.set_value(conn, "presence_mode", "gate")
+        elif restore == "env":
             db.delete_value(conn, "presence_mode")
-        else:
-            db.set_value(conn, "presence_mode", stored)
-    print("The Pi animal check is back in gate mode.", flush=True)
+        now = mode(conn)
+    print(f"The Pi animal check is {'back' if restore else 'now'} in {now} mode.", flush=True)
 
 
 def backfill(limit: int | None = None, redo: bool = False, clf=None) -> int:
     """Embeddings of the current view (~6 s each on a Pi 4), newest first, for stored frames that have none and,
-    with `redo`, for frames embedded in an older view (the check is held meanwhile, see hold_gate, and gate mode
-    comes back only when none are left to redo). Visits whose photo is gone (deleted to save space, or only the
-    thumbnail left) are left as they were and counted apart, never in `limit`. Each visit is seen with its own
-    zones (raw_json.zones, else the zones at the time, else today's) and trigger. Prints progress as it goes;
-    returns how many were embedded."""
+    with `redo`, for frames embedded in an older view (the check is held meanwhile, see hold_gate; gate mode comes
+    back only from a complete redo, see release_gate, after pick_all). Visits whose photo is gone (deleted to save
+    space, or only the thumbnail left) are left as they were and counted apart, never in `limit`. Each visit is
+    seen with its own zones (raw_json.zones, else the zones at the time, else today's) and trigger. A redo with
+    nothing left to embed still finishes what an earlier partial one left (the picks, the hold). Prints progress
+    as it goes; returns how many were embedded."""
     clf = clf or classifier.load()
     if clf is None:
         raise SystemExit("the classifier is off (CLASSIFIER=off)")
@@ -641,18 +732,27 @@ def backfill(limit: int | None = None, redo: bool = False, clf=None) -> int:
         rows = conn.execute(f"""SELECT id, image_path, raw_json, captured_at, {db.FULL_FRAME} AS has_photo
                                 FROM visits WHERE id NOT IN (SELECT visit_id FROM embeddings){old}
                                 ORDER BY id DESC""").fetchall()
+        earlier = db.get_value(conn, HOLD_KEY) is not None or db.get_value(conn, RESTORE_KEY) is not None
     gone = sum(1 for r in rows if not r["has_photo"])
     rows = [r for r in rows if r["has_photo"]][:limit]
-    holding = bool(redo and rows)
-    switched, stored = hold_gate() if holding else (False, None)
+    holding = bool(redo and (rows or earlier))
+    if holding:
+        hold_gate()
     failed: set[int] = set()
+    picks_done = False
     try:
-        done = _embed_rows(rows, clf, gone, failed, check_in if holding else None)
+        done = _embed_rows(rows, clf, gone, failed, check_in if holding else None) if rows or not holding else 0
+        if holding:
+            with db.session() as conn:
+                if not still_to_redo(conn, failed) and gate_due(conn):
+                    pick_all(conn, clf, check_in)
+            picks_done = True
     finally:
         if holding:
             with db.session() as conn:
                 left = still_to_redo(conn, failed)
-            release_gate(stored, switched, left)
+                picks_left = len(pending_picks(conn)) if not left and not picks_done and gate_due(conn) else 0
+            release_gate(left, picks_left)
     return done
 
 
