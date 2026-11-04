@@ -24,6 +24,9 @@
   tip.hidden = true;
   document.body.append(dialog, tip);
 
+  let hold = null;
+  dialog.addEventListener("close", () => { if (hold) { const h = hold; hold = null; h.release(); } });
+
   async function open(name) {
     hideTip();
     const p = document.createElement("p");
@@ -31,6 +34,7 @@
     p.textContent = `Loading ${name}…`;
     body.replaceChildren(p);
     dialog.showModal();
+    hold = window.bbBack ? bbBack.hold(() => dialog.close()) : null;  // Back closes the card first
     try {
       body.innerHTML = await load(name, false);
       initMaps(body);
@@ -42,7 +46,11 @@
   // Jump to visits inside the pop-up: when the page is already that species page, close the pop-up so the scroll shows.
   dialog.addEventListener("click", (e) => {
     const a = e.target.closest("a.sp-jump");
-    if (a && new URL(a.href).pathname === location.pathname) dialog.close();
+    if (a && new URL(a.href).pathname === location.pathname) {
+      // scroll by hand: following the link would race with the history entry the card gives back
+      const target = a.hash && document.getElementById(a.hash.slice(1));
+      if (target) { e.preventDefault(); dialog.close(); target.scrollIntoView(); } else dialog.close();
+    }
   });
 
   // Capture phase, so a name inside a visit card opens the species card instead of following the card's link.
