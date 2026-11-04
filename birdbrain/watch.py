@@ -485,19 +485,44 @@ def presence_mode() -> str:
     return mode
 
 
+_hold_cache: tuple[float, bool] = (0.0, False)  # (read at, held)
+
+
+def presence_held() -> bool:
+    """Whether a `--backfill --redo` is holding the animal check (presence.held), re-read at most every 15 s like
+    the mode."""
+    global _hold_cache
+    read_at, held = _hold_cache
+    if time.monotonic() - read_at > 15:
+        with db.session() as conn:
+            held = presence.held(conn)
+        _hold_cache = (time.monotonic(), held)
+    return held
+
+
 def probe_ready() -> bool:
     """Probes need a working local animal check: the embedding model on (CLASSIFIER) and loadable, the check not
-    off, and trained on enough of this yard's frames to give a verdict. Without all of that a rain run just
+    off, not held by a redo (its model is then trained on part of the frames, so a probe it called empty could be
+    a bird: as with no model, probes wait), and trained on enough of this yard's frames to give a verdict. Without all of that a rain run just
     waits out its doubling backoff: unfiltered probes every COOLDOWN_NONE would ask Claude 180 times an hour
     and use up the day's budget before lunch. Fail-soft: if the mode can't be read (a locked database), there
     are no probes until it can be, and the caller carries on."""
     if not classifier.usable() or not presence.trained():
         return False
     try:
-        return presence_mode() != "off"
+        return presence_mode() != "off" and not presence_held()
     except Exception:
         log_rarely("presence_mode", "couldn't read the animal check's mode; no probes until it can be read")
         return False
+
+
+def _held_now() -> bool:
+    """presence_held, fail-soft the safe way: if it can't be read, a probe counts as held (unchecked)."""
+    try:
+        return presence_held()
+    except Exception:
+        log_rarely("presence_hold", "couldn't read whether a redo holds the animal check; probes count as unchecked")
+        return True
 
 
 def motion_action(now: float, cooldown_until: float, backoff_until: float, can_probe: bool) -> str:
@@ -580,6 +605,9 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     night = is_night(best)
     if probe and not judged(check):
         log.info("probe (%s trigger): the animal check gave no verdict; discarded, backing off without probes", trigger)
+        return PROBE_UNCHECKED
+    if probe and _held_now():
+        log.info("probe (%s trigger): a redo holds the animal check; discarded, backing off without probes", trigger)
         return PROBE_UNCHECKED
     if probe and not probe_passes(check):
         log.info("probe (%s trigger): animal check found nothing; discarded", trigger)

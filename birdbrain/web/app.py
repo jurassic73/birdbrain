@@ -761,12 +761,27 @@ def set_photo_frame(visit_id: int, frame: str = Form(""), conn=Depends(get_conn)
 FIRED = {"rim": "the rim and rocks", "water": "the open water", "ground": "the ground"}
 
 
+def old_view(raw: dict, visit_id: int, conn) -> bool:
+    """Whether the Pi animal check saw this visit in the old view (the crop box's middle square), in this order:
+    its verdict names a view (raw_json.calls.presence.view, newer visits): no; an embedding of the current view:
+    no; an embedding of an old view, or a verdict without a view (made before views had names): yes; nothing
+    about it at all: no. raw_json comes first so the public mirror, which has no embeddings, mostly agrees."""
+    calls = raw.get("calls")
+    verdict = calls.get("presence") if isinstance(calls, dict) else None
+    if isinstance(verdict, dict) and verdict.get("view"):
+        return False
+    row = conn.execute("SELECT view FROM embeddings WHERE visit_id = ?", (visit_id,)).fetchone()
+    if row is not None:
+        return row["view"] != classifier.PRESENCE_VIEW
+    return isinstance(verdict, dict)
+
+
 def visit_zones(visit, conn) -> dict | None:
     """What the visit photo draws over itself: the dashed box the Pi animal check looked at, and the zone whose
-    motion fired the capture, each in its Settings color. The dashed box is the view the visit's stored embedding
-    was made of: the current one (classifier.presence_view_box: a square around the bowl, the ground crop, or the
-    crop box when there's no ring), or for an embedding of the old view the middle square of the crop box it saw
-    then (classifier.old_view_box). `view` and `claude_sees` say so in words for the tip. `source` says whose
+    motion fired the capture, each in its Settings color. The dashed box is the current view
+    (classifier.presence_view_box: a square around the bowl, the ground crop, or the crop box when there's no ring)
+    or the old one, the middle square of the crop box (classifier.old_view_box), decided by old_view(). `view` and
+    `claude_sees` say so in words for the tip. `source` says whose
     zones: stored with the photo (since 2026-11-01), rebuilt from the calibration history at the time, or today's.
     Bad stored zones never break the page: a ring that can't be drawn counts as none."""
     try:
@@ -805,10 +820,9 @@ def visit_zones(visit, conn) -> dict | None:
         shapes = [{"d": s["water"], "color": colors.get("water", colors["ring"])}]
     elif trigger == "ground" and s["ground"]:
         shapes = [{"d": s["ground"], "color": colors.get("ground", SCENE_COLORS[0])}]
-    row = conn.execute("SELECT view FROM embeddings WHERE visit_id = ?", (visit["id"],)).fetchone()
     ground = trigger == "ground"
     claude_box = "the ground crop" if ground else "the crop box"
-    if row is not None and row["view"] != classifier.PRESENCE_VIEW:  # embedded the old way: what it saw then
+    if old_view(raw, visit["id"], conn):  # judged the old way: what it saw then
         crop = box_rect(classifier.old_view_box(z, trigger, ZONE_W / ZONE_H))
         had_box = classifier.usable_box(z.ground_crop if ground else z.crop)
         view = (f"the middle square of {claude_box if had_box else 'the photo'}, "

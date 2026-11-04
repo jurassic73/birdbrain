@@ -7,8 +7,9 @@ Its view (classifier.presence_patch, version classifier.PRESENCE_VIEW, saved in 
 the whole bowl, rim and a bird's height above it, for birdbath triggers; the ground crop padded to a square for
 ground ones. It used to be the crop box center-cut to a square, which cut the rim's left and right ends off (birds
 perched there were called empty). Only embeddings of the current view train or are scored; older ones wait for
-`--backfill --redo`, which holds gate mode at shadow while it runs (a model trained on the first few redone frames
-mustn't skip Claude). "Inside the crop box" below means inside that view (classifier.presence_view_box), the
+`--backfill --redo`, which holds the check while it runs (HOLD_KEY: gate mode at shadow, no rain probes, no burst
+picks; a model trained on the first few redone frames mustn't skip Claude or drop a probe) and puts gate back only
+once every frame with a photo is redone. "Inside the crop box" below means inside that view (classifier.presence_view_box), the
 dashed box on the visit page.
 
 Describing "nothing" in words didn't work (BioCLIP called almost every empty frame an animal), but a logistic
@@ -82,6 +83,12 @@ OUTLIER_GAP = 2.0  # log-odds below the next visitor (7x less likely) for the lo
 OUTLIER_PEERS = 10  # ...and only with this many others of its kind (visitor type, day or night) in training
 RETRAIN_CHECK = 60  # seconds between the watcher's label checks (birdbrain.watch runs start_background())
 BACKGROUND = True  # retrain in a thread; tests set False to train synchronously (no stray threads)
+# Set while `--backfill --redo` runs (the time it last checked in, epoch seconds): the model in hand then is trained
+# on part of the frames, so the watcher sends no rain probes (watch.probe_ready) and picks no burst frames. A redo
+# checks in with every progress line; a hold older than HOLD_MAX (a killed redo) counts as gone.
+HOLD_KEY = "presence_hold"
+HOLD_MAX = 3 * 3600
+_now = time.time  # the hold's clock (tests move it on)
 # {"key": label key, "model": train()'s result}. Replaced whole (an atomic swap), never changed in place.
 _model: dict | None = None
 _train_lock = threading.Lock()  # one training at a time in this process
@@ -94,6 +101,15 @@ CHECKED = "(v.confirmed_at IS NOT NULL OR v.corrected_visitor IS NOT NULL OR v.c
 def mode(conn) -> str:
     value = db.get_value(conn, "presence_mode")
     return value if value in MODES else config.PRESENCE
+
+
+def held(conn) -> bool:
+    """Whether a redo is holding the check (HOLD_KEY set and checked in within HOLD_MAX)."""
+    try:
+        since = float(db.get_value(conn, HOLD_KEY) or "nan")
+    except ValueError:
+        return False
+    return 0 <= _now() - since < HOLD_MAX
 
 
 def store(conn, visit_id: int, emb: np.ndarray, view: int = classifier.PRESENCE_VIEW) -> None:
@@ -419,8 +435,10 @@ def _keep_fresh(every: float, busy: threading.Event | None = None) -> None:
         try:
             with db.session() as conn:
                 if mode(conn) != "off":
-                    if config.CLASSIFIER != "off":
-                        pick_frames(conn, limit=1, busy=busy)  # one corrected false trigger per round, never mid-capture
+                    # One corrected false trigger per round, never mid-capture, and none during a redo: the model
+                    # then is trained on part of the frames, and a low score would leave a visitor out for good.
+                    if config.CLASSIFIER != "off" and not held(conn):
+                        pick_frames(conn, limit=1, busy=busy)
                     retrain(conn)  # trains only when the labels changed
         except Exception:
             log.exception("could not retrain the animal check")
@@ -557,24 +575,49 @@ def progress_line(n: int, total: int, failed: int, elapsed: float) -> str:
 
 
 def hold_gate() -> tuple[bool, str | None]:
-    """Gate mode switched to shadow for a redo: (whether it was switched, the stored presence_mode setting before,
-    None when the mode came from .env). Left at shadow if the process dies: the safe way, shown on Settings."""
+    """Hold the check for a redo: HOLD_KEY set (no rain probes, no burst picks) and gate mode switched to shadow.
+    (whether the mode was switched, the stored presence_mode setting before, None when the mode came from .env).
+    Left at shadow if the process dies: the safe way, shown on Settings; the hold runs out after HOLD_MAX."""
     with db.session() as conn:
+        db.set_value(conn, HOLD_KEY, str(_now()))
         stored = db.get_value(conn, "presence_mode")
         if mode(conn) != "gate":
             return False, stored
         db.set_value(conn, "presence_mode", "shadow")
     print("The Pi animal check was in gate mode: switched to shadow while frames are re-embedded, so a model "
-          "trained on the first few can't skip Claude. It goes back to gate at the end.", flush=True)
+          "trained on the first few can't skip Claude. It goes back to gate once every frame is redone.", flush=True)
     return True, stored
 
 
-def release_gate(stored: str | None) -> None:
-    """Undo hold_gate: the setting as it was (removed again when the mode came from .env), unless someone changed
-    it meanwhile."""
+def check_in() -> None:
+    """A redo still running: the hold's time moved on, so it doesn't run out mid-redo."""
     with db.session() as conn:
+        if db.get_value(conn, HOLD_KEY) is not None:
+            db.set_value(conn, HOLD_KEY, str(_now()))
+
+
+def still_to_redo(conn, failed: set[int] = frozenset()) -> int:
+    """Frames embedded in an older view that a redo could still do (their photo is there), apart from `failed`
+    (tried in this run and unreadable: a complete run with failures is still complete)."""
+    rows = conn.execute(f"""SELECT id FROM visits WHERE {db.FULL_FRAME} AND id IN
+                              (SELECT visit_id FROM embeddings WHERE view IS NOT {classifier.PRESENCE_VIEW})""")
+    return sum(1 for r in rows if r["id"] not in failed)
+
+
+def release_gate(stored: str | None, switched: bool = True, left: int = 0) -> None:
+    """Undo hold_gate: the hold removed, and (when it `switched` the mode) the setting as it was (removed again when
+    the mode came from .env), but only after a complete redo (`left` == 0) and unless someone changed it
+    meanwhile. After a partial run (Ctrl-C, --limit) the check stays in shadow."""
+    with db.session() as conn:
+        db.delete_value(conn, HOLD_KEY)
+        if not switched:
+            return
         if db.get_value(conn, "presence_mode") != "shadow":
             print("The Pi animal check's mode was changed during the redo; left as it is now.", flush=True)
+            return
+        if left:
+            print(f"The Pi animal check is left in shadow: {left} frame{'s' * (left != 1)} still to redo; "
+                  "run --backfill --redo again to finish.", flush=True)
             return
         if stored is None:
             db.delete_value(conn, "presence_mode")
@@ -585,10 +628,11 @@ def release_gate(stored: str | None) -> None:
 
 def backfill(limit: int | None = None, redo: bool = False, clf=None) -> int:
     """Embeddings of the current view (~6 s each on a Pi 4), newest first, for stored frames that have none and,
-    with `redo`, for frames embedded in an older view (gate mode is held at shadow meanwhile, see hold_gate).
-    Visits whose photo is gone (deleted to save space, or only the thumbnail left) are left as they were and
-    counted apart, never in `limit`. Each visit is seen with its own zones (raw_json.zones, else the zones at the
-    time, else today's) and trigger. Prints progress as it goes; returns how many were embedded."""
+    with `redo`, for frames embedded in an older view (the check is held meanwhile, see hold_gate, and gate mode
+    comes back only when none are left to redo). Visits whose photo is gone (deleted to save space, or only the
+    thumbnail left) are left as they were and counted apart, never in `limit`. Each visit is seen with its own
+    zones (raw_json.zones, else the zones at the time, else today's) and trigger. Prints progress as it goes;
+    returns how many were embedded."""
     clf = clf or classifier.load()
     if clf is None:
         raise SystemExit("the classifier is off (CLASSIFIER=off)")
@@ -599,18 +643,22 @@ def backfill(limit: int | None = None, redo: bool = False, clf=None) -> int:
                                 ORDER BY id DESC""").fetchall()
     gone = sum(1 for r in rows if not r["has_photo"])
     rows = [r for r in rows if r["has_photo"]][:limit]
-    held, stored = hold_gate() if redo and rows else (False, None)
+    holding = bool(redo and rows)
+    switched, stored = hold_gate() if holding else (False, None)
+    failed: set[int] = set()
     try:
-        done = _embed_rows(rows, clf, gone)
+        done = _embed_rows(rows, clf, gone, failed, check_in if holding else None)
     finally:
-        if held:
-            release_gate(stored)
+        if holding:
+            with db.session() as conn:
+                left = still_to_redo(conn, failed)
+            release_gate(stored, switched, left)
     return done
 
 
-def _embed_rows(rows: list, clf, gone: int = 0) -> int:
-    """backfill's loop: how many were embedded. Prints progress lines; the last one always, once, with the
-    `gone` visits whose photos were already deleted."""
+def _embed_rows(rows: list, clf, gone: int = 0, failed_ids: set[int] | None = None, beat=None) -> int:
+    """backfill's loop: how many were embedded (the ids that failed go in `failed_ids`). Prints progress lines,
+    calling `beat` with each; the last one always, once, with the `gone` visits whose photos are gone."""
     import cv2
 
     total, done, failed = len(rows), 0, 0
@@ -629,13 +677,17 @@ def _embed_rows(rows: list, clf, gone: int = 0) -> int:
             done += 1
         except Exception as e:
             failed += 1
+            if failed_ids is not None:
+                failed_ids.add(r["id"])
             log.warning("visit %d: not embedded (%s)", r["id"], e)
         now = _clock()
         if i < total and (i % PROGRESS_EVERY == 0 or now - last >= PROGRESS_SECONDS):
             print(progress_line(i, total, failed, now - start), flush=True)
+            if beat is not None:
+                beat()
             last = now
-    deleted = f", {gone} photos already deleted (left as they were)" if gone else ""
-    print(progress_line(total, total, failed, _clock() - start) + deleted, flush=True)
+    photos_gone = f", {gone} photos gone (left as they were)" if gone else ""
+    print(progress_line(total, total, failed, _clock() - start) + photos_gone, flush=True)
     return done
 
 
