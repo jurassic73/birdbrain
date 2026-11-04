@@ -196,7 +196,7 @@
       A false trigger keeps its whole burst. Night photos are infrared, so black and white.</li>
     <li><strong>The Pi looks first</strong> <strong>BioCLIP 2</strong>, an open model of living things, runs on the Pi for free.
       The Pi animal check {% if presence_mode != 'off' %}{{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') }}{% endif %}
-      says whether anything is in the crop box{% if presence_mode == 'gate' %}; a photo it calls empty never leaves the house and waits under
+      says whether anything is in a square around the whole bowl (for ground photos, the ground crop){% if presence_mode == 'gate' %}; a photo it calls empty never leaves the house and waits under
       {% call admin_link("/false-triggers") %}False triggers{% endcall %} for your check{% elif presence_mode == 'shadow' %}, but for now only keeps score{% else %}, but is switched off here{% endif %}.
       The BioCLIP 2 species check {% if classifier_mode == 'gate' %}names sure daytime regulars itself, marked {{ badge('RPi', 'pi-only') }}{% elif classifier_mode != 'off' %}guesses the species, but for now only keeps score{% else %}is switched off here{% endif %}.
       Modes on {% call admin_link("/settings#local") %}Settings &gt; Pi checks{% endcall %}, scorecards on <a href="/stats">Stats</a>.</li>

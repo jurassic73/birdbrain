@@ -510,21 +510,27 @@ def motion_action(now: float, cooldown_until: float, backoff_until: float, can_p
     return "full"
 
 
-def _scored(jpeg: bytes, crop) -> tuple[np.ndarray | None, dict | None]:
-    emb = classifier.box_embedding(jpeg, crop)
+def _scored(jpeg: bytes, z, trigger: str) -> tuple[np.ndarray | None, dict | None]:
+    """The Pi animal check on one frame: its view of the zones in use for this trigger (classifier.presence_patch:
+    the bowl square, or the padded ground crop), and the verdict, which records the view's kind."""
+    emb = classifier.box_embedding(jpeg, z, trigger)
+    kind = classifier.view_kind(z, trigger)
     with db.session() as conn:
-        return emb, presence.check(conn, emb)
+        check = presence.check(conn, emb, view=kind)
+    return emb, None if check is None else {**check, "view": kind}
 
 
-def animal_check(frames: list[bytes], ranked: list[bytes], crop) -> tuple[np.ndarray | None, dict | None, list[bytes]]:
+def animal_check(frames: list[bytes], ranked: list[bytes], z, trigger: str = "rim"
+                 ) -> tuple[np.ndarray | None, dict | None, list[bytes]]:
     """(embedding, verdict, ranked frames) from the local animal check, fail-soft (no verdict on any problem).
+    `z` is the zones in use and `trigger` what fired, which together decide what the check looks at.
 
     It scores the sharpest frame and, when that looks empty and PRESENCE_LAST_FRAME is on, the burst's last frame
     too: a landing bird is usually in the bowl by then, while sharpness can favour ripples or mulch. The higher
     score counts (so the verdict is the max of the two), and its embedding is the one stored for training. When
     only the last frame shows an animal it becomes the photo, so Claude sees what the Pi saw."""
     try:
-        emb, check = _scored(ranked[0], crop)
+        emb, check = _scored(ranked[0], z, trigger)
     except Exception:
         log.exception("local animal check failed; asking Claude")
         return None, None, ranked
@@ -533,7 +539,7 @@ def animal_check(frames: list[bytes], ranked: list[bytes], crop) -> tuple[np.nda
             or last is ranked[0]):
         return emb, check, ranked
     try:
-        emb2, check2 = _scored(last, crop)
+        emb2, check2 = _scored(last, z, trigger)
     except Exception:
         log.exception("animal check on the burst's last frame failed; going by the sharpest frame")
         return emb, check, ranked
@@ -562,13 +568,13 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     z = zones.current()
     crop = z.ground_crop if trigger == "ground" else z.crop
     ranked = best_frames(frames, crop)
-    # The local animal check: BioCLIP 2's embedding of the crop box, scored by a model trained on this yard's
-    # labelled frames. It is the only gate: in gate mode an empty verdict skips Claude (day and night; the
+    # The local animal check: BioCLIP 2's embedding of a square around the bowl (ground triggers: the ground crop
+    # padded to a square), scored by a model trained on this yard's labelled frames. It is the only gate: in gate mode an empty verdict skips Claude (day and night; the
     # owner reviews them), and a rain-backoff probe it calls empty is discarded in any mode but off.
     emb = check = None
     pmode = presence_mode()
     if pmode != "off":
-        emb, check, ranked = animal_check(frames, ranked, crop)
+        emb, check, ranked = animal_check(frames, ranked, z, trigger)
     best = ranked[0]
     night = is_night(best)
     if probe and not judged(check):

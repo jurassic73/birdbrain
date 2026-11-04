@@ -21,7 +21,7 @@ from PIL import Image, ImageStat
 from starlette.routing import Match
 
 from . import auth, steps, viewer
-from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
+from .. import alert, camera, circle_check, classifier, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 log = logging.getLogger("birdbrain.web")
@@ -762,8 +762,9 @@ FIRED = {"rim": "the rim and rocks", "water": "the open water", "ground": "the g
 
 
 def visit_zones(visit, conn) -> dict | None:
-    """What the visit photo draws over itself: the crop box the Pi animal check and Claude looked at, and the
-    zone whose motion fired the capture, each in its Settings color. `source` says whose zones: stored with the
+    """What the visit photo draws over itself: the dashed box the Pi animal check looked at (a square around the
+    bowl, or the ground crop; classifier.presence_view_box), and the zone whose motion fired the capture, each in its
+    Settings color. `source` says whose zones: stored with the
     photo (since 2026-11-01), rebuilt from the calibration history at the time, or today's."""
     try:
         raw = json.loads(visit["raw_json"] or "{}") or {}
@@ -798,10 +799,9 @@ def visit_zones(visit, conn) -> dict | None:
         shapes = [{"d": s["water"], "color": colors.get("water", colors["ring"])}]
     elif trigger == "ground" and s["ground"]:
         shapes = [{"d": s["ground"], "color": colors.get("ground", SCENE_COLORS[0])}]
-    if trigger == "ground":  # the ground crop isn't a Settings shape: it takes the ground's color
-        crop, crop_color = box_rect(z.ground_crop), colors.get("ground", SCENE_COLORS[0])
-    else:
-        crop, crop_color = box_rect(z.crop), colors.get("crop", SCENE_COLORS[0])
+    crop = box_rect(classifier.presence_view_box(z, trigger, ZONE_W / ZONE_H))
+    # The ground crop isn't a Settings shape: it takes the ground's color.
+    crop_color = colors.get("ground" if trigger == "ground" else "crop", SCENE_COLORS[0])
     if not crop and not shapes:
         return None
     return {"w": ZONE_W, "h": ZONE_H, "shapes": shapes, "crop": crop, "crop_color": crop_color,

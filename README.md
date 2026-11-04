@@ -174,10 +174,16 @@ uv run python -m birdbrain.motion_circle --backfill            # store the circl
 
 ### Pi animal check
 
-The same model also answers "is anything there?" for every trigger, using a small check trained on your own labelled frames (Claude's answers, your corrections, and frames you mark "Confirm: this is correct" or confirm on the False triggers page). It retrains itself in the background whenever labels change (a few seconds on a Pi 4; the watcher looks for changes every minute, so a correction or confirm counts within about a minute), while triggers keep using the model it already has, so they never wait for it. In **gate** mode (Settings > Pi checks) a frame it judges empty skips Claude and is kept as a false trigger marked "pi only" for you to check; correct any with an animal and it learns from that. Deleting false-trigger photos (the Delete button, which takes only photos you confirmed empty, or the storage limit, which takes confirmed ones first) deletes only the image files: the record and what the check learned from it stay. It needs at least 10 visitors and 30 empty frames with embeddings before it judges anything. To embed frames you already have (about 6 s each on a Pi 4):
+The same model also answers "is anything there?" for every trigger, using a small check trained on your own labelled frames (Claude's answers, your corrections, and frames you mark "Confirm: this is correct" or confirm on the False triggers page). It retrains itself in the background whenever labels change (a few seconds on a Pi 4; the watcher looks for changes every minute, so a correction or confirm counts within about a minute), while triggers keep using the model it already has, so they never wait for it. In **gate** mode (Settings > Pi checks) a frame it judges empty skips Claude and is kept as a false trigger marked "pi only" for you to check; correct any with an animal and it learns from that. Deleting false-trigger photos (the Delete button, which takes only photos you confirmed empty, or the storage limit, which takes confirmed ones first) deletes only the image files: the record and what the check learned from it stay. It needs at least 10 visitors and 30 empty frames with embeddings before it judges anything. It looks at a square around the whole bowl (the outer rim plus a bird's length above it and beyond each end), so a bird perched on the rim's far left or right is in view; for ground triggers it looks at the ground crop padded to a square. On the visit page this is the dashed box. To embed frames you already have (about 6 s each on a Pi 4):
 
 ```bash
 uv run python -m birdbrain.presence --backfill
+```
+
+Embeddings record which view they were made of. Ones from an older view (before 2026-11-04 the check saw only the middle square of the crop box, which cut off both ends of the rim) don't train or score it. Re-embed them, newest first, with a progress line every 25 frames; until enough are redone the check gives no verdict, so nothing is skipped in the meantime:
+
+```bash
+uv run python -m birdbrain.presence --backfill --redo   # add --limit N to do part of it
 ```
 
 It looks at the sharpest frame of the burst and, when that one looks empty, at the burst's last frame too (a landing bird is usually in the bowl by then, while sharpness can favour ripples or mulch). The higher score counts, and if only the last frame shows an animal it becomes the photo Claude sees. This adds about 6 s on a Pi 4 to empty-looking triggers; `PRESENCE_LAST_FRAME=0` in `.env` turns it off.

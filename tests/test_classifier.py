@@ -314,8 +314,8 @@ def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit
     monkeypatch.setattr(watch, "presence_mode", lambda: "gate")
     monkeypatch.setattr(config, "CLASSIFIER", "gate")
     emb = {"v": one_hot(0)}
-    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, box: emb["v"])
-    monkeypatch.setattr(watch.presence, "check", lambda conn, e: {"model": "bioclip-presence", "score": 0.9,
+    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, zones, trigger: emb["v"])
+    monkeypatch.setattr(watch.presence, "check", lambda conn, e, view=None: {"model": "bioclip-presence", "score": 0.9,
                                                                   "threshold": 0.4, "empty": False})
     monkeypatch.setattr(watch.presence, "store", lambda conn, vid, e: None)
     monkeypatch.setattr(classifier, "load", lambda: FakeTextClassifier())

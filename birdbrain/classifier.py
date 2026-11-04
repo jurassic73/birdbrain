@@ -16,7 +16,10 @@ which is the same as asking the model to choose among the local birds only. Name
 Mammals too (2026-10-31): every iNaturalist mammal species (6.9k) is in the list as well, limited the same way to
 the place's mammals, so squirrels get a species (26 of the first 27 squirrel visits were called a squirrel).
 
-The same image embedding of the crop box also feeds birdbrain.presence (is anything there at all?).
+The same image embedding also feeds birdbrain.presence (is anything there at all?). That one is made of
+presence_patch, not the crop box: a square around the whole bowl for birdbath triggers, the ground crop
+padded to a square for ground ones, since to_input's center crop cut the rim's left and right ends off the
+wide crop box (visits 759, 760, 761, 794: birds on the rim settled as empty).
 IR night frames are grayscale; it hasn't been checked on them yet.
 
 CLI: python -m birdbrain.classifier photo.jpg            (top 3 for whole photos)
@@ -245,6 +248,115 @@ def rank(probs: np.ndarray, labels: list[tuple[str, str, bool]], local: dict[str
 
 # --- cropping -------------------------------------------------------------------------------------------
 
+# The Pi animal check's view (birdbrain.presence). Version 1 (stored as NULL) was the crop box center-cut to a
+# square by to_input, which lost the rim's left and right ends; version 2 is presence_patch. Only embeddings of the
+# current view train or are scored, so a change of view starts training afresh (backfill --redo re-embeds).
+PRESENCE_VIEW = 2
+# Of the frame's height, kept in the bowl square above the rim's top and beyond its left and right ends: a perched
+# bird's body. Checked on real frames (2026-11-04): the junco of visit 759 hung its tail ~0.04 of the width left of
+# the rim and the nuthatch of 760 its head ~0.03 right of it, outside a square with the band above the rim only.
+BIRD_BAND = 0.06
+VIEW_MARGIN = 0.04  # extra space around the bowl, as a fraction of the square's side, on each side
+PAD_FILL = tuple(int(round(v)) for v in MEAN[::-1] * 255)  # BGR; CLIP's mean color, so padding normalizes to ~0
+
+
+def _zone_dict(z) -> dict:
+    """A zones.Zones or a dict like Zones.to_dict() (raw_json.zones) as a dict; {} for anything else."""
+    if isinstance(z, zones.Zones):
+        return z.to_dict()
+    return z if isinstance(z, dict) else {}
+
+
+def _box(v):
+    return tuple(v) if v and len(v) == 4 else None
+
+
+def _bowl_square(W: float, H: float, ring) -> tuple[float, float, float]:
+    """(left, top, side) of the bowl square on a W x H frame, unrounded (see presence_square)."""
+    cx, cy, rx, ry, angle = config.ring_ellipses(ring)[0]
+    a, b, t = rx * W, ry * H, np.radians(angle)
+    hx = float(np.hypot(a * np.cos(t), b * np.sin(t)))  # half the rotated ellipse's bounding box
+    hy = float(np.hypot(a * np.sin(t), b * np.cos(t)))
+    x0, x1 = cx * W - hx - BIRD_BAND * H, cx * W + hx + BIRD_BAND * H
+    y0, y1 = cy * H - hy - BIRD_BAND * H, cy * H + hy
+    side = min(max(x1 - x0, y1 - y0) / (1 - 2 * VIEW_MARGIN), W, H)
+    left = min(max((x0 + x1) / 2 - side / 2, 0.0), W - side)
+    top = min(max((y0 + y1) / 2 - side / 2, 0.0), H - side)
+    return left, top, side
+
+
+def view_kind(z, trigger: str | None) -> str:
+    """Which view presence_patch takes for these zones and trigger: "bowl", "padded" or "frame"."""
+    d = _zone_dict(z)
+    if trigger == "ground":
+        return "padded" if _box(d.get("ground_crop")) else "frame"
+    if d.get("ring"):
+        return "bowl"
+    return "padded" if _box(d.get("crop")) else "frame"
+
+
+def presence_square(shape, z) -> tuple[int, int, int] | None:
+    """The square (left, top, side in pixels) the Pi animal check sees on a birdbath trigger: the whole outer rim
+    (a turned one by its bounding box) plus BIRD_BAND of the frame's height above it and beyond its left and right
+    ends, VIEW_MARGIN more on each side, centered on that, slid inside the frame and at most the frame's height.
+    None without a ring."""
+    ring = _zone_dict(z).get("ring")
+    if not ring:
+        return None
+    H, W = shape[:2]
+    left, top, side = _bowl_square(W, H, ring)
+    side_px = min(int(round(side)), H, W)
+    x0 = min(max(int(round(left)), 0), W - side_px)
+    y0 = min(max(int(round(top)), 0), H - side_px)
+    return x0, y0, side_px
+
+
+def pad_square(patch: np.ndarray) -> np.ndarray:
+    """The patch unchanged in the middle of a square of side max(w, h), the rest PAD_FILL."""
+    h, w = patch.shape[:2]
+    side = max(h, w)
+    if h == w:
+        return patch
+    out = np.empty((side, side, *patch.shape[2:]), patch.dtype)
+    out[...] = PAD_FILL if patch.ndim == 3 and patch.shape[2] == 3 else int(np.mean(PAD_FILL))
+    y, x = (side - h) // 2, (side - w) // 2
+    out[y:y + h, x:x + w] = patch
+    return out
+
+
+def presence_patch(img: np.ndarray, z, trigger: str | None) -> tuple[np.ndarray, str]:
+    """The square patch the Pi animal check embeds, and its kind: "bowl" (a birdbath trigger with a ring: the
+    presence_square), "padded" (a ground trigger's ground crop, or a birdbath trigger's crop box when there is
+    no ring, padded to a square) or "frame" (no usable box: the whole frame padded). Square, so to_input's
+    center crop keeps all of it. Geometry is in fractions, so any size of the same frame gives the same view."""
+    kind = view_kind(z, trigger)
+    if kind == "bowl":
+        x0, y0, side = presence_square(img.shape, z)
+        return img[y0:y0 + side, x0:x0 + side], kind
+    if kind == "padded":
+        d = _zone_dict(z)
+        box = _box(d.get("ground_crop") if trigger == "ground" else d.get("crop"))
+        if px := zones.pixel_box(img.shape, box):
+            x0, y0, x1, y1 = px
+            return pad_square(img[y0:y1, x0:x1]), kind
+    return pad_square(img), "frame"
+
+
+def presence_view_box(z, trigger: str | None, aspect: float = 16 / 9) -> tuple[float, float, float, float] | None:
+    """The Pi animal check's view as frame fractions (x, y, w, h), for drawing it and judging circles: the bowl
+    square (w and h differ as fractions on a wide frame), or for "padded" the box itself (padding adds nothing
+    to see). None for "frame"."""
+    kind = view_kind(z, trigger)
+    d = _zone_dict(z)
+    if kind == "bowl":
+        W, H = float(aspect), 1.0
+        left, top, side = _bowl_square(W, H, d["ring"])
+        return (round(left / W, 4), round(top / H, 4), round(side / W, 4), round(side / H, 4))
+    if kind == "padded":
+        return _box(d.get("ground_crop") if trigger == "ground" else d.get("crop"))
+    return None
+
+
 def crop_for(img: np.ndarray, circle: dict | None, box, margin: float = CIRCLE_MARGIN) -> tuple[np.ndarray, str]:
     """A square around the circle (fractions of the frame; r is a fraction of the width) when there is one,
     else the crop box. Returns the patch and which crop was used."""
@@ -412,8 +524,9 @@ def gate_check(emb, night: bool, settled: dict[str, str]) -> tuple[dict | None, 
     return guess, gate_pick(guess, settled, night)
 
 
-def box_embedding(jpeg: bytes, box) -> np.ndarray | None:
-    """Fail-soft embedding of the crop box (for birdbrain.presence); None when off or anything fails."""
+def box_embedding(jpeg: bytes, z, trigger: str | None) -> np.ndarray | None:
+    """Fail-soft embedding of the Pi animal check's view (presence_patch of these zones for this trigger, for
+    birdbrain.presence); None when off or anything fails."""
     if config.CLASSIFIER == "off":
         return None
     try:
@@ -421,7 +534,7 @@ def box_embedding(jpeg: bytes, box) -> np.ndarray | None:
 
         clf = load()
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
-        return clf.embed(crop_for(img, None, box)[0]) if clf else None
+        return clf.embed(presence_patch(img, z, trigger)[0]) if clf else None
     except Exception:
         log.exception("local embedding failed; skipped for this trigger")
         return None

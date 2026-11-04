@@ -1,7 +1,14 @@
-"""Is anything there? A small check on BioCLIP 2's image embedding of the crop box (the same model and file
-as birdbrain.classifier), trained on this yard's own labelled frames: every stored trigger with its final
+"""Is anything there? A small check on BioCLIP 2's image embedding of its view (the same model and file as
+birdbrain.classifier), trained on this yard's own labelled frames: every stored trigger with its final
 answer (the owner's correction wins, else Claude's), frames the owner confirmed or corrected counting
 CONFIRMED_WEIGHT times.
+
+Its view (classifier.presence_patch, version classifier.PRESENCE_VIEW, saved in embeddings.view): a square around
+the whole bowl, rim and a bird's height above it, for birdbath triggers; the ground crop padded to a square for
+ground ones. It used to be the crop box center-cut to a square, which cut the rim's left and right ends off (birds
+perched there were called empty). Only embeddings of the current view train or are scored; older ones wait for
+`--backfill --redo`, and until enough are redone the check gives no verdict, so nothing is gated meanwhile.
+"Inside the crop box" below means inside that view (classifier.presence_view_box).
 
 Describing "nothing" in words didn't work (BioCLIP called almost every empty frame an animal), but a logistic
 regression on the embeddings did: on the first 683 frames, 5-fold cross-validated, keeping all 55 visitors it
@@ -41,6 +48,7 @@ Modes (Settings, else PRESENCE in .env): off; shadow records the score; gate ski
 Skipped frames are stored as false triggers for the owner's daily review; correcting one teaches it.
 
 CLI: python -m birdbrain.presence --backfill [--limit N]   (embeddings for stored frames that have none)
+     python -m birdbrain.presence --backfill --redo [--limit N]   (also re-embed frames of an older view)
      python -m birdbrain.presence --pick                   (burst frames for corrected false triggers and the
                                                            owner's circled frames, now)
 """
@@ -87,18 +95,32 @@ def mode(conn) -> str:
     return value if value in MODES else config.PRESENCE
 
 
-def store(conn, visit_id: int, emb: np.ndarray) -> None:
-    conn.execute("""INSERT INTO embeddings (visit_id, vec) VALUES (?, ?)
-                    ON CONFLICT(visit_id) DO UPDATE SET vec = excluded.vec""",
-                 (visit_id, np.asarray(emb, np.float16).tobytes()))
+def store(conn, visit_id: int, emb: np.ndarray, view: int = classifier.PRESENCE_VIEW) -> None:
+    """Save a frame's embedding of `view`. Re-embedding a row of another view also forgets its burst frame
+    pick (made in the old view), so pick_frames looks again."""
+    conn.execute("""INSERT INTO embeddings (visit_id, vec, view) VALUES (?, ?, ?)
+                    ON CONFLICT(visit_id) DO UPDATE SET vec = excluded.vec, view = excluded.view,
+                      animal_vec = CASE WHEN embeddings.view IS excluded.view THEN animal_vec END,
+                      animal_frame = CASE WHEN embeddings.view IS excluded.view THEN animal_frame END,
+                      animal_score = CASE WHEN embeddings.view IS excluded.view THEN animal_score END,
+                      animal_by_owner = CASE WHEN embeddings.view IS excluded.view THEN animal_by_owner END""",
+                 (visit_id, np.asarray(emb, np.float16).tobytes(), view))
     conn.commit()
 
 
-def crop_box(raw: dict, zones: dict | None = None) -> tuple | None:
-    """The crop box the visit's frames were judged in: raw_json.zones (saved with newer visits), else `zones`."""
+def visit_zones(raw: dict, conn=None, captured_at: str | None = None) -> dict | None:
+    """The zones a visit's frames were judged in: raw_json.zones, else (with `conn`) the zones at the time."""
+    z = raw.get("zones")
+    if isinstance(z, dict) and z:
+        return z
+    return zones_then(conn, captured_at) if conn is not None else None
+
+
+def view_box(raw: dict, zones: dict | None = None) -> tuple | None:
+    """The Pi animal check's view (x, y, w, h fractions) for the visit's trigger: from raw_json.zones (saved with
+    newer visits), else `zones`. Circles are judged against it."""
     z = raw.get("zones") or zones or {}
-    box = z.get("ground_crop") if raw.get("trigger") == "ground" else z.get("crop")
-    return tuple(box) if box and len(box) == 4 else None
+    return classifier.presence_view_box(z, raw.get("trigger"), ASPECT)
 
 
 def zones_then(conn, captured_at: str | None) -> dict | None:
@@ -167,9 +189,9 @@ def animal_example(row, conn=None) -> tuple[bytes | None, str]:
     """The embedding that teaches "animal" for a visitor (see the module notes), or None to leave it out, with why.
     `conn` finds the crop box of older visits that didn't save their zones."""
     raw = _raw(row)
-    box = crop_box(raw)
+    box = view_box(raw)
     if box is None and conn is not None:
-        box = crop_box(raw, zones_then(conn, row["captured_at"]))
+        box = view_box(raw, zones_then(conn, row["captured_at"]))
     own = owner_frame(row["marks"], raw)
     if own is not None:  # the owner circled it on another burst frame: that frame or nothing
         picked = _by_owner(row) and row["animal_frame"] == own
@@ -199,13 +221,14 @@ EXAMPLE_ROWS = f"""SELECT e.visit_id, e.vec, e.animal_vec, e.animal_frame, e.ani
                           v.photo_deleted_at, v.is_night, v.captured_at,
                           COALESCE(v.corrected_visitor, v.visitor) AS final,
                           json_extract(v.raw_json, '$.burst') IS NOT NULL AS has_burst
-                   FROM embeddings e JOIN visits v ON v.id = e.visit_id"""
+                   FROM embeddings e JOIN visits v ON v.id = e.visit_id
+                   WHERE e.view = {classifier.PRESENCE_VIEW}"""
 
 
 def teaches(conn, visit_id: int) -> dict | None:
     """What one visit teaches the check, for its page: {"animal", "used", "why", "checked"}, or None without an
     embedding. `why` names the frame it learns from ("burst frame 4 (your circle)") or why it's left out."""
-    row = conn.execute(EXAMPLE_ROWS + " WHERE e.visit_id = ?", (visit_id,)).fetchone()
+    row = conn.execute(EXAMPLE_ROWS + " AND e.visit_id = ?", (visit_id,)).fetchone()
     if row is None:
         return None
     if not row["real"]:
@@ -323,7 +346,8 @@ def label_key(conn) -> tuple:
                    SUM(CASE WHEN v.marks LIKE '%"frame"%' AND json_valid(v.marks) THEN
                        (SELECT TOTAL(json_extract(j.value, '$.frame') * (j.key + 1)) FROM json_each(v.marks) j)
                        END)
-            FROM embeddings e JOIN visits v ON v.id = e.visit_id""").fetchone())
+            FROM embeddings e JOIN visits v ON v.id = e.visit_id
+            WHERE e.view = {classifier.PRESENCE_VIEW}""").fetchone())
 
 
 def retrain(conn) -> dict:
@@ -412,17 +436,19 @@ def start_background(every: float = RETRAIN_CHECK, busy: threading.Event | None 
     return t
 
 
-def check(conn, emb: np.ndarray | None) -> dict | None:
-    """The stored verdict for one trigger (raw_json.calls.presence), or None without an embedding."""
+def check(conn, emb: np.ndarray | None, view: str | None = None) -> dict | None:
+    """The stored verdict for one trigger (raw_json.calls.presence), or None without an embedding. `view` (the
+    kind of classifier.presence_patch the embedding was made of) is recorded with it when given."""
     if emb is None:
         return None
     start = time.perf_counter()
     m = model(conn)
+    seen = {"view": view} if view else {}
     if m is None:
-        return {"model": MODEL_NAME, "score": None, "empty": False, "note": "not enough labelled frames yet"}
+        return {"model": MODEL_NAME, "score": None, "empty": False, "note": "not enough labelled frames yet", **seen}
     s = score(m, emb)
     return {"model": MODEL_NAME, "score": round(s, 4), "threshold": round(m["threshold"], 4), "empty": s < m["threshold"],
-            "trained_on": m["visitors"] + m["empty"], "seconds": round(time.perf_counter() - start, 3)}
+            "trained_on": m["visitors"] + m["empty"], "seconds": round(time.perf_counter() - start, 3), **seen}
 
 
 def pending_picks(conn) -> list:
@@ -433,6 +459,7 @@ def pending_picks(conn) -> list:
         f"""SELECT v.id, v.image_path, v.raw_json, v.captured_at, v.marks, v.visitor, e.animal_frame, e.animal_by_owner
             FROM embeddings e JOIN visits v ON v.id = e.visit_id
             WHERE {db.REAL} AND v.photo_deleted_at IS NULL AND json_extract(v.raw_json, '$.burst') IS NOT NULL
+              AND e.view = {classifier.PRESENCE_VIEW}
               AND ((v.visitor = 'none' AND e.animal_frame IS NULL) OR e.animal_by_owner
                    OR v.marks LIKE '%"frame"%')
             ORDER BY v.id""").fetchall()
@@ -460,9 +487,9 @@ def _save_pick(conn, visit_id: int, emb, frame: int | None, score: float | None,
 
 def pick_frames(conn, limit: int | None = None, busy: threading.Event | None = None, clf=None) -> int:
     """Embed burst frames for training (see pending_picks), ~6 s a frame on a Pi 4:
-    - the owner circled the animal on burst frame k: embed k's crop box (animal_by_owner), score it if a model is
-      trained (shown, not used to judge it);
-    - a false trigger the owner corrected to an animal: embed the crop box of every saved burst frame and keep the
+    - the owner circled the animal on burst frame k: embed k's view (classifier.presence_patch, animal_by_owner),
+      score it if a model is trained (shown, not used to judge it);
+    - a false trigger the owner corrected to an animal: embed the view of every saved burst frame and keep the
       one the current model scores highest (animal_vec, animal_frame, animal_score), so training sees the frame
       where the animal is in the crop box rather than the sharpest one;
     - an owner's pick whose circle went back to the photo: forget it (a false trigger then gets looked through
@@ -489,7 +516,7 @@ def pick_frames(conn, limit: int | None = None, busy: threading.Event | None = N
             done += 1
             continue
         raw = json.loads(r["raw_json"] or "{}") or {}
-        box = crop_box(raw) or crop_box(raw, zones_then(conn, r["captured_at"]))
+        z = visit_zones(raw, conn, r["captured_at"])
         paths = images.burst_paths(r["image_path"])
         want = [r["owner_frame"]] if r["owner_frame"] is not None else range(1, len(paths) + 1)
         emb, best, n = None, -1.0, 0
@@ -499,7 +526,7 @@ def pick_frames(conn, limit: int | None = None, busy: threading.Event | None = N
             img = cv2.imread(str(config.IMAGES_DIR / paths[i - 1])) if i <= len(paths) else None
             if img is None:
                 continue
-            e = clf.embed(classifier.crop_for(img, None, box)[0])
+            e = clf.embed(classifier.presence_patch(img, z, raw.get("trigger"))[0])
             s = score(m, e) if m is not None else None
             if s is None or s > best:
                 emb, best, n = e, (-1.0 if s is None else s), i
@@ -518,30 +545,53 @@ def pick_frames(conn, limit: int | None = None, busy: threading.Event | None = N
     return done
 
 
-def backfill(limit: int | None = None) -> int:
-    """Embeddings for stored frames that have none (~6 s each on a Pi 4), newest first."""
+PROGRESS_EVERY, PROGRESS_SECONDS = 25, 30  # backfill prints a progress line this often (whichever comes first)
+
+
+def progress_line(n: int, total: int, failed: int, elapsed: float) -> str:
+    """"142/683 done, 3 failed, ~4 min left"."""
+    left = elapsed / n * (total - n) if n else 0.0
+    return f"{n}/{total} done, {failed} failed, ~{round(left / 60)} min left"
+
+
+def backfill(limit: int | None = None, redo: bool = False, clf=None) -> int:
+    """Embeddings of the current view (~6 s each on a Pi 4), newest first, for stored frames that have none and,
+    with `redo`, for frames embedded in an older view. Each visit is seen with its own zones (raw_json.zones,
+    else the zones at the time, else today's) and trigger. Prints progress as it goes; returns how many were
+    embedded."""
     import cv2
 
-    from . import zones
-
-    clf = classifier.load()
+    clf = clf or classifier.load()
     if clf is None:
         raise SystemExit("the classifier is off (CLASSIFIER=off)")
-    z = zones.current()
+    old = f" OR id IN (SELECT visit_id FROM embeddings WHERE view IS NOT {classifier.PRESENCE_VIEW})" if redo else ""
     with db.session() as conn:
-        rows = conn.execute("""SELECT id, image_path, raw_json FROM visits
-                               WHERE id NOT IN (SELECT visit_id FROM embeddings) ORDER BY id DESC""").fetchall()
-    done = 0
-    for r in rows[:limit]:
-        img = cv2.imread(str(config.IMAGES_DIR / r["image_path"]))
-        if img is None:
-            continue
-        raw = json.loads(r["raw_json"] or "{}") or {}
-        box = z.ground_crop if raw.get("trigger") == "ground" else z.crop
-        emb = clf.embed(classifier.crop_for(img, None, box)[0])
-        with db.session() as conn:
-            store(conn, r["id"], emb)
-        done += 1
+        rows = conn.execute(f"""SELECT id, image_path, raw_json, captured_at FROM visits
+                                WHERE id NOT IN (SELECT visit_id FROM embeddings){old}
+                                ORDER BY id DESC""").fetchall()
+    rows = rows[:limit]
+    total, done, failed = len(rows), 0, 0
+    start = last = time.monotonic()
+    for i, r in enumerate(rows, 1):
+        try:
+            img = cv2.imread(str(config.IMAGES_DIR / r["image_path"])) if r["image_path"] else None
+            if img is None:
+                raise FileNotFoundError(r["image_path"])
+            raw = json.loads(r["raw_json"] or "{}") or {}
+            with db.session() as conn:
+                z = visit_zones(raw, conn, r["captured_at"])
+            emb = clf.embed(classifier.presence_patch(img, z, raw.get("trigger"))[0])
+            with db.session() as conn:
+                store(conn, r["id"], emb)
+            done += 1
+        except Exception as e:
+            failed += 1
+            log.warning("visit %d: not embedded (%s)", r["id"], e)
+        now = time.monotonic()
+        if i % PROGRESS_EVERY == 0 or now - last >= PROGRESS_SECONDS:
+            print(progress_line(i, total, failed, now - start), flush=True)
+            last = now
+    print(progress_line(total, total, failed, time.monotonic() - start), flush=True)
     return done
 
 
@@ -549,6 +599,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m birdbrain.presence")
     parser.add_argument("--backfill", action="store_true", help="embed stored frames that have no embedding")
     parser.add_argument("--limit", type=int, help="with --backfill: at most this many, newest first")
+    parser.add_argument("--redo", action="store_true",
+                        help="with --backfill: also re-embed frames embedded in an older view (the old center cut)")
     parser.add_argument("--pick", action="store_true",
                         help="look through the bursts of false triggers corrected to an animal, and embed the frames "
                              "the owner circled")
@@ -556,7 +608,7 @@ def main() -> None:
     with db.session() as conn:
         db.init_db(conn)
     if args.backfill:
-        print(f"embedded {backfill(args.limit)} frames")
+        print(f"embedded {backfill(args.limit, args.redo)} frames")
     if args.pick:
         logging.basicConfig(level=logging.INFO, format="%(message)s")  # one line per visit as it goes
         with db.session() as conn:

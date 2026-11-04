@@ -117,7 +117,7 @@ def test_gate_skips_claude_and_keeps_the_frame_for_review(monkeypatch, conn, yar
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
     monkeypatch.setattr(watch, "presence_mode", lambda: "gate")
     emb = vec(False, yard)
-    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: emb)
+    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, zones, trigger: emb)
     asked = []
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: asked.append(1))
     assert watch.handle_event() == "none"
@@ -134,7 +134,7 @@ def test_shadow_records_the_score_and_still_asks_claude(monkeypatch, conn, yard)
     burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), 90, np.uint8))[1].tobytes()] * 3
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
     monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
-    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: vec(False, yard))
+    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, zones, trigger: vec(False, yard))
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
         Sighting(visitor="none", species=None, count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
     assert watch.handle_event() == "none"
@@ -427,8 +427,8 @@ def test_training_sets_the_outlier_aside_and_says_which_visit(conn, yard, add_vi
 def scored_frames(monkeypatch, scores: dict[bytes, float], threshold=0.3):
     """box_embedding returns the frame itself; presence.check scores it from the table."""
     looked = []
-    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, box: looked.append(jpeg) or np.array([scores[jpeg]]))
-    monkeypatch.setattr(presence, "check", lambda conn, emb: {
+    monkeypatch.setattr(classifier, "box_embedding", lambda jpeg, zones, trigger: looked.append(jpeg) or np.array([scores[jpeg]]))
+    monkeypatch.setattr(presence, "check", lambda conn, emb, view=None: {
         "model": presence.MODEL_NAME, "score": float(emb[0]), "threshold": threshold, "empty": bool(emb[0] < threshold)})
     return looked
 
@@ -460,7 +460,7 @@ def test_the_last_frame_check_can_be_switched_off_and_fails_soft(monkeypatch, co
     assert watch.animal_check([b"a", b"z"], [b"a", b"z"], CROP)[1]["empty"] and looked == [b"a"]
     monkeypatch.setattr(watch.config, "PRESENCE_LAST_FRAME", True)
 
-    def broken(jpeg, box):
+    def broken(jpeg, zones, trigger):
         if jpeg == b"z":
             raise RuntimeError("out of memory")
         return np.array([0.01])
