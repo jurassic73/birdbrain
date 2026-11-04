@@ -1216,6 +1216,9 @@ def test_manifest_has_maskable_icon_and_base_path(client, monkeypatch):
     m = r.json()
     assert m["start_url"] == "/" and m["scope"] == "/" and m["display"] == "standalone"
     assert any(i["purpose"] == "maskable" for i in m["icons"])
+    # The installed Android app paints its navigation bar with the manifest's theme_color and has no dark
+    # variant, so any color here would be wrong on a phone in the other mode (a white bar in dark mode).
+    assert "theme_color" not in m
     assert 'rel="manifest"' in client.get("/").text
     monkeypatch.setattr(webapp, "BASE", "/birdbrain")
     m = client.get("/manifest.webmanifest").json()

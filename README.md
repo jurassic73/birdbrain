@@ -227,7 +227,7 @@ The first time a browser opens the home page, a short tour points at the latest 
 
 Set `ADMIN_PASSWORD` in `.env` and the site becomes read-only for everyone else: they can browse visits, species, stats and the About page, but can't correct, delete, change settings or ask Claude anything. The Admin button at the top logs you in on that device for 30 days. Leave it blank to keep the site fully open (fine on a home LAN). Before putting the site on the internet, put HTTPS in front of it so the password isn't sent in the clear.
 
-On Android, open the site in Chrome and choose Add to Home screen (or Install app on an https site) for a round app icon; on iOS use Share, Add to Home Screen. If you change the icon, remove the old shortcut and add it again.
+On Android, open the site in Chrome and choose Add to Home screen (or Install app on an https site) for a round app icon; on iOS use Share, Add to Home Screen. The installed app's bottom bar follows the phone's light or dark mode. Android fixes an app's icon and bar colors when it's added, so if you change the icon (or update from a version whose app had a white bottom bar in dark mode), remove the old shortcut and add it again.
 
 ## Optional: a public read-only copy
 
