@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import sp_name, thumb, zoom_btn, zoom_out_btn, fav_star %}
+{% from "_filters.html" import chips_nav, filters_toggle, tod_select, date_range %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
 {# Hovering a visit card prerenders its page, so the click shows it finished instead of building it out.
@@ -55,22 +56,13 @@
       <span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }} today</span>
     </div>
     {% if any_visits %}
-    <button type="button" class="filters-toggle" aria-controls="more-filters" aria-expanded="{{ 'true' if more_filters_open else 'false' }}"
-            data-tip="Filter by species, birds, mammals or photos with several animals, day or night, and a date range">
-      <svg class="filters-funnel" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
-      More filters
-      <svg class="filters-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-    </button>
+    {{ filters_toggle(more_filters_open, "Filter by species, birds, mammals or photos with several animals, day or night, and a date range") }}
     {% endif %}
   </div>
   <div class="visits-head">
     {% if filtered %}<h2 class="visits-count">{{ total }} matching</h2>{% endif %}
     {% if any_visits %}
-    <nav class="chips" aria-label="Quick filters">
-      {% for name, href, is_active in chips %}
-      <a href="{{ href }}" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
-      {% endfor %}
-    </nav>
+    {{ chips_nav(chips) }}
     {% endif %}
   </div>
   {% if any_visits %}
@@ -87,13 +79,8 @@
         <option value="mammal" {% if filters.kind == 'mammal' %}selected{% endif %}>Mammals</option>
         <option value="multiple" {% if filters.kind == 'multiple' %}selected{% endif %}>Multiple animals</option>
       </select>
-      <select name="tod" aria-label="Day or night">
-        <option value="">Day and night</option>
-        <option value="day" {% if filters.tod == 'day' %}selected{% endif %}>Day</option>
-        <option value="night" {% if filters.tod == 'night' %}selected{% endif %}>Night</option>
-      </select>
-      <label>From <input type="date" name="date_from" value="{{ filters.date_from or '' }}"></label>
-      <label>To <input type="date" name="date_to" value="{{ filters.date_to or '' }}"></label>
+      {{ tod_select(filters) }}
+      {{ date_range(filters) }}
       <button type="submit">Apply</button>
       {% if filtered %}<a class="clear" href="/">Clear</a>{% endif %}
       </form>

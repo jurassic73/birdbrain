@@ -141,6 +141,15 @@ Rain and wind can trigger motion every few seconds. Three things keep that cheap
 - **Birds in the water:** besides the rim, the open water is watched with a stricter rule: one solid, bird-sized blob that stays put for over half a second. Ripples and raindrops never qualify, and anything that does is checked by the Pi animal check before Claude. This zone sleeps at night (nothing flies in to land after dark).
 - **Pi animal check:** BioCLIP 2 on the Pi decides whether anything is there before Claude is asked (see below). An earlier object detector (YOLOX-tiny) was retired in its favour.
 
+## Species card facts
+
+Each species card gets 2 to 5 short "hook" facts for the top of its page, written in the same Haiku call as the behavior notes from the Wikipedia article (a fraction of a cent per species; the code drops blanks, runaway sentences, repeats of a note and anything past 5). New cards get them automatically. For cards you already have:
+
+```bash
+uv run python -m birdbrain.species_info --facts --dry-run   # list the cards that have none yet
+uv run python -m birdbrain.species_info --facts             # add them (--redo for all, --name "House Finch" for one)
+```
+
 ## BioCLIP 2 species check
 
 A second small model guesses each bird's species on the Pi, so you can see whether birds could one day be named without Claude. It's [BioCLIP 2](https://huggingface.co/imageomics/bioclip-2) (Imageomics Institute, MIT), with its image encoder converted to an 8-bit ONNX file (300 MB) and its names precomputed for every species in the eBird list; set `CLASSIFIER_RELEASE_URL` in `.env` to the folder URL where the model files are hosted (only needed once; without it, and with the files missing, the classifier logs a clear message and stays off, and you can copy the files into the data folder's `models` directory instead). It downloads itself into the data folder the first time it's needed (checked by SHA-256), takes about 6 seconds per photo on a Pi 4 and uses about 400 MB of RAM. Guesses are limited to birds reported to iNaturalist in your `INAT_PLACE_ID` (the list is cached and refreshed monthly).

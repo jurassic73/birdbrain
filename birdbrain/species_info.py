@@ -13,7 +13,7 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import httpx
 from pydantic import BaseModel
@@ -38,7 +38,7 @@ LICENSES = {
 
 _building: set[str] = set()
 RETRY_AFTER = 3600  # seconds before trying a failed download or rebuild again
-MERGED_FIELDS = ("description", "notes", "photo", "sounds", "map_center")  # a rebuild lacking one keeps the old
+MERGED_FIELDS = ("description", "notes", "facts", "photo", "sounds", "map_center")  # a rebuild lacking one keeps the old
 _failed_at: dict[str, float] = {}  # species name (or "ebird_codes") -> time.monotonic() of its last failed fetch
 _lock = threading.Lock()
 
@@ -246,29 +246,85 @@ def fetch_sounds(client: httpx.Client, sci_name: str | None, center: list[float]
     return pick_sounds(recordings, center)
 
 
-class Notes(BaseModel):
+class CardText(BaseModel):
     notes: list[str]
+    facts: list[str]
 
 
-NOTES_PROMPT = """You write short behavior notes for a backyard wildlife site, using only the article text you are given.
-Write 2 to 4 notes, each one sentence of at most 25 words, in plain language:
-diet; how it behaves at a feeder or birdbath (or in a backyard); how it gets along with other animals (aggressive, territorial, social); one fun fact.
-Skip any topic the article does not cover. Never add facts that are not in the text."""
+NOTES_PROMPT = """You write short text for a backyard wildlife site, using only the article text you are given.
+Never add a fact that is not in the text, and never mention "the article" or "the text".
+
+notes: 2 to 4 notes, each one sentence of at most 25 words, in plain language:
+diet; how it behaves at a feeder or birdbath (or in a backyard); how it gets along with other animals (aggressive, territorial, social).
+Skip any topic the article does not cover.
+
+facts: 2 to 5 hook facts for the top of the species page, to catch a curious visitor's interest. Put the article's most
+surprising and memorable facts here (the notes are the practical behavior). Each is 6 to 14 words,
+punchy and memorable: a size or weight comparison, a lifespan record, a speed, an odd habit, where its name comes from, a striking number.
+Keep every number exactly as the article states it, and say exactly who it applies to (do not turn a claim about females
+or the whole species into one about males, or the reverse). Prefer the surprising over the descriptive: skip plain
+taxonomy ("a small sparrow") and ordinary size ranges unless there is a vivid comparison. They must not repeat or rephrase any
+of the notes. Write fewer, or none, rather than pad with dull or generic facts. No emoji."""
+
+MAX_NOTES = 4
+MAX_FACTS = 5
+MAX_FACT_WORDS = 20  # the prompt asks for 6 to 14; this only catches a runaway sentence
+FACT_DUP_SHARE = 0.6  # a fact sharing this much of its words with a note is a repeat
+_STOP = {"a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with", "is", "are", "it", "its", "as", "at", "by",
+         "can", "has", "have", "from", "that", "this", "their", "they", "up", "than", "often", "about"}
 
 
-def behavior_notes(name: str, article: str) -> list[str]:
+def _words(text: str) -> set[str]:
+    words = (w.rstrip("'") for w in re.findall(r"[a-z0-9']+", text.lower()))
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words if w not in _STOP}  # plural-blind
+
+
+def clean_facts(facts: list[str], notes: list[str]) -> list[str]:
+    """The model's hook facts, checked in code: no blanks, none over MAX_FACT_WORDS words, none repeating a note or an
+    earlier fact (by share of shared words), at most MAX_FACTS."""
+    kept: list[str] = []
+    seen = [_words(n) for n in notes]
+    for fact in facts or []:
+        fact = " ".join((fact or "").split())
+        if not fact or len(fact.split()) > MAX_FACT_WORDS:
+            continue
+        mine = _words(fact)
+        if not mine or any(len(mine & other) / len(mine) >= FACT_DUP_SHARE for other in seen):
+            continue
+        kept.append(fact)
+        seen.append(mine)
+        if len(kept) == MAX_FACTS:
+            break
+    return kept
+
+
+def card_text(name: str, article: str) -> dict:
+    """One Haiku call on the Wikipedia article: the behavior notes and the header facts, both guarded in code."""
     from .identify import HAIKU, client  # lazy: keeps the web app from loading the SDK at startup
 
     response = client().beta.messages.parse(
         model=HAIKU,
-        max_tokens=1000,
+        max_tokens=1500,
         output_config={"effort": "low"},
         system=NOTES_PROMPT,
         messages=[{"role": "user", "content": f"Animal: {name}\n\nArticle:\n{article[:12000]}"}],
-        output_format=Notes,
+        output_format=CardText,
     )
     parsed = response.parsed_output
-    return [n.strip() for n in parsed.notes[:4] if n.strip()] if parsed else []
+    if not parsed:
+        return {"notes": [], "facts": []}
+    notes = [n.strip() for n in parsed.notes if n and n.strip()][:MAX_NOTES]
+    return {"notes": notes, "facts": clean_facts(parsed.facts, notes)}
+
+
+def wikipedia_article(http: httpx.Client, title: str) -> tuple[dict | None, str]:
+    """The Wikipedia summary (None if the page isn't a standard article) and its plain text."""
+    summary = _get(http, f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title)}")
+    if summary.get("type") != "standard":
+        return None, ""
+    ext = _get(http, "https://en.wikipedia.org/w/api.php", action="query", prop="extracts",
+               explaintext=1, redirects=1, format="json", titles=summary["title"])
+    return summary, next(iter(ext["query"]["pages"].values())).get("extract", "")
 
 
 def build(name: str) -> dict:
@@ -302,13 +358,10 @@ def build(name: str) -> dict:
         title = wiki_url.rsplit("/", 1)[-1] if wiki_url else common.replace(" ", "_")
         article = ""
         try:
-            summary = _get(http, f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title)}")
-            if summary.get("type") == "standard":
+            summary, article = wikipedia_article(http, title)
+            if summary:
                 data["description"] = summary.get("extract")
                 wiki_url = summary["content_urls"]["desktop"]["page"]
-                ext = _get(http, "https://en.wikipedia.org/w/api.php", action="query", prop="extracts",
-                           explaintext=1, redirects=1, format="json", titles=summary["title"])
-                article = next(iter(ext["query"]["pages"].values())).get("extract", "")
         except Exception:
             log.exception("Wikipedia lookup failed for %s", title)
         data["wiki_url"] = wiki_url
@@ -339,7 +392,7 @@ def build(name: str) -> dict:
                     log.exception("xeno-canto lookup failed for %s", common)
     if article:
         try:
-            data["notes"] = behavior_notes(common, article)
+            data.update(card_text(common, article))
         except Exception:
             log.exception("behavior notes failed for %s", common)
     data["links"] = links(common, is_bird, code, data.get("inat_id"), wiki_url)
@@ -545,3 +598,80 @@ def prefetch(name: str) -> None:
             get(conn, name)
 
     threading.Thread(target=run, daemon=True).start()
+
+
+def add_facts(conn: sqlite3.Connection, name: str, http: httpx.Client) -> bool:
+    """Refresh one cached card's notes and header facts from its Wikipedia article. Only those two fields change; the
+    card keeps its date. Raises if a source fails (the caller keeps the old card); False if there is nothing to read."""
+    cached = db.get_species_info(conn, name)
+    if not cached:
+        return False
+    card, fetched_at = cached
+    wiki = card.get("wiki_url")
+    if not wiki or not card.get("description"):
+        return False
+    _, article = wikipedia_article(http, unquote(wiki.rsplit("/", 1)[-1]))
+    if not article:
+        return False
+    text = card_text(card.get("common") or name, article)
+    if not text["facts"]:
+        return False
+    card["facts"] = text["facts"]
+    if text["notes"]:
+        card["notes"] = text["notes"]
+    db.save_species_info(conn, name, card, fetched_at)
+    forget_cached_cards()
+    return True
+
+
+def backfill_facts(conn: sqlite3.Connection, redo: bool = False, only: str | None = None, dry_run: bool = False,
+                   out=print) -> tuple[int, int]:
+    """Give every cached species card header facts. Returns (done, failed). Cards that already have facts are skipped
+    unless redo. With dry_run it only lists the cards it would do."""
+    names = [r["name"] for r in conn.execute("SELECT name FROM species_info ORDER BY name")]
+    todo = []
+    for name in names:
+        if only and name.lower() != only.lower():
+            continue
+        card = (db.get_species_info(conn, name) or ({}, ""))[0]
+        if card.get("wiki_url") and card.get("description") and (redo or not card.get("facts")):
+            todo.append(name)
+    if dry_run:
+        out(f"would do {len(todo)}: {', '.join(todo)}")
+        return 0, 0
+    done = failed = 0
+    with httpx.Client(follow_redirects=True) as http:
+        for i, name in enumerate(todo, 1):
+            try:
+                if add_facts(conn, name, http):
+                    done += 1
+                else:
+                    failed += 1
+            except Exception:
+                log.exception("facts failed for %s", name)
+                failed += 1
+            out(f"{i}/{len(todo)} done, {failed} failed" if failed else f"{i}/{len(todo)} done, 0 failed")
+    return done, failed
+
+
+def main() -> None:
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(prog="python -m birdbrain.species_info")
+    parser.add_argument("--facts", action="store_true", help="add header facts (and refresh notes) on cached cards")
+    parser.add_argument("--redo", action="store_true", help="with --facts: also cards that already have facts")
+    parser.add_argument("--name", help="with --facts: only this species")
+    parser.add_argument("--dry-run", action="store_true", help="with --facts: list the cards, change nothing")
+    args = parser.parse_args()
+    if not args.facts:
+        parser.error("nothing to do (give --facts)")
+    with db.session() as conn:
+        db.init_db(conn)
+        done, failed = backfill_facts(conn, args.redo, args.name, args.dry_run)
+    print(f"facts added to {done} cards, {failed} failed")
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()
