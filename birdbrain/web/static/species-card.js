@@ -107,6 +107,29 @@
     addEventListener("scroll", hideTip, { passive: true });
   }
 
+  // The title's Song button: one shared Audio so only one thing plays; the card's own <audio> players pause it (and it pauses them).
+  const song = new Audio();
+  song.preload = "none";
+  let songBtn = null;
+  const songState = () => document.querySelectorAll(".sp-play").forEach((b) => {
+    const on = b === songBtn && !song.paused;
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    const name = b.getAttribute("aria-label").replace(/^(Play|Pause)/, on ? "Pause" : "Play");
+    b.setAttribute("aria-label", name);
+  });
+  for (const ev of ["play", "pause", "ended", "error"]) song.addEventListener(ev, songState);
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".sp-play");
+    if (!b) return;
+    if (songBtn === b && !song.paused) { song.pause(); return; }
+    document.querySelectorAll(".sp-sounds audio").forEach((a) => a.pause());
+    if (songBtn !== b || song.ended) { songBtn = b; song.src = b.dataset.src; }
+    song.play().catch(songState);
+  });
+  document.addEventListener("play", (e) => {  // media events don't bubble, so listen in the capture phase
+    if (e.target.closest && e.target.closest(".sp-sounds")) song.pause();
+  }, true);
+
   let leaflet = null;
   function loadLeaflet() {
     if (window.L) return Promise.resolve();

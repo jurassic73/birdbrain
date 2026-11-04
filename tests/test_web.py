@@ -1546,3 +1546,21 @@ def test_confidence_pills_carry_the_claude_mark(client, add_visit):
     html = client.get(f"/visit/{vid}").text
     assert re.search(r'class="badge conf-low by-claude"[^>]*><svg class="claude-mark"', html)
     assert re.search(r'class="badge conf-low"[^>]*>Needs review', html)
+
+
+def test_species_title_has_a_play_button_only_when_the_card_has_sounds(client, add_visit, monkeypatch):
+    add_visit(species="Bushtit")
+    from birdbrain import species_info
+    card = {"name": "Bushtit", "common": "Bushtit", "status": "Year-round resident", "links": [],
+            "sounds": [{"label": "Call", "file": "https://xc.example/1.mp3", "recordist": "A", "license": "CC", "km": None, "id": "1"},
+                       {"label": "Song", "file": "https://xc.example/2.mp3", "recordist": "B", "license": "CC", "km": 40, "id": "2"}]}
+    monkeypatch.setattr(species_info, "get", lambda conn, name, fetch=True: dict(card))
+    html = client.get("/species-info/Bushtit?fold=1").text
+    assert 'class="sp-play"' in html and 'data-src="https://xc.example/2.mp3"' in html and "Song</span>" in html
+    assert 'aria-pressed="false"' in html and "by B" in html
+    mini = client.get("/species-info/Bushtit?mini=1").text
+    assert "sp-play" not in mini
+    card["sounds"] = [card["sounds"][0]]
+    assert 'data-src="https://xc.example/1.mp3"' in client.get("/species-info/Bushtit?fold=1").text
+    card["sounds"] = []
+    assert "sp-play" not in client.get("/species-info/Bushtit?fold=1").text
