@@ -143,7 +143,7 @@ Rain and wind can trigger motion every few seconds. Three things keep that cheap
 
 ## Species card facts
 
-Each species card gets 2 to 5 short "hook" facts for the top of its page, written in the same Haiku call as the behavior notes from the Wikipedia article (a fraction of a cent per species; the code drops blanks, runaway sentences, repeats of a note and anything past 5). New cards get them automatically. For cards you already have:
+Each species card gets 2 to 5 short "hook" facts for the top of its page (each with a one or two word lead shown on its tile, which the code checks against the fact), written in the same Haiku call as the behavior notes from the Wikipedia article (a fraction of a cent per species; the code drops blanks, runaway sentences, repeats of a note (or of an earlier note) and anything past 5). New cards get them automatically. For cards you already have:
 
 ```bash
 uv run python -m birdbrain.species_info --facts --dry-run   # list the cards that have none yet
