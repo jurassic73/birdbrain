@@ -1,11 +1,11 @@
-// Species page: the Info / Visits tabs. The choice lives in the URL hash (#info, #visits) so a reload and old
-// #visits links land on the right tab. Charts and maps drawn while their panel was hidden are resized on show.
+// Species page: the Visits / Info tabs (Visits is the default). The choice lives in the URL hash (#visits, #info) so a reload and
+// #info links land on the right tab. Charts and maps drawn while their panel was hidden are resized on show.
 (() => {
   const tabs = [...document.querySelectorAll("[data-sp-tab]")];
   if (!tabs.length) return;
 
   function show(name, focus) {
-    if (!tabs.some((t) => t.dataset.spTab === name)) name = "info";
+    if (!tabs.some((t) => t.dataset.spTab === name)) name = "visits";
     for (const t of tabs) {
       const on = t.dataset.spTab === name;
       t.setAttribute("aria-selected", on);
@@ -43,7 +43,6 @@
   });
 
   window.addEventListener("hashchange", () => show(fromHash()));
-  // A filtered link (?tod=night) without a hash opens on the Visits tab: that is where its filters show.
+  // No hash means Visits, which the server already renders as selected; an #info link opens Info.
   if (fromHash()) show(fromHash());
-  else if (document.getElementById("panel-visits")?.hasAttribute("data-filtered")) show("visits");
 })();

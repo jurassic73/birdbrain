@@ -138,17 +138,19 @@ def test_species_page_has_info_and_visits_tabs(client, add_visit, fake_build):
     client.get("/species-info/Bushtit")  # builds and caches the card
     html = client.get("/species/Bushtit").text
     assert 'role="tablist"' in html and html.count('role="tab"') == 2 and html.count('role="tabpanel"') == 2
-    assert html.index('data-sp-tab="info"') < html.index('data-sp-tab="visits"')
-    assert 'id="tab-info"' in html and 'aria-selected="true"' in html and "Jump to visits" not in html
+    assert html.index('data-sp-tab="visits"') < html.index('data-sp-tab="info"')
+    assert re.search(r'id="tab-visits"[^>]*aria-selected="true"', html) and re.search(r'id="tab-info"[^>]*aria-selected="false" tabindex="-1"', html)  # Visits is the default tab
+    assert re.search(r'id="panel-info"[^>]*hidden>', html) and not re.search(r'id="panel-visits"[^>]*hidden>', html) and "Jump to visits" not in html
     # Facts, charts and the card's sections live in the Info panel; the grid and its tools in the Visits panel.
-    info, visits = html.index('id="panel-info"'), html.index('id="panel-visits"')
+    visits, info = html.index('id="panel-visits"'), html.index('id="panel-info"')
     assert "First seen" not in html
-    assert visits < html.index("grid-count") < html.index('class="lb-open"', visits)  # the count sits left of the expand button
-    assert re.search(r'data-sp-tab="visits">Visits<span class="tab-count"> \(\d+\)</span></button>\s*<button[^>]*lb-tab', html)  # phones: count in the tab, expand button after it
-    assert re.search(r'<button[^>]*lb-tab[^>]*aria-disabled="true" tabindex="-1"', html)  # Info is the default tab: the expand button starts disabled
+    assert visits < html.index("grid-count") < html.index('class="lb-open"', visits) < info  # the count sits left of the expand button
+    assert re.search(r'data-sp-tab="info">Info</button>\s*<button[^>]*lb-tab', html)  # phones: count in the tab, expand button after it
+    lb_tab = re.search(r'<button[^>]*lb-tab[^>]*>', html).group(0)
+    assert "aria-disabled" not in lb_tab and "tabindex" not in lb_tab  # Visits is the default tab: the expand button starts enabled
     assert html.index("Year-round resident") < html.index('role="tablist"')  # the status pill sits with the bird
-    assert info < html.index('id="daily"') < visits and info < html.index('class="sp-map"') < visits
-    assert visits < html.index('class="grid-tools"') < html.index('id="visit-grid"')
+    assert info < html.index('id="daily"') and info < html.index('class="sp-map"')
+    assert visits < html.index('class="grid-tools"') < html.index('id="visit-grid"') < info
     assert html.index("<h1") < html.index('role="tablist"')  # the bird comes first
     assert "species-tabs.js" in html and html.count("<h1") == 1 and "<h2>" not in html
     assert "?fold=1" not in html  # rendered inline, no htmx load
@@ -167,7 +169,7 @@ def test_species_page_without_card_keeps_title(client, add_visit):
     add_visit(species="Other")
     html = client.get("/species/Other").text
     assert html.count("<h1>Other</h1>") == 1 and 'id="daily"' in html and 'role="tablist"' in html
-    assert html.index("<h1>Other</h1>") < html.index('role="tablist"') < html.index('id="daily"') < html.index('id="visit-grid"')
+    assert html.index("<h1>Other</h1>") < html.index('role="tablist"') < html.index('id="visit-grid"') < html.index('id="daily"')
 
 
 def test_card_route_unknown(client, monkeypatch):
