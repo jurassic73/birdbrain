@@ -4,12 +4,14 @@
 {% set fold = part != "all" %}
 {% macro facts() %}
   {% if sp or (info.status and not fold) %}
-  <div class="sp-facts">
+  <div class="sp-facts{{ ' hide-on-phone' if fold }}">
     {% if info.status and not fold %}{{ badge(info.status, "sp-status") }}{% endif %}
     {% if sp %}
+    {# On the species page (fold) the visit count lives in the Visits tab and First seen is dropped; the pop-up keeps both. #}
+    {% if not fold %}
     <span class="fact"><span class="big">{{ sp.visits }}</span> visit{{ 's' if sp.visits != 1 }}</span>
     <span class="fact">First seen <strong>{{ sp.first_seen | nice_date }}</strong></span>
-    {# On the species page (fold) the phone drops these two; the pop-up keeps them. #}
+    {% endif %}
     <span class="fact{{ ' hide-on-phone' if fold }}">Last seen <strong>{{ sp.last_seen | nice_time }}</strong></span>
     <span class="{{ 'hide-on-phone' if fold }}">{{ confirm_badge(sp.label) }}</span>
     {% endif %}

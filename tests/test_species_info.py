@@ -141,7 +141,8 @@ def test_species_page_has_info_and_visits_tabs(client, add_visit, fake_build):
     assert 'id="tab-info"' in html and 'aria-selected="true"' in html and "Jump to visits" not in html
     # Facts, charts and the card's sections live in the Info panel; the grid and its tools in the Visits panel.
     info, visits = html.index('id="panel-info"'), html.index('id="panel-visits"')
-    assert info < html.index("First seen", info) < visits
+    assert "First seen" not in html
+    assert visits < html.index("grid-count") < html.index("lb-open")  # the count sits left of the expand button
     assert html.index("Year-round resident") < html.index('role="tablist"')  # the status pill sits with the bird
     assert info < html.index('id="daily"') < visits and info < html.index('class="sp-map"') < visits
     assert visits < html.index('class="grid-tools"') < html.index('id="visits"')
