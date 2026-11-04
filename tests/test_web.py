@@ -1538,3 +1538,11 @@ def test_home_chips_are_swappable_in_place(client, add_visit):
     add_visit(species="Bushtit")
     html = client.get("/?kind=bird").text
     assert 'aria-current="page"' in html and 'id="more-filters"' in html and "bb-home-url" in html
+
+
+def test_confidence_pills_carry_the_claude_mark(client, add_visit):
+    """A high/medium/low pill is Claude's answer, so it gets the mark; Needs review reuses conf-low without it."""
+    vid = add_visit(confidence="low", needs_review=1)
+    html = client.get(f"/visit/{vid}").text
+    assert re.search(r'class="badge conf-low by-claude"[^>]*><svg class="claude-mark"', html)
+    assert re.search(r'class="badge conf-low"[^>]*>Needs review', html)
