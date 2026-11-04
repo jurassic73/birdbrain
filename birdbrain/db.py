@@ -189,6 +189,16 @@ UNCHECKED = "(confirmed_at IS NULL AND corrected_visitor IS NULL AND corrected_s
 # The other kinds of animal in a visit's photo besides the main one, as JSON [{visitor, species, count, ...}]:
 # the owner's list when they corrected it ([] means "nothing else"), else Claude's.
 ALSO = "COALESCE(corrected_also, also)"
+
+
+def valid_json(col: str) -> str:
+    """`col` for json_extract/json_each in SQL: the stored text when it is JSON, else NULL (no match, no rows).
+    The functions raise "malformed JSON" on text they can't read, and what counts as JSON moves with the SQLite
+    version (3.42+ reads a bare NaN that json.dumps writes; the Pi's 3.40 doesn't), so one such row would stop a
+    query over every visit, retraining and the visit page with it. json_valid never raises."""
+    return f"CASE WHEN json_valid({col}) THEN {col} END"
+
+
 # Display label of one json_each(ALSO) entry, as LABEL is for the main animal.
 ALSO_VISITOR = "json_extract(value, '$.visitor')"
 ALSO_LABEL = f"COALESCE(json_extract(value, '$.species'), {_cap(ALSO_VISITOR)})"
@@ -801,7 +811,7 @@ def _seen(where: str) -> str:
         UNION ALL
         SELECT v.id, v.captured_at, v.is_night, v.thumb_path, json_extract(j.value, '$.confidence'), NULL, NULL,
                json_extract(j.value, '$.visitor'), {ALSO_LABEL.replace("value", "j.value")}, 1
-        FROM (SELECT * FROM visits WHERE {where}) v, json_each(COALESCE(v.corrected_also, v.also)) j"""
+        FROM (SELECT * FROM visits WHERE {where}) v, json_each({valid_json("COALESCE(v.corrected_also, v.also)")}) j"""
 
 
 def photo_frame(visit) -> int | None:
