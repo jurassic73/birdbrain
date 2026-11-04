@@ -990,6 +990,8 @@ button.danger.sending, button.danger.htmx-request {
 .facts { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 16px; color: var(--muted); }
 .facts strong, .facts .big { color: var(--text); }
 .facts .big { font-size: 1.4rem; font-weight: 700; }
+/* Species page only (fallback facts and the folded card): phones drop the last-seen date and the confirmed pill. */
+@media (max-width: 640px) { .hide-on-phone { display: none; } }
 .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 20px; }
 .charts figure { margin: 0; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); height: 240px; display: flex; flex-direction: column; }
 .charts figcaption { color: var(--muted); font-size: .9rem; margin-bottom: 6px; }

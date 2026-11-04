@@ -14,8 +14,9 @@
     <span class="fact"><span class="big">{{ sp.visits }}</span> visit{{ 's' if sp.visits != 1 }}</span>
     <a class="button-link solid sp-jump" href="/species/{{ sp.label | urlencode }}#visits">Jump to visits</a>
     <span class="fact">First seen <strong>{{ sp.first_seen | nice_date }}</strong></span>
-    <span class="fact">Last seen <strong>{{ sp.last_seen | nice_time }}</strong></span>
-    {{ confirm_badge(sp.label) }}
+    {# On the species page (fold) the phone drops these two; the pop-up keeps them. #}
+    <span class="fact{{ ' hide-on-phone' if fold }}">Last seen <strong>{{ sp.last_seen | nice_time }}</strong></span>
+    <span class="{{ 'hide-on-phone' if fold }}">{{ confirm_badge(sp.label) }}</span>
     {% endif %}
   </div>
   {% endif %}

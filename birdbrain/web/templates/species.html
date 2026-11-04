@@ -12,8 +12,8 @@
   <div class="facts">
     <div><span class="big">{{ sp.visits }}</span> visits</div>
     <div>First seen <strong>{{ sp.first_seen | nice_date }}</strong></div>
-    <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong></div>
-    <div>{{ confirm_badge(sp.label) }}</div>
+    <div class="hide-on-phone">Last seen <strong>{{ sp.last_seen | nice_time }}</strong></div>
+    <div class="hide-on-phone">{{ confirm_badge(sp.label) }}</div>
   </div>
   <div class="charts">
     <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
