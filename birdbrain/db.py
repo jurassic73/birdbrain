@@ -206,6 +206,8 @@ INDEXES = (
     "WHERE needs_review = 1",
     f"CREATE INDEX IF NOT EXISTS visits_false_photo ON visits(captured_at, visitor, corrected_visitor, "
     f"corrected_species, confirmed_at) WHERE {FALSE_TRIGGER} AND {HAS_PHOTO}",
+    # A photo file's visit, for the visitors' check on a false trigger's burst frames (is_false_trigger_photo).
+    "CREATE INDEX IF NOT EXISTS visits_image_path ON visits(image_path)",
 )
 # Every column the indexes name; a visits table without them all (a test's stub) gets no indexes.
 INDEX_COLUMNS = {"captured_at", "visitor", "corrected_visitor", "corrected_species", "species", "confidence", "is_night",
@@ -906,6 +908,12 @@ def get_visit(conn: sqlite3.Connection, visit_id: int) -> sqlite3.Row | None:
 
 def is_false_trigger(conn: sqlite3.Connection, visit_id: int) -> bool:
     return conn.execute(f"SELECT {FALSE_TRIGGER} FROM visits WHERE id = ?", (visit_id,)).fetchone()[0] == 1
+
+
+def is_false_trigger_photo(conn: sqlite3.Connection, image_rel: str) -> bool:
+    """Whether a visit photo path (visits.image_path) is a false trigger's; one lookup on visits_image_path."""
+    return conn.execute(f"SELECT 1 FROM visits WHERE image_path = ? AND {FALSE_TRIGGER} LIMIT 1",
+                        (image_rel,)).fetchone() is not None
 
 
 def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool = False,

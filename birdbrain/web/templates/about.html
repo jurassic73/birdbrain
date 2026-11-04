@@ -7,6 +7,9 @@
    It's the 10,000-foot view: a sentence or two per idea, live values from config and settings, details in the tips
    and on the pages it links to. #}
 {% macro pct(v) %}{{ '%g' | format((v * 100) | round(2)) }}{% endmacro %}
+{# The admin's pages (Settings, Claude's Notes, Review, False triggers) are links for the admin only; visitors and the
+   public mirror, which have no such pages, read their names as plain text. #}
+{% macro admin_link(href) %}{% if request.state.admin %}<a href="{{ href }}">{{ caller() }}</a>{% else %}{{ caller() }}{% endif %}{% endmacro %}
 <div class="about">
 
 <header class="about-intro">
@@ -140,8 +143,8 @@
     {% if recal.auto and recal.times %}every day at {{ recal.labels | join(' and ') }}{% else %}when asked{% endif %}
     the Pi re-finds the bath and the rocks and moves the zones to match
     <span data-tip="It blends a minute of frames so ripples, leaves and birds fade out, lines the bath's edges up with an earlier view, and moves each rock spot back onto its rocks (dark by day, bright in infrared). Day and night keep separate views.">(how)</span>.
-    Drag them by hand, or undo a change, on <a href="/settings#zones">Settings</a>; what Claude is told about the yard
-    lives on <a href="/notes#camera">Claude's Notes</a>.</p>
+    Drag them by hand, or undo a change, on {% call admin_link("/settings#zones") %}Settings{% endcall %}; what Claude is told about the yard
+    lives on {% call admin_link("/notes#camera") %}Claude's Notes{% endcall %}.</p>
 </section>
 
 {# ---------- 5. Detection rules ---------- #}
@@ -194,17 +197,17 @@
     <li><strong>The Pi looks first</strong> <strong>BioCLIP 2</strong>, an open model of living things, runs on the Pi for free.
       The Pi animal check {% if presence_mode != 'off' %}{{ badge(presence_mode, 'shadow' if presence_mode == 'shadow' else 'pi-only') }}{% endif %}
       says whether anything is in the crop box{% if presence_mode == 'gate' %}; a photo it calls empty never leaves the house and waits under
-      <a href="/false-triggers">False triggers</a> for your check{% elif presence_mode == 'shadow' %}, but for now only keeps score{% else %}, but is switched off here{% endif %}.
+      {% call admin_link("/false-triggers") %}False triggers{% endcall %} for your check{% elif presence_mode == 'shadow' %}, but for now only keeps score{% else %}, but is switched off here{% endif %}.
       The BioCLIP 2 species check {% if classifier_mode == 'gate' %}names sure daytime regulars itself, marked {{ badge('RPi', 'pi-only') }}{% elif classifier_mode != 'off' %}guesses the species, but for now only keeps score{% else %}is switched off here{% endif %}.
-      Modes on <a href="/settings#local">Settings &gt; Pi checks</a>, scorecards on <a href="/stats">Stats</a>.</li>
+      Modes on {% call admin_link("/settings#local") %}Settings &gt; Pi checks{% endcall %}, scorecards on <a href="/stats">Stats</a>.</li>
     <li><strong>Claude Haiku</strong> sees the sharpest photo{{ ', cropped' if zones.crop }} and answers in a fixed format: kind of animal,
-      species, how sure, how many, any other animals in the shot. "Nothing there" goes to <a href="/false-triggers">False triggers</a>, hidden from the gallery.</li>
+      species, how sure, how many, any other animals in the shot. "Nothing there" goes to {% call admin_link("/false-triggers") %}False triggers{% endcall %}, hidden from the gallery.</li>
     <li><strong>Claude Sonnet</strong> looks at the 3 sharpest photos together when Haiku isn't sure
       <span data-tip="A fairly sure Haiku guess at a species already confirmed here {{ confirmed_min }}+ times skips Sonnet, as long as the BioCLIP 2 species check names the same species. If Claude can't answer at all, the visit is kept, labelled other, and waits in the review queue.">(mostly)</span>.
-      Still unsure: the <a href="/review">review queue</a>, where you have the final say.</li>
+      Still unsure: the {% call admin_link("/review") %}review queue{% endcall %}, where you have the final say.</li>
     <li><strong>What Claude is told</strong> The photo, the date and time, night or day, your yard from
-      <a href="/notes#camera">Claude's Notes</a>{% if site.location %} (in {{ site.location }}){% elif not site.scene_notes %} (not filled in yet){% endif %},
-      the <a href="/notes#summary">Lessons summary</a>{{ '' if site.lessons_summary else ' (none accepted yet)' }} and the newest
+      {% call admin_link("/notes#camera") %}Claude's Notes{% endcall %}{% if site.location %} (in {{ site.location }}){% elif not site.scene_notes %} (not filled in yet){% endif %},
+      the {% call admin_link("/notes#summary") %}Lessons summary{% endcall %}{{ '' if site.lessons_summary else ' (none accepted yet)' }} and the newest
       {{ lesson_limit }} lessons from your corrections, word for word.</li>
     <li><strong>Cost</strong> {{ haiku }} and {{ sonnet }}. A Haiku look costs {% if avg_call >= 0.001 %}about {{ avg_call | usd }}{% else %}well under a cent{% endif %},
       a Sonnet second look under a cent; the notes are cached between calls. Each visit page shows these steps under "How it was decided".</li>
@@ -217,7 +220,7 @@
   <table class="learn">
     <tbody>
       <tr><th>{{ four[0].name }}<br>{{ badge(four[0].pill[0], four[0].pill[1]) }}</th>
-        <td>Doesn't learn. Only the zones and thresholds change it (<a href="/settings#zones">Settings &gt; Zones</a>).</td></tr>
+        <td>Doesn't learn. Only the zones and thresholds change it ({% call admin_link("/settings#zones") %}Settings &gt; Zones{% endcall %}).</td></tr>
       <tr><th>{{ four[1].name }}<br>{{ badge(four[1].pill[0], four[1].pill[1]) }}</th>
         <td>Retrained from your labels (Confirm says empty, picking an animal says animal), which count {{ weight }} times Claude's,
           soon after a label changes. Never reads notes or names.</td></tr>
@@ -227,7 +230,7 @@
       <tr><th>{{ four[3].name }}<br>{{ badge(four[3].pill[0], four[3].pill[1]) }}</th>
         <td>Not fine-tuned: Claude reads Claude's Notes and your lessons fresh with every photo (in-context learning, not fine-tuning),
           so a correction counts from the very next visit; after every {{ auto_every }} new notes Claude distills them into a
-          <a href="/notes#summary">Lessons summary</a> for you to accept.</td></tr>
+          {% call admin_link("/notes#summary") %}Lessons summary{% endcall %} for you to accept.</td></tr>
     </tbody>
   </table>
   <p class="muted small">Missed something? Circle it on the visit page and Ask BioCLIP 2 (free), then Haiku or Sonnet; saving an animal there teaches the Pi animal check.</p>

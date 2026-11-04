@@ -318,7 +318,7 @@ def test_popup_never_on_the_public_mirror(client, conn, add_visit, fake_distill,
     assert 'id="lessons-popup"' in client.get("/").text
     monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
     assert 'id="lessons-popup"' not in client.get("/").text
-    assert client.post("/notes/summary/distill").status_code == 403
+    assert client.post("/notes/summary/distill").status_code == 404  # no admin on the mirror: as if it didn't exist
 
 
 def test_summary_routes_are_admin_only(client, conn, add_visit, locked):

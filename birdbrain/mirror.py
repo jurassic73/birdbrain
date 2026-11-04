@@ -38,6 +38,9 @@ SETTINGS_PREFIXES = ("retention.",      # photo budget options and flags (About)
 # Visit columns blanked: the owner's note for Claude (a lesson, shown on the Pi's visit page only). public_ok is
 # blanked by the privacy filter once it has read it.
 PRIVATE_COLUMNS = ("feedback",)
+# Visit columns put back to their default: the admin's own marks that only admin pages read (a lesson switched off
+# on Claude's Notes).
+ADMIN_COLUMNS = {"lesson_off": 0}
 # What the visit page, Stats and About read from raw_json: the identification trail with its token counts, the
 # zone that fired, the burst's frame info and the zones in use. The rest (the answer again, motion figures, the
 # probe and frame counts) is the watcher's own record.
@@ -88,6 +91,7 @@ def trim(conn: sqlite3.Connection) -> None:
     conn.executemany("UPDATE visits SET raw_json = ? WHERE id = ?",
                      [(public_raw(raw, share_checks), vid) for vid, raw in rows])
     for sql in (*(f"UPDATE visits SET {col} = NULL" for col in PRIVATE_COLUMNS),
+                *(f"UPDATE visits SET {col} = {value}" for col, value in ADMIN_COLUMNS.items()),
                 *(f"DELETE FROM {table}" for table in EMPTIED_TABLES),
                 "UPDATE calibrations SET summary = '', image_path = NULL"):  # the zones history stays: older
         try:                                                                   # visit photos draw their zones from it
@@ -108,6 +112,9 @@ def copy_db(src: Path, dst: Path, timezone: str = "") -> None:
         if timezone:
             copy.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (clock.KEY, timezone))
         copy.commit()
+        # Rebuild the file so what trim deleted (false triggers, the owner's notes, raw_json's private parts, the
+        # emptied tables) doesn't linger in its free pages, where anyone with the file could read it back.
+        copy.execute("VACUUM")
     finally:
         source.close()
         copy.close()

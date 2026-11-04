@@ -38,7 +38,7 @@
 {# Block sets: their apostrophes stay as typed, as they were inline. #}
 {% set note_tip %}{% if claude_skipped %}Claude wasn't asked about this visit: the Pi judged it empty. {% else %}Nothing is sent to Claude now.{% endif %} A Note for Claude becomes a lesson on Claude's Notes: sent word for word with every photo while it is among the newest {{ lesson_limit }} lessons, and folded into the Lessons summary. The Pi animal check never reads notes: it learns only from the answer you pick above.{% endset %}
 {% set note_placeholder %}{% if claude_skipped %}Claude didn't look at this one. Describe each numbered circle, e.g. 1: spiderweb moving in the wind{% else %}Describe each numbered circle, e.g. 1: spiderweb moving in the wind{% endif %}{% endset %}
-{% set embed = request.query_params.get('embed') == '1' %}
+{% set embed = request.state.admin and request.query_params.get('embed') == '1' %}
 {# In the False triggers pop-up every link keeps embed=1 (and todo=1, unconfirmed only), so the arrows stay inside it. #}
 {% set ft_args = (['ft=1'] if is_ft else []) + (['todo=1'] if todo else []) + (['embed=1'] if embed else []) + (['species=' ~ (scope | urlencode)] if scope else []) %}
 {% set ft_param = ('?' ~ ft_args | join('&')) if ft_args else '' %}
@@ -375,6 +375,7 @@
   // False triggers pop-up the parent's Close too (it asks this page by postMessage, see the embed script). A reload
   // or a closed tab gets the browser's own Leave/Stay prompt, the only one browsers allow there. Save posts the
   // form the way the Save button does, then the navigation goes on. Visitors have no form, so no guard.
+{% if request.state.admin %}
   const bbUnsaved = window.bbUnsaved = (() => {
     const form = document.querySelector("form.review"), photo = document.getElementById("photo");
     if (!form) return { dirty: () => false, check: async () => true, choose: async () => "discard", clean() {} };
@@ -443,6 +444,12 @@
     window.addEventListener("beforeunload", e => { if (me.dirty()) { e.preventDefault(); e.returnValue = ""; } });
     return me;
   })();
+{% else %}
+  // Visitors have no correction form and draw no circles, so nothing is ever unsaved; the admin's form scripts
+  // aren't sent to them at all.
+  const bbUnsaved = window.bbUnsaved = { dirty: () => false, check: async () => true, choose: async () => "discard", clean() {} };
+{% endif %}
+{% if request.state.admin %}
   if (document.querySelector("form.review")) {  // visitors (read-only) have no correction form
   (() => {
     // Every Save (the form's and the one beside "Using X") says what saving teaches, for the answer picked now.
@@ -717,6 +724,7 @@
     fold.scrollIntoView({behavior: "smooth", block: "start"});
   });
   }
+{% endif %}
   // Numbered circles on the photo, stored as fractions of the image (x, y of the size; r of the width). With a burst,
   // a circle drawn on another frame carries that frame's number (1-based); none means the photo Claude saw. Only
   // the shown frame's circles are drawn, numbered across all frames so the list and the circle checks match.
@@ -948,7 +956,9 @@
     const shown = () => Math.max(0, list.findIndex(o => o.classList.contains("on")));
     // Use as photo (admins) offers the frame shown big, unless it's the photo already or Claude's (then
     // Use Claude's photo is the way back).
-    const useBtn = document.getElementById("use-frame"), useN = document.getElementById("use-frame-n");
+    {% if request.state.admin %}const useBtn = document.getElementById("use-frame"), useN = document.getElementById("use-frame-n");
+    {% else %}const useBtn = null, useN = null;  // Use as photo is the admin's
+    {% endif %}
     const photoFrame = photo.dataset.frame ? +photo.dataset.frame : null;
     const offer = frame => {
       if (!useBtn) return;

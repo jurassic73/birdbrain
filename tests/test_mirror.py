@@ -262,3 +262,19 @@ def test_file_list_has_no_false_trigger_photo_thumbnail_or_burst(photo_tree, tmp
     assert "2026/11/03/a.jpg" in files and "2026/11/03/a_b1.jpg" in files  # real visits keep theirs
     stage = mirror.stage_files(files, tmp_path / "stage")
     assert not any("ft" in p.name for p in stage.rglob("*"))
+
+
+def test_copy_keeps_nothing_trim_removed_in_its_free_pages(conn, add_visit, tmp_path):
+    """trim deletes rows and blanks columns; the copy is rebuilt (VACUUM) so their bytes aren't left in free pages
+    for anyone with the file to read back. The admin's own marks (a lesson switched off) go back to the default."""
+    add_visit(visitor="none", species=None, image_path="2026/11/03/ft.jpg", thumb_path="2026/11/03/ft_t.jpg",
+              notes="FALSE-TRIGGER-NOTES " * 20)
+    vid = add_visit(feedback="OWNER-NOTE-FOR-CLAUDE " * 20, lesson_off=1)
+    copy = tmp_path / "mirror.db"
+    mirror.copy_db(config.DB_PATH, copy)
+    data = copy.read_bytes()
+    assert b"FALSE-TRIGGER-NOTES" not in data and b"OWNER-NOTE-FOR-CLAUDE" not in data
+    c = sqlite3.connect(copy)
+    assert c.execute("SELECT lesson_off FROM visits WHERE id = ?", (vid,)).fetchone() == (0,)
+    assert c.execute("PRAGMA freelist_count").fetchone() == (0,)
+    assert db.get_visit(conn, vid)["lesson_off"] == 1  # the Pi's own database is untouched
