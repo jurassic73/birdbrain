@@ -49,7 +49,6 @@
   {# Admins can always draw (no Add circles button since 2026-11-03): the note says how; a click still opens the full-size photo. #}
   <div class="photo-tools" id="photo-tools">
     {% if request.state.admin and not visit.photo_deleted_at %}<span class="photo-note photo-draw-note muted small" id="draw-note" data-tip-anchor=".visit-photo" data-tip="Drag on the photo to draw a circle, drag a circle's middle to move it, its × removes it. A click without dragging opens the full-size photo. With a burst, pick any frame below and draw on that one. Pinching with two fingers still zooms. On an empty photo, circles plus a Note for Claude become a lesson for Claude about where the false alarm was; the Pi animal check learns only from the answer you pick, never from circles or names. On a photo with an animal, the first circle picks the burst frame the Pi animal check learns from.">Add circles: drag on the photo</span>{% endif %}
-    <button type="button" class="photo-clear" id="mark-clear" hidden>Clear circles</button>
     {% set nc = no_circle_note(visit) %}{% if nc and not visit.photo_deleted_at %}<span class="photo-note muted small" data-tip="Claude wasn't asked, and the Pi's circle from the motion found nothing it was sure of (see How it was decided), so there's no circle on this photo.">{{ nc }}</span>{% endif %}
     <span class="photo-tools-end">
     {% if not visit.photo_deleted_at %}<button type="button" class="photo-circles" id="circles-toggle" aria-pressed="true" hidden data-tip-anchor=".visit-photo" data-tip="Claude's circle shows where it saw the animal; numbered ones are yours. Hiding them gives a clear view of the photo (this browser remembers it, here and on the cards). Drawing a new circle shows them again.">Hide circles</button>{% endif %}
@@ -719,7 +718,6 @@
     const img = photo.querySelector("img"), svg = photo.querySelector("svg.marks");
     if (!img) return;  // the photo was deleted to save space: nothing to draw on
     const field = document.getElementById("marks") || {};
-    const clear = document.getElementById("mark-clear");
     const legend = document.getElementById("mark-legend"), claudeSaw = {{ (visit.species or visit.visitor) | lower | tojson }};
     // The name that goes after a circle's number: the visit's own, unless it names no animal.
     const visitName = {{ (visit.label if visit.label and visit.label not in ('None', 'Other') else '') | tojson }};
@@ -836,7 +834,6 @@
       photo.dispatchEvent(new CustomEvent("birdbrain:marks", {detail: {owner: marks.some(m => !m.claude && !m.pi)}}));
       const shown = marks.filter(here).length;
       document.getElementById("circles-toggle").hidden = !shown;
-      clear.hidden = !editing || !shown;
       // The filmstrip marks each frame that has circles with their numbers.
       document.querySelectorAll(".vburst-frame").forEach(b => {
         const f = b.dataset.best === "1" ? null : +b.dataset.frame;
@@ -852,7 +849,6 @@
       const b = img.getBoundingClientRect();
       return {x: Math.min(Math.max((e.clientX - b.left) / b.width, 0), 1), y: Math.min(Math.max((e.clientY - b.top) / b.height, 0), 1), ratio: b.height / b.width};
     };
-    clear.addEventListener("click", () => { marks = marks.filter(m => !here(m)); draw(); });  // this frame's only
     photo.classList.toggle("editing", editing);
     const point = on => { if (on !== pointing) { pointing = on; if (!drag) draw(); } };
     photo.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") point(true); });

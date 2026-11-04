@@ -273,6 +273,7 @@ def test_admins_can_always_draw_circles_without_a_button(client, add_visit):
         assert "const editing = true;" in html
         assert 'id="draw-note"' in html and "Add circles: drag on the photo" in html
         assert 'id="mark-edit"' not in html  # the old Add circles / Done button is gone
+        assert 'id="mark-clear"' not in html and "Clear circles" not in html  # and so is Clear circles
         # The overlay switches sit at the far right of the row above the photo, zones last.
         end = html.index('class="photo-tools-end"')
         assert end < html.index('id="circles-toggle"')
