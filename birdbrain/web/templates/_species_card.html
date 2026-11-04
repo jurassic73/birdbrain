@@ -19,6 +19,27 @@
   {% endif %}
 
 {% endmacro %}
+{% macro plays() %}
+      {% set clips = info.sounds or [] %}
+      {% if clips %}
+      {% set seen = namespace(n={}) %}
+      <div class="sp-plays" role="group" aria-label="Recordings">
+        {% for pick in clips %}
+        {% set base = pick.label or "Call" %}
+        {% set total = clips | selectattr("label", "equalto", pick.label) | list | length %}
+        {% set _ = seen.n.update({base: seen.n.get(base, 0) + 1}) %}
+        {% set kind = base ~ (" " ~ seen.n[base] if total > 1 else "") %}
+        <button type="button" class="sp-play" data-src="{{ pick.file }}" data-card="{{ info.name }}" aria-pressed="false"
+                aria-label="Play {{ kind | lower }}: {{ info.common or info.name }}"
+                data-tip="Play a {{ base | lower }} recorded {% if pick.km is not none and pick.km is defined %}{{ '{:,}'.format(pick.km) }} km from here{% else %}near here{% endif %}, by {{ pick.recordist }}">
+          <svg class="ic-play" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
+          <svg class="ic-pause" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/></svg>
+          <span class="sp-play-label">{{ kind }}</span>
+        </button>
+        {% endfor %}
+      </div>
+      {% endif %}
+{% endmacro %}
 {% macro text() %}
     <div class="sp-text">
       {% if info.description %}<p>{{ info.description }}</p>{% endif %}
@@ -125,30 +146,26 @@
       <figcaption>Photo {{ info.photo.credit }}{% if info.photo.license and info.photo.license not in info.photo.credit %} ({{ info.photo.license }}){% endif %}, via iNaturalist</figcaption>
     </figure>
     {% endif %}
-    <div class="sp-hero-id">
+    {% set tiles = (info.facts or []) | map("tile_fact") | selectattr("text") | list %}
+    {% set has_facts = tiles | length >= 2 %}
+    <div class="sp-hero-id{{ ' has-facts' if has_facts }}">
       <div class="sp-hero-text">
         <h1>{{ info.common or info.name }}</h1>
         {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
         {% if info.status %}{{ badge(info.status, "sp-status") }}{% endif %}
+        {% if has_facts %}{{ plays() }}{% endif %}
       </div>
-      {% set clips = info.sounds or [] %}
-      {% if clips %}
-      {% set seen = namespace(n={}) %}
-      <div class="sp-plays" role="group" aria-label="Recordings">
-        {% for pick in clips %}
-        {% set base = pick.label or "Call" %}
-        {% set total = clips | selectattr("label", "equalto", pick.label) | list | length %}
-        {% set _ = seen.n.update({base: seen.n.get(base, 0) + 1}) %}
-        {% set kind = base ~ (" " ~ seen.n[base] if total > 1 else "") %}
-        <button type="button" class="sp-play" data-src="{{ pick.file }}" data-card="{{ info.name }}" aria-pressed="false"
-                aria-label="Play {{ kind | lower }}: {{ info.common or info.name }}"
-                data-tip="Play a {{ base | lower }} recorded {% if pick.km is not none and pick.km is defined %}{{ '{:,}'.format(pick.km) }} km from here{% else %}near here{% endif %}, by {{ pick.recordist }}">
-          <svg class="ic-play" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
-          <svg class="ic-pause" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/></svg>
-          <span class="sp-play-label">{{ kind }}</span>
-        </button>
+      {% if has_facts %}
+      <div class="fact-tiles" data-n="{{ tiles | length }}" data-tip="AI summary based on Wikipedia" role="list">
+        {% for f in tiles %}
+        <div class="fact-tile{{ '' if f.lead else ' no-lead' }}" role="listitem">
+          {% if f.lead %}<b>{{ f.lead }}</b>{% endif %}
+          <span>{{ f.text }}</span>
+        </div>
         {% endfor %}
       </div>
+      {% else %}
+      {{ plays() }}
       {% endif %}
     </div>
   </div>

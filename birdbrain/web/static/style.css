@@ -1960,6 +1960,23 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 .sp-play svg { display: block; flex: none; }
 .sp-play .ic-pause, .sp-play[aria-pressed="true"] .ic-play { display: none; }
 .sp-play[aria-pressed="true"] .ic-pause { display: block; }
+/* Header facts (2 to 5 from the card's Haiku call): tiles fill the right of the header; the sound buttons move under the name. */
+.sp-hero-id.has-facts { align-items: stretch; gap: 18px; }
+.sp-hero-id.has-facts .sp-hero-text { justify-content: center; flex: none; max-width: 52%; }
+.sp-hero-id.has-facts .sp-plays { justify-content: flex-start; margin-top: 4px; }
+.fact-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1 1 0; min-width: 230px; max-width: 400px; margin-left: auto; }
+.fact-tiles[data-n="2"] { grid-template-columns: 1fr; }
+.fact-tiles[data-n="3"] .fact-tile:last-child, .fact-tiles[data-n="5"] .fact-tile:last-child { grid-column: 1 / -1; }
+.fact-tile { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--accent) 7%, var(--surface)); }
+.fact-tile b { color: var(--accent); font-size: 1.15rem; line-height: 1.2; overflow-wrap: anywhere; }
+.fact-tile span { font-size: .8rem; line-height: 1.3; }
+@media (max-width: 900px) {
+  /* narrower than a laptop: the tiles drop under the photo and the name, full width */
+  .sp-hero-id.has-facts { display: contents; }
+  .sp-hero-id.has-facts .sp-hero-text { max-width: none; align-self: center; }
+  .fact-tiles { grid-column: 1 / -1; max-width: none; margin-left: 0; min-width: 0; }
+  .fact-tiles[data-n="2"] { grid-template-columns: 1fr 1fr; }
+}
 .sp-hero-id h1 { font-size: 1.6rem; margin: 0; }
 .sp-hero-id p { margin: 0; }
 .sp-hero-id .badge.sp-status { background: var(--accent); color: var(--accent-text); font-weight: 600; margin: 0; }
