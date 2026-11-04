@@ -1503,3 +1503,12 @@ def test_embedded_visit_page_does_not_swipe(client, add_visit):
     vid = add_visit()
     html = client.get(f"/visit/{vid}?embed=1").text
     assert "data-swipe=" not in html and "swipe.js" not in html
+
+
+def test_home_has_rotate_hint_button_and_popup(client):
+    html = client.get("/").text
+    assert 'id="rotate-btn"' in html and 'type="button"' in html
+    assert 'aria-label="Turn sideways for a bigger view"' in html
+    assert 'id="rotate-dialog"' in html and "Try landscape" in html and "Got it" in html
+    assert "rotate-hint.js" in html
+    assert "—" not in html.split('id="rotate-dialog"')[1].split("</dialog>")[0]
