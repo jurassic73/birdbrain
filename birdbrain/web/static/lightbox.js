@@ -1,5 +1,5 @@
 // Full-size photo browser for the species page: the expand button (.lb-open) opens every photo in the grid
-// (a.card[data-full] inside #visits, read when opened, so "Load more" tiles count) in a 95% box over a dimmed page.
+// (a.card[data-full] inside #visit-grid, read when opened, so "Load more" tiles count) in a 95% box over a dimmed page.
 // Left/right (or the arrows, or a swipe) step and wrap around; Escape, ArrowUp, x or a click outside the photo close it, and so does the browser's Back
 // (bb-back.js), which leaves the page and its scroll position as they were.
 (() => {
@@ -51,7 +51,7 @@
   }
 
   function open(at) {
-    tiles = [...document.querySelectorAll("#visits a.card[data-full]")];
+    tiles = [...document.querySelectorAll("#visit-grid a.card[data-full]")];
     if (!tiles.length) return;
     if (!box) build();
     i = at || 0;

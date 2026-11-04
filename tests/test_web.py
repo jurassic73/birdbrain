@@ -1166,7 +1166,10 @@ def test_species_list_names_open_the_info_card_and_card_has_no_jump_to_visits(cl
     html = client.get("/species-info/Bushtit").text
     assert "Jump to visits" not in html and "sp-jump" not in html
     assert "All visits" not in html and 'class="sp-facts"' in html
-    assert 'id="visits"' in client.get("/species/Bushtit").text
+    assert 'id="visit-grid"' in client.get("/species/Bushtit").text
+    page = client.get("/species/Bushtit").text
+    for tab in re.findall(r'data-sp-tab="(\w+)"', page):  # a tab name in the URL hash must not match an element id, or the browser scrolls to it
+        assert f'id="{tab}"' not in page
     assert re.findall(r'class="badge [^"]*"(?! data-tip)', html) == []
 
 
