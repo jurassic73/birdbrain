@@ -1,8 +1,9 @@
 // Full-size photo browser for the species page: the expand button (.lb-open) opens every photo in the grid
 // (a.card[data-full] inside #visits, read when opened, so "Load more" tiles count) in a 95% box over a dimmed page.
-// Left/right (or the arrows, or a swipe) step and wrap around; Escape, ArrowUp, x or a click outside the photo close it.
+// Left/right (or the arrows, or a swipe) step and wrap around; Escape, ArrowUp, x or a click outside the photo close it, and so does the browser's Back
+// (bb-back.js), which leaves the page and its scroll position as they were.
 (() => {
-  let box, img, count, when, tiles = [], i = 0, touchX = null, opener = null;
+  let box, img, count, when, tiles = [], i = 0, touchX = null, opener = null, hold = null;
 
   function build() {
     box = document.createElement("div");
@@ -59,6 +60,8 @@
     box.hidden = false;
     document.body.style.overflow = "hidden";
     box.querySelector(".lb-close").focus();
+    // the browser's Back (phone Back button) closes the viewer first; stepping adds no history entries
+    hold = window.bbBack ? bbBack.hold(close) : null;
   }
 
   function close() {
@@ -66,7 +69,8 @@
     box.hidden = true;
     img.removeAttribute("src");
     document.body.style.overflow = "";
-    if (opener) opener.focus();
+    if (opener) opener.focus({ preventScroll: true });
+    if (hold) { const h = hold; hold = null; h.release(); }
   }
 
   document.addEventListener("click", (e) => {
