@@ -1,7 +1,10 @@
 {% extends "base.html" %}
+{% set swipe = "links" %}
 {% from "_macros.html" import confirm_badge with context %}
 {% block title %}{{ sp.label }} | Birdbrain{% endblock %}
-{% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
+{% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>
+{% if swipe_prev %}<link rel="prev" href="{{ swipe_prev }}">{% endif %}
+{% if swipe_next %}<link rel="next" href="{{ swipe_next }}">{% endif %}{% endblock %}
 {% block content %}
 {# The bird (title and photo) sits on top, then two tabs: Info (facts, text, charts, the card's sections) and Visits. #}
 {# Without a card the title, facts and charts stand in; a card that loads (htmx) replaces them, one that comes back empty leaves them. #}

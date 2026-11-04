@@ -1025,6 +1025,8 @@ def delete(visit_id: int, conn=Depends(get_conn)):
 @app.get("/species", response_class=HTMLResponse)
 def species_list(request: Request, sort: str = "visits", conn=Depends(get_conn)):
     return page(request, "species_list.html", species=db.species_summary(conn, sort=sort), sort=sort,
+                # tiles keep the list's sort on their links so the species page's swipe follows the same order
+                link_sort=sort if sort in db.SPECIES_SORTS and sort != "visits" else "",
                 confirmed=db.confirmed_species(conn))
 
 
@@ -1036,16 +1038,26 @@ def photo_reminder(request: Request, conn=Depends(get_conn)):
 
 
 @app.get("/species/{name}", response_class=HTMLResponse)
-def species_page(request: Request, name: str, conn=Depends(get_conn)):
+def species_page(request: Request, name: str, sort: str = "visits", conn=Depends(get_conn)):
     row = db.species_row(conn, name)
     if not row:
         raise HTTPException(404)
+    # Phone swipe steps along the species list in the sort the owner came from (templates: <link rel=prev/next>).
+    sort = sort if sort in db.SPECIES_SORTS else "visits"
+    order = db.species_order(conn, sort)
+    at = order.index(name) if name in order else -1
+    suffix = f"?sort={sort}" if sort != "visits" else ""
+
+    def neighbour(i: int) -> str | None:
+        return f"/species/{quote(order[i])}{suffix}" if at >= 0 and 0 <= i < len(order) else None
     visits = db.list_visits(conn, species=name, limit=SPECIES_PAGE)
     return page(
         request,
         "species.html",
         sp=row,
         visits=visits,
+        swipe_prev=neighbour(at - 1),
+        swipe_next=neighbour(at + 1),
         next_url=more_url(f"/species/{quote(name)}/more", visits, SPECIES_PAGE),
         daily=db.daily_counts(conn, days=60, species=name),
         hourly=db.hourly_counts(conn, species=name),

@@ -4,7 +4,8 @@
 // Where it runs: base.html puts data-swipe on <body> only on the top-level pages (/, /species, /stats, /review,
 // /false-triggers, /notes) and never in embeds. The value picks the targets:
 //   data-swipe="nav"   (default) the links of <header.topbar> <nav>, current one found by aria-current="page"
-//   data-swipe="links" the page's own <link rel="prev"> and <link rel="next"> in <head> (for the species detail page)
+//   data-swipe="links" the page's own <link rel="prev"> and <link rel="next"> in <head> (for the species detail page; the
+//                      current #hash is kept, so the Visits tab stays on Visits)
 //   no attribute / "off" nothing happens
 // A page can opt out in Jinja with {% set swipe = "off" %} (or "links") before extending base.html, or at runtime
 // with document.body.dataset.swipe = "off". Any element can carry data-no-swipe to be left alone.
@@ -28,7 +29,9 @@
   function targets() {
     const mode = document.body.dataset.swipe;
     if (mode === "links") {
-      return { prev: document.querySelector('link[rel="prev"]')?.href, next: document.querySelector('link[rel="next"]')?.href };
+      // the current #hash goes along (the species page's Info / Visits tab stays the same on the next species)
+      const link = (rel) => { const h = document.querySelector(`link[rel="${rel}"]`)?.href; return h && h + location.hash; };
+      return { prev: link("prev"), next: link("next") };
     }
     if (mode !== "nav") return {};
     const links = [...document.querySelectorAll("header.topbar nav a")].filter((a) => a.offsetParent !== null);
