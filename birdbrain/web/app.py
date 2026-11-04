@@ -65,6 +65,11 @@ app.mount("/images", PhotoFiles(directory=images_dir(), check_dir=False), name="
 templates = Jinja2Templates(directory=HERE / "templates")
 
 
+# The one change a visitor may make: telling the site a recording on a species card wouldn't play. It only
+# sets a flag (checked against the card's own saved sounds); the public mirror still refuses every POST.
+_SOUND_BROKEN = re.compile(r"^/species-info/[^/]+/sound-broken$")
+
+
 @app.middleware("http")
 async def read_only(request: Request, call_next):
     """Visitors can browse; changes, Claude calls and the admin pages need the admin login."""
@@ -99,7 +104,7 @@ async def read_only(request: Request, call_next):
         if auth.admin_only(path) or path == "/login":
             return Response("Not found", status_code=404)
     elif not admin and path not in ("/login", "/logout"):
-        if request.method not in ("GET", "HEAD"):
+        if request.method not in ("GET", "HEAD") and not _SOUND_BROKEN.match(path):
             return Response("Read-only: log in as admin to change things.", status_code=403)
         if auth.admin_only(path):
             return RedirectResponse("/login?" + urlencode({"next": path}), status_code=303)
@@ -1190,6 +1195,19 @@ def species_card(request: Request, name: str, mini: bool = False, fold: bool = F
         confirmed=db.confirmed_species(conn),
         fold=fold,  # the species page folds the long part; the pop-up stays open
     )
+
+
+@app.post("/species-info/{name}/sound-broken")
+async def species_sound_broken(request: Request, name: str, conn=Depends(get_conn)):
+    """A card's recording wouldn't load in someone's browser. Flags the card so its sounds are fetched again
+    next time an admin opens it or a visit of the species arrives; never fetches or calls Claude here."""
+    try:
+        url = (await request.json()).get("url")
+    except Exception:
+        url = None
+    if not isinstance(url, str) or name not in db.known_species(conn) or not species_info.flag_broken_sound(conn, name, url):
+        return Response(status_code=400)
+    return Response(status_code=204)
 
 
 @app.get("/stats", response_class=HTMLResponse)

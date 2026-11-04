@@ -46,6 +46,9 @@ PUBLIC_GETS = {
     "/visit/{visit_id}", "/visits", "/visits/archive-more", "/visits/more", "/weather",
 }
 LOGIN_ROUTES = {"/login", "/logout", "/guest-login"}
+# The one change a visitor may make on the Pi: flag a species card's recording that wouldn't play (validated
+# and flag-only; the public mirror still refuses it, which test_every_route_on_the_public_mirror checks).
+VISITOR_POSTS = {"/species-info/{name}/sound-broken"}
 FILL = {"visit_id": "1", "name": "x", "source": "pi", "state": "x", "change_id": "1", "cal_id": "1"}
 
 
@@ -88,6 +91,8 @@ def test_every_route_is_classified(client, locked, method, template, path):
         else:
             assert template in PUBLIC_GETS, f"new route {template}: public, or add it to auth.ADMIN_PATHS?"
             assert r.status_code != 500 and not r.headers.get("location", "").startswith("/login"), path
+    elif template in VISITOR_POSTS:
+        assert client.request(method, path).status_code == 400  # allowed in, then refused: nothing to flag
     elif template not in LOGIN_ROUTES:
         r = client.request(method, path)
         assert r.status_code == 403 and "log in" in r.text, path

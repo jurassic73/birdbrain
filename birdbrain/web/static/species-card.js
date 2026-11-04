@@ -130,6 +130,33 @@
     if (e.target.closest && e.target.closest(".sp-sounds")) song.pause();
   }, true);
 
+  // A recording that won't load (xeno-canto took it down): drop it from the card and tell the Pi once per URL,
+  // which flags the card so its sounds are fetched again later. The POST is best effort; the mirror refuses it.
+  const reported = new Set();
+  function soundBroken(url, name) {
+    if (!url) return;
+    const same = (el, attr) => el.getAttribute(attr) === url;
+    document.querySelectorAll(".sp-sounds audio").forEach((a) => { if (same(a, "src")) a.closest("li")?.remove(); });
+    document.querySelectorAll(".sp-play").forEach((b) => { if (same(b, "data-src")) b.remove(); });
+    document.querySelectorAll(".sp-plays").forEach((g) => { if (!g.querySelector(".sp-play")) g.remove(); });
+    document.querySelectorAll(".sp-sounds").forEach((ul) => {
+      if (ul.querySelector("li")) return;
+      ul.closest("section")?.remove();
+      document.querySelectorAll(".sp-play").forEach((b) => { if (b.dataset.card === name) b.remove(); });
+      document.querySelectorAll(".sp-plays").forEach((g) => { if (!g.querySelector(".sp-play")) g.remove(); });
+    });
+    if (reported.has(url)) return;
+    reported.add(url);
+    if (name) fetch("/species-info/" + encodeURIComponent(name) + "/sound-broken", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }),
+    }).catch(() => {});
+  }
+  document.addEventListener("error", (e) => {  // media errors don't bubble, so listen in the capture phase
+    const a = e.target;
+    if (a && a.matches && a.matches(".sp-sounds audio")) soundBroken(a.getAttribute("src"), a.dataset.card);
+  }, true);
+  song.addEventListener("error", () => { if (songBtn) soundBroken(songBtn.dataset.src, songBtn.dataset.card); });
+
   let leaflet = null;
   function loadLeaflet() {
     if (window.L) return Promise.resolve();

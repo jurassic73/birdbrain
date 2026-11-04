@@ -247,7 +247,7 @@ def test_card_shows_sounds_with_credits(client, add_visit, monkeypatch):
                "length": "0:30"}]
     monkeypatch.setattr(species_info, "build", lambda name: {**CARD, "name": name, "sounds": sounds})
     html = client.get("/species-info/Bushtit").text
-    assert '<audio controls preload="none" src="https://xeno-canto.org/9/download">' in html
+    assert '<audio controls preload="none" src="https://xeno-canto.org/9/download" data-card="Bushtit">' in html
     assert "A Recordist, CC BY 4.0" in html and "(1,234 km away)" in html and "XC9" in html
     assert "Recordings streamed from xeno-canto" in html
 
@@ -368,6 +368,78 @@ def test_short_status_for_tight_lists(monkeypatch):
     assert species_info.short_status("Raccoon") is None
     assert species_info.short_status("None") is None
 
+
+# --- a recording that won't play: the card is flagged, then its sounds are fetched again ---
+
+SOUNDS = [{"label": "Song", "file": "https://xeno-canto.org/1/download", "id": 1},
+          {"label": "Call", "file": "https://xeno-canto.org/2/download", "id": 2}]
+
+
+def _save_card(conn, **extra):
+    db.save_species_info(conn, "Bushtit", {**CARD, "sounds": [dict(s) for s in SOUNDS], **extra},
+                         datetime.now().replace(microsecond=0).isoformat())
+
+
+def _post(client, url, name="Bushtit", **kw):
+    return client.post(f"/species-info/{name}/sound-broken", json={"url": url}, **kw)
+
+
+def test_sound_broken_route_flags_only_a_real_sound_of_a_known_species(client, conn, add_visit):
+    add_visit(species="Bushtit")
+    _save_card(conn)
+    assert _post(client, SOUNDS[0]["file"], name="Made Up Bird").status_code == 400
+    assert _post(client, "https://elsewhere.example/x.mp3").status_code == 400
+    assert client.post("/species-info/Bushtit/sound-broken", content="nope").status_code == 400
+    assert not db.get_species_info(conn, "Bushtit")[0].get("sounds_broken")
+    assert _post(client, SOUNDS[0]["file"]).status_code == 204
+    card = db.get_species_info(conn, "Bushtit")[0]
+    assert card["sounds_broken"] is True and len(card["sounds"]) == 2  # flagged, nothing removed
+
+
+def test_sound_broken_allowed_for_visitors_on_the_pi_but_not_the_mirror(client, conn, add_visit, monkeypatch):
+    add_visit(species="Bushtit")
+    _save_card(conn)
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    assert _post(client, SOUNDS[1]["file"]).status_code == 204
+    assert client.post("/species-info/Bushtit/delete").status_code == 403  # nothing else opened up
+    assert _post(client, SOUNDS[1]["file"], headers={"sec-fetch-site": "cross-site"}).status_code == 403
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    assert _post(client, SOUNDS[1]["file"]).status_code == 403
+
+
+def test_flagged_card_refetches_sounds_and_clears_the_flag(conn, monkeypatch):
+    monkeypatch.setattr(species_info.config, "XC_API_KEY", "k")
+    _save_card(conn, sounds_broken=True)
+    new = [{"label": "Song", "file": "https://xeno-canto.org/3/download", "id": 3}]
+    monkeypatch.setattr(species_info, "fetch_sounds", lambda *a: new)
+    assert species_info.get(conn, "Bushtit", fetch=False)["sounds"][0]["id"] == 1  # viewers never trigger it
+    card = species_info.get(conn, "Bushtit")
+    assert card["sounds"] == new and "sounds_broken" not in db.get_species_info(conn, "Bushtit")[0]
+
+
+def test_empty_refetch_still_clears_the_flag(conn, monkeypatch):
+    monkeypatch.setattr(species_info.config, "XC_API_KEY", "k")
+    _save_card(conn, sounds_broken=True)
+    monkeypatch.setattr(species_info, "fetch_sounds", lambda *a: [])
+    assert species_info.get(conn, "Bushtit")["sounds"] == []
+    assert "sounds_broken" not in db.get_species_info(conn, "Bushtit")[0]
+
+
+def test_failed_refetch_keeps_sounds_and_flag_and_backs_off(conn, monkeypatch):
+    monkeypatch.setattr(species_info.config, "XC_API_KEY", "k")
+    _save_card(conn, sounds_broken=True)
+    calls = []
+
+    def boom(*a):
+        calls.append(1)
+        raise httpx.ConnectError("down")
+    monkeypatch.setattr(species_info, "fetch_sounds", boom)
+    for _ in range(3):
+        card = species_info.get(conn, "Bushtit")
+    assert len(calls) == 1 and len(card["sounds"]) == 2 and card["sounds_broken"] is True
+    species_info._failed_at["sounds:Bushtit"] -= species_info.RETRY_AFTER + 1
+    species_info.get(conn, "Bushtit")
+    assert len(calls) == 2
 
 # --- header facts (one Haiku call with the notes) ---
 
@@ -501,3 +573,16 @@ def test_rebuild_keeps_old_facts_when_new_build_has_none(conn, monkeypatch):
     monkeypatch.setattr(species_info, "build", lambda name: {"name": name, "inat_id": 1, "links": []})
     out = species_info._rebuild(conn, "Bushtit", cached)
     assert out["facts"] == ["Old fact that stays."]
+
+
+def test_header_play_buttons_carry_the_card_name(client, conn, add_visit):
+    """The header's Song/Call buttons say which species they belong to, so a clip that won't play can be reported."""
+    add_visit(species="Bushtit")
+    _save_card(conn)
+    card = db.get_species_info(conn, "Bushtit")
+    for sound in card[0]["sounds"]:
+        sound.update(km=100, recordist="A")
+    db.save_species_info(conn, "Bushtit", card[0], card[1])
+    html = client.get("/species-info/Bushtit?fold=1").text
+    buttons = re.findall(r'<button[^>]*class="sp-play"[^>]*>', html)
+    assert len(buttons) == 2 and all('data-card="Bushtit"' in b for b in buttons)
