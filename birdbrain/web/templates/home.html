@@ -7,7 +7,7 @@
    Not the latest-visitor photo: the Right arrow opens it, and a prerendered page swapped in by a key press may not
    have keyboard focus yet, so the first Esc there (back home, see visit.html) was lost. #}
 <script type="speculationrules">
-  {"prerender": [{"where": {"and": [{"href_matches": "/visit/*"}, {"not": {"selector_matches": ".hero-link, .hero-goto"}}]}, "eagerness": "moderate"}]}
+  {"prerender": [{"where": {"and": [{"href_matches": "/visit/*"}, {"not": {"selector_matches": ".hero-link"}}]}, "eagerness": "moderate"}]}
 </script>
 {# The latest visitor gets the big photo; the live view has its own tab (/live). Until the first visitor ever
    there is no photo, so Today takes the whole row. #}
@@ -20,9 +20,9 @@
   </a>
   {% set kicker = 'Latest visitor' if lv.captured_at[:10] == today.date else 'Last visitor, before today' %}
     {# One chip at the top-left (the camera burns its date stamp into the bottom-left): kicker, then name and time. #}
-  {# A sibling of the photo link (no nested <a>); clicks on the chip fall through to the photo link except on "Go to visit". #}
+  {# A sibling of the photo link (no nested <a>); clicks on the chip fall through to the photo link. #}
     <div class="hero-caption">
-      <span class="hero-kicker">{{ kicker }} <a class="hero-goto" href="/visit/{{ lv.id }}" title="Open this visit (→)">Go to visit</a></span>
+      <span class="hero-kicker">{{ kicker }}</span>
       <div class="hero-row">
         <span class="hero-name">{{ lv.label }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}
           {%- for a in also_of(lv) %} + {{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}</span>

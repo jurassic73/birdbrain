@@ -230,6 +230,7 @@ templates.env.globals["wind_unit"] = WIND_UNIT
 templates.env.filters.update(temp=temp, temp_alt=temp_alt, wind=wind, wind_alt=wind_alt)
 templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, short_time=short_time, usd=usd, mb=mb,
                              month_name=lambda v: datetime.fromisoformat(v).strftime("%B"))
+templates.env.filters["tile_fact"] = species_info.fact_item
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
 templates.env.globals["mirror_status"] = privacy.visit_status
 templates.env.globals["has_card"] = species_info.has_card

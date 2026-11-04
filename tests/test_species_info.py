@@ -457,40 +457,82 @@ class FakeHaiku:
         return type("R", (), {"parsed_output": self.parsed})()
 
 
+def F(lead, text):
+    return {"lead": lead, "text": text}
+
+
 def test_clean_facts_guard():
     notes = ["Eats seeds on the ground.", "Travels in flocks in winter."]
     facts = [
-        "",                                                                   # blank
-        "   ",                                                                # blank
-        "Weighs about as much as three quarters.",                            # kept
-        "Eats seeds on the ground.",                                          # repeats a note
-        "Flocks travel together in winter.",                                  # mostly the same words as a note
-        " ".join(["word"] * 21),                                              # too long
-        "Weighs about as much as three quarters!",                            # repeats an earlier fact
-        "Males sing from the tops of tall trees.",
-        "Some live over ten years in the wild.",
-        "Its name means snow bird.",
-        "Pairs stay together all season.",
-        "Sixth good fact is cut off by the cap.",
+        F("x", ""),                                                           # blank
+        F("x", "   "),                                                        # blank
+        F("Quarters", "Weighs about as much as three quarters."),             # kept
+        F("", "Eats seeds on the ground."),                                   # repeats a note
+        F("Flocks", "Flocks travel together in winter."),                     # mostly the same words as a note
+        F("", " ".join(["word"] * 21)),                                       # too long
+        F("Quarters", "Weighs about as much as three quarters!"),             # repeats an earlier fact
+        F("Males", "Males sing from the tops of tall trees."),
+        F("10 years", "Some live over 10 years in the wild."),
+        F("Snow bird", "Its name means snow bird."),
+        F("Pairs", "Pairs stay together all season."),
+        F("Sixth", "Sixth good fact is cut off by the cap."),
     ]
     got = species_info.clean_facts(facts, notes)
-    assert got[0] == "Weighs about as much as three quarters."
-    assert "Eats seeds on the ground." not in got and "Flocks travel together in winter." not in got
+    assert got[0] == F("Quarters", "Weighs about as much as three quarters.")
+    texts = [f["text"] for f in got]
+    assert "Eats seeds on the ground." not in texts and "Flocks travel together in winter." not in texts
     assert len(got) == species_info.MAX_FACTS
-    assert got == [f for f in got if f.strip()] and not any(len(f.split()) > species_info.MAX_FACT_WORDS for f in got)
+    assert not any(len(t.split()) > species_info.MAX_FACT_WORDS or not t.strip() for t in texts)
     assert species_info.clean_facts(None, notes) == []
+
+
+def test_clean_facts_accepts_models_dicts_and_old_strings():
+    out = species_info.clean_facts([species_info.Fact(lead="Blizzard", text="A flock is called a blizzard."),
+                                    "Plain old string fact lives to 11 years."], [])
+    assert out == [F("Blizzard", "A flock is called a blizzard."), F("11 years", "Plain old string fact lives to 11 years.")]
+
+
+@pytest.mark.parametrize("lead, text, want", [
+    ("Blizzard", "A flock is called a blizzard.", "Blizzard"),                      # valid, case-insensitive
+    ("75%", "Seeds make up 75% of the diet.", "75%"),                               # number as written
+    ("75%", "Seeds make up 75 percent of the diet.", "75%"),                        # % vs the word
+    ("12 years", "Lives up to 12-year stretches.", "12 years"),                     # unit dropped in the text
+    ("40 million", "About 40 million live in North America.", "40 million"),
+    ("1,741", "Named in 1741 by a Swede.", "1,741"),                                # same number, comma or not
+    ("1,800", "Named in 1741 by a Swede.", "1741"),                                 # a different number: the text's own
+    ("", "Weighs about 20 grams.", "20 grams"),                                     # missing: number fallback with unit
+    ("", "Lives in flocks near feeders.", ""),                                      # missing, no number: no lead
+    ("Hummingbird", "A flock is called a blizzard.", ""),                           # not in the text, no number
+    ("Warbler", "Weighs 9 ounces and sings.", "9 ounces"),                          # not in text: number fallback
+    ("Seven word long lead here", "Seven word long lead here is odd.", ""),         # over 3 words
+    ("Extraordinarily rare", "Extraordinarily rare bird.", ""),                          # over the character cap
+    ("Eight", "About 8% of the diet is bugs.", "8%"),                               # word lead absent: number fallback
+])
+def test_clean_lead(lead, text, want):
+    assert species_info.clean_lead(lead, text) == want
+
+
+def test_clean_notes_drops_a_note_that_repeats_an_earlier_one():
+    notes = ["In winter it often forages in flocks, and it is common at feeders.",
+             "Juncos forage in mixed flocks in winter and are common at feeders.",
+             "", "Eats seeds and small insects.", "Eats seeds and small insects."]
+    assert species_info.clean_notes(notes) == [notes[0], "Eats seeds and small insects."]
+    many = ["Eats beetles.", "Nests in hedges.", "Sings at dawn.", "Drinks often.", "Migrates south."]
+    assert len(species_info.clean_notes(many)) == species_info.MAX_NOTES
 
 
 def test_card_text_parses_both_lists_and_guards_them(monkeypatch):
     from birdbrain import identify
-    fake = FakeHaiku(["Eats seeds.", "", "Lives in flocks."] + ["Note"] * 5,
-                     ["A tiny bird that weighs less than a deck of cards.", "Eats seeds.", ""])
+    Fact = species_info.Fact
+    fake = FakeHaiku(["Eats seeds.", "", "Lives in flocks."] + [f"Note about {w}." for w in ("red", "blue", "green", "pink")],
+                     [Fact(lead="Deck of cards", text="A tiny bird that weighs less than a deck of cards."),
+                      Fact(lead="x", text="Eats seeds."), Fact(lead="", text="")])
     monkeypatch.setattr(identify, "client", lambda: fake)
     out = species_info.card_text("Bushtit", "Article text " * 10)
     assert len(out["notes"]) == species_info.MAX_NOTES and out["notes"][:2] == ["Eats seeds.", "Lives in flocks."]
-    assert out["facts"] == ["A tiny bird that weighs less than a deck of cards."]
+    assert out["facts"] == [F("Deck of cards", "A tiny bird that weighs less than a deck of cards.")]
     sent = fake.requests[0]
-    assert sent["output_format"] is species_info.CardText and "facts" in sent["system"]
+    assert sent["output_format"] is species_info.CardText and "facts" in sent["system"] and "lead" in sent["system"]
     assert "Animal: Bushtit" in sent["messages"][0]["content"]
 
 
@@ -505,8 +547,9 @@ def test_card_text_without_a_parsed_answer(monkeypatch):
 class FakeWiki:
     """httpx.Client stand-in for the two Wikipedia calls (summary, then plain text)."""
 
-    def __init__(self, fail=()):
-        self.urls, self.headers_seen, self.fail = [], [], fail
+    def __init__(self, fail=(), limited=None):
+        # limited: {url fragment: [(status, headers), ...]}, one scripted reply per call before the real one
+        self.urls, self.headers_seen, self.fail, self.limited = [], [], fail, limited or {}
 
     def __enter__(self):
         return self
@@ -518,6 +561,10 @@ class FakeWiki:
         self.urls.append(url)
         self.headers_seen.append(headers)
         req = httpx.Request("GET", url)
+        for frag, script in self.limited.items():
+            if frag in url and script:
+                status, headers = script.pop(0)
+                return httpx.Response(status, request=req, headers=headers)
         if any(f in url for f in self.fail):
             return httpx.Response(500, request=req)
         if "rest_v1" in url:
@@ -536,14 +583,14 @@ def test_backfill_facts_updates_only_notes_and_facts(conn, monkeypatch):
     cached_card(conn, "Bushtit")
     cached_card(conn, "Has Facts", facts=["Already here."])
     cached_card(conn, "No Wiki", wiki_url=None)
-    fake = FakeHaiku(["New note."], ["Weighs less than a deck of cards."])
+    fake = FakeHaiku(["New note."], [species_info.Fact(lead="Deck of cards", text="Weighs less than a deck of cards.")])
     monkeypatch.setattr(identify, "client", lambda: fake)
     wiki = FakeWiki()
     monkeypatch.setattr(species_info.httpx, "Client", lambda **kw: wiki)
     lines = []
     assert species_info.backfill_facts(conn, out=lines.append) == (1, 0)
     card, stamp = db.get_species_info(conn, "Bushtit")
-    assert card["facts"] == ["Weighs less than a deck of cards."] and card["notes"] == ["New note."]
+    assert card["facts"] == [F("Deck of cards", "Weighs less than a deck of cards.")] and card["notes"] == ["New note."]
     assert card["photo"] == CARD["photo"] and card["description"] == CARD["description"]  # nothing else touched
     assert stamp == "2026-10-01T00:00:00"
     assert db.get_species_info(conn, "Has Facts")[0]["facts"] == ["Already here."]
@@ -557,7 +604,7 @@ def test_backfill_facts_updates_only_notes_and_facts(conn, monkeypatch):
 def test_backfill_facts_dry_run_and_failure_keep_old_cards(conn, monkeypatch):
     from birdbrain import identify
     cached_card(conn, "Bushtit")
-    monkeypatch.setattr(identify, "client", lambda: FakeHaiku(["n"], ["Weighs less than a deck of cards."]))
+    monkeypatch.setattr(identify, "client", lambda: FakeHaiku(["n"], [species_info.Fact(lead="", text="Weighs less than a deck of cards.")]))
     lines = []
     assert species_info.backfill_facts(conn, dry_run=True, out=lines.append) == (0, 0)
     assert "Bushtit" in lines[0] and "facts" not in db.get_species_info(conn, "Bushtit")[0]
@@ -586,3 +633,111 @@ def test_header_play_buttons_carry_the_card_name(client, conn, add_visit):
     html = client.get("/species-info/Bushtit?fold=1").text
     buttons = re.findall(r'<button[^>]*class="sp-play"[^>]*>', html)
     assert len(buttons) == 2 and all('data-card="Bushtit"' in b for b in buttons)
+
+
+HOOKS = [F("Blizzard", "A flock of juncos is called a blizzard."), F("75%", "Seeds make up 75% of the diet."),
+         F("Arctic", "Some breed as far north as the Arctic."), F("1741", "Named by Linnaeus in 1741."),
+         F("", "Old tile with no lead lives in flocks.")]
+
+
+def _hero(client, conn, add_visit, facts):
+    add_visit(species="Bushtit")
+    _save_card(conn, facts=facts, sounds=[{**s, "km": 100, "recordist": "A"} for s in SOUNDS])
+    return client.get("/species-info/Bushtit?fold=1").text
+
+
+def test_species_header_shows_a_tile_per_fact_with_its_lead(client, conn, add_visit):
+    html = _hero(client, conn, add_visit, HOOKS[:4])
+    assert len(re.findall(r'class="fact-tile[ "]', html)) == 4 and 'data-n="4"' in html
+    for lead in ("Blizzard", "75%", "Arctic", "1741"):
+        assert f"<b>{lead}</b>" in html
+    assert 'data-tip="AI summary based on Wikipedia"' in html
+    assert "has-facts" in html
+    # the sound buttons move under the name, inside the name block (before the tiles)
+    assert html.index("sp-hero-text") < html.index("sp-plays") < html.index("fact-tiles")
+
+
+def test_species_header_five_facts_and_a_leadless_tile(client, conn, add_visit):
+    html = _hero(client, conn, add_visit, HOOKS)
+    assert len(re.findall(r'class="fact-tile[ "]', html)) == 5 and html.count("<b>") == 4 and "no-lead" in html
+
+
+def test_species_header_old_string_facts_still_render(client, conn, add_visit):
+    html = _hero(client, conn, add_visit, ["Old plain fact one here.", "Old plain fact two here."])
+    assert len(re.findall(r'class="fact-tile[ "]', html)) == 2 and "<b>" not in html and "Old plain fact two here." in html
+
+
+def test_species_header_without_facts_is_as_before(client, conn, add_visit):
+    for facts in ([], HOOKS[:1]):  # one fact alone is not a tile group
+        html = _hero(client, conn, add_visit, facts)
+        assert "fact-tile" not in html.replace(".fact-tile", "") and "has-facts" not in html
+        assert html.index("sp-hero-text") < html.index("sp-hero-id") + 400 and "sp-plays" in html
+
+
+def test_pop_up_card_has_no_tiles(client, conn, add_visit):
+    add_visit(species="Bushtit")
+    _save_card(conn, facts=HOOKS[:4], sounds=[{**s, "km": 100, "recordist": "A"} for s in SOUNDS])
+    assert "fact-tile" not in client.get("/species-info/Bushtit").text
+
+
+@pytest.fixture
+def naps(monkeypatch):
+    """Replaces the backfill's sleep, so nothing waits; the list holds the seconds it was asked to wait."""
+    waits = []
+    monkeypatch.setattr(species_info, "_sleep", waits.append)
+    return waits
+
+
+def _scripted(monkeypatch, wiki):
+    from birdbrain import identify
+    monkeypatch.setattr(identify, "client", lambda: FakeHaiku(["n"], [species_info.Fact(lead="Deck", text="Weighs less than a deck of cards.")]))
+    monkeypatch.setattr(species_info.httpx, "Client", lambda **kw: wiki)
+
+
+def test_backfill_waits_out_a_429_then_succeeds(conn, monkeypatch, naps):
+    cached_card(conn, "Bushtit")
+    wiki = FakeWiki(limited={"rest_v1": [(429, {}), (503, {})]})  # then the real reply; no Retry-After: 10 s then 30 s
+    _scripted(monkeypatch, wiki)
+    assert species_info.backfill_facts(conn, out=lambda m: None) == (1, 0)
+    assert naps == [10, 30]
+    assert sum("rest_v1" in u for u in wiki.urls) == 3
+
+
+def test_backfill_honours_retry_after_and_gives_up_after_two_retries(conn, monkeypatch, naps):
+    cached_card(conn, "Bushtit")
+    wiki = FakeWiki(limited={"rest_v1": [(429, {"Retry-After": "7"}), (429, {"Retry-After": "9999"}), (429, {})]})
+    _scripted(monkeypatch, wiki)
+    lines = []
+    assert species_info.backfill_facts(conn, out=lines.append) == (0, 1)
+    assert naps == [7, species_info.RETRY_AFTER_MAX]  # capped; the third 429 is a failure, with no third wait
+    assert lines == ["1/1 done, 1 failed"]
+    assert "facts" not in db.get_species_info(conn, "Bushtit")[0]  # the old card survives
+
+
+def test_backfill_pauses_between_cards(conn, monkeypatch, naps):
+    for n in ("Bushtit", "Chickadee", "Wren"):
+        cached_card(conn, n)
+    _scripted(monkeypatch, FakeWiki())
+    assert species_info.backfill_facts(conn, out=lambda m: None) == (3, 0)
+    assert naps == [species_info.PACE, species_info.PACE]  # between cards, not before the first or after the last
+
+
+def test_clean_facts_drops_a_leadless_fact_unless_too_few_remain():
+    notes = []
+    mixed = [F("Blizzard", "A flock of juncos is called a blizzard."), F("", "Juncos forage on the ground in winter flocks."),
+             F("Arctic", "Some juncos breed as far north as the Arctic.")]
+    assert [f["lead"] for f in species_info.clean_facts(mixed, notes)] == ["Blizzard", "Arctic"]
+    one_led = [F("Blizzard", "A flock of juncos is called a blizzard."), F("", "Juncos forage on the ground in winter flocks.")]
+    assert len(species_info.clean_facts(one_led, notes)) == 2  # dropping would leave 1: keep both
+    none_led = [F("", "Juncos forage on the ground in winter flocks."), F("", "Males sing from the tops of tall trees.")]
+    assert len(species_info.clean_facts(none_led, notes)) == 2
+    many = [F("Beetles", "It outruns beetles on open ground."), F("Granite", "Nests are lined with crushed granite."),
+            F("Violins", "Its song resembles violins tuning up."), F("Marathons", "Some migrate marathons every autumn."),
+            F("Volcanoes", "Young birds roost near volcanoes."), F("Teapots", "Collectors prize teapots with its portrait."),
+            F("Glaciers", "Glaciers shaped its breeding range.")]
+    assert len(species_info.clean_facts(many, notes)) == species_info.MAX_FACTS
+
+
+def test_prompt_asks_for_whole_single_claim_sentences_with_a_lead():
+    p = species_info.NOTES_PROMPT
+    assert "complete sentence" in p and "exactly one claim" in p and "Every fact must have a lead" in p
