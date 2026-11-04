@@ -461,5 +461,55 @@
       if (open) form.querySelector("select, input")?.focus({preventScroll: true});
     });
   })();
+
+  // Quick filter chips: swap the filtered parts in place (no page load, so no jump to the top) and keep the URL in
+  // step, so Back/Forward and the visit page's Back link return to the same filters. Anything that goes wrong falls
+  // back to a normal page load. The new-visitor refresh and Load more use location.href / the swapped grid, so they
+  // follow the filters on their own.
+  (() => {
+    const KEY = "bb-home-url";
+    const remember = () => { try { sessionStorage.setItem(KEY, location.pathname + location.search); } catch (e) {} };
+    remember();
+    addEventListener("pageshow", remember);  // a page restored from the back/forward cache
+    let token = 0;
+    async function show(url, push, chip) {
+      const mine = ++token, y = scrollY;
+      const nav = document.querySelector(".chips");
+      chip?.classList.add("sending");
+      if (chip) { nav.querySelectorAll("a").forEach(a => a.removeAttribute("aria-current")); chip.setAttribute("aria-current", "page"); }
+      try {
+        const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10000) });
+        if (!r.ok) throw new Error(r.status);
+        const doc = new DOMParser().parseFromString(await r.text(), "text/html");
+        if (mine !== token) return;  // a later tap won
+        const sec = document.querySelector("section.visits"), fresh = doc.querySelector("section.visits");
+        const form = document.getElementById("more-filters"), freshForm = doc.getElementById("more-filters");
+        if (!sec || !fresh || !form || !freshForm) throw new Error("page shape");
+        // Head (count and chips) and the grid or empty state are replaced; the open/closed More filters form keeps
+        // its state and takes the new values.
+        sec.querySelector(".visits-head").replaceWith(fresh.querySelector(".visits-head"));
+        form.innerHTML = freshForm.innerHTML;
+        while (form.nextElementSibling) form.nextElementSibling.remove();
+        for (let n = freshForm.nextElementSibling; n; n = n.nextElementSibling) sec.append(n.cloneNode(true));
+        const info = document.querySelector(".today-info"), freshInfo = doc.querySelector(".today-info");
+        if (info && freshInfo) info.replaceWith(freshInfo);
+        const g = sec.querySelector(".grid");
+        if (g) { window.htmx?.process(g); g.dispatchEvent(new CustomEvent("birdbrain:cards", { bubbles: true })); }
+        if (push) history.pushState(null, "", url);
+        remember();
+        scrollTo(0, y);  // the page may have been shorter for a moment
+      } catch (e) {
+        if (mine === token) location.href = url;
+      } finally { chip?.classList.remove("sending"); }
+    }
+    document.addEventListener("click", e => {
+      const a = e.target.closest?.(".chips a");
+      if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target) return;
+      e.preventDefault();
+      if (a.getAttribute("aria-current") === "page") return;
+      show(a.href, true, a);
+    });
+    addEventListener("popstate", () => show(location.href, false, null));
+  })();
 </script>
 {% endblock %}
