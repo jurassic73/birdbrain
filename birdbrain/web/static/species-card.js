@@ -43,16 +43,6 @@
     }
   }
 
-  // Jump to visits inside the pop-up: when the page is already that species page, close the pop-up so the scroll shows.
-  dialog.addEventListener("click", (e) => {
-    const a = e.target.closest("a.sp-jump");
-    if (a && new URL(a.href).pathname === location.pathname) {
-      // scroll by hand: following the link would race with the history entry the card gives back
-      const target = a.hash && document.getElementById(a.hash.slice(1));
-      if (target) { e.preventDefault(); dialog.close(); target.scrollIntoView(); } else dialog.close();
-    }
-  });
-
   // Capture phase, so a name inside a visit card opens the species card instead of following the card's link.
   document.addEventListener("click", (e) => {
     const el = e.target.closest("[data-species]");
@@ -136,11 +126,6 @@
       setTimeout(() => map.invalidateSize(), 60);
     }
   }
-  // A map inside a closed fold has no size; fix it when the fold opens.
-  document.addEventListener("toggle", (e) => {
-    if (!e.target.classList?.contains("sp-more") || !e.target.open) return;
-    for (const el of e.target.querySelectorAll(".sp-map")) el._map?.invalidateSize();
-  }, true);
-  document.addEventListener("htmx:afterSwap", (e) => initMaps(e.target));
+  document.addEventListener("htmx:afterSwap", (e) => { initMaps(e.target); initMaps(document); });
   initMaps(document);  // cards rendered with the page
 })();
