@@ -86,8 +86,8 @@ def test_public_mirror_has_no_admin_and_never_touches_camera(client, add_visit, 
     assert page.status_code == 200 and "Dark-eyed Junco" in page.text
     assert 'href="/login' not in page.text and "Log out" not in page.text and "/correct" not in page.text
     assert client.get("/login").status_code == 404
-    assert client.post("/login", data={"password": "s3cret!"}).status_code == 403
-    assert client.post(f"/visit/{vid}/delete").status_code == 403
+    assert client.post("/login", data={"password": "s3cret!"}).status_code == 404
+    assert client.post(f"/visit/{vid}/delete").status_code == 404
     for path in ("/settings", "/notes", "/review", "/false-triggers", "/settings/camera", "/lessons"):
         assert client.get(path, follow_redirects=False).status_code == 404
     for path in ("/", "/live", "/species", "/stats", "/about"):
@@ -199,3 +199,48 @@ def test_the_public_mirror_has_no_false_trigger_pages(client, add_visit, monkeyp
     monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
     ft = _false_trigger(add_visit)
     assert client.get(f"/visit/{ft}").status_code == 404
+
+
+def test_visitors_get_404_for_a_false_triggers_burst_frames_but_a_real_visits_stay(client, add_visit, locked,
+                                                                                  monkeypatch):
+    """/images is a plain static folder: a visitor who knows (or guesses) a false trigger's burst frame name gets the
+    same 404 as for a missing file. A real visit's burst (a false trigger the owner corrected keeps its burst and is
+    shown on its page) stays public, and the admin sees everything."""
+    from birdbrain import config
+    day = config.IMAGES_DIR / "2026" / "11" / "01"
+    day.mkdir(parents=True, exist_ok=True)
+    names = ("ft.jpg", "ft_t.jpg", "ft_b1.jpg", "ft_b2.jpg", "ft_b2_t.jpg", "real.jpg", "real_t.jpg", "real_b1.jpg")
+    for name in names:
+        (day / name).write_bytes(b"jpeg")
+    try:
+        add_visit(visitor="none", species=None, image_path="2026/11/01/ft.jpg", thumb_path="2026/11/01/ft_t.jpg")
+        add_visit(visitor="none", species=None, corrected_visitor="bird", corrected_species="Bushtit",
+                  image_path="2026/11/01/real.jpg", thumb_path="2026/11/01/real_t.jpg")
+        hidden = ("/images/2026/11/01/ft_b1.jpg", "/images/2026/11/01/ft_b2.jpg", "/images/2026/11/01/ft_b2_t.jpg",
+                  "/images//2026/11/01/ft_b1.jpg", "/images/2026/11/01/./ft_b1.jpg", "/images/2026/11/../11/01/ft_b1.jpg")
+        shown = ("/images/2026/11/01/real.jpg", "/images/2026/11/01/real_t.jpg", "/images/2026/11/01/real_b1.jpg")
+        for url in hidden:
+            assert client.get(url).status_code == 404, url
+        for url in shown:
+            assert client.get(url).status_code == 200, url
+        assert client.post("/login", data={"password": "s3cret!"}, follow_redirects=False).status_code == 303
+        for url in hidden[:3] + shown:
+            assert client.get(url).status_code == 200, url
+        client.cookies.clear()
+        monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")  # the mirror has no false triggers; its real bursts load
+        assert client.get("/images/2026/11/01/real_b1.jpg").status_code == 200
+    finally:
+        for name in names:
+            (day / name).unlink(missing_ok=True)
+
+
+def test_latest_visit_api_tells_only_the_admin_of_a_false_trigger(client, add_visit, locked, monkeypatch):
+    real = add_visit(visitor="bird", species="Bushtit")
+    ft = add_visit(visitor="none", species=None)
+    v = client.get("/api/latest-visit").json()
+    assert (v["id"], v["any_id"]) == (real, real)  # a visitor: the false trigger's id never shows up
+    client.post("/login", data={"password": "s3cret!"})
+    v = client.get("/api/latest-visit").json()
+    assert (v["id"], v["any_id"]) == (real, ft)  # the admin's False triggers page refreshes on it
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    assert client.get("/api/latest-visit").json()["any_id"] == real

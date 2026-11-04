@@ -353,7 +353,7 @@
     location.href = link.href.split("#")[0] + "#from-home";
   });
 </script>
-<script src="/static/photo-reminder.js?v={{ asset_version }}" defer></script>
+{% if request.state.admin %}<script src="/static/photo-reminder.js?v={{ asset_version }}" defer></script>{% endif %}
 <script>
   // More filters: the button after the chips shows or hides the filter boxes under the row.
   (() => {

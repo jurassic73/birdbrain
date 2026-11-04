@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from PIL import Image, ImageStat
+from starlette.routing import Match
 
 from . import auth, steps, viewer
 from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
@@ -70,6 +71,36 @@ templates = Jinja2Templates(directory=HERE / "templates")
 _SOUND_BROKEN = re.compile(r"^/species-info/[^/]+/sound-broken$")
 
 
+def not_found() -> Response:
+    """The very answer FastAPI gives for a path no route has."""
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+
+def route_of(scope) -> str | None:
+    """The path template of the route (or mount) a request goes to, e.g. "/visit/{visit_id}", picked as the router
+    picks it: the first route that fits path and method, else the first that fits the path; None when none does."""
+    partial = None
+    for route in app.router.routes:
+        match = route.matches(scope)[0]
+        if match is Match.FULL:
+            return route.path
+        if match is Match.PARTIAL and partial is None:
+            partial = route.path
+    return partial
+
+
+def false_trigger_burst(rel: str) -> bool:
+    """Whether a file under /images is a false trigger's burst frame (or a burst frame's thumbnail). Only file names
+    shaped like a burst frame (images.burst_file) are looked up, with one indexed query, so the gallery's photos and
+    thumbnails never touch the database. A real visit's burst (a false trigger the owner corrected) stays public."""
+    rel = os.path.normpath(rel.lstrip("/"))  # as StaticFiles reads it: "//", "./" and ".." steps resolved
+    parsed = images.burst_file(os.path.basename(rel))
+    if not parsed:
+        return False
+    with db.session() as conn:
+        return db.is_false_trigger_photo(conn, os.path.join(os.path.dirname(rel), parsed[0] + ".jpg"))
+
+
 @app.middleware("http")
 async def read_only(request: Request, call_next):
     """Visitors can browse; changes, Claude calls and the admin pages need the admin login."""
@@ -99,15 +130,17 @@ async def read_only(request: Request, call_next):
             clock.set_zone(db.get_value(conn, clock.KEY))
     path = request.url.path
     if auth.public():
-        if request.method not in ("GET", "HEAD") and path != "/guest-login":
-            return Response("This is a read-only copy.", status_code=403)
-        if auth.admin_only(path) or path == "/login":
-            return Response("Not found", status_code=404)
+        # The mirror has no admin at all: anything but its public pages (auth.MIRROR_ROUTES) is the same 404 as a
+        # page that doesn't exist, every change and admin page included, never a login or a "read-only" answer.
+        if not auth.on_mirror(request.method, route_of(request.scope)):
+            return not_found()
     elif not admin and path not in ("/login", "/logout"):
         if request.method not in ("GET", "HEAD") and not _SOUND_BROKEN.match(path):
             return Response("Read-only: log in as admin to change things.", status_code=403)
         if auth.admin_only(path):
             return RedirectResponse("/login?" + urlencode({"next": path}), status_code=303)
+        if path.startswith("/images/") and false_trigger_burst(path.removeprefix("/images/")):
+            return not_found()  # false triggers are the admin's: their burst frames too, by exact URL
     response = await call_next(request)
     if gate_on and not viewer.is_open(path):
         # Behind the gate, photos and pages are for signed-in guests only: a shared cache in front must not keep
@@ -2024,14 +2057,17 @@ def identify_prompt_preview(site: dict, lessons: list[str]) -> str:
 
 @app.get("/api/latest-visit")
 def latest_visit(request: Request, conn=Depends(get_conn)):
-    """Newest real visitor (not false triggers), plus the newest visit of any kind (`any_id`).
+    """Newest real visitor (not false triggers), plus the newest visit of any kind (`any_id`, the admin's False
+    triggers page refreshes on it). Visitors and the public mirror never learn of a false trigger: their any_id is
+    the real visitor's id, so it only ever moves along with a real visit (static/tab-alert.js).
 
     Pages poll this to flag new arrivals in the tab and to pull in new cards, numbers and arrows."""
     row = db.latest_visit(conn)
     newest = {"id": row["id"], "label": row["label"], "captured_at": row["captured_at"]} if row else \
         {"id": 0, "label": None, "captured_at": None}
+    any_id = db.newest_id(conn) if request.state.admin else newest["id"]
     # Nav bubble counts: zeros for visitors and the public mirror (nav_waiting checks both).
-    return {**newest, "any_id": db.newest_id(conn), "waiting": nav_waiting(request)}
+    return {**newest, "any_id": any_id, "waiting": nav_waiting(request)}
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)

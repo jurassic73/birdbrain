@@ -404,7 +404,7 @@ def test_sound_broken_allowed_for_visitors_on_the_pi_but_not_the_mirror(client, 
     assert client.post("/species-info/Bushtit/delete").status_code == 403  # nothing else opened up
     assert _post(client, SOUNDS[1]["file"], headers={"sec-fetch-site": "cross-site"}).status_code == 403
     monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
-    assert _post(client, SOUNDS[1]["file"]).status_code == 403
+    assert _post(client, SOUNDS[1]["file"]).status_code == 404  # the mirror takes no POST but the guest sign-in
 
 
 def test_flagged_card_refetches_sounds_and_clears_the_flag(conn, monkeypatch):

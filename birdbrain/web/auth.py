@@ -17,6 +17,18 @@ COOKIE = "bb_admin"
 MAX_AGE = 30 * 24 * 3600
 # Pages a visitor never sees (prefixes); every POST is blocked for visitors too.
 ADMIN_PATHS = ("/notes", "/lessons", "/review", "/false-triggers", "/settings", "/calibration")
+# The public mirror (public()) serves only these routes, as app.py declares them, and only to GET/HEAD; the one
+# thing it takes a POST for is the friends & family sign-in. Everything else (the admin pages, every change, Claude
+# and camera calls, the admin's JSON) is a 404 there, as if it didn't exist. Deny by default: a new route stays off
+# the mirror until it is added here, and tests/test_public_no_admin.py makes every route be one or the other.
+MIRROR_ROUTES = frozenset({
+    "/", "/live", "/scoreboard", "/visits", "/visits/archive-more", "/visits/more", "/visit/{visit_id}",
+    "/species", "/species/{name}", "/species/{name}/more", "/species-info/{name}",
+    "/stats", "/weather", "/about",
+    "/api/latest-visit", "/live/latest.jpg", "/live.jpg", "/manifest.webmanifest", "/favicon.ico",
+    "/guest-login", "/static", "/images",
+})
+MIRROR_POSTS = frozenset({"/guest-login"})
 MAX_FAILS = 5
 FAIL_WINDOW = 15 * 60
 _fails: dict[str, list[float]] = {}
@@ -124,3 +136,10 @@ def failed(ip: str) -> None:
 
 def admin_only(path: str) -> bool:
     return any(path == p or path.startswith(p + "/") for p in ADMIN_PATHS)
+
+
+def on_mirror(method: str, route: str | None) -> bool:
+    """Whether the public mirror answers this request: `route` is the path template it goes to (None: no route)."""
+    if route in MIRROR_POSTS and method == "POST":
+        return True
+    return method in ("GET", "HEAD") and route in MIRROR_ROUTES

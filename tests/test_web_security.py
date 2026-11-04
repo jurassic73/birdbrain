@@ -45,6 +45,9 @@ PUBLIC_GETS = {
     "/species-photo", "/species-search", "/species/{name}", "/species/{name}/cover-compare", "/species/{name}/more", "/stats",
     "/visit/{visit_id}", "/visits", "/visits/archive-more", "/visits/more", "/weather",
 }
+# What the public mirror serves (GET), by route template: the visitor's pages minus the admin's JSON. Everything
+# else there, every change included, is the same 404 as a page that doesn't exist (auth.MIRROR_ROUTES).
+MIRROR_GETS = PUBLIC_GETS - {"/api/photo-reminder", "/species-photo", "/species-search", "/species/{name}/cover-compare"}
 LOGIN_ROUTES = {"/login", "/logout", "/guest-login"}
 # The one change a visitor may make on the Pi: flag a species card's recording that wouldn't play (validated
 # and flag-only; the public mirror still refuses it, which test_every_route_on_the_public_mirror checks).
@@ -100,15 +103,15 @@ def test_every_route_is_classified(client, locked, method, template, path):
 
 @pytest.mark.parametrize("method,template,path", ROUTES, ids=IDS)
 def test_every_route_on_the_public_mirror(client, mirror, method, template, path):
-    """BIRDBRAIN_PUBLIC=1: the admin pages and the login don't exist, nothing can be changed."""
+    """BIRDBRAIN_PUBLIC=1: no admin anything. The admin pages, the login, the admin's JSON and every change are the
+    same 404 as a page that doesn't exist; only the guest sign-in takes a POST."""
     r = client.request(method, path, follow_redirects=False)
-    if method != "GET":
-        if template != "/guest-login":
-            assert r.status_code == 403, path
-    elif auth.admin_only(template) or template in ("/login", "/species-search"):
-        assert r.status_code == 404, path
-    else:
+    if template == "/guest-login":
+        assert r.status_code != 404, path
+    elif method == "GET" and template in MIRROR_GETS:
         assert r.status_code != 500 and not r.headers.get("location", "").startswith("/login"), path
+    else:
+        assert r.status_code == 404 and r.json() == {"detail": "Not Found"}, path
 
 
 # --- Cross-site requests -------------------------------------------------------------------------------------

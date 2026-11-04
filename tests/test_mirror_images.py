@@ -181,15 +181,12 @@ def _json_site_urls(data) -> list[str]:
 def test_json_answers_carry_the_base_path_and_resolve(mirror, photos, conn, add_visit):
     """The base_path middleware rewrites HTML only. Routes that answer a URL in JSON (for a script to put in an
     img src) must add the prefix themselves (app.site_url), or the browser asks the host's root and gets nothing."""
-    v1, _, _ = photos
     new = add_visit(image_path="2026/11/03/a.jpg", thumb_path="2026/11/03/a_t.jpg", species="Dark-eyed Junco",
                     captured_at=FROZEN_NOW.replace(hour=11, minute=30).isoformat())
     conn.commit()
     compare_url = f"/species/Dark-eyed%20Junco/cover-compare?visit_id={new}"
-    answers = {compare_url: mirror.get(compare_url), "/manifest.webmanifest": mirror.get("/manifest.webmanifest")}
-    compare = answers[compare_url]
-    assert compare.status_code == 200
-    assert compare.json()["cover"]["id"] == v1 and compare.json()["candidate"]["id"] == new
+    assert mirror.get(compare_url).status_code == 404  # the star's question is the admin's: not on the mirror
+    answers = {"/manifest.webmanifest": mirror.get("/manifest.webmanifest")}
     manifest = answers["/manifest.webmanifest"].json()
     assert manifest["start_url"] == BASE + "/" and manifest["scope"] == BASE + "/"
     failures = []
@@ -206,6 +203,25 @@ def test_json_answers_carry_the_base_path_and_resolve(mirror, photos, conn, add_
             if got.status_code != 200 or not got.headers.get("content-type", "").startswith(want):
                 failures.append(f"{route}: {url} -> {got.status_code} {got.headers.get('content-type')}")
     assert not failures, "\n".join(failures)
+
+
+def test_admin_json_carries_the_base_path_too(mirror, photos, conn, add_visit, monkeypatch):
+    """The admin's JSON with a photo URL in it (the star's "Replace the cover?" question) under a base path: the same
+    site, not public, no password, so everyone is admin. The mirror itself answers it 404 (test above)."""
+    v1, _, _ = photos
+    new = add_visit(image_path="2026/11/03/a.jpg", thumb_path="2026/11/03/a_t.jpg", species="Dark-eyed Junco",
+                    captured_at=FROZEN_NOW.replace(hour=11, minute=30).isoformat())
+    conn.commit()
+    monkeypatch.delenv("BIRDBRAIN_PUBLIC")
+    compare = mirror.get(f"/species/Dark-eyed%20Junco/cover-compare?visit_id={new}")
+    assert compare.status_code == 200
+    assert compare.json()["cover"]["id"] == v1 and compare.json()["candidate"]["id"] == new
+    urls = _json_site_urls(compare.json())
+    assert urls
+    for url in urls:
+        assert url.startswith(BASE + "/"), url
+        got = mirror.get(url[len(BASE):])
+        assert got.status_code == 200 and got.headers["content-type"].startswith("image/"), url
 
 
 def test_json_answers_keep_plain_paths_without_a_base_path(conn, add_visit):

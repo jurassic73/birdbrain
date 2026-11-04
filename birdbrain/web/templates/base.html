@@ -1,5 +1,6 @@
 <!doctype html>
-{% set embed = request.query_params.get('embed') == '1' %}
+{# embed=1: a visit inside the admin's False triggers pop-up; visitors always get the plain page. #}
+{% set embed = request.state.admin and request.query_params.get('embed') == '1' %}
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -88,8 +89,8 @@
   {% if request.state.admin %}<script src="/static/star.js?v={{ asset_version }}" defer></script>{% endif %}
   <script src="/static/dialog.js?v={{ asset_version }}" defer></script>
   <script src="/static/rotate-hint.js?v={{ asset_version }}" defer></script>
-  <script src="/static/save-feedback.js?v={{ asset_version }}" defer></script>
-  <script src="/static/scene-edit.js?v={{ asset_version }}" defer></script>
+  {% if request.state.admin %}<script src="/static/save-feedback.js?v={{ asset_version }}" defer></script>
+  <script src="/static/scene-edit.js?v={{ asset_version }}" defer></script>{% endif %}
   {% if not embed %}<script src="/static/tour.js?v={{ asset_version }}" defer></script>{% endif %}
   {% if not embed %}<script src="/static/shortcuts.js?v={{ asset_version }}" defer></script>{% endif %}
   {% block head %}{% endblock %}
