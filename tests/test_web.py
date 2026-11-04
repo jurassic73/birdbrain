@@ -1434,3 +1434,23 @@ def test_false_triggers_page_with_nothing_unchecked_has_no_count_or_confirm_all(
     assert 'id="ft-unchecked"' not in html
     assert 'id="ft-confirm"' not in html and "Confirm all shown" not in html
     assert "Nothing left to check" in html
+
+
+@pytest.mark.parametrize("path", ["/", "/species", "/stats", "/review", "/false-triggers", "/notes"])
+def test_top_level_pages_turn_on_the_phone_swipe(client, path):
+    html = client.get(path).text
+    assert re.search(r'<body[^>]*data-swipe="nav"', html)
+    assert f"/static/swipe.js?v={webapp.templates.env.globals['asset_version']}" in html
+
+
+@pytest.mark.parametrize("path", ["/about", "/settings", "/species/Junco", "/visit/1"])
+def test_other_pages_do_not_swipe_between_tabs(client, add_visit, path):
+    add_visit()
+    html = client.get(path).text
+    assert "data-swipe=" not in html
+
+
+def test_embedded_visit_page_does_not_swipe(client, add_visit):
+    vid = add_visit()
+    html = client.get(f"/visit/{vid}?embed=1").text
+    assert "data-swipe=" not in html and "swipe.js" not in html

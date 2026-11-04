@@ -21,6 +21,7 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ asset_version }}">
   <link rel="stylesheet" href="/static/style.css?v={{ asset_version }}">
   <script src="/static/vendor/htmx-2.0.4.min.js"></script>
+  {% if not embed %}<script src="/static/swipe.js?v={{ asset_version }}" defer></script>{% endif %}
   {% if not embed %}<script src="/static/tab-alert.js?v={{ asset_version }}" defer></script>{% endif %}
   <script src="/static/overlays.js?v={{ asset_version }}"></script>
   <script src="/static/theme.js?v={{ asset_version }}" defer></script>
@@ -35,7 +36,10 @@
   {% if not embed %}<script src="/static/tour.js?v={{ asset_version }}" defer></script>{% endif %}
   {% block head %}{% endblock %}
 </head>
-<body{% if embed %} class="embed"{% endif %}{% if request.state.admin %} data-admin="1"{% endif %}>
+{# Phone swipe between the top nav tabs (static/swipe.js). "nav" on the top-level pages; a page can set
+   `{% set swipe = "off" %}` or `"links"` (its own <link rel="prev"/"next">) before extending. #}
+{% set swipe_mode = swipe|default("nav" if request.url.path in ("/", "/species", "/stats", "/review", "/false-triggers", "/notes") else "off") %}
+<body{% if embed %} class="embed"{% endif %}{% if request.state.admin %} data-admin="1"{% endif %}{% if not embed and swipe_mode != "off" %} data-swipe="{{ swipe_mode }}"{% endif %}>
   {% if not embed %}
   <header class="topbar">
     {% if public() %}<a class="home-link" href="https://somegeek.com/" aria-label="somegeek.com home" title="somegeek.com home"><img src="/static/somegeek-logo.png?v={{ asset_version }}" alt="" width="34" height="34"></a>{% endif %}
