@@ -195,8 +195,11 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   .topbar { padding: 8px 10px; gap: 6px 8px; }
   .topbar nav { order: 4; flex-basis: 100%; }
   /* Brand on the left, every button on the right, all on the first row (admin has the most buttons). */
-  .brand { font-size: 1rem; gap: 5px; min-width: 0; }
+  .brand { font-size: 1.1rem; gap: 5px; min-width: 0; }
   .brand img, .home-link img { width: 28px; height: 28px; }
+  /* logo.png's drawn disc is an ellipse (126 x 114 of 128 px) and Calvin's fills its box, so the bird gets a
+     slightly bigger box (negative margin keeps the row the same width) to look the same diameter. */
+  .brand img { width: 30px; height: 30px; margin: -1px; }
   .topbar-actions { gap: 3px; flex: none; }
   .topbar-actions .icon-btn { width: 30px; height: 30px; }
   .topbar-actions .icon-btn svg { width: 17px; height: 17px; }
@@ -204,8 +207,9 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
 /* Narrow phones (360 and under): shave a few more pixels so admin's row still fits. */
 @media (max-width: 380px) {
   .topbar { padding-left: 6px; padding-right: 6px; gap: 6px 4px; }
-  .brand { font-size: .95rem; gap: 4px; }
+  .brand { font-size: 1.045rem; gap: 4px; }
   .brand img, .home-link img { width: 24px; height: 24px; }
+  .brand img { width: 26px; height: 26px; margin: -1px; }
   .topbar-actions .icon-btn { width: 28px; height: 28px; }
   .topbar-actions .icon-btn svg { width: 16px; height: 16px; }
 }
@@ -235,8 +239,9 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
 /* Phone in landscape (short screen): a slim bar that scrolls away with the page. */
 @media (max-height: 500px) {
   .topbar { position: static; padding: 4px 12px; gap: 10px; }
-  .brand { font-size: 1rem; gap: 6px; }
-  .brand img { width: 26px; height: 26px; }
+  .brand { font-size: 1.1rem; gap: 6px; }
+  .home-link img { width: 26px; height: 26px; }
+  .brand img { width: 28px; height: 28px; margin: -1px; }
   .topbar nav a { padding: 4px 8px; font-size: .9rem; }
   .topbar nav a .nav-n { margin-left: 4px; padding: 0 4px; }
   .topbar nav a .long { display: none; }
