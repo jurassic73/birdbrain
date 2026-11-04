@@ -22,7 +22,7 @@
   // visible match is highlighted together.
   const STEPS = [
     {part: "public", sel: [".hero-latest", ".hero"], title: "The latest visitor",
-     text: "Click the photo to open that visit. The magnifier opens it big, where you can zoom, drag and press Reset view. So does the Right arrow key."},
+     text: "Click the photo, or press the Right arrow key, to open that visit. The magnifier opens it big, where you can zoom, drag and press Reset view."},
     {part: "public", sel: ["#overlays-toggle"], title: "See the bird without the circles",
      text: "The eye hides Claude's circles and the zones drawn on photos so you can see the bird itself. Press it again to bring them back."},
     {part: "public", sel: [".today"], title: "Today",
