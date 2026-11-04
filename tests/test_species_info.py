@@ -743,3 +743,37 @@ def test_clean_facts_drops_a_leadless_fact_unless_too_few_remain():
 def test_prompt_asks_for_whole_single_claim_sentences_with_a_lead():
     p = species_info.NOTES_PROMPT
     assert "complete sentence" in p and "exactly one claim" in p and "Every fact must have a lead" in p
+
+
+def _last_seen_visit(add_visit):
+    from datetime import timedelta
+    from conftest import FROZEN_NOW
+    add_visit(species="Bushtit", captured_at=(FROZEN_NOW - timedelta(days=2)).isoformat())
+
+
+def test_hero_has_last_seen_line_under_the_songs(client, conn, add_visit):
+    _last_seen_visit(add_visit)
+    for facts in (HOOKS[:4], []):  # with tiles (inside the name block) and without
+        _save_card(conn, facts=facts, sounds=[{**s, "km": 100, "recordist": "A"} for s in SOUNDS])
+        html = client.get("/species-info/Bushtit?fold=1").text
+        assert html.count('class="sp-last-seen') == 1
+        assert html.index("sp-plays") < html.index("sp-last-seen")
+        assert re.search(r'Last seen <span class="ago" data-bare="1" data-age="\d+">2 days ago</span>', html)
+
+
+def test_hero_last_seen_line_without_sounds_sits_under_the_badge(client, conn, add_visit):
+    _last_seen_visit(add_visit)
+    _save_card(conn, facts=[], sounds=[])
+    html = client.get("/species-info/Bushtit?fold=1").text
+    assert "sp-plays" not in html and html.index("sp-status") < html.index("sp-last-seen") < html.index("sp-hero-row") + 4000
+
+
+def test_info_tab_drops_last_seen_but_pop_up_keeps_it(client, conn, add_visit):
+    _last_seen_visit(add_visit)
+    _save_card(conn, facts=[], sounds=[])
+    folded = client.get("/species-info/Bushtit?fold=1").text
+    body = folded[folded.index('id="sp-info-body"'):]
+    assert "Last seen" not in body and 'class="sp-facts' in body  # the confirm badge row stays
+    popup = client.get("/species-info/Bushtit").text
+    assert "sp-last-seen" not in popup
+    assert re.search(r'Last seen <strong>[^<]+</strong> <span class="ago" data-age="\d+">\(2 days ago\)</span>', popup)

@@ -12,7 +12,7 @@
     <span class="fact"><span class="big">{{ sp.visits }}</span> visit{{ 's' if sp.visits != 1 }}</span>
     <span class="fact">First seen <strong>{{ sp.first_seen | nice_date }}</strong></span>
     {% endif %}
-    <span class="fact{{ ' hide-on-phone' if fold }}">Last seen <strong>{{ sp.last_seen | nice_time }}</strong> <span class="ago">{{ sp.last_seen | ago }}</span></span>
+    {% if not fold %}<span class="fact">Last seen <strong>{{ sp.last_seen | nice_time }}</strong> <span class="ago" data-age="{{ sp.last_seen | age_seconds }}">{{ sp.last_seen | ago }}</span></span>{% endif %}
     <span class="{{ 'hide-on-phone' if fold }}">{{ confirm_badge(sp.label) }}</span>
     {% endif %}
   </div>
@@ -39,6 +39,10 @@
         {% endfor %}
       </div>
       {% endif %}
+{% endmacro %}
+{# The species page hero's plain line under the songs: no clock time, so no brackets (data-bare tells static/ago.js). #}
+{% macro last_seen_line() %}
+  {% if sp %}<p class="sp-last-seen muted small">Last seen <span class="ago" data-bare="1" data-age="{{ sp.last_seen | age_seconds }}">{{ sp.last_seen | ago(bare=True) }}</span></p>{% endif %}
 {% endmacro %}
 {% macro text() %}
     <div class="sp-text">
@@ -153,7 +157,8 @@
         <h1>{{ info.common or info.name }}</h1>
         {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
         {% if info.status %}{{ badge(info.status, "sp-status") }}{% endif %}
-        {% if has_facts %}{{ plays() }}{% endif %}
+        {% if has_facts %}{{ plays() }}{{ last_seen_line() }}{% endif %}
+        {% if not has_facts and not info.sounds %}{{ last_seen_line() }}{% endif %}
       </div>
       {% if has_facts %}
       <div class="fact-tiles" data-n="{{ tiles | length }}" data-tip="AI summary based on Wikipedia" role="list">
@@ -164,8 +169,8 @@
         </div>
         {% endfor %}
       </div>
-      {% else %}
-      {{ plays() }}
+      {% elif info.sounds %}
+      <div class="sp-sounds-col">{{ plays() }}{{ last_seen_line() }}</div>
       {% endif %}
     </div>
   </div>

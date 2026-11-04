@@ -1996,6 +1996,8 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 .sp-hero-row { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: center; }
 .sp-hero-id { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .sp-plays { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.sp-sounds-col { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.sp-last-seen { margin: 0; }
 .sp-hero-text { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
 /* Play / pause the card's song; an accent action button, centred by eye (see the alignment rule above). */
 .sp-play { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: 19px; font-weight: 600; font-size: .95rem; line-height: 1; flex: none; white-space: nowrap; box-sizing: border-box; }
