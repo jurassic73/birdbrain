@@ -374,6 +374,26 @@ button.score-range:hover { border-color: var(--accent); }
 button.score-range.on { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .critter-name { color: var(--text); text-decoration: none; }
 .critter-name:hover, .critter-name:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+/* Home on a phone in landscape: photo and Today share the row (no gap), names on one line, chips on one row.
+   Same width guard as the two-column .hero above (801px), so it applies exactly where the columns do. */
+@media (orientation: landscape) and (max-height: 500px) and (min-width: 801px) {
+  .hero { grid-template-columns: 56% minmax(0, 1fr); gap: 12px; margin-bottom: 14px; }
+  .hero-latest { max-height: none; width: 100%; }
+  .hero-latest ~ .today { padding: 8px 10px; gap: 6px; }
+  .today .score-head { gap: 4px; }
+  .today h2, .score-head .muted { font-size: .92rem; }
+  .score-ranges { gap: 2px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .score-ranges::-webkit-scrollbar { display: none; }
+  button.score-range {
+    flex: none; white-space: nowrap; padding: 0 5px; font-size: .7rem; min-height: 22px;
+    display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+  }
+  .critters li { grid-template-columns: minmax(0, 1fr) 2em; gap: 6px; padding: 2px 4px; font-size: .9rem; }
+  .critters li > span:first-child { display: flex; align-items: center; min-width: 0; }
+  .critters li .critter-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .critters li .info-tip { flex: none; }
+  .critter-status { display: none; }
+}
 .info-tip.card-tip { cursor: pointer; }
 /* The Today list's info icons, 50% bigger than elsewhere (owner: too small to see or tap). */
 .critters .info-tip { font-size: 1.125em; }
