@@ -587,7 +587,14 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
     visit = db.get_visit(conn, visit_id)
     if not visit:
         raise HTTPException(404)
-    is_ft = ft or db.is_false_trigger(conn, visit_id)
+    is_ft = db.is_false_trigger(conn, visit_id)
+    if not request.state.admin and (is_ft or ft):
+        # False triggers are for the admin only: a visitor gets the same 404 as for an id that doesn't exist (the
+        # mirror has none of them either), and the ft flag can't switch a real visit's arrows over to them.
+        if is_ft:
+            raise HTTPException(404)
+        ft = False
+    is_ft = ft or is_ft
     # todo: opened from the False triggers list of unconfirmed photos, so the arrows (and C) skip confirmed ones.
     todo = todo and is_ft
     # species: opened from that species' page, so the arrows step through only its visits.

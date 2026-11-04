@@ -8,7 +8,8 @@ BioCLIP 2 / Haiku / Sonnet on the visit page, raw_json.calls.owner_checks) go al
 says not to (OWNER_CHECKS_KEY, read here on the Pi, so the data never leaves it). Only the files the trimmed,
 privacy-filtered copy refers to (each visit's photo, thumbnail and burst frames) are pushed, so a photo saved
 after the copy was made, an orphan or a temporary file never goes out. They're staged as symlinks in a folder
-rsync sends with --copy-links --delete, so whatever else is on the mirror is removed.
+rsync sends with --copy-links --delete, so whatever else is on the mirror is removed. False triggers (the admin's
+pages only) are dropped from the copy, so their photos and bursts are never listed and the next push removes them.
 
 CLI (exit 0 = ok, 2 = error; the push script stops on a nonzero exit, so nothing goes out half done):
   python -m birdbrain.mirror prepare SRC.db STAGE [TZ]    copy, trim and filter SRC.db into STAGE/birdbrain.db,
@@ -79,6 +80,10 @@ def trim(conn: sqlite3.Connection) -> None:
     like = " OR ".join("key LIKE ?" for _ in SETTINGS_PREFIXES)
     conn.execute(f"DELETE FROM settings WHERE key NOT IN ({keys}) AND NOT ({like})",
                  [*sorted(SETTINGS_KEYS), *(p + "%" for p in SETTINGS_PREFIXES)])
+    # False triggers are for the admin only: they stay on the Pi, so neither their rows nor their photos, thumbnails
+    # and burst frames (files_of lists only the visits left) reach the mirror. Nothing else in the copy points at a
+    # visit: embeddings and pi_checks are emptied below, and species cover picks are real visits only.
+    conn.execute(f"DELETE FROM visits WHERE {db.FALSE_TRIGGER}")
     rows = conn.execute("SELECT id, raw_json FROM visits WHERE raw_json IS NOT NULL").fetchall()
     conn.executemany("UPDATE visits SET raw_json = ? WHERE id = ?",
                      [(public_raw(raw, share_checks), vid) for vid, raw in rows])
@@ -121,13 +126,14 @@ def is_temp(name: str) -> bool:
 
 def files_of(db_path: Path, images_dir: Path | None = None) -> list[str]:
     """Every photo file the (filtered) copy refers to that is on disk, as paths relative to the images folder:
-    each visit's photo, its thumbnail and its burst frames (with a picked frame's thumbnail). Nothing else goes: not
+    each visit's photo, its thumbnail and its burst frames (with a picked frame's thumbnail), never a false trigger's
+    (trim already dropped them; this is the second lock). Nothing else goes: not
     a photo saved since the copy was made, not an orphan, never a temporary file. Each day folder is listed once
     (images.frame_parts)."""
     images_dir = images_dir or config.IMAGES_DIR
     conn = sqlite3.connect(db_path)
     try:
-        visits = conn.execute("SELECT image_path, thumb_path FROM visits ORDER BY id").fetchall()
+        visits = conn.execute(f"SELECT image_path, thumb_path FROM visits WHERE NOT {db.FALSE_TRIGGER} ORDER BY id").fetchall()
     finally:
         conn.close()
     folders: dict[Path, tuple[set[str], dict[str, list[tuple[int, bool, str]]]]] = {}
