@@ -373,6 +373,7 @@ button.score-range.on { background: var(--accent); border-color: var(--accent); 
 /* Today's visitor count: plain text on the row with More filters; the other numbers live on Stats. */
 .tally-box { margin: 0; }
 .tally-box.tally-head { font-size: 1rem; white-space: nowrap; }
+.visits-bar .filters-toggle { margin-left: auto; flex: none; }
 .visits-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; margin-bottom: 8px; }
 .today-visits { margin: 0 0 8px; }
 .today-visits h2 { margin: 0; font-size: 1.1rem; }
@@ -1248,7 +1249,6 @@ details.review-fold > summary { display: none; }
   .hero { gap: 12px; margin-bottom: 16px; }
   .today { padding: 10px 12px; gap: 8px; }
   .visits-head .chips { flex: 1 1 0; min-width: 0; }
-  .visits-head .filters-toggle { flex: none; }
   .visits-head h2 { white-space: nowrap; }
   .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .chips a { white-space: nowrap; }

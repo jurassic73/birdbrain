@@ -67,9 +67,9 @@ def test_home_lists_visits_with_chips_and_filters_toggle(client, add_visit):
     add_visit(visitor="none", species=None)
     html = client.get("/").text
     assert "Bushtit" in html and "tally-box" in html and "Mammals" in html
-    # More filters is a toggle after the chips; its boxes start hidden. The Today panel has no Last motion line any more.
+    # More filters is a toggle on the tally row, above the chips; its boxes start hidden. The Today panel has no Last motion line any more.
     assert 'class="filters-toggle"' in html and 'aria-expanded="false"' in html and 'id="more-filters"' in html
-    assert html.index('class="chips"') < html.index('class="filters-toggle"') < html.index('id="more-filters"')
+    assert html.index('class="filters-toggle"') < html.index('class="chips"') < html.index('id="more-filters"')
     assert "Last motion" not in html
 
 
@@ -117,7 +117,7 @@ def test_multiple_chip_follows_mammals_and_filters(client, add_visit):
     add_visit(species="Dark-eyed Junco", count=1)
     html = client.get("/?kind=multiple").text
     assert 'aria-current="page">Multiple<' in html and "2 matching</h2>" in html
-    assert html.index(">Mammals<") < html.index(">Multiple<") < html.index(">Night<")
+    assert html.index(">Multiple<") < html.index(">Mammals<") < html.index(">Night<")
     assert '<option value="multiple" selected>' in html
 
 
