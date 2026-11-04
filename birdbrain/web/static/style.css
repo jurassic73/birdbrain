@@ -1893,7 +1893,15 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 
 /* Species page: the bird on top, then the Info / Visits tabs (they reuse the .cam-tab look). */
 .sp-hero-row { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: center; }
-.sp-hero-id { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.sp-hero-id { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sp-hero-text { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; min-width: 0; }
+/* Play / pause the card's song; an accent action button, centred by eye (see the alignment rule above). */
+.sp-play { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 38px; padding: 0 16px; border-radius: 19px; font-weight: 600; font-size: .95rem; line-height: 1; flex: none; white-space: nowrap; box-sizing: border-box; }
+.sp-play .sp-play-label { text-box: trim-both cap alphabetic; }
+@supports not (text-box: trim-both cap alphabetic) { .sp-play .sp-play-label { padding-top: 2px; } }
+.sp-play svg { display: block; flex: none; }
+.sp-play .ic-pause, .sp-play[aria-pressed="true"] .ic-play { display: none; }
+.sp-play[aria-pressed="true"] .ic-pause { display: block; }
 .sp-hero-id h1 { font-size: 1.6rem; margin: 0; }
 .sp-hero-id p { margin: 0; }
 .sp-hero-id .badge.sp-status { background: var(--accent); color: var(--accent-text); font-weight: 600; margin: 0; }
@@ -1906,6 +1914,7 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
   .sp-hero-row .sp-photo img { aspect-ratio: 1; max-height: none; }
   .sp-hero-row .sp-photo figcaption { display: none; }
   .sp-hero-id h1 { font-size: 1.3rem; }
+  .sp-play { height: 34px; padding: 0 12px; gap: 5px; font-size: .9rem; }
   .sp-inline { margin-bottom: 8px; }  /* the card above the tabs: 20px was a wide gap on a phone */
   .sp-tabs { margin-top: 0; margin-bottom: 8px; }
   .sp-tabs .cam-tab { flex: 1; padding: 0 12px; min-height: 36px; font-size: .95rem; }
