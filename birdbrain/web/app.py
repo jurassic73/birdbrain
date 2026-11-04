@@ -1121,7 +1121,7 @@ def species_card(request: Request, name: str, mini: bool = False, fold: bool = F
         return HTMLResponse('<p class="muted sp-empty">No info found for this one yet.</p>')
     return page(
         request,
-        "_species_tip.html" if mini else "_species_card.html",
+        "_species_tip.html" if mini else "_species_fold.html" if fold else "_species_card.html",
         info=info,
         sp=db.species_row(conn, name),
         ours=db.month_counts(conn, name),

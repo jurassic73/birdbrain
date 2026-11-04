@@ -107,7 +107,7 @@ def test_card_route_renders_full_card(client, add_visit, fake_build):
     add_visit(species="Bushtit", captured_at="2026-01-05T09:00:00")
     html = client.get("/species-info/Bushtit").text
     assert "Psaltriparus minimus" in html and "Year-round resident" in html
-    assert "AI summary based on Wikipedia" in html and "Jump to visits" in html and "1</span> visit" in html
+    assert "AI summary based on Wikipedia" in html and "1</span> visit" in html
     assert 'data-taxon="14886"' in html and "ebird.org/species/bushti" in html
 
 
@@ -118,26 +118,37 @@ def test_card_route_mini(client, add_visit, fake_build):
     assert "Click for more" in html and "<h2>" not in html
 
 
-def test_card_fold_only_when_asked(client, add_visit, fake_build):
+def test_card_fold_splits_into_the_bird_and_the_info_body(client, add_visit, fake_build):
     add_visit(species="Bushtit")
     assert "<details" not in client.get("/species-info/Bushtit").text
     assert "<h2>" in client.get("/species-info/Bushtit").text
     folded = client.get("/species-info/Bushtit?fold=1").text
-    assert '<details class="sp-more">' in folded and "More about this species" in folded
-    assert folded.index("sp-more") > folded.index("sp-top") and folded.index('class="sp-map"') > folded.index("sp-more")
+    # The title and photo swap into the page; the Info tab's body rides along out of band.
+    assert "sp-hero" in folded and folded.count("<h1") == 1 and 'id="sp-info-body" hx-swap-oob="innerHTML"' in folded
+    assert folded.index('id="sp-info-body"') > folded.index("sp-photo")
+    assert folded.index('class="sp-map"') > folded.index('id="sp-info-body"')
     assert "Click for more" in client.get("/species-info/Bushtit?mini=1&fold=1").text
-    assert 'id="daily"' in client.get("/species-info/Bushtit?fold=1").text
-    assert 'id="daily"' not in client.get("/species-info/Bushtit").text  # not in the pop-up
+    assert 'id="daily"' in folded and 'id="daily"' not in client.get("/species-info/Bushtit").text  # not in the pop-up
+    assert "sp-more" not in folded and "Jump to visits" not in folded
 
 
-def test_species_page_folds_and_names_once(client, add_visit, fake_build):
+def test_species_page_has_info_and_visits_tabs(client, add_visit, fake_build):
     add_visit(species="Bushtit")
     client.get("/species-info/Bushtit")  # builds and caches the card
     html = client.get("/species/Bushtit").text
-    assert '<details class="sp-more">' in html and html.count("<h1") == 1 and "<h2>" not in html
+    assert 'role="tablist"' in html and html.count('role="tab"') == 2 and html.count('role="tabpanel"') == 2
+    assert html.index('data-sp-tab="info"') < html.index('data-sp-tab="visits"')
+    assert 'id="tab-info"' in html and 'aria-selected="true"' in html and "Jump to visits" not in html
+    # Facts, charts and the card's sections live in the Info panel; the grid and its tools in the Visits panel.
+    info, visits = html.index('id="panel-info"'), html.index('id="panel-visits"')
+    assert info < html.index("First seen", info) < visits
+    assert html.index("Year-round resident") < html.index('role="tablist"')  # the status pill sits with the bird
+    assert info < html.index('id="daily"') < visits and info < html.index('class="sp-map"') < visits
+    assert visits < html.index('class="grid-tools"') < html.index('id="visits"')
+    assert html.index("<h1") < html.index('role="tablist"')  # the bird comes first
+    assert "species-tabs.js" in html and html.count("<h1") == 1 and "<h2>" not in html
     assert "?fold=1" not in html  # rendered inline, no htmx load
-    assert html.count('id="daily"') == 1 and html.index('id="daily"') > html.index("sp-more")
-    assert html.count('id="hourly"') == 1 and html.index('id="hourly"') > html.index("sp-more")
+    assert html.count('id="daily"') == 1 and html.count('id="hourly"') == 1
 
 
 def test_species_page_loading_card_asks_for_fold_and_keeps_a_fallback(client, add_visit):
@@ -151,7 +162,8 @@ def test_species_page_loading_card_asks_for_fold_and_keeps_a_fallback(client, ad
 def test_species_page_without_card_keeps_title(client, add_visit):
     add_visit(species="Other")
     html = client.get("/species/Other").text
-    assert html.count("<h1>Other</h1>") == 1 and 'id="daily"' in html and "sp-more" not in html
+    assert html.count("<h1>Other</h1>") == 1 and 'id="daily"' in html and 'role="tablist"' in html
+    assert html.index("<h1>Other</h1>") < html.index('role="tablist"') < html.index('id="daily"') < html.index('id="visits"')
 
 
 def test_card_route_unknown(client, monkeypatch):

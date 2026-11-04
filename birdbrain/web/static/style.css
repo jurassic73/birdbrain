@@ -1028,7 +1028,6 @@ button.danger.sending, button.danger.htmx-request {
 .sp-facts .big { font-size: 1.3rem; font-weight: 700; }
 .sp-facts .badge { margin: 0; }
 .sp-facts .badge.sp-status { background: var(--accent); color: var(--accent-text); font-weight: 600; }
-.sp-facts .sp-jump { padding: 5px 14px; font-size: .9rem; text-decoration: none; margin-left: -8px; }
 html { scroll-behavior: smooth; }
 #visits { scroll-margin-top: 70px; }
 .sp-top { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: start; }
@@ -1049,21 +1048,6 @@ html { scroll-behavior: smooth; }
 .sp-links { display: flex; flex-wrap: wrap; gap: 8px; }
 .sp-links a { padding: 7px 14px; border: 1px solid var(--accent); border-radius: 999px; text-decoration: none; font-size: .9rem; }
 .sp-links a:hover { background: var(--accent); color: var(--accent-text); }
-.sp-more > summary {
-  display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; user-select: none;
-  padding: 10px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font-weight: 600;
-}
-.sp-more > summary::-webkit-details-marker { display: none; }
-.sp-more > summary::before {
-  content: ""; flex: none; width: 7px; height: 7px; border: solid var(--accent); border-width: 0 2px 2px 0;
-  transform: rotate(-45deg); transition: transform .15s;
-}
-.sp-more[open] > summary::before { transform: rotate(45deg) translate(-2px, -2px); }
-.sp-more > summary:hover { border-color: var(--accent); }
-.sp-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.sp-more-body { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
-.sp-more .charts { margin-bottom: 0; }
-.sp-more .charts figure { background: var(--bg); }
 .sp-inline { margin: 0 0 20px; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
 .sp-inline:empty, .sp-inline:has(> .sp-empty) { display: none; }  /* no card (yet, or none to be had): the page's own title, facts and charts stand in */
 @media (max-width: 640px) {
@@ -1477,12 +1461,12 @@ button.se-all { font-weight: 600; }
 }
 .cam-live img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; display: block; background: var(--line); }
 .cam-live-note { margin: 6px 0 0; }
-.cam-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
+.cam-tabs, .sp-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 14px; overflow-x: auto; scrollbar-width: none; }
 .cam-tab { background: none; color: var(--muted); border: 0; border-bottom: 3px solid transparent; border-radius: 0;
   padding: 8px 12px; font-weight: 600; white-space: nowrap; margin-bottom: -1px; }
 .cam-tab:hover { color: var(--text); background: none; }
 .cam-tab[aria-selected=true] { color: var(--text); border-bottom-color: var(--accent); }
-[data-cam-pane][hidden] { display: none; }
+[data-cam-pane][hidden], .sp-panel[hidden] { display: none; }
 .cam-form h3 { margin: 6px 0 0; font-size: 1rem; }
 .cam-form { gap: 12px; }
 .cam-slider, .cam-row { display: grid; grid-template-columns: 9.5em 1fr 3em; align-items: center; gap: 12px; }
@@ -1874,3 +1858,20 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 .ft-trains-popup { width: min(94vw, 640px); max-height: 90vh; padding: 18px 20px 16px; overflow-y: auto; }
 .ft-trains-popup .popup-title { padding-right: 32px; }
 .ft-trains-popup .popup-close { position: absolute; top: 10px; right: 10px; }
+
+/* Species page: the bird on top, then the Info / Visits tabs (they reuse the .cam-tab look). */
+.sp-hero-row { display: grid; grid-template-columns: 260px 1fr; gap: 18px; align-items: center; }
+.sp-hero-id { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.sp-hero-id h1 { font-size: 1.6rem; margin: 0; }
+.sp-hero-id p { margin: 0; }
+.sp-hero-id .badge.sp-status { background: var(--accent); color: var(--accent-text); font-weight: 600; margin: 0; }
+.sp-tabs { margin-top: 4px; margin-bottom: 18px; }
+.sp-tabs .cam-tab { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 26px; font-size: 1rem; }
+.sp-body { gap: 20px; }
+@media (max-width: 640px) {
+  .sp-hero-row { grid-template-columns: 110px 1fr; gap: 12px; }
+  .sp-hero-row .sp-photo img { aspect-ratio: 1; max-height: none; }
+  .sp-hero-row .sp-photo figcaption { display: none; }
+  .sp-hero-id h1 { font-size: 1.3rem; }
+  .sp-tabs .cam-tab { flex: 1; padding: 0 12px; }
+}

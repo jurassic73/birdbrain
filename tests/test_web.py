@@ -1109,13 +1109,13 @@ def test_popups_use_the_site_dialog_not_the_browsers(client):
     assert ".popup {" in css and ".viewer {" in css and ".popup-actions" in css
 
 
-def test_species_list_names_open_the_info_card_and_card_has_jump_to_visits(client, add_visit, monkeypatch):
+def test_species_list_names_open_the_info_card_and_card_has_no_jump_to_visits(client, add_visit, monkeypatch):
     add_visit(species="Bushtit")
     assert 'data-species="Bushtit"' in client.get("/species").text
     from birdbrain import species_info
     monkeypatch.setattr(species_info, "get", lambda conn, name, fetch=True: {"name": name, "common": name, "status": "Year-round resident"})
     html = client.get("/species-info/Bushtit").text
-    assert 'href="/species/Bushtit#visits"' in html and "Jump to visits" in html
+    assert "Jump to visits" not in html and "sp-jump" not in html
     assert "All visits" not in html and 'class="sp-facts"' in html
     assert 'id="visits"' in client.get("/species/Bushtit").text
     assert re.findall(r'class="badge [^"]*"(?! data-tip)', html) == []

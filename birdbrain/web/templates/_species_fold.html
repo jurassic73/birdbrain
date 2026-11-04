@@ -1,0 +1,3 @@
+{# The species page's card, in two parts: the bird (title and photo) swaps into .sp-inline, the Info tab's body rides along out of band. #}
+{% set part = "hero" %}{% include "_species_card.html" %}
+<div id="sp-info-body" hx-swap-oob="innerHTML">{% set part = "body" %}{% include "_species_card.html" %}</div>

@@ -1,18 +1,13 @@
 {% from "_macros.html" import badge, confirm_badge with context %}
-<article class="sp-card">
-  <header class="sp-head">
-    <div>
-      <{{ "h1" if fold else "h2" }}>{{ info.common or info.name }}</{{ "h1" if fold else "h2" }}>
-      {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
-    </div>
-  </header>
-
-  {% if sp or info.status %}
+{# part: "all" is the whole card (the pop-up); "hero" is the species page's title and photo, "body" its Info tab (facts, text, charts, the rest). #}
+{% set part = part | default("all") %}
+{% set fold = part != "all" %}
+{% macro facts() %}
+  {% if sp or (info.status and not fold) %}
   <div class="sp-facts">
-    {% if info.status %}{{ badge(info.status, "sp-status") }}{% endif %}
+    {% if info.status and not fold %}{{ badge(info.status, "sp-status") }}{% endif %}
     {% if sp %}
     <span class="fact"><span class="big">{{ sp.visits }}</span> visit{{ 's' if sp.visits != 1 }}</span>
-    <a class="button-link solid sp-jump" href="/species/{{ sp.label | urlencode }}#visits">Jump to visits</a>
     <span class="fact">First seen <strong>{{ sp.first_seen | nice_date }}</strong></span>
     {# On the species page (fold) the phone drops these two; the pop-up keeps them. #}
     <span class="fact{{ ' hide-on-phone' if fold }}">Last seen <strong>{{ sp.last_seen | nice_time }}</strong></span>
@@ -21,13 +16,8 @@
   </div>
   {% endif %}
 
-  <div class="sp-top">
-    {% if info.photo %}
-    <figure class="sp-photo">
-      <img src="{{ info.photo.url }}" alt="{{ info.common or info.name }}">
-      <figcaption>Photo {{ info.photo.credit }}{% if info.photo.license and info.photo.license not in info.photo.credit %} ({{ info.photo.license }}){% endif %}, via iNaturalist</figcaption>
-    </figure>
-    {% endif %}
+{% endmacro %}
+{% macro text() %}
     <div class="sp-text">
       {% if info.description %}<p>{{ info.description }}</p>{% endif %}
       {% if info.notes %}
@@ -35,16 +25,13 @@
       <p class="muted small">AI summary based on Wikipedia</p>
       {% endif %}
     </div>
-  </div>
-
+{% endmacro %}
+{% macro rest() %}
   {% if fold %}
-  <details class="sp-more">
-    <summary>More about this species</summary>
-    <div class="sp-more-body">
-    <div class="charts">
-      <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
-      <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
-    </div>
+  <div class="charts">
+    <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
+    <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
+  </div>
   {% endif %}
 
   {% if info.sounds %}
@@ -99,8 +86,49 @@
   <p class="sp-credits muted small">
     {% if info.description %}Description from Wikipedia (CC BY-SA). {% endif %}Photo, range and local reports from iNaturalist.{% if info.sounds %} Recordings streamed from xeno-canto.{% endif %}
   </p>
-  {% if fold %}
+{% endmacro %}
+{% if part == "body" %}
+<div class="sp-card sp-body">
+  {{ facts() }}
+  {{ text() }}
+  {{ rest() }}
+</div>
+{% else %}
+<article class="sp-card{{ ' sp-hero' if part == 'hero' }}">
+  {% if part == "all" %}
+  <header class="sp-head">
+    <div>
+      <{{ "h1" if fold else "h2" }}>{{ info.common or info.name }}</{{ "h1" if fold else "h2" }}>
+      {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
     </div>
-  </details>
+  </header>
+
+
+  {{ facts() }}
+  <div class="sp-top">
+    {% if info.photo %}
+    <figure class="sp-photo">
+      <img src="{{ info.photo.url }}" alt="{{ info.common or info.name }}">
+      <figcaption>Photo {{ info.photo.credit }}{% if info.photo.license and info.photo.license not in info.photo.credit %} ({{ info.photo.license }}){% endif %}, via iNaturalist</figcaption>
+    </figure>
+    {% endif %}
+    {{ text() }}
+  </div>
+  {{ rest() }}
+  {% else %}
+  <div class="sp-hero-row">
+    {% if info.photo %}
+    <figure class="sp-photo">
+      <img src="{{ info.photo.url }}" alt="{{ info.common or info.name }}">
+      <figcaption>Photo {{ info.photo.credit }}{% if info.photo.license and info.photo.license not in info.photo.credit %} ({{ info.photo.license }}){% endif %}, via iNaturalist</figcaption>
+    </figure>
+    {% endif %}
+    <div class="sp-hero-id">
+      <h1>{{ info.common or info.name }}</h1>
+      {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
+      {% if info.status %}{{ badge(info.status, "sp-status") }}{% endif %}
+    </div>
+  </div>
   {% endif %}
 </article>
+{% endif %}
