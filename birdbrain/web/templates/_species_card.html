@@ -43,7 +43,7 @@
       {% for s in info.sounds %}
       <li>
         <div class="sp-sound-head"><strong>{{ s.label }}</strong>{% if s.length %} <span class="muted">{{ s.length }}</span>{% endif %}</div>
-        <audio controls preload="none" src="{{ s.file }}"></audio>
+        <audio controls preload="none" src="{{ s.file }}" data-card="{{ info.name }}"></audio>
         <small class="muted">{{ s.recordist }}, {{ s.license }}{% if s.where %} · {{ s.where }}{% endif %}{% if s.km is not none %} ({{ '{:,}'.format(s.km) }} km away){% endif %} · <a href="{{ s.page }}" target="_blank" rel="noopener">XC{{ s.id }}</a></small>
       </li>
       {% endfor %}
@@ -135,7 +135,7 @@
       {% set pick = songs[0] if songs else ((info.sounds or [])[0] if info.sounds else none) %}
       {% if pick %}
       {% set kind = "Song" if songs else (pick.label or "Call") %}
-      <button type="button" class="sp-play" data-src="{{ pick.file }}" aria-pressed="false"
+      <button type="button" class="sp-play" data-src="{{ pick.file }}" data-card="{{ info.name }}" aria-pressed="false"
               aria-label="Play {{ kind | lower }}: {{ info.common or info.name }}"
               data-tip="Play a {{ kind | lower }} recorded {% if pick.km is not none and pick.km is defined %}{{ '{:,}'.format(pick.km) }} km from here{% else %}near here{% endif %}, by {{ pick.recordist }}">
         <svg class="ic-play" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>

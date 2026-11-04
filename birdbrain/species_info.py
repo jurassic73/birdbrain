@@ -403,18 +403,42 @@ def short_status(label: str | None) -> tuple[str, str] | None:
 
 
 def _needs_sounds(data: dict) -> bool:
-    """Cards built before the xeno-canto key was set get their sounds added on next view, no full rebuild."""
-    return bool(config.XC_API_KEY) and data.get("is_bird") and "sounds" not in data
+    """Cards built before the xeno-canto key was set get their sounds added on next view, no full rebuild.
+    A card a viewer flagged (a recording that wouldn't load) gets its sounds fetched again the same way."""
+    if not config.XC_API_KEY or not data.get("is_bird"):
+        return False
+    return "sounds" not in data or bool(data.get("sounds_broken"))
+
+
+def flag_broken_sound(conn: sqlite3.Connection, name: str, url: str) -> bool:
+    """Note that a saved recording wouldn't play. Only flags: the sound stays on the card and nothing is
+    fetched here (the next admin view or visit prefetch re-fetches the sounds). True if the flag was set."""
+    cached = db.get_species_info(conn, name)
+    if not cached or url not in [s.get("file") for s in cached[0].get("sounds") or []]:
+        return False
+    data, stamp = cached
+    if not data.get("sounds_broken"):
+        data["sounds_broken"] = True
+        db.save_species_info(conn, name, data, stamp)
+        forget_cached_cards()
+    return True
 
 
 def _add_sounds(conn: sqlite3.Connection, name: str, data: dict, fetched_at: str) -> None:
+    key = "sounds:" + name
+    last = _failed_at.get(key)
+    if last is not None and time.monotonic() - last < RETRY_AFTER:
+        return  # it just failed; don't hammer xeno-canto
     try:
         with httpx.Client(follow_redirects=True) as http:
             data["sounds"] = fetch_sounds(http, data.get("sci_name"), data.get("map_center"))
     except Exception:
         log.exception("xeno-canto lookup failed for %s", name)
+        _failed_at[key] = time.monotonic()
         return
+    data.pop("sounds_broken", None)
     db.save_species_info(conn, name, data, fetched_at)
+    forget_cached_cards()
 
 
 def get(conn: sqlite3.Connection, name: str, fetch: bool = True) -> dict | None:
@@ -460,6 +484,8 @@ def _rebuild(conn: sqlite3.Connection, name: str, cached: tuple[dict, str] | Non
         if gaps:
             stamp = cached[1]  # keep the old date so it is rebuilt again (after the backoff) to fill the gaps
             _failed_at[name] = time.monotonic()
+    if data.get("sounds") and old and data["sounds"] != old.get("sounds"):
+        data.pop("sounds_broken", None)  # fresh recordings replace the ones that wouldn't play
     db.save_species_info(conn, name, data, stamp)
     forget_cached_cards()
     return data
