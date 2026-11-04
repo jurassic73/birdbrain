@@ -1,4 +1,5 @@
 import asyncio
+import io
 import json
 import logging
 import math
@@ -16,6 +17,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from PIL import Image, ImageStat
 
 from . import auth, steps, viewer
 from .. import alert, camera, circle_check, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
@@ -463,10 +465,22 @@ def home(request: Request, conn=Depends(get_conn)):
         species_names=db.species_names(conn),
         next_url=more_url("/visits/more", visits, PAGE_SIZE, filters),
         split_day=None if active else clock.today().isoformat(),
-        live_refresh=config.LIVE_REFRESH,
-        live_stale=LIVE_STALE,
         # The Today and This week chips show the same period on the scoreboard.
         **scoreboard_ctx(conn, next(({"Today": "today", "This week": "week"}.get(n) for n, _, on in chips if on), None)),
+    )
+
+
+@app.get("/live", response_class=HTMLResponse)
+def live_page(request: Request, conn=Depends(get_conn)):
+    """The live view on its own tab: the frame, plus a slim panel (light, frame age, today, the last visitor)."""
+    load_saved_frame()
+    return page(
+        request,
+        "live.html",
+        today=db.today_summary(conn),
+        light=frame_light(),
+        live_refresh=config.LIVE_REFRESH,
+        live_stale=LIVE_STALE,
     )
 
 
@@ -2006,14 +2020,36 @@ def save_frame(jpeg: bytes) -> None:
     tmp.replace(path)  # atomic, so a reader never sees half a file
 
 
+NIGHT_SATURATION = 12  # the watcher's rule (watch.frame_is_night): IR night frames are nearly grayscale
+
+
+def frame_light() -> str | None:
+    """'day' or 'night' for the cached live frame, judged from its color (IR frames are gray); None without a frame.
+
+    Read from the picture, never from the camera, so the page costs the camera nothing and works the same on the
+    public mirror. Cached per frame."""
+    jpeg = _live["jpeg"]
+    if jpeg is None:
+        return None
+    if _live.get("light_for") != _live["at"]:
+        try:
+            with Image.open(io.BytesIO(jpeg)) as im:
+                im.draft("RGB", (160, 90))  # JPEG decodes small for free
+                sat = ImageStat.Stat(im.convert("RGB").resize((64, 36)).convert("HSV")).mean[1]
+            _live["light"] = "night" if sat < NIGHT_SATURATION else "day"
+        except (OSError, ValueError):
+            _live["light"] = None
+        _live["light_for"] = _live["at"]
+    return _live["light"]
+
+
 def frame_response() -> Response:
-    """The cached frame plus its age, so the page can label stale frames honestly."""
+    """The cached frame plus its age and light, so the page can label stale frames honestly."""
     age = max(0.0, time.time() - _live["at"])
-    return Response(
-        _live["jpeg"],
-        media_type="image/jpeg",
-        headers={"Cache-Control": "no-store", "X-Frame-Age": f"{age:.1f}"},
-    )
+    headers = {"Cache-Control": "no-store", "X-Frame-Age": f"{age:.1f}"}
+    if light := frame_light():
+        headers["X-Frame-Light"] = light
+    return Response(_live["jpeg"], media_type="image/jpeg", headers=headers)
 
 
 async def grab_live_frame() -> bytes:

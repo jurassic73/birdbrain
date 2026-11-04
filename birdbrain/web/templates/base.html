@@ -95,7 +95,7 @@
 </head>
 {# Phone swipe between the top nav tabs (static/swipe.js). "nav" on the top-level pages; a page can set
    `{% set swipe = "off" %}` or `"links"` (its own <link rel="prev"/"next">) before extending. #}
-{% set swipe_mode = swipe|default("nav" if request.url.path in ("/", "/species", "/stats", "/review", "/false-triggers", "/notes") else "off") %}
+{% set swipe_mode = swipe|default("nav" if request.url.path in ("/", "/live", "/species", "/stats", "/review", "/false-triggers", "/notes") else "off") %}
 <body{% if embed %} class="embed"{% endif %}{% if request.state.admin %} data-admin="1"{% endif %}{% if not embed and swipe_mode != "off" %} data-swipe="{{ swipe_mode }}"{% endif %}>
   {% if not embed %}
   <header class="topbar">
@@ -104,6 +104,7 @@
     <div class="nav-row">
     <nav>
       <a href="/" {% if request.url.path == '/' or request.url.path.startswith('/visit/') %}aria-current="page"{% endif %}>Visits</a>
+      <a href="/live" {% if request.url.path == '/live' %}aria-current="page"{% endif %}>Live</a>
       <a href="/species" {% if request.url.path.startswith('/species') %}aria-current="page"{% endif %}>Species</a>
       <a href="/stats" {% if request.url.path in ('/stats', '/weather') %}aria-current="page"{% endif %}>Stats</a>
       {% if request.state.admin %}

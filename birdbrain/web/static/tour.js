@@ -21,14 +21,14 @@
   // part: "public" or "admin". sel: selectors tried in order (first one that shows wins), or with all:true every
   // visible match is highlighted together.
   const STEPS = [
-    {part: "public", sel: [".hero-latest", ".hero #live-box"], title: "The latest visitor",
+    {part: "public", sel: [".hero-latest", ".hero"], title: "The latest visitor",
      text: "Click the photo to open that visit. The magnifier opens it big, where you can zoom, drag and press Reset view. \"Go to visit\" in the caption does the same as a click. So does the Right arrow key."},
     {part: "public", sel: ["#overlays-toggle"], title: "See the bird without the circles",
      text: "The eye hides Claude's circles and the zones drawn on photos so you can see the bird itself. Press it again to bring them back."},
-    {part: "public", sel: [".today #live-box", ".today"], title: "Today and the live view",
-     text: "The live view shows what the camera sees right now, with today's visitors and numbers under it."},
+    {part: "public", sel: [".today"], title: "Today",
+     text: "Today's visitors and how many of each, so you can see who has been around."},
     {part: "public", sel: [".topbar nav"], title: "Find your way around",
-     text: "Visits is this page. Species shows each kind of animal seen, and Stats has the charts."},
+     text: "Visits is this page. Live shows what the camera sees right now, Species shows each kind of animal seen, and Stats has the charts."},
     {part: "public", sel: [".grid .sp-name", ".sp-name"], title: "Tap a species name",
      text: "Any species name opens an info card with a photo, sounds, a range map and when it is usually seen here."},
     {part: "public", sel: ["#palette-toggle", "#theme-toggle"], all: true, title: "Colors and dark mode",

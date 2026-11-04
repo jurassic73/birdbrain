@@ -89,14 +89,14 @@ def photo_urls(html: str) -> set[str]:
     for value in URL_ATTRS.findall(html):
         for part in value.split(","):  # srcset: "url 1x, url 2x"
             url = part.strip().split(" ")[0]
-            if "/images/" in url or "/live" in url or url.endswith(".jpg"):
+            if "/images/" in url or "/live/" in url or "/live.jpg" in url or url.endswith(".jpg"):
                 found.add(url)
     return found
 
 
 def test_every_photo_on_the_public_pages_loads_under_the_base_path(mirror, photos):
     v1, v2, v3 = photos
-    pages = ["/", f"/visit/{v1}", f"/visit/{v2}", f"/visit/{v3}", "/species", "/species/Dark-eyed%20Junco",
+    pages = ["/", "/live", f"/visit/{v1}", f"/visit/{v2}", f"/visit/{v3}", "/species", "/species/Dark-eyed%20Junco",
              "/species/Eastern%20Gray%20Squirrel", "/stats", "/about"]
     urls: dict[str, set[str]] = {}
     for page in pages:

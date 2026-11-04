@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, sp_name, thumb, zoom_btn, zoom_out_btn %}
+{% block title %}Live view · Birdbrain{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+{# The live view on its own tab: the frame big on the left, a slim panel on the right (under it on phones).
+   static/live-view.js refreshes the frame, the badge, the frame age and the light pill; a new visitor swaps #live-visits. #}
+{% set lv = today.latest %}
+<div class="live-page">
+  <div class="live" id="live-box" data-refresh-ms="{{ live_refresh * 1000 }}" data-stale="{{ live_stale }}">
+    <img id="live" src="/live/latest.jpg" alt="Live view of the birdbath" fetchpriority="high">
+    <button type="button" class="live-zoom" aria-label="Open the live view big"></button>
+    {{ zoom_btn() }}
+    <div class="live-badge"><span class="dot"></span><span id="live-status">Live</span> <span class="muted" id="live-age"></span></div>
+    <div class="live-title" data-tip="What the camera sees right now, refreshed every few seconds">Live view</div>
+    <div class="live-offline">Camera offline</div>
+  </div>
+
+  <aside class="live-side">
+    <h2>Camera</h2>
+    <div class="live-row">
+      <span class="muted">Light</span>
+      <span class="live-light">
+        <span data-light="day"{% if light != 'day' %} hidden{% endif %}>{{ badge("day mode", "") }}</span>
+        <span data-light="night"{% if light != 'night' %} hidden{% endif %}>{{ badge("night mode", "night") }}</span>
+        {% if not light %}<span class="muted" data-light="none">unknown</span>{% endif %}
+      </span>
+    </div>
+    <div class="live-row"><span class="muted">Last frame</span><span id="live-side-age"></span></div>
+    <div id="live-visits">
+      <hr class="live-rule">
+      <h2>Today</h2>
+      <div class="live-row live-today">
+        <span class="live-big">{{ today.visits }}</span>
+        <span class="muted">visitor{{ 's' if today.visits != 1 }}{% if today.visits %}, {{ today.species }} species{% endif %}</span>
+      </div>
+      {% if lv %}
+      <hr class="live-rule">
+      <h2>Last visitor</h2>
+      <div class="live-last">
+        <a class="live-last-photo" href="/visit/{{ lv.id }}" aria-label="Open the last visit">{{ thumb(lv) }}</a>
+        <div class="live-last-name">{{ sp_name(lv.label) }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}</div>
+        <div class="muted">{{ lv.captured_at | short_time }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </aside>
+</div>
+
+<dialog class="viewer live-viewer" id="live-viewer" aria-label="Live view, big">
+  <div class="live-viewer-frame">
+    <img id="live-big" alt="Live view of the birdbath">
+    <div class="live-badge"><span class="dot"></span><span id="live-big-status">Live</span> <span class="muted" id="live-big-age"></span></div>
+  </div>
+  {{ zoom_out_btn("live-viewer-close") }}
+</dialog>
+<script src="/static/live-view.js?v={{ asset_version }}" defer></script>
+{% endblock %}
