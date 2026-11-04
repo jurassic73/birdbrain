@@ -1,49 +1,39 @@
 // Guided tour: a spotlight over a real element plus a small card (title, a sentence or two, Back / Next / Skip).
-// Runs on its own the first time a browser sees the home page; an admin gets three extra steps once. "Run the tour
-// again" (Settings, About) goes to /?tour=1. Seen flags live in localStorage; if storage fails it never starts by itself.
+// Runs on its own the first time a browser sees the home page. "Run the tour again" (Settings, About) goes to
+// /?tour=1. The seen flag lives in localStorage; if storage fails it never starts by itself.
 (() => {
-  const SEEN = "bb_tour_seen", ADMIN_SEEN = "bb_tour_admin_seen", LOGIN = "bb_tour_login";
+  const SEEN = "bb_tour_seen";
   const root = document.documentElement;
   const get = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
   const set = (k) => { try { localStorage.setItem(k, "1"); } catch { /* nothing to do */ } };
   const storageOk = () => { try { localStorage.setItem("bb_tour_probe", "1"); localStorage.removeItem("bb_tour_probe"); return true; } catch { return false; } };
 
-  // Rerun links clear the flags (the tour starts on the home page because of ?tour=1).
+  // Rerun links clear the flag (the tour starts on the home page because of ?tour=1).
   document.addEventListener("click", (e) => {
     if (!e.target.closest("[data-tour-restart]")) return;
-    try { localStorage.removeItem(SEEN); localStorage.removeItem(ADMIN_SEEN); } catch { /* ignore */ }
-  });
-  // The admin login form marks this tab, so the page it lands on can offer the admin part.
-  document.addEventListener("submit", (e) => {
-    if (e.target.matches("form[action$='/login']")) { try { sessionStorage.setItem(LOGIN, "1"); } catch { /* ignore */ } }
+    try { localStorage.removeItem(SEEN); } catch { /* ignore */ }
   });
 
-  // part: "public" or "admin". sel: selectors tried in order (first one that shows wins), or with all:true every
-  // visible match is highlighted together.
-  const STEPS = [
-    {part: "public", sel: [".hero-latest", ".hero"], title: "The latest visitor",
+  // sel: selectors tried in order (first one that shows wins), or with all:true every visible match is highlighted
+  // together. Only features that exist on both the home site and the public mirror.
+  const steps = [
+    {sel: [".hero-latest", ".hero"], title: "The latest visitor",
      text: "Click the photo, or press the Right arrow key, to open that visit. The magnifier opens it big, where you can zoom, drag and press Reset view."},
-    {part: "public", sel: ["#overlays-toggle"], title: "See the bird without the circles",
+    {sel: ["#overlays-toggle"], title: "See the bird without the circles",
      text: "The eye hides Claude's circles and the zones drawn on photos so you can see the bird itself. Press it again to bring them back."},
-    {part: "public", sel: [".today"], title: "Today",
+    {sel: [".today"], title: "Today",
      text: "Today's visitors and how many of each, so you can see who has been around."},
-    {part: "public", sel: [".topbar nav"], title: "Find your way around",
+    {sel: [".topbar nav"], title: "Find your way around",
      text: "Visits is this page. Species shows each kind of animal seen, Live shows what the camera sees right now, and Stats has the charts."},
-    {part: "public", sel: [".grid .sp-name", ".sp-name"], title: "Tap a species name",
+    {sel: [".grid .sp-name", ".sp-name"], title: "Tap a species name",
      text: "Any species name opens an info card with a photo, sounds, a range map and when it is usually seen here."},
-    {part: "public", sel: ["#palette-toggle", "#theme-toggle"], all: true, title: "Colors and dark mode",
+    {sel: ["#palette-toggle", "#theme-toggle"], all: true, title: "Colors and dark mode",
      text: "The half-filled circle changes the color palette. The sun or moon switches between light and dark. Both are remembered in this browser."},
-    {part: "public", sel: [".topbar a[href='/about']"], title: "How it works",
+    {sel: [".topbar a[href='/about']"], title: "How it works",
      text: "The i button explains how Birdbrain spots, photographs and names visitors. You can run this tour again from there."},
-    {part: "admin", sel: [".topbar a[href='/review']", ".topbar a[href='/false-triggers']"], all: true, title: "Review and false triggers",
-     text: "Review holds visits Claude was unsure about. False triggers are the times nothing was there. On a visit page, \"Looks right\" confirms a label and the form corrects a wrong one."},
-    {part: "admin", sel: [".topbar a[href='/notes']"], title: "Claude's Notes",
-     text: "Everything Claude is told about your yard lives here: what the camera sees, what to look for and ignore, and the lessons from your corrections."},
-    {part: "admin", sel: [".topbar a[href='/settings']"], title: "Settings",
-     text: "Zones, camera, the Pi animal check and BioCLIP 2 species check, storage and alerts. The Run the tour again button is here too."},
   ];
 
-  let steps = [], idx = 0, parts = [], els = {}, savedFocus = null;
+  let idx = 0, els = {}, savedFocus = null;
 
   const visible = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden"; };
   function targetOf(step) {
@@ -134,8 +124,7 @@
   }
 
   function end() {
-    if (parts.includes("public")) set(SEEN);
-    if (parts.includes("admin")) set(ADMIN_SEEN);
+    set(SEEN);
     delete root.dataset.tour;
     removeEventListener("resize", place); removeEventListener("scroll", place, true);
     removeEventListener("keydown", onKey, true);
@@ -155,9 +144,7 @@
     }
   }
 
-  function start(which) {
-    parts = which;
-    steps = STEPS.filter((s) => which.includes(s.part));
+  function start() {
     savedFocus = document.activeElement;
     idx = steps.findIndex((s) => targetOf(s));
     if (idx < 0) return;
@@ -180,20 +167,13 @@
 
   addEventListener("DOMContentLoaded", () => {
     if (document.body.classList.contains("embed")) return;
-    const admin = document.body.dataset.admin === "1";
-    const all = admin ? ["public", "admin"] : ["public"];
     const home = !!document.querySelector(".hero");
     if (home && new URLSearchParams(location.search).get("tour") === "1") {
       history.replaceState(null, "", location.pathname + location.hash);
-      setTimeout(() => whenClear(() => start(all)), 500);
+      setTimeout(() => whenClear(start), 500);
       return;
     }
     if (!storageOk()) return;  // can't remember it, so never start by itself
-    const need = [];
-    if (home && !get(SEEN)) need.push("public");
-    let fromLogin = false;
-    try { fromLogin = sessionStorage.getItem(LOGIN) === "1"; if (admin) sessionStorage.removeItem(LOGIN); } catch { /* ignore */ }
-    if (admin && !get(ADMIN_SEEN) && (home || fromLogin)) need.push("admin");
-    if (need.length) setTimeout(() => whenClear(() => start(need)), 700);
+    if (home && !get(SEEN)) setTimeout(() => whenClear(start), 700);
   });
 })();

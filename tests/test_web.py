@@ -1442,6 +1442,8 @@ def test_tour_script_and_rerun_buttons(client):
     assert "data-tour-restart" in client.get("/settings").text
     assert "data-admin=\"1\"" in client.get("/").text  # no password: everyone is admin
     assert "tour.js" not in client.get("/?embed=1").text
+    tour = client.get("/static/tour.js").text  # the tour is the same for everyone: no admin steps or flags
+    assert 'part: "admin"' not in tour and "bb_tour_admin_seen" not in tour
 
 
 def test_every_big_photo_view_closes_with_the_minus_magnifier(client, add_visit):
