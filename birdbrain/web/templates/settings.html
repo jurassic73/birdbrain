@@ -85,7 +85,7 @@
       <div><span class="big {{ 'bad' if p.missed }}">{{ p.missed | length }}</span> it called empty</div>
       <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames caught</div>
     </div>
-    <p class="muted small">Last {{ p.days }} days. <a href="/stats#presence">Details</a></p>
+    <p class="muted small">Last {{ p.days }} days.</p>
     {% endif %}
     <form class="settings-form" method="post" action="/settings/presence">
       <div class="choices">
