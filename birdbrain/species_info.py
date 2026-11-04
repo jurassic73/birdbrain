@@ -53,6 +53,29 @@ def _get(client: httpx.Client, url: str, **params) -> dict:
     return r.json()
 
 
+PACE = 2  # seconds between cards in the facts backfill, to stay under Wikipedia's rate limit
+PATIENT_WAITS = (10, 30)  # seconds before the 1st and 2nd retry of a 429/503 when there is no Retry-After
+RETRY_AFTER_MAX = 120
+_sleep = time.sleep  # tests replace this so nothing really waits
+
+
+def _get_patient(client: httpx.Client, url: str, **params) -> dict:
+    """Like _get, but a 429 or 503 is waited out (Retry-After if given, else 10 s then 30 s) and retried twice."""
+    for attempt in range(len(PATIENT_WAITS) + 1):
+        r = client.get(url, params=params or None, headers=HEADERS, timeout=15)
+        if r.status_code in (429, 503) and attempt < len(PATIENT_WAITS):
+            wait = PATIENT_WAITS[attempt]
+            retry = (r.headers.get("Retry-After") or "").strip()
+            if retry.isdigit():
+                wait = min(int(retry), RETRY_AFTER_MAX)
+            log.warning("%s from %s, waiting %s s", r.status_code, url.split("?")[0], wait)
+            _sleep(wait)
+            continue
+        r.raise_for_status()
+        return r.json()
+    raise RuntimeError("unreachable")
+
+
 def find_taxon(client: httpx.Client, query: str) -> dict | None:
     """The iNaturalist taxon for a common name: an exact common-name match at species rank if there is one."""
     results = _get(client, "https://api.inaturalist.org/v1/taxa", q=query, is_active="true", per_page=10)["results"]
@@ -264,14 +287,17 @@ diet; how it behaves at a feeder or birdbath (or in a backyard); how it gets alo
 Skip any topic the article does not cover.
 
 facts: 2 to 5 hook facts for the top of the species page, to catch a curious visitor's interest. Put the article's most
-surprising and memorable facts here (the notes are the practical behavior). Each has a text and a lead. The text is 6 to 14 words,
-punchy and memorable: a size or weight comparison, a lifespan record, a speed, an odd habit, where its name comes from, a striking number.
+surprising and memorable facts here (the notes are the practical behavior). Each has a text and a lead. The text is one complete sentence of 6 to 14 words with its own subject (the animal's name, "it",
+or "they"), never a fragment such as "Longest recorded lifespan for females". It makes exactly one claim, taken from one
+place in the article: never merge two separate claims, or a claim and a detail from a different sentence, into one fact.
+Make it punchy and memorable: a size or weight comparison, a lifespan record, a speed, an odd habit, where its name comes from, a striking number.
 Keep every number exactly as the article states it, and say exactly who it applies to (do not turn a claim about females
 or the whole species into one about males, or the reverse). Prefer the surprising over the descriptive: skip plain
 taxonomy ("a small sparrow") and ordinary size ranges unless there is a vivid comparison. They must not repeat or rephrase any
 of the notes. Write fewer, or none, rather than pad with dull or generic facts. No emoji.
-The lead is the fact's headline for a tile: 1 or 2 words, or a number with its unit, copied exactly from the fact's own text
-(for example "Blizzard", "75%", "40 million", "1741", "12 years"). Never a word that is not in the text."""
+Every fact must have a lead. The lead is the fact's headline for a tile: 1 or 2 words, or a number with its unit, copied exactly
+from the fact's own text (for example "Blizzard", "75%", "40 million", "1741", "12 years"). If a fact has no good lead in its own
+sentence, choose a different fact instead. Never a word that is not in the text."""
 
 MAX_NOTES = 4
 MAX_FACTS = 5
@@ -347,7 +373,8 @@ def fact_item(fact) -> dict:
 
 def clean_facts(facts: list, notes: list[str]) -> list[dict]:
     """The model's hook facts as {lead, text}, checked in code: no blanks, none over MAX_FACT_WORDS words, none repeating a
-    note or an earlier fact (by share of shared words), at most MAX_FACTS; each lead must come from its text."""
+    note or an earlier fact (by share of shared words); each lead must come from its text, and a fact still without one is
+    dropped unless fewer than 2 would be left; at most MAX_FACTS."""
     kept: list[dict] = []
     seen = [_words(n) for n in notes]
     for fact in facts or []:
@@ -360,9 +387,10 @@ def clean_facts(facts: list, notes: list[str]) -> list[dict]:
             continue
         kept.append({"lead": clean_lead(lead, text), "text": text})
         seen.append(mine)
-        if len(kept) == MAX_FACTS:
-            break
-    return kept
+    led = [f for f in kept if f["lead"]]
+    if len(led) >= 2:  # a fact with no lead is dropped, unless that would leave too few to show
+        kept = led
+    return kept[:MAX_FACTS]
 
 
 def clean_notes(notes: list[str]) -> list[str]:
@@ -402,13 +430,14 @@ def card_text(name: str, article: str) -> dict:
     return {"notes": notes, "facts": clean_facts(parsed.facts, notes)}
 
 
-def wikipedia_article(http: httpx.Client, title: str) -> tuple[dict | None, str]:
-    """The Wikipedia summary (None if the page isn't a standard article) and its plain text."""
-    summary = _get(http, f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title)}")
+def wikipedia_article(http: httpx.Client, title: str, patient: bool = False) -> tuple[dict | None, str]:
+    """The Wikipedia summary (None if the page isn't a standard article) and its plain text. patient waits out rate limits."""
+    get = _get_patient if patient else _get
+    summary = get(http, f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(title)}")
     if summary.get("type") != "standard":
         return None, ""
-    ext = _get(http, "https://en.wikipedia.org/w/api.php", action="query", prop="extracts",
-               explaintext=1, redirects=1, format="json", titles=summary["title"])
+    ext = get(http, "https://en.wikipedia.org/w/api.php", action="query", prop="extracts",
+              explaintext=1, redirects=1, format="json", titles=summary["title"])
     return summary, next(iter(ext["query"]["pages"].values())).get("extract", "")
 
 
@@ -695,7 +724,7 @@ def add_facts(conn: sqlite3.Connection, name: str, http: httpx.Client) -> bool:
     wiki = card.get("wiki_url")
     if not wiki or not card.get("description"):
         return False
-    _, article = wikipedia_article(http, unquote(wiki.rsplit("/", 1)[-1]))
+    _, article = wikipedia_article(http, unquote(wiki.rsplit("/", 1)[-1]), patient=True)
     if not article:
         return False
     text = card_text(card.get("common") or name, article)
@@ -727,6 +756,8 @@ def backfill_facts(conn: sqlite3.Connection, redo: bool = False, only: str | Non
     done = failed = 0
     with httpx.Client(follow_redirects=True) as http:
         for i, name in enumerate(todo, 1):
+            if i > 1:
+                _sleep(PACE)
             try:
                 if add_facts(conn, name, http):
                     done += 1

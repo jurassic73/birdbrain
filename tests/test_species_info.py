@@ -547,8 +547,9 @@ def test_card_text_without_a_parsed_answer(monkeypatch):
 class FakeWiki:
     """httpx.Client stand-in for the two Wikipedia calls (summary, then plain text)."""
 
-    def __init__(self, fail=()):
-        self.urls, self.headers_seen, self.fail = [], [], fail
+    def __init__(self, fail=(), limited=None):
+        # limited: {url fragment: [(status, headers), ...]}, one scripted reply per call before the real one
+        self.urls, self.headers_seen, self.fail, self.limited = [], [], fail, limited or {}
 
     def __enter__(self):
         return self
@@ -560,6 +561,10 @@ class FakeWiki:
         self.urls.append(url)
         self.headers_seen.append(headers)
         req = httpx.Request("GET", url)
+        for frag, script in self.limited.items():
+            if frag in url and script:
+                status, headers = script.pop(0)
+                return httpx.Response(status, request=req, headers=headers)
         if any(f in url for f in self.fail):
             return httpx.Response(500, request=req)
         if "rest_v1" in url:
@@ -673,3 +678,66 @@ def test_pop_up_card_has_no_tiles(client, conn, add_visit):
     add_visit(species="Bushtit")
     _save_card(conn, facts=HOOKS[:4], sounds=[{**s, "km": 100, "recordist": "A"} for s in SOUNDS])
     assert "fact-tile" not in client.get("/species-info/Bushtit").text
+
+
+@pytest.fixture
+def naps(monkeypatch):
+    """Replaces the backfill's sleep, so nothing waits; the list holds the seconds it was asked to wait."""
+    waits = []
+    monkeypatch.setattr(species_info, "_sleep", waits.append)
+    return waits
+
+
+def _scripted(monkeypatch, wiki):
+    from birdbrain import identify
+    monkeypatch.setattr(identify, "client", lambda: FakeHaiku(["n"], [species_info.Fact(lead="Deck", text="Weighs less than a deck of cards.")]))
+    monkeypatch.setattr(species_info.httpx, "Client", lambda **kw: wiki)
+
+
+def test_backfill_waits_out_a_429_then_succeeds(conn, monkeypatch, naps):
+    cached_card(conn, "Bushtit")
+    wiki = FakeWiki(limited={"rest_v1": [(429, {}), (503, {})]})  # then the real reply; no Retry-After: 10 s then 30 s
+    _scripted(monkeypatch, wiki)
+    assert species_info.backfill_facts(conn, out=lambda m: None) == (1, 0)
+    assert naps == [10, 30]
+    assert sum("rest_v1" in u for u in wiki.urls) == 3
+
+
+def test_backfill_honours_retry_after_and_gives_up_after_two_retries(conn, monkeypatch, naps):
+    cached_card(conn, "Bushtit")
+    wiki = FakeWiki(limited={"rest_v1": [(429, {"Retry-After": "7"}), (429, {"Retry-After": "9999"}), (429, {})]})
+    _scripted(monkeypatch, wiki)
+    lines = []
+    assert species_info.backfill_facts(conn, out=lines.append) == (0, 1)
+    assert naps == [7, species_info.RETRY_AFTER_MAX]  # capped; the third 429 is a failure, with no third wait
+    assert lines == ["1/1 done, 1 failed"]
+    assert "facts" not in db.get_species_info(conn, "Bushtit")[0]  # the old card survives
+
+
+def test_backfill_pauses_between_cards(conn, monkeypatch, naps):
+    for n in ("Bushtit", "Chickadee", "Wren"):
+        cached_card(conn, n)
+    _scripted(monkeypatch, FakeWiki())
+    assert species_info.backfill_facts(conn, out=lambda m: None) == (3, 0)
+    assert naps == [species_info.PACE, species_info.PACE]  # between cards, not before the first or after the last
+
+
+def test_clean_facts_drops_a_leadless_fact_unless_too_few_remain():
+    notes = []
+    mixed = [F("Blizzard", "A flock of juncos is called a blizzard."), F("", "Juncos forage on the ground in winter flocks."),
+             F("Arctic", "Some juncos breed as far north as the Arctic.")]
+    assert [f["lead"] for f in species_info.clean_facts(mixed, notes)] == ["Blizzard", "Arctic"]
+    one_led = [F("Blizzard", "A flock of juncos is called a blizzard."), F("", "Juncos forage on the ground in winter flocks.")]
+    assert len(species_info.clean_facts(one_led, notes)) == 2  # dropping would leave 1: keep both
+    none_led = [F("", "Juncos forage on the ground in winter flocks."), F("", "Males sing from the tops of tall trees.")]
+    assert len(species_info.clean_facts(none_led, notes)) == 2
+    many = [F("Beetles", "It outruns beetles on open ground."), F("Granite", "Nests are lined with crushed granite."),
+            F("Violins", "Its song resembles violins tuning up."), F("Marathons", "Some migrate marathons every autumn."),
+            F("Volcanoes", "Young birds roost near volcanoes."), F("Teapots", "Collectors prize teapots with its portrait."),
+            F("Glaciers", "Glaciers shaped its breeding range.")]
+    assert len(species_info.clean_facts(many, notes)) == species_info.MAX_FACTS
+
+
+def test_prompt_asks_for_whole_single_claim_sentences_with_a_lead():
+    p = species_info.NOTES_PROMPT
+    assert "complete sentence" in p and "exactly one claim" in p and "Every fact must have a lead" in p
