@@ -664,6 +664,55 @@ def test_species_pages(client, add_visit):
     assert client.get("/species/Nope").status_code == 404
 
 
+def _seed_swipe_species(add_visit):
+    # visits order: Bushtit (3), Song Sparrow (2), Anna's Hummingbird (1); A to Z: Anna's, Bushtit, Song
+    for _ in range(3):
+        add_visit(species="Bushtit", captured_at="2026-10-01T09:00:00")
+    for _ in range(2):
+        add_visit(species="Song Sparrow", captured_at="2026-10-05T09:00:00")
+    add_visit(species="Anna's Hummingbird", captured_at="2026-10-09T09:00:00")
+
+
+def _swipe_links(html):
+    import re
+    return {rel: (m.group(1) if (m := re.search(rf'<link rel="{rel}" href="([^"]*)"', html)) else None) for rel in ("prev", "next")}
+
+
+def test_species_page_swipes_along_the_list_order(client, add_visit):
+    _seed_swipe_species(add_visit)
+    html = client.get("/species/Song%20Sparrow").text
+    assert 'data-swipe="links"' in html
+    assert _swipe_links(html) == {"prev": "/species/Bushtit", "next": "/species/Anna%27s%20Hummingbird"}
+    # the ends have only one neighbour
+    assert _swipe_links(client.get("/species/Bushtit").text) == {"prev": None, "next": "/species/Song%20Sparrow"}
+    assert _swipe_links(client.get("/species/Anna's%20Hummingbird").text)["next"] is None
+
+
+def test_species_page_swipe_follows_the_lists_sort(client, add_visit):
+    _seed_swipe_species(add_visit)
+    html = client.get("/species/Bushtit?sort=name").text
+    assert _swipe_links(html) == {"prev": "/species/Anna%27s%20Hummingbird?sort=name", "next": "/species/Song%20Sparrow?sort=name"}
+    # newest first seen: Anna's, Song, Bushtit
+    assert _swipe_links(client.get("/species/Song%20Sparrow?sort=newest").text)["prev"] == "/species/Anna%27s%20Hummingbird?sort=newest"
+    # an unknown sort is the default order, with clean links
+    assert _swipe_links(client.get("/species/Song%20Sparrow?sort=bogus").text)["prev"] == "/species/Bushtit"
+
+
+def test_species_order_matches_the_list(conn, add_visit):
+    _seed_swipe_species(add_visit)
+    add_visit(species="Bushtit", visitor="bird", also=json.dumps([{"visitor": "bird", "species": "Steller's Jay", "count": 1, "confidence": "high"}]))
+    for sort in db.SPECIES_SORTS:
+        assert db.species_order(conn, sort) == [r["label"] for r in db.species_summary(conn, sort=sort)]
+
+
+def test_species_list_tiles_carry_the_sort(client, add_visit):
+    _seed_swipe_species(add_visit)
+    assert 'href="/species/Bushtit"' in client.get("/species").text
+    assert 'href="/species/Bushtit"' in client.get("/species?sort=visits").text
+    assert 'href="/species/Bushtit?sort=name"' in client.get("/species?sort=name").text
+    assert "?sort=bogus" not in client.get("/species?sort=bogus").text.replace('href="?sort=', "")
+
+
 def test_species_page_has_the_full_size_photo_browser(client, add_visit):
     add_visit(species="Bushtit")
     html = client.get("/species/Bushtit").text

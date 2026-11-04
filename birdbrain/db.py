@@ -1321,8 +1321,8 @@ def species_without_favorite(conn: sqlite3.Connection, min_photos: int = 2) -> l
 
 SPECIES_SORTS = {
     "visits": "visits DESC, label",
-    "newest": "first_seen DESC",
-    "recent": "last_seen DESC",
+    "newest": "first_seen DESC, label",
+    "recent": "last_seen DESC, label",
     "name": "label",
 }
 
@@ -1367,6 +1367,17 @@ def species_summary(
     if limit:
         sql += f" LIMIT {int(limit)}"
     return conn.execute(sql, args).fetchall()
+
+
+def species_order(conn: sqlite3.Connection, sort: str = "visits") -> list[str]:
+    """Just the labels, in the order species_summary lists them (no photos), for the species page's swipe."""
+    order = SPECIES_SORTS.get(sort, SPECIES_SORTS["visits"])
+    where, args = _where()
+    sql = f"""SELECT label FROM (
+                  SELECT label, COUNT(DISTINCT id) AS visits, MIN(captured_at) AS first_seen,
+                         MAX(captured_at) AS last_seen
+                  FROM ({_seen(where)}) GROUP BY label) ORDER BY {order}"""
+    return [r[0] for r in conn.execute(sql, [*args, *args])]
 
 
 def species_row(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
