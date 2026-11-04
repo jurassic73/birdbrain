@@ -27,7 +27,7 @@
 </div>
 {% endif %}{% endblock %}
 {% block content %}
-{# The bird (title and photo) sits on top, then two tabs: Info (facts, text, charts, the card's sections) and Visits. #}
+{# The bird (title and photo) sits on top, then two tabs: Visits (the default) and Info (facts, text, charts, the card's sections). #}
 {# Without a card the title, facts and charts stand in; a card that loads (htmx) replaces them, one that comes back empty leaves them. #}
 {% if not info %}
 <div class="page-head" id="sp-fallback-head">
@@ -41,28 +41,12 @@
 </div>
 {% endif %}
 <div class="cam-tabs sp-tabs" role="tablist" aria-label="{{ sp.label }}">
-  <button type="button" role="tab" class="cam-tab" id="tab-info" aria-controls="panel-info" aria-selected="true" data-sp-tab="info">Info</button>
-  <button type="button" role="tab" class="cam-tab" id="tab-visits" aria-controls="panel-visits" aria-selected="false" tabindex="-1" data-sp-tab="visits">Visits<span class="tab-count"> ({{ matching ~ " of " ~ sp.visits if filtered else sp.visits }})</span></button>
-  {# Phones only: the expand button sits at the end of the tab row (dimmed and disabled on Info, see species-tabs.js); desktop keeps .grid-tools below. #}
-  <button type="button" class="lb-open lb-tab" aria-label="View photos full size" aria-disabled="true" tabindex="-1" data-tip="View photos full size (left/right arrows to browse, Esc or up arrow to close)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M14 10l4-4M15 6h3v3M10 14l-4 4M9 18H6v-3M14 14l4 4M15 18h3v-3M10 10L6 6M9 6H6v3"/></svg></button>
+  <button type="button" role="tab" class="cam-tab" id="tab-visits" aria-controls="panel-visits" aria-selected="true" data-sp-tab="visits">Visits<span class="tab-count"> ({{ matching ~ " of " ~ sp.visits if filtered else sp.visits }})</span></button>
+  <button type="button" role="tab" class="cam-tab" id="tab-info" aria-controls="panel-info" aria-selected="false" tabindex="-1" data-sp-tab="info">Info</button>
+  {# Phones only: the expand button sits at the end of the tab row (dimmed and disabled on Info, enabled on Visits, the default; see species-tabs.js); desktop keeps .grid-tools below. #}
+  <button type="button" class="lb-open lb-tab" aria-label="View photos full size" data-tip="View photos full size (left/right arrows to browse, Esc or up arrow to close)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M14 10l4-4M15 6h3v3M10 14l-4 4M9 18H6v-3M14 14l4 4M15 18h3v-3M10 10L6 6M9 6H6v3"/></svg></button>
 </div>
-<div role="tabpanel" id="panel-info" aria-labelledby="tab-info" class="sp-panel">
-  <div id="sp-info-body">
-  {% if info %}{% set part = "body" %}{% include "_species_card.html" %}{% else %}
-  <div id="sp-fallback">
-    <div class="facts hide-on-phone">
-      <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong></div>
-      <div>{{ confirm_badge(sp.label) }}</div>
-    </div>
-    <div class="charts">
-      <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
-      <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
-    </div>
-  </div>
-  {% endif %}
-  </div>
-</div>
-<div role="tabpanel" id="panel-visits" aria-labelledby="tab-visits" class="sp-panel" data-base="/species/{{ sp.label | urlencode }}"{% if filtered %} data-filtered{% endif %} hidden>
+<div role="tabpanel" id="panel-visits" aria-labelledby="tab-visits" class="sp-panel" data-base="/species/{{ sp.label | urlencode }}"{% if filtered %} data-filtered{% endif %}>
   {# The same quick chips and More filters as the home page (minus Species, Birds and Mammals: the species is fixed here); species-filters.js swaps them in place. #}
   <div class="grid-tools">
     <div class="visits-head">
@@ -93,6 +77,22 @@
   {% else %}
   <p class="empty">No visits match these filters. <a href="/species/{{ sp.label | urlencode }}{{ '?sort=' ~ sort_kept if sort_kept }}#visits">Show all</a></p>
   {% endif %}
+</div>
+<div role="tabpanel" id="panel-info" aria-labelledby="tab-info" class="sp-panel" hidden>
+  <div id="sp-info-body">
+  {% if info %}{% set part = "body" %}{% include "_species_card.html" %}{% else %}
+  <div id="sp-fallback">
+    <div class="facts hide-on-phone">
+      <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong></div>
+      <div>{{ confirm_badge(sp.label) }}</div>
+    </div>
+    <div class="charts">
+      <figure><figcaption>Visits per day, last 60 days</figcaption><canvas id="daily"></canvas></figure>
+      <figure><figcaption>Time of day</figcaption><canvas id="hourly"></canvas></figure>
+    </div>
+  </div>
+  {% endif %}
+  </div>
 </div>
 <script src="/static/species-tabs.js?v={{ asset_version }}"></script>
 <script src="/static/species-filters.js?v={{ asset_version }}"></script>
