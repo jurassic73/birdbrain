@@ -28,7 +28,7 @@
     {part: "public", sel: [".today"], title: "Today",
      text: "Today's visitors and how many of each, so you can see who has been around."},
     {part: "public", sel: [".topbar nav"], title: "Find your way around",
-     text: "Visits is this page. Live shows what the camera sees right now, Species shows each kind of animal seen, and Stats has the charts."},
+     text: "Visits is this page. Species shows each kind of animal seen, Live shows what the camera sees right now, and Stats has the charts."},
     {part: "public", sel: [".grid .sp-name", ".sp-name"], title: "Tap a species name",
      text: "Any species name opens an info card with a photo, sounds, a range map and when it is usually seen here."},
     {part: "public", sel: ["#palette-toggle", "#theme-toggle"], all: true, title: "Colors and dark mode",
