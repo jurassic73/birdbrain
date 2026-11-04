@@ -5,8 +5,7 @@
     <nav class="score-ranges" aria-label="Scoreboard period">
       {% for key, label, words, _ in score_ranges %}
       <button type="button" class="score-range{{ ' on' if key == score.key }}" aria-pressed="{{ 'true' if key == score.key else 'false' }}"
-              hx-get="/scoreboard?range={{ key }}" hx-target="closest .critters" hx-swap="outerHTML"
-              data-tip="Who visited {{ words }}">{{ label }}</button>
+              hx-get="/scoreboard?range={{ key }}" hx-target="closest .critters" hx-swap="outerHTML">{{ label }}</button>
       {% endfor %}
     </nav>
   </div>
