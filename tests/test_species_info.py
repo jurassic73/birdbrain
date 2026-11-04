@@ -145,6 +145,7 @@ def test_species_page_has_info_and_visits_tabs(client, add_visit, fake_build):
     assert "First seen" not in html
     assert visits < html.index("grid-count") < html.index('class="lb-open"', visits)  # the count sits left of the expand button
     assert re.search(r'data-sp-tab="visits">Visits<span class="tab-count"> \(\d+\)</span></button>\s*<button[^>]*lb-tab', html)  # phones: count in the tab, expand button after it
+    assert re.search(r'<button[^>]*lb-tab[^>]*aria-disabled="true" tabindex="-1"', html)  # Info is the default tab: the expand button starts disabled
     assert html.index("Year-round resident") < html.index('role="tablist"')  # the status pill sits with the bird
     assert info < html.index('id="daily"') < visits and info < html.index('class="sp-map"') < visits
     assert visits < html.index('class="grid-tools"') < html.index('id="visits"')

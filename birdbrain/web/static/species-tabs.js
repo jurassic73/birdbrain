@@ -13,6 +13,13 @@
       document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
       if (on && focus) t.focus();
     }
+    // The expand button (phones, end of the tab row) opens the visit photos: dimmed and inert on Info.
+    const expand = document.querySelector(".sp-tabs .lb-tab");
+    if (expand) {
+      const off = name !== "visits";
+      expand.setAttribute("aria-disabled", off);
+      expand.tabIndex = off ? -1 : 0;
+    }
     // Charts and Leaflet maps measure their box; one resize after the panel shows makes them redraw at full size.
     if (typeof Chart !== "undefined") Object.values(Chart.instances).forEach((c) => c.resize());
     window.dispatchEvent(new Event("resize"));

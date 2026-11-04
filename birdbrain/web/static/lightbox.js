@@ -75,7 +75,7 @@
 
   document.addEventListener("click", (e) => {
     const b = e.target.closest(".lb-open");
-    if (!b) return;
+    if (!b || b.getAttribute("aria-disabled") === "true") return;
     opener = b;
     open(0);
   });

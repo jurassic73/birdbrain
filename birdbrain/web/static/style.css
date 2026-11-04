@@ -1913,6 +1913,6 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
   .sp-tabs .tab-count { display: inline; white-space: pre; }
   .sp-tabs { align-items: center; }
   .sp-tabs .lb-tab { width: 34px; height: 34px; flex: none; margin-left: 4px; }
-  .sp-tabs:not(:has(#tab-visits[aria-selected=true])) .lb-tab { display: none; }  /* it opens the visit photos: only with that tab */
-  .sp-tabs:has(#tab-visits[aria-selected=true]) .lb-tab { display: grid; }
+  .sp-tabs .lb-tab { display: grid; }
+  .sp-tabs .lb-tab[aria-disabled="true"] { opacity: .35; pointer-events: none; }  /* it opens the visit photos: dimmed (same spot, no shift) on Info */
 }
