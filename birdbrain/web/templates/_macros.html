@@ -96,7 +96,8 @@
   "no lesson yet": "No lesson yet: Confirm alone and circles alone are not lessons. A correction or a Note for Claude is.",
   "too old": "Too old: newer lessons fill the prompt, so this one isn't sent any more. Switching newer ones off brings it back.",
 } -%}
-<{{ tag }} class="badge {{ cls }}"{% if tips[key or text] %} data-tip="{{ tips[key or text] }}"{% endif %}>{{ text }}</{{ tag }}>
+{%- set by_claude = cls in ("conf-high", "conf-medium", "conf-low") and text in ("high", "medium", "low") -%}
+<{{ tag }} class="badge {{ cls }}{{ ' by-claude' if by_claude }}"{% if tips[key or text] %} data-tip="{{ tips[key or text] }}"{% endif %}>{% if by_claude %}{{ claude_mark() }}{% endif %}{{ text }}</{{ tag }}>
 {%- endmacro %}
 
 {# Whether a species is confirmed here (db.confirmed_species); needs `confirmed` from the route. #}

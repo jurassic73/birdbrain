@@ -604,6 +604,9 @@ button.fav-star[data-pending] { background: conic-gradient(rgba(255, 211, 77, .5
   display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: .75rem;
   border: 1px solid currentColor; line-height: 1.5;
 }
+/* A confidence pill is Claude's answer, so the Claude mark sits left of the word (text-sized, no tile). */
+.badge.by-claude { display: inline-flex; align-items: center; gap: 4px; }
+.badge.by-claude .claude-mark { width: .85rem; height: .85rem; padding: 0; margin: 0; background: none; }
 .conf-high { color: var(--high); }
 .conf-medium { color: var(--medium); }
 .badge.confirmed { color: var(--accent); white-space: nowrap; }
