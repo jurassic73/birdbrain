@@ -1,4 +1,5 @@
 {# The Today panel's scoreboard: every animal seen in the chosen period, most seen first. #}
+{% from "_macros.html" import badge %}
 <div class="critters" data-range="{{ score.key }}">
   <div class="score-head">
     <span class="muted"><strong class="score-total">{{ score_total }}</strong> Visitor{{ 's' if score_total != 1 }} {{ score.words }}{% if score_rows %} · {{ score_rows | length }} kind{{ 's' if score_rows | length != 1 }}{% endif %}</span>
@@ -15,8 +16,8 @@
     {% set st = short_status(c.label) %}
     {% set href = "/?species=" ~ (c.label | urlencode) ~ ("&date_from=" ~ score.date_from if score.date_from else "") ~ ("&date_to=" ~ score.date_to if score.date_to else "") %}
     <li><span><a class="critter-name" href="{{ href }}" data-tip="See the {{ c.label }} visits {{ score.words }}">{{ c.label }}</a>
-      {%- if has_card(c.label) %}<span class="info-tip card-tip" data-species="{{ c.label }}" role="button" tabindex="0" aria-label="About {{ c.label }}">i</span>{% endif %}</span>
-      <span class="critter-status"{% if st %} data-tip="{{ st[1] }} in this area"{% endif %}>{{ st[0] if st }}</span>
+      {%- if has_card(c.label) %}<span class="info-tip card-tip" data-species="{{ c.label }}" role="button" tabindex="0" aria-label="About {{ c.label }}">i</span>{% endif %}
+      {%- if st %}{{ badge(st[0], "sp-status", key=st[1]) }}{% endif %}</span>
       <a class="critter-n" href="{{ href }}"
          data-tip="{{ c.n }} sighting{{ 's' if c.n != 1 }} {{ score.words }}, last at {{ c.last_at | short_time }}">{{ c.n }}</a></li>
     {% endfor %}
