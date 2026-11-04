@@ -83,7 +83,7 @@
   {% if info %}{% set part = "body" %}{% include "_species_card.html" %}{% else %}
   <div id="sp-fallback">
     <div class="facts hide-on-phone">
-      <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong> <span class="ago">{{ sp.last_seen | ago }}</span></div>
+      <div>Last seen <strong>{{ sp.last_seen | nice_time }}</strong> <span class="ago" data-age="{{ sp.last_seen | age_seconds }}">{{ sp.last_seen | ago }}</span></div>
       <div>{{ confirm_badge(sp.label) }}</div>
     </div>
     <div class="charts">

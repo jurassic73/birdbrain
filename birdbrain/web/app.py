@@ -218,21 +218,20 @@ def age_seconds(value: str) -> int:
     return max(0, int((clock.now() - datetime.fromisoformat(value)).total_seconds()))
 
 
-def ago(value: str, rough: bool = False) -> str:
-    """'(today)', '(3 days ago)', '(2 weeks ago)' by calendar day. With rough=True the finer
-    '(just now)', '(5 min ago)', '(~2 hours ago)', then days and up. static/ago.js mirrors the rough form."""
-    dt = datetime.fromisoformat(value)
-    if not rough:
-        days = (clock.today() - dt.date()).days
-        return "(today)" if days <= 0 else f"({_days_ago(days)})"
+def ago(value: str, bare: bool = False) -> str:
+    """'(just now)', '(5 min ago)', '(~2 hours ago)', then days, weeks, months, years, in brackets for use right
+    after a clock time. bare=True drops the brackets ('2 days ago') for a line with no time before it.
+    static/ago.js mirrors this wording and keeps the page's copies current."""
     secs = age_seconds(value)
     if secs < 60:
-        return "(just now)"
-    if secs < 3600:
-        return f"({secs // 60} min ago)"
-    if secs < 86400:
-        return f"(~{_plural(secs // 3600, 'hour')})"
-    return f"({_days_ago(secs // 86400)})"
+        text = "just now"
+    elif secs < 3600:
+        text = f"{secs // 60} min ago"
+    elif secs < 86400:
+        text = f"~{_plural(secs // 3600, 'hour')}"
+    else:
+        text = _days_ago(secs // 86400)
+    return text if bare else f"({text})"
 
 
 def stayed(captured_at: str, ended_at: str | None) -> str:

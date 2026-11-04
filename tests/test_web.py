@@ -1928,21 +1928,12 @@ def test_home_marks_only_the_heros_card_as_a_repeat(client, add_visit):
     (75 * 86400, "(2 months ago)"), (400 * 86400, "(1 year ago)"),
 ])
 def test_ago_rough_wording(secs, want):
-    assert webapp.ago((FROZEN_NOW - timedelta(seconds=secs)).isoformat(), rough=True) == want
+    assert webapp.ago((FROZEN_NOW - timedelta(seconds=secs)).isoformat()) == want
 
 
-@pytest.mark.parametrize("days,want", [
-    (0, "(today)"), (1, "(1 day ago)"), (2, "(2 days ago)"), (6, "(6 days ago)"), (7, "(1 week ago)"),
-    (13, "(1 week ago)"), (14, "(2 weeks ago)"), (29, "(4 weeks ago)"), (30, "(1 month ago)"),
-    (95, "(3 months ago)"), (365, "(1 year ago)"),
-])
-def test_ago_by_calendar_day(days, want):
-    assert webapp.ago((FROZEN_NOW - timedelta(days=days)).isoformat()) == want
-
-
-def test_ago_today_even_just_after_midnight():
-    midnight = FROZEN_NOW.replace(hour=0, minute=1)
-    assert webapp.ago(midnight.isoformat()) == "(today)"
+def test_ago_bare_form_has_no_brackets():
+    for secs, want in ((30, "just now"), (300, "5 min ago"), (7200, "~2 hours ago"), (2 * 86400, "2 days ago")):
+        assert webapp.ago((FROZEN_NOW - timedelta(seconds=secs)).isoformat(), bare=True) == want
 
 
 def test_species_and_home_show_how_long_ago(client, add_visit):
@@ -1951,4 +1942,5 @@ def test_species_and_home_show_how_long_ago(client, add_visit):
     assert re.search(r'class="ago" data-age="300">\(5 min ago\)<', home)
     assert 'src="/static/ago.js' in home
     page = client.get("/species/Bushtit").text
-    assert '<span class="ago">(today)</span>' in page
+    assert re.search(r'class="ago" data-age="300">\(5 min ago\)<', page)  # the fallback ticks too
+    assert 'src="/static/ago.js' in page
