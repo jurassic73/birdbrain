@@ -1036,13 +1036,14 @@ button.danger.sending, button.danger.htmx-request {
 .sp-name { cursor: pointer; text-decoration: underline dotted; text-decoration-color: var(--muted); text-underline-offset: 3px; }
 .sp-name:hover, .sp-name:focus-visible { text-decoration-color: var(--accent); color: var(--accent); }
 .sp-tip {
-  position: fixed; z-index: 50; width: 280px; padding: 8px; pointer-events: none;
+  position: fixed; z-index: 50; width: 420px; padding: 12px; pointer-events: none;
   background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: 0 6px 24px rgba(0, 0, 0, .18);
 }
-.sp-tip-inner { display: flex; gap: 10px; align-items: center; }
-.sp-tip-inner img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; flex: none; }
-.sp-tip-inner div { display: flex; flex-direction: column; gap: 2px; font-size: .9rem; }
+.sp-tip-inner { display: flex; gap: 15px; align-items: center; }
+.sp-tip-inner img { width: 108px; height: 108px; object-fit: cover; border-radius: 12px; flex: none; }
+.sp-tip-inner div { display: flex; flex-direction: column; gap: 3px; font-size: 1.35rem; }
+.sp-tip-inner small { font-size: 1.05rem; }
 .sp-dialog { width: min(780px, calc(100vw - 24px)); }  /* the look: .popup */
 .sp-close { position: sticky; top: 0; float: right; margin: -8px -8px 0 8px; }  /* the look: .popup-close */
 .sp-card { display: flex; flex-direction: column; gap: 16px; }

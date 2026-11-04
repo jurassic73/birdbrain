@@ -69,11 +69,21 @@
   function place(el) {
     const r = el.getBoundingClientRect();
     tip.hidden = false;
-    const w = tip.offsetWidth, h = tip.offsetHeight;
-    const x = Math.min(Math.max(8, r.left), innerWidth - w - 8);
-    const below = r.bottom + 8;
+    const w = tip.offsetWidth, h = tip.offsetHeight, m = 8;
+    const clampX = (x) => Math.min(Math.max(m, x), innerWidth - w - m);
+    const clampY = (y) => Math.min(Math.max(m, y), innerHeight - h - m);
+    const below = r.bottom + m;
+    let x = clampX(r.left), y = below;
+    if (below + h > innerHeight - m) {
+      // No room below: sit beside the card so its own photo stays visible, else flip above the name.
+      const box = el.closest(".card, .hero-latest, .visit-photo");
+      const c = (box || el).getBoundingClientRect();
+      if (box && c.right + m + w <= innerWidth - m) { x = c.right + m; y = clampY(r.top); }
+      else if (box && c.left - m - w >= m) { x = c.left - m - w; y = clampY(r.top); }
+      else y = r.top - h - m;
+    }
     tip.style.left = `${x}px`;
-    tip.style.top = `${below + h > innerHeight - 8 ? r.top - h - 8 : below}px`;
+    tip.style.top = `${y}px`;
   }
   if (matchMedia("(hover: hover) and (pointer: fine)").matches) {
     document.addEventListener("mouseover", (e) => {
