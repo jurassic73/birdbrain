@@ -1621,6 +1621,12 @@ def test_species_title_has_a_play_button_only_when_the_card_has_sounds(client, a
     html = client.get("/species-info/Bushtit?fold=1").text
     assert 'class="sp-play"' in html and 'data-src="https://xc.example/2.mp3"' in html and "Song</span>" in html
     assert 'aria-pressed="false"' in html and "by B" in html
+    assert html.count('class="sp-play"') == 2 and "Call</span>" in html
+    assert html.index("Call</span>") < html.index("Song</span>")  # the list's order
+    card["sounds"] = card["sounds"] + [{"label": "Song", "file": "https://xc.example/3.mp3", "recordist": "C", "license": "CC", "km": 9, "id": "3"}]
+    html = client.get("/species-info/Bushtit?fold=1").text
+    assert html.count('class="sp-play"') == 3 and "Song 1</span>" in html and "Song 2</span>" in html and "Call</span>" in html
+    card["sounds"] = card["sounds"][:2]
     mini = client.get("/species-info/Bushtit?mini=1").text
     assert "sp-play" not in mini
     card["sounds"] = [card["sounds"][0]]

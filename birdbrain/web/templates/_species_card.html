@@ -131,17 +131,24 @@
         {% if info.sci_name %}<p class="sci">{{ info.sci_name }}</p>{% endif %}
         {% if info.status %}{{ badge(info.status, "sp-status") }}{% endif %}
       </div>
-      {% set songs = (info.sounds or []) | selectattr("label", "in", ["Song", "Song and call"]) | list %}
-      {% set pick = songs[0] if songs else ((info.sounds or [])[0] if info.sounds else none) %}
-      {% if pick %}
-      {% set kind = "Song" if songs else (pick.label or "Call") %}
-      <button type="button" class="sp-play" data-src="{{ pick.file }}" data-card="{{ info.name }}" aria-pressed="false"
-              aria-label="Play {{ kind | lower }}: {{ info.common or info.name }}"
-              data-tip="Play a {{ kind | lower }} recorded {% if pick.km is not none and pick.km is defined %}{{ '{:,}'.format(pick.km) }} km from here{% else %}near here{% endif %}, by {{ pick.recordist }}">
-        <svg class="ic-play" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
-        <svg class="ic-pause" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/></svg>
-        <span class="sp-play-label">{{ kind }}</span>
-      </button>
+      {% set clips = info.sounds or [] %}
+      {% if clips %}
+      {% set seen = namespace(n={}) %}
+      <div class="sp-plays" role="group" aria-label="Recordings">
+        {% for pick in clips %}
+        {% set base = pick.label or "Call" %}
+        {% set total = clips | selectattr("label", "equalto", pick.label) | list | length %}
+        {% set _ = seen.n.update({base: seen.n.get(base, 0) + 1}) %}
+        {% set kind = base ~ (" " ~ seen.n[base] if total > 1 else "") %}
+        <button type="button" class="sp-play" data-src="{{ pick.file }}" data-card="{{ info.name }}" aria-pressed="false"
+                aria-label="Play {{ kind | lower }}: {{ info.common or info.name }}"
+                data-tip="Play a {{ base | lower }} recorded {% if pick.km is not none and pick.km is defined %}{{ '{:,}'.format(pick.km) }} km from here{% else %}near here{% endif %}, by {{ pick.recordist }}">
+          <svg class="ic-play" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
+          <svg class="ic-pause" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5h3v11H4zM9 2.5h3v11H9z" fill="currentColor"/></svg>
+          <span class="sp-play-label">{{ kind }}</span>
+        </button>
+        {% endfor %}
+      </div>
       {% endif %}
     </div>
   </div>
