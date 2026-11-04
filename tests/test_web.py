@@ -366,7 +366,7 @@ def test_false_trigger_popup_skips_confirmed_photos_and_lists_its_keys(client, a
     assert html.index('id="embed-close"') > html.index('embed-keys')  # Close sits at the far right, after the keys
     assert f'href="/visit/{mid}?ft=1" id="nav-next"' in client.get(f"/visit/{new}?ft=1").text  # without todo: all
     assert "Confirmed No Animal" in client.get(f"/visit/{mid}").text
-    assert "<kbd>" not in client.get(f"/visit/{mid}").text
+    assert 'class="embed-keys' not in client.get(f"/visit/{mid}").text  # only the pop-up version lists keys
 
 
 def test_false_trigger_page_shows_its_burst_in_order_and_delete_removes_it(client, stored_visit):
@@ -1817,3 +1817,81 @@ def test_live_tab_reads_the_light_from_the_frame_not_the_camera(client, monkeypa
         assert client.get("/live/latest.jpg").headers["X-Frame-Light"] == light
     monkeypatch.setattr(webapp, "_live", {"jpeg": b"not a picture", "at": time.time(), "tried": 0.0})
     assert "X-Frame-Light" not in client.get("/live/latest.jpg").headers and "unknown" in client.get("/live").text
+
+
+def test_species_page_has_desktop_arrows_counter_and_keyboard_hint(client, add_visit):
+    _seed_swipe_species(add_visit)
+    html = client.get("/species/Song%20Sparrow").text
+    assert '<span class="pos" aria-label="Species 2 of 3">2/3</span>' in html
+    assert 'id="sp-prev" href="/species/Bushtit"' in html
+    assert 'id="sp-next" href="/species/Anna%27s%20Hummingbird"' in html
+    assert 'Next species (→): Anna&#39;s Hummingbird' in html and 'Previous species (←): Bushtit' in html
+    assert 'id="keys-btn"' in html and 'id="keys-dialog"' in html and "species-nav.js" in html and "shortcuts.js" in html
+    # the keyboard button sits just left of the About icon, after the arrows
+    assert html.index('class="sp-nav"') < html.index('id="keys-btn"') < html.index('href="/about"')
+    # the list's sort is kept on the arrows
+    assert 'id="sp-next" href="/species/Song%20Sparrow?sort=name"' in client.get("/species/Bushtit?sort=name").text
+
+
+def test_species_arrows_dim_at_the_ends_and_stay_off_other_pages(client, add_visit):
+    _seed_swipe_species(add_visit)
+    first = client.get("/species/Bushtit").text
+    assert 'id="sp-prev"' not in first and 'id="sp-next"' in first and ">1/3<" in first
+    assert 'aria-label="No previous species"' in first
+    last = client.get("/species/Anna's%20Hummingbird").text
+    assert 'id="sp-next"' not in last and 'id="sp-prev"' in last and ">3/3<" in last
+    for path in ("/", "/species", "/about"):
+        page = client.get(path).text
+        assert "sp-nav" not in page.replace(".sp-nav", "") and "species-nav.js" not in page and 'rel="up"' not in page
+
+
+def _keys_dialog(html):
+    """The text of the Keyboard shortcuts pop-up's rows: [(key, what it does)] and its headings."""
+    dlg = html[html.index('id="keys-dialog"'):]
+    dlg = dlg[:dlg.index("</dialog>")]
+    rows = re.findall(r"<li><kbd>(.*?)</kbd><span>(.*?)</span></li>", dlg)
+    heads = re.findall(r'<li class="keys-head">(.*?)</li>', dlg)
+    return rows, heads
+
+
+SITE_KEYS = [("?", "This list"), ("1", "Visits"), ("2", "Species"), ("3", "Live"), ("4", "Stats"),
+             ("T", "Light or dark"), ("P", "Change colors")]
+
+
+def test_keyboard_shortcuts_button_and_popup_on_every_page(client, add_visit):
+    vid = add_visit(visitor="bird", species="Song Sparrow")
+    for path in ("/", "/species", "/live", "/stats", "/about", f"/visit/{vid}", "/species/Song%20Sparrow"):
+        html = client.get(path).text
+        assert 'id="keys-btn"' in html and 'id="keys-dialog"' in html and "/static/shortcuts.js" in html, path
+        assert html.index('id="keys-btn"') < html.index('href="/about"')  # just left of the About icon
+        rows, heads = _keys_dialog(html)
+        assert rows[-len(SITE_KEYS):] == SITE_KEYS, path
+    # pages without keys of their own show the site keys alone, under no heading
+    assert _keys_dialog(client.get("/species").text) == (SITE_KEYS, [])
+
+
+def test_keyboard_shortcuts_popup_lists_each_pages_own_keys(client, add_visit):
+    vid = add_visit(visitor="bird", species="Song Sparrow")
+    rows, heads = _keys_dialog(client.get("/").text)
+    assert ("→", "Open the latest visit") in rows and heads == ["This page", "Everywhere"]
+    rows, heads = _keys_dialog(client.get(f"/visit/{vid}").text)
+    assert [r[1] for r in rows[:5]] == ["Newer visit", "Older visit", "Home (at the top of the page)",
+                                        "Back home (if you came by →)",
+                                        "Confirm no animal, then next"]  # admin: the C row too
+    assert heads == ["This page", "Everywhere"]
+    rows, heads = _keys_dialog(client.get("/species/Song%20Sparrow").text)
+    assert [r[0] for r in rows[:3]] == ["←", "→", "↑"] and "Species list" in rows[2][1]
+
+
+def test_species_page_up_key_goes_to_the_list_in_the_same_sort(client, add_visit):
+    _seed_swipe_species(add_visit)
+    assert '<link rel="up" href="/species">' in client.get("/species/Song%20Sparrow").text
+    assert '<link rel="up" href="/species?sort=name">' in client.get("/species/Song%20Sparrow?sort=name").text
+
+
+def test_embed_pages_have_no_keyboard_shortcuts(client, add_visit):
+    vid = add_visit(visitor="bird", species="Song Sparrow")
+    for path in (f"/visit/{vid}?embed=1", "/?embed=1", "/species?embed=1"):
+        html = client.get(path).text
+        assert 'id="keys-btn"' not in html and 'id="keys-dialog"' not in html and "shortcuts.js" not in html, path
+    assert "species-nav.js" not in client.get("/species/Song%20Sparrow?embed=1").text

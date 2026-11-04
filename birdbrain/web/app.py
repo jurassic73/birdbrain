@@ -1108,6 +1108,9 @@ def species_page(request: Request, name: str, sort: str = "visits", conn=Depends
         visits=visits,
         swipe_prev=neighbour(at - 1),
         swipe_next=neighbour(at + 1),
+        # desktop arrows in the top bar: position and the neighbours' names for their tooltips
+        nav_at=at, nav_total=len(order),
+        nav_prev_name=order[at - 1] if at > 0 else "", nav_next_name=order[at + 1] if 0 <= at < len(order) - 1 else "",
         next_url=more_url(f"/species/{quote(name)}/more", visits, SPECIES_PAGE, filters),
         filters=filters,
         filtered=bool(active),

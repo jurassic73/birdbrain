@@ -155,3 +155,10 @@ def test_visitors_cannot_draw_circles(client, add_visit, locked):
     ft = add_visit(visitor="none", species=None)
     html = client.get(f"/visit/{ft}?ft=1").text
     assert "const editing = false;" in html and 'id="draw-note"' not in html
+
+
+def test_visitors_keyboard_popup_has_no_admin_only_confirm_key(client, add_visit, locked):
+    vid = add_visit(visitor="none", species=None)
+    html = client.get(f"/visit/{vid}").text
+    assert 'id="keys-dialog"' in html and "Newer visit" in html
+    assert "Confirm no animal" not in html

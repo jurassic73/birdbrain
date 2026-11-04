@@ -5,7 +5,27 @@
 {% block title %}{{ sp.label }} | Birdbrain{% endblock %}
 {% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>
 {% if swipe_prev %}<link rel="prev" href="{{ swipe_prev }}">{% endif %}
-{% if swipe_next %}<link rel="next" href="{{ swipe_next }}">{% endif %}{% endblock %}
+{% if swipe_next %}<link rel="next" href="{{ swipe_next }}">{% endif %}
+{# The Species list in the sort the owner came from: the Up key goes there (static/species-nav.js). #}
+<link rel="up" href="/species{{ '?sort=' ~ sort_kept if sort_kept else '' }}">
+{% if request.query_params.get('embed') != '1' %}<script src="/static/species-nav.js?v={{ asset_version }}" defer></script>{% endif %}{% endblock %}
+{% block keys_page %}
+<li><kbd>←</kbd><span>Previous species</span></li>
+<li><kbd>→</kbd><span>Next species</span></li>
+<li><kbd>↑</kbd><span>Species list (at the top of the page)</span></li>
+{% endblock %}
+{% block topbar_extra %}{% if nav_total and nav_at >= 0 %}
+{# Desktop only (hidden at 820px and under, where phones swipe): previous/next species and the position. #}
+<div class="sp-nav">
+  <div class="sp-pill">
+    {% if swipe_prev %}<a class="seg" id="sp-prev" href="{{ swipe_prev }}" rel="prev" aria-label="Previous species (←): {{ nav_prev_name }}" title="Previous species (←): {{ nav_prev_name }}" data-tip="Previous species (←): {{ nav_prev_name }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6l-6 6 6 6"/></svg></a>
+    {% else %}<span class="seg dis" aria-disabled="true" aria-label="No previous species"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 6l-6 6 6 6"/></svg></span>{% endif %}
+    <span class="pos" aria-label="Species {{ nav_at + 1 }} of {{ nav_total }}">{{ nav_at + 1 }}/{{ nav_total }}</span>
+    {% if swipe_next %}<a class="seg" id="sp-next" href="{{ swipe_next }}" rel="next" aria-label="Next species (→): {{ nav_next_name }}" title="Next species (→): {{ nav_next_name }}" data-tip="Next species (→): {{ nav_next_name }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg></a>
+    {% else %}<span class="seg dis" aria-disabled="true" aria-label="No next species"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6l6 6-6 6"/></svg></span>{% endif %}
+  </div>
+</div>
+{% endif %}{% endblock %}
 {% block content %}
 {# The bird (title and photo) sits on top, then two tabs: Info (facts, text, charts, the card's sections) and Visits. #}
 {# Without a card the title, facts and charts stand in; a card that loads (htmx) replaces them, one that comes back empty leaves them. #}
