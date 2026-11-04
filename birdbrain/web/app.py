@@ -417,6 +417,31 @@ def quick_filters() -> list[tuple[str, dict]]:
     ]
 
 
+def species_filters(request: Request) -> dict:
+    """The filters a species page takes from its query string: the home page's, minus the Species box and the
+    Birds / Mammals kinds, which mean nothing for one species. Multiple animals stays."""
+    filters = filters_from(request)
+    del filters["species"]
+    if filters["kind"] != "multiple":
+        filters["kind"] = None
+    return filters
+
+
+def species_chips(name: str, filters: dict, sort: str) -> list[tuple[str, str, bool]]:
+    """The quick filter chips for a species' Visits tab: the home page's list minus Birds and Mammals. Links keep
+    the species list's sort (the phone swipe order) and end in #visits so a shared link opens on the Visits tab."""
+    active = {k: v for k, v in filters.items() if v}
+    keep = {"sort": sort} if sort != "visits" else {}
+    base = f"/species/{quote(name)}"
+    chips = []
+    for label, f in quick_filters():
+        if f.get("kind") in ("bird", "mammal"):
+            continue
+        q = query_string(f, **keep)
+        chips.append((label, f"{base}?{q}#visits" if q else f"{base}#visits", f == active))
+    return chips
+
+
 # The Today panel's scoreboard periods: key, button, heading words, days back (None: all time). Yesterday is special.
 SCORE_RANGES = [
     ("today", "Today", "today", 0),
@@ -1064,7 +1089,9 @@ def species_page(request: Request, name: str, sort: str = "visits", conn=Depends
 
     def neighbour(i: int) -> str | None:
         return f"/species/{quote(order[i])}{suffix}" if at >= 0 and 0 <= i < len(order) else None
-    visits = db.list_visits(conn, species=name, limit=SPECIES_PAGE)
+    filters = species_filters(request)
+    active = {k: v for k, v in filters.items() if v}
+    visits = db.list_visits(conn, species=name, **filters, limit=SPECIES_PAGE)
     return page(
         request,
         "species.html",
@@ -1072,7 +1099,13 @@ def species_page(request: Request, name: str, sort: str = "visits", conn=Depends
         visits=visits,
         swipe_prev=neighbour(at - 1),
         swipe_next=neighbour(at + 1),
-        next_url=more_url(f"/species/{quote(name)}/more", visits, SPECIES_PAGE),
+        next_url=more_url(f"/species/{quote(name)}/more", visits, SPECIES_PAGE, filters),
+        filters=filters,
+        filtered=bool(active),
+        matching=db.count_visits(conn, species=name, **filters) if active else row["visits"],
+        more_filters_open=bool(filters["tod"] == "day" or (filters["date_to"] and filters["date_from"] != filters["date_to"])),
+        chips=species_chips(name, filters, sort),
+        sort_kept=sort if sort != "visits" else "",
         daily=db.daily_counts(conn, days=60, species=name),
         hourly=db.hourly_counts(conn, species=name),
         # A cached info card renders with the page; an uncached one still loads afterward over htmx.
@@ -1089,9 +1122,10 @@ def species_page(request: Request, name: str, sort: str = "visits", conn=Depends
 @app.get("/species/{name}/more", response_class=HTMLResponse)
 def species_more(request: Request, name: str, before: str = "", conn=Depends(get_conn)):
     """The next page of a species' grid; its cards carry the same star and ?species= scope as the page's."""
-    visits = visits_before(conn, before, limit=SPECIES_PAGE, species=name)
+    filters = species_filters(request)
+    visits = visits_before(conn, before, limit=SPECIES_PAGE, species=name, **filters)
     return page(request, "_cards.html", visits=visits, fav_label=name, scope_species=name,
-                next_url=more_url(f"/species/{quote(name)}/more", visits, SPECIES_PAGE))
+                next_url=more_url(f"/species/{quote(name)}/more", visits, SPECIES_PAGE, filters))
 
 
 STAR_STATES = db.STAR_STATES

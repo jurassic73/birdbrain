@@ -1817,7 +1817,10 @@ button.zoom-btn:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
 }
 
 /* Species page photo browser (static/lightbox.js): the photo in a 95% box over a dimmed page. Drawn over photos, so fixed colors. */
-.grid-tools { display: flex; justify-content: space-between; align-items: center; margin: 0 0 8px; }
+.grid-tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; margin: 0 0 8px; }
+.grid-tools .visits-head { margin: 0; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; }
+.grid-tools .visits-head .chips { flex: 0 1 auto; min-width: 0; }
+.grid-end { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; }
 .grid-count { color: var(--muted); }
 .grid-count .big { color: var(--text); font-size: 1.2rem; font-weight: 700; }
 button.lb-open { width: 38px; height: 38px; padding: 0; display: grid; place-items: center; background: var(--surface); color: var(--text); border: 1px solid var(--line); }
@@ -1972,7 +1975,11 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
   .sp-inline { margin-bottom: 8px; }  /* the card above the tabs: 20px was a wide gap on a phone */
   .sp-tabs { margin-top: 0; margin-bottom: 8px; }
   .sp-tabs .cam-tab { flex: 1; padding: 0 12px; min-height: 36px; font-size: .95rem; }
-  .sp-panel .grid-tools { display: none; }  /* the count moved into the Visits tab, the expand button into the tab row */
+  /* the count moved into the Visits tab, the expand button into the tab row; the chips and More filters stay */
+  .sp-panel .grid-end { display: none; }
+  .sp-panel .grid-tools { margin-bottom: 10px; }
+  .grid-tools .visits-head { flex: 1 1 100%; }
+  .grid-tools .visits-head .chips { flex: 1 1 0; }
   .sp-tabs .tab-count { display: inline; white-space: pre; }
   .sp-tabs { align-items: center; }
   .sp-tabs .lb-tab { width: 34px; height: 34px; flex: none; margin-left: 4px; }
