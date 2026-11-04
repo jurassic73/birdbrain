@@ -43,5 +43,7 @@
   });
 
   window.addEventListener("hashchange", () => show(fromHash()));
+  // A filtered link (?tod=night) without a hash opens on the Visits tab: that is where its filters show.
   if (fromHash()) show(fromHash());
+  else if (document.getElementById("panel-visits")?.hasAttribute("data-filtered")) show("visits");
 })();

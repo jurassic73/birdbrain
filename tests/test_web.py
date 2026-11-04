@@ -678,6 +678,76 @@ def test_species_pages(client, add_visit):
     assert client.get("/species/Nope").status_code == 404
 
 
+def _seed_filter_species(add_visit):
+    """Junco visits: a day one today, a night one today, a two-bird one, an old one; plus a Bushtit that must never show."""
+    today = FROZEN_NOW.replace(microsecond=0)
+    add_visit(species="Dark-eyed Junco", captured_at=today.isoformat())
+    add_visit(species="Dark-eyed Junco", captured_at=(today - timedelta(minutes=5)).isoformat(), is_night=1)
+    add_visit(species="Dark-eyed Junco", count=2, captured_at=(today - timedelta(minutes=9)).isoformat())
+    add_visit(species="Dark-eyed Junco", captured_at=(today - timedelta(days=20)).isoformat())
+    add_visit(species="Bushtit", also=json.dumps([{"visitor": "bird", "species": "Dark-eyed Junco", "count": 1, "confidence": "high"}]))
+    add_visit(species="Bushtit")
+
+
+def _cards(html):
+    import re
+    return re.findall(r'<a class="card" href="/visit/(\d+)', html)
+
+
+def test_species_visits_tab_has_the_home_filters_minus_species_and_kinds(client, add_visit):
+    _seed_filter_species(add_visit)
+    html = client.get("/species/Dark-eyed%20Junco").text
+    panel = html[html.index('id="panel-visits"'):]
+    assert 'class="filters-toggle"' in panel and 'id="more-filters"' in panel and "/static/species-filters.js" in html
+    assert panel.index('class="chips"') < panel.index('id="more-filters"') < panel.index('id="visit-grid"')
+    chips = panel[panel.index('class="chips"'):panel.index("</nav>")]
+    for label in ("All", "Multiple", "Night", "Today", "This week"):
+        assert f">{label}<" in chips
+    assert ">Birds<" not in chips and ">Mammals<" not in chips
+    form = panel[panel.index('id="more-filters"'):panel.index("</form>")]
+    assert 'name="tod"' in form and 'name="date_from"' in form and 'name="date_to"' in form and 'name="species"' not in form
+    assert "data-filtered" not in panel[:panel.index(">")] and ">5</span> visits" in panel and "(5)" in html
+    assert len(_cards(html)) == 5  # the Bushtit photo with a junco in it counts as a junco visit
+
+
+def test_species_visits_filter_by_night_multiple_and_dates_and_open_on_the_visits_tab(client, add_visit):
+    _seed_filter_species(add_visit)
+    night = client.get("/species/Dark-eyed%20Junco?tod=night").text
+    assert len(_cards(night)) == 1 and 'aria-current="page">Night<' in night and ">1</span> of 5 visits" in night
+    assert "(1 of 5)" in night and 'id="panel-visits"' in night and "data-filtered" in night and ">Clear<" in night
+    day = client.get("/species/Dark-eyed%20Junco?tod=day").text
+    assert len(_cards(day)) == 4 and 'id="more-filters"' in day and 'aria-expanded="true"' in day
+    multi = client.get("/species/Dark-eyed%20Junco?kind=multiple").text
+    assert len(_cards(multi)) == 2 and 'aria-current="page">Multiple<' in multi  # the two-bird visit and the Bushtit with a junco too
+    week = client.get("/species/Dark-eyed%20Junco?date_from=2026-01-01&date_to=2026-01-02").text
+    assert "No visits match these filters." in week and "Show all" in week and 'id="visit-grid"' not in week
+    # Birds / Mammals and a species in the URL don't apply on a species page.
+    assert len(_cards(client.get("/species/Dark-eyed%20Junco?kind=mammal&species=Bushtit").text)) == 5
+
+
+def test_species_filter_chips_keep_the_sort_and_end_in_the_visits_hash(client, add_visit):
+    _seed_filter_species(add_visit)
+    html = client.get("/species/Dark-eyed%20Junco?sort=name&tod=night").text
+    assert 'href="/species/Dark-eyed%20Junco?tod=night&amp;sort=name#visits"' in html
+    assert 'href="/species/Dark-eyed%20Junco?sort=name#visits"' in html  # All
+    assert 'name="sort" value="name"' in html
+    assert _swipe_links(html)["prev"] is None or "sort=name" in _swipe_links(html)["prev"]
+
+
+def test_species_load_more_keeps_the_filters(client, add_visit, monkeypatch):
+    monkeypatch.setattr(webapp, "SPECIES_PAGE", 2)
+    _seed_filter_species(add_visit)
+    first = client.get("/species/Dark-eyed%20Junco?tod=day").text
+    assert len(_cards(first)) == 2
+    import html as htmllib, re
+    url = htmllib.unescape(re.search(r'hx-get="(/species/[^"]*/more[^"]*)"', first).group(1))
+    assert "tod=day" in url and "before=" in url
+    page2 = client.get(url).text
+    got = _cards(first) + _cards(page2)
+    assert len(got) == 4 and len(set(got)) == 4  # all four day visits, none of the night one, no repeats
+    assert len(_cards(client.get("/species/Dark-eyed%20Junco/more?tod=night").text)) == 1
+
+
 def _seed_swipe_species(add_visit):
     # visits order: Bushtit (3), Song Sparrow (2), Anna's Hummingbird (1); A to Z: Anna's, Bushtit, Song
     for _ in range(3):
