@@ -724,7 +724,6 @@ main.wide { max-width: 1600px; }
 .overlays-toggle .slash { display: none; }
 .overlays-toggle[aria-pressed="false"] .slash { display: inline; }
 .overlays-toggle[hidden] { display: none; }
-.photo-clear[hidden] { display: none; }
 /* The crop box the Pi and Claude looked at (dashed) and the zone that fired (solid outline, light tint, brightened
    2026-11-02 because it was hard to see): the fill stays light so the animal still shows through. While drawing circles the lines stay bold and only the tint gets lighter, so the circles stay readable; the same on every burst frame. */
 .zones-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden;
@@ -739,11 +738,14 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 /* The visit photo's column: its switches in a row above it, so nothing sits on the picture. */
 .visit-media { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .photo-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-/* The overlay switches sit at the far right of the row; the drawing note and Clear circles on the left. */
+/* The overlay switches sit at the far right of the row; the drawing note on the left. */
 .photo-tools-end { margin-left: auto; display: flex; gap: 6px; }
 .photo-tools button { padding: 4px 12px; font-size: .85rem; }
 .photo-tools button[hidden], .photo-tools:not(:has(button:not([hidden]), .photo-note)) { display: none; }
 .photo-note { align-self: center; }
+/* Same size as the "Note for Claude" label (no size of its own, so it inherits the 1rem body text). */
+.photo-draw-note { font-size: 1rem; }
+@media (max-width: 600px) { .photo-draw-note { font-size: .85rem; } }
 .marks .ring { fill: none; stroke: #ffd23f; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .marks .ring-shadow { fill: none; stroke: rgba(0, 0, 0, .45); stroke-width: 4; vector-effect: non-scaling-stroke; }
 /* Thin, slightly faded rings so a small bird shows through; numbers stay solid. Full strength with the editing
