@@ -5,16 +5,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Birdbrain{% endblock %}</title>
+  <meta name="theme-color" id="theme-color" content="#f6f5f0">
   <script>
-    // Apply a saved theme before the first paint so the page never flashes the wrong one.
+    // Apply a saved theme before the first paint so the page never flashes the wrong one, and set the
+    // browser's bar color (Android's navigation bar too) to match right away, not after theme.js loads.
+    // BG is each palette's page background; it must match style.css and is shared with theme.js.
+    window.bbBg = {
+      forest: { light: "#f6f5f0", dark: "#141815" },
+      ocean: { light: "#f3f6f9", dark: "#121820" },
+      sunset: { light: "#faf5ef", dark: "#1a1512" },
+      plum: { light: "#f7f4f8", dark: "#17131a" },
+    };
     try {
+      const root = document.documentElement;
       const t = localStorage.getItem("theme");
-      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      if (t === "light" || t === "dark") root.dataset.theme = t;
       const p = localStorage.getItem("palette");
-      if (p === "ocean" || p === "sunset" || p === "plum") document.documentElement.dataset.palette = p;
+      if (p === "ocean" || p === "sunset" || p === "plum") root.dataset.palette = p;
+      const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      document.getElementById("theme-color").content = window.bbBg[root.dataset.palette || "forest"][dark ? "dark" : "light"];
     } catch (e) {}
   </script>
-  <meta name="theme-color" id="theme-color" content="#f6f5f0">
   <link rel="manifest" href="/manifest.webmanifest?v={{ asset_version }}">
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="64x64" href="/static/favicon-64.png?v={{ asset_version }}">

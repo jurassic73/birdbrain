@@ -6,13 +6,8 @@
   const meta = document.getElementById("theme-color");
   const deviceDark = window.matchMedia("(prefers-color-scheme: dark)");
   const palette = document.getElementById("palette-toggle");
-  // Page backgrounds per palette, for the browser's toolbar color; must match style.css.
-  const BG = {
-    forest: { light: "#f6f5f0", dark: "#141815" },
-    ocean: { light: "#f3f6f9", dark: "#121820" },
-    sunset: { light: "#faf5ef", dark: "#1a1512" },
-    plum: { light: "#f7f4f8", dark: "#17131a" },
-  };
+  // Page backgrounds per palette, for the browser's toolbar color; defined in base.html's early script.
+  const BG = window.bbBg;
   const PALETTES = ["forest", "ocean", "sunset", "plum"];
   const NAMES = { forest: "Forest", ocean: "Ocean", sunset: "Sunset", plum: "Plum" };
   const currentPalette = () => root.dataset.palette || "forest";
