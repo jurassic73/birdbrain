@@ -198,6 +198,43 @@ def short_time(value: str) -> str:
     return dt.strftime("%-I:%M %p") if dt.date() == clock.today() else dt.strftime("%b %-d, %-I:%M %p")
 
 
+def _plural(n: int, unit: str) -> str:
+    return f"{n} {unit}{'' if n == 1 else 's'} ago"
+
+
+def _days_ago(days: int) -> str:
+    """'1 day ago' .. '6 days ago', then weeks, months, years."""
+    if days < 7:
+        return _plural(days, "day")
+    if days < 30:
+        return _plural(days // 7, "week")
+    if days < 365:
+        return _plural(days // 30, "month")
+    return _plural(days // 365, "year")
+
+
+def age_seconds(value: str) -> int:
+    """Seconds since an ISO time (0 for the future); the home page's script ticks from this."""
+    return max(0, int((clock.now() - datetime.fromisoformat(value)).total_seconds()))
+
+
+def ago(value: str, rough: bool = False) -> str:
+    """'(today)', '(3 days ago)', '(2 weeks ago)' by calendar day. With rough=True the finer
+    '(just now)', '(5 min ago)', '(~2 hours ago)', then days and up. static/ago.js mirrors the rough form."""
+    dt = datetime.fromisoformat(value)
+    if not rough:
+        days = (clock.today() - dt.date()).days
+        return "(today)" if days <= 0 else f"({_days_ago(days)})"
+    secs = age_seconds(value)
+    if secs < 60:
+        return "(just now)"
+    if secs < 3600:
+        return f"({secs // 60} min ago)"
+    if secs < 86400:
+        return f"(~{_plural(secs // 3600, 'hour')})"
+    return f"({_days_ago(secs // 86400)})"
+
+
 def stayed(captured_at: str, ended_at: str | None) -> str:
     """How long a visitor stayed, from a minute up ('stayed 3 min'); shorter stays say nothing."""
     if not ended_at:
@@ -261,7 +298,7 @@ def temp_alt(c: float | None) -> str:
 templates.env.globals["temp_unit"] = TEMP_UNIT
 templates.env.globals["wind_unit"] = WIND_UNIT
 templates.env.filters.update(temp=temp, temp_alt=temp_alt, wind=wind, wind_alt=wind_alt)
-templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, short_time=short_time, usd=usd, mb=mb,
+templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, short_time=short_time, ago=ago, age_seconds=age_seconds, usd=usd, mb=mb,
                              month_name=lambda v: datetime.fromisoformat(v).strftime("%B"))
 templates.env.filters["tile_fact"] = species_info.fact_item
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""

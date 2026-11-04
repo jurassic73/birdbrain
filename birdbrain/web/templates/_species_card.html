@@ -12,7 +12,7 @@
     <span class="fact"><span class="big">{{ sp.visits }}</span> visit{{ 's' if sp.visits != 1 }}</span>
     <span class="fact">First seen <strong>{{ sp.first_seen | nice_date }}</strong></span>
     {% endif %}
-    <span class="fact{{ ' hide-on-phone' if fold }}">Last seen <strong>{{ sp.last_seen | nice_time }}</strong></span>
+    <span class="fact{{ ' hide-on-phone' if fold }}">Last seen <strong>{{ sp.last_seen | nice_time }}</strong> <span class="ago">{{ sp.last_seen | ago }}</span></span>
     <span class="{{ 'hide-on-phone' if fold }}">{{ confirm_badge(sp.label) }}</span>
     {% endif %}
   </div>

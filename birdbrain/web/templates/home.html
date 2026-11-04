@@ -29,7 +29,7 @@
       <div class="hero-row">
         <span class="hero-name">{{ lv.label }}{% if lv.count and lv.count > 1 %} x{{ lv.count }}{% endif %}
           {%- for a in also_of(lv) %} + {{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}</span>
-        <span class="hero-time">{{ lv.captured_at | short_time }}</span>
+        <span class="hero-time">{{ lv.captured_at | short_time }} <span class="ago" data-age="{{ lv.captured_at | age_seconds }}">{{ lv.captured_at | ago(True) }}</span></span>
       </div>
       {% set nc = no_circle_note(lv) %}{% if nc %}<span class="hero-note">{{ nc }}</span>{% endif %}
     </div>
@@ -116,6 +116,7 @@
 </section>
 
 <script src="/static/home-facts.js?v={{ asset_version }}"></script>
+<script src="/static/ago.js?v={{ asset_version }}"></script>
 
 <dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
   <button type="button" class="viewer-reset" id="home-viewer-reset" hidden>Reset view</button>
