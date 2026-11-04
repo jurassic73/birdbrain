@@ -1979,9 +1979,12 @@ def manifest():
     icons += [{"src": f"{st}/icon-maskable-{n}.png?v={v}", "sizes": f"{n}x{n}", "type": "image/png",
                "purpose": "maskable"} for n in (192, 512)]
     data = {"name": "Birdbrain", "short_name": "Birdbrain", "start_url": site_url("/"), "scope": site_url("/"),
-            "display": "standalone", "background_color": "#f6f5f0", "theme_color": "#f6f5f0", "icons": icons}
-    # No per-scheme colors here: Chrome has no reliable key for it. Once a page loads, its own
-    # <meta name="theme-color"> (set from the saved theme before first paint) overrides these.
+            "display": "standalone", "background_color": "#f6f5f0", "icons": icons}
+    # No theme_color, on purpose. In the installed Android app Chrome paints the navigation bar with the
+    # manifest's theme_color, fixed when the app is installed and never from the page, and it has no dark
+    # variant in the manifest (only desktop experiments), so a light one gave a white bar on a dark phone.
+    # Without it Chrome uses its own default bar, which follows the phone's dark mode. In a browser tab and
+    # in the app's status bar the page's <meta name="theme-color"> (set from the saved theme) still rules.
     return Response(json.dumps(data), media_type="application/manifest+json")
 
 
