@@ -162,7 +162,7 @@
         <li{% if step.shadow %} class="step-shadow"{% endif %}>
           {% if step.shadow %}
           <div class="step-head">
-            <strong>BioCLIP 2 species check</strong> {{ badge("pi named", "pi-only") if step.gated else badge("shadow", "shadow") }}
+            <strong>BioCLIP 2 species check</strong> {{ badge("RPi", "pi-only") if step.gated else badge("shadow", "shadow") }}
             <span class="muted">on the Pi, {{ step.crop }}{% if step.seconds is not none %}, {{ step.seconds }} s{% endif %}</span>
           </div>
           <div>{% if step.guesses %}{{ step.guesses | join(", ") }}{% else %}no local species{% endif %}</div>

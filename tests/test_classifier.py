@@ -367,7 +367,7 @@ def test_visit_page_says_the_pi_named_it(client, add_visit):
     vid = add_visit(model="bioclip-2", raw_json=json.dumps({"calls": {
         "classifier": guess("Dark-eyed Junco"), "skipped_claude": True, "settled_by": "classifier"}}))
     html = client.get(f"/visit/{vid}").text
-    assert "Claude wasn't asked" in html and 'data-tip="Pi named:' in html
+    assert "Claude wasn't asked" in html and 'data-tip="RPi:' in html
 
 
 def test_missing_model_without_release_url_fails_soft(monkeypatch, tmp_path):

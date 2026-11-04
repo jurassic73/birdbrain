@@ -20,15 +20,16 @@
     <div class="card-title">{{ sp_name(v.label) }}{% if v.count and v.count > 1 %} <span class="muted">x{{ v.count }}</span>{% endif %}
       {%- for a in also_of(v) %} <span class="also-name">+ {{ sp_name(also_label(a)) }}{% if a.count and a.count > 1 %} <span class="muted">x{{ a.count }}</span>{% endif %}</span>{% endfor %}</div>
     <div class="card-meta">
-      <span>{{ v.captured_at | nice_time }}{% if stayed(v) %}, {{ stayed(v) }}{% endif %}</span>
+      <span class="card-when">{{ v.captured_at | nice_time }}</span>
       {% if v.corrected_species or v.corrected_visitor or v.corrected_also is not none %}{{ badge("corrected", "corrected") }}
       {% elif v.confirmed_at %}{{ badge("Confirmed No Animal" if v.label == 'None' else "confirmed by human", "checked") }}
       {% elif v.model == "bioclip-presence" %}{{ badge("pi only", "pi-only") }}
-      {% elif v.model == "bioclip-2" %}{{ badge("pi named", "pi-only") }}
+      {% elif v.model == "bioclip-2" %}{{ badge("RPi", "pi-only") }}
       {% elif v.confidence %}{{ badge(v.confidence, "conf-" ~ v.confidence) }}{% endif %}
       {% if v.is_night %}{{ badge("night", "night") }}{% endif %}
       {% if not ft_cards %}{% set sb = season_badge(v.label, v.captured_at) %}{% if sb %}{{ badge(sb, "out-of-season") }}{% endif %}{% endif %}
     </div>
+    {% if stayed(v) %}<div class="card-stay">{{ stayed(v) }}</div>{% endif %}
   </div>
 </a>
 {% endfor %}
