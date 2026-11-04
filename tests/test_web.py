@@ -92,6 +92,18 @@ def test_home_lists_todays_visitors_with_counts(client, add_visit):
     assert ">2</a>" in critters and ">1</a>" in critters and "None" not in critters
 
 
+def test_today_list_shows_the_seasonal_status_as_a_pill_after_the_info_icon(client, conn, add_visit):
+    from birdbrain import species_info
+    add_visit(species="Dark-eyed Junco")
+    _card(conn, "Dark-eyed Junco", status="Year-round resident")
+    species_info.forget_cached_cards()
+    row = client.get("/").text.split('class="critters"')[1].split("</li>")[0]
+    icon = row.index('class="info-tip card-tip"')
+    pill = row.index('class="badge sp-status"')
+    assert icon < pill and 'data-tip="Year-round resident: reported here' in row[pill:]
+    assert ">Year-round</span>" in row[pill:] and 'class="critter-status"' not in row
+
+
 def _card(conn, name, **fields):
     db.save_species_info(conn, name, {"name": name, "links": [], **fields}, datetime.now().isoformat())
 
