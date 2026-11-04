@@ -406,9 +406,9 @@ def test_ground_calls_have_their_own_daily_count(conn, add_visit):
 
 def test_ground_events_use_the_ground_crop(pipeline, monkeypatch):
     conn, asked, set_detector = pipeline
-    crops = []
+    views = []
     set_detector(True)
-    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, crop, trigger: crops.append(crop))
+    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, z, trigger: views.append((trigger, z)))
     monkeypatch.setattr(watch.config, "GROUND_CROP", (0.0, 0.5, 1.0, 0.5))
     watch.handle_event(trigger="ground")
     raw = watch.json.loads(watch.db.latest_visit(conn)["raw_json"])
@@ -416,7 +416,8 @@ def test_ground_events_use_the_ground_crop(pipeline, monkeypatch):
     # The zones in use are stored with the visit, for the visit page's drawing.
     assert watch.zones.Zones.from_dict(raw["zones"]).ground_crop == (0.0, 0.5, 1.0, 0.5)
     watch.handle_event(trigger="rim")
-    assert crops == [(0.0, 0.5, 1.0, 0.5), watch.config.CROP_ROI]
+    assert [t for t, _ in views] == ["ground", "rim"]
+    assert views[0][1].ground_crop == (0.0, 0.5, 1.0, 0.5) and views[1][1].crop == watch.config.CROP_ROI
 
 
 def test_ground_results_never_put_the_birdbath_on_cooldown(monkeypatch, conn):
