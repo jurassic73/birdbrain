@@ -407,8 +407,8 @@ def quick_filters() -> list[tuple[str, dict]]:
     return [
         ("All", {}),
         ("Birds", {"kind": "bird"}),
-        ("Mammals", {"kind": "mammal"}),
         ("Multiple", {"kind": "multiple"}),
+        ("Mammals", {"kind": "mammal"}),
         ("Night", {"tod": "night"}),
         ("Today", {"date_from": today.isoformat(), "date_to": today.isoformat()}),
         ("This week", {"date_from": (today - timedelta(days=6)).isoformat()}),

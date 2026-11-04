@@ -66,6 +66,14 @@
     <div class="tally-box tally-head" data-tip="Birds and animals identified today{% if a.species %}, {{ a.species }} species{% endif %}. The rest of today's numbers (false alarms, Pi checks, Claude calls) are on the Stats page.">
       <span class="tally-n good">{{ a.visitors }}</span> <span class="tally-label">Visitor{{ 's' if a.visitors != 1 }} today</span>
     </div>
+    {% if any_visits %}
+    <button type="button" class="filters-toggle" aria-controls="more-filters" aria-expanded="{{ 'true' if more_filters_open else 'false' }}"
+            data-tip="Filter by species, birds, mammals or photos with several animals, day or night, and a date range">
+      <svg class="filters-funnel" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
+      More filters
+      <svg class="filters-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    {% endif %}
   </div>
   <div class="visits-head">
     {% if filtered %}<h2 class="visits-count">{{ total }} matching</h2>{% endif %}
@@ -75,14 +83,6 @@
       <a href="{{ href }}" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
       {% endfor %}
     </nav>
-    {% endif %}
-    {% if any_visits %}
-    <button type="button" class="filters-toggle" aria-controls="more-filters" aria-expanded="{{ 'true' if more_filters_open else 'false' }}"
-            data-tip="Filter by species, birds, mammals or photos with several animals, day or night, and a date range">
-      <svg class="filters-funnel" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
-      More filters
-      <svg class="filters-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-    </button>
     {% endif %}
   </div>
   {% if any_visits %}
