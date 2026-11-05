@@ -1073,16 +1073,29 @@ button.danger.sending, button.danger.htmx-request {
 .decision[open] summary { margin-bottom: 6px; }
 .decision-flow { list-style: none; margin: 0 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 0; font-size: .8rem; }
 .decision-flow.in-info { display: none; }
-.flow-pill { position: relative; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
+/* On the arrows row (desktop): the strip's lines hang under the first pill, the label sits beside line 1, and the
+   arrows and Back line up with line 1 instead of floating in the middle of a tall strip. */
+.decision-flow.in-nav { position: relative; flex: 1 1 0; min-width: 0; padding-left: 116px; gap: 4px 0; }
+.decision-flow.in-nav .flow-label { position: absolute; left: 0; top: 0; height: 24px; display: flex; align-items: center; margin: 0; }
+body:not(.embed) .visit-nav { align-items: flex-start; }
+body:not(.embed) .visit-nav-back { display: inline-flex; align-items: center; height: 36px; }
+.decision-flow.in-nav .flow-pill { margin-top: 0; }
+/* Every pill is the same height with its text centred both ways; the arrow before a pill is dropped on a pill that
+   starts a wrapped line (visit.html marks it .line-start), so no arrow dangles at a line's start. */
+.flow-pill { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 24px; box-sizing: border-box; padding: 0 10px 2px; line-height: 1; white-space: nowrap; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); }
 .flow-pill + .flow-pill { margin-left: 20px; }
 .flow-pill + .flow-pill::before { content: "\2192"; position: absolute; left: -16px; color: var(--muted); }
+.flow-pill.line-start { margin-left: 0; }
+.flow-pill.line-start::before { display: none; }
+/* A BioCLIP 2 species check pill's top guess: a long name ends in an ellipsis (the full guesses are in its tip). */
+.flow-guess { display: inline-block; max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* "Detection path" label before the first pill */
 .flow-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); white-space: nowrap; margin-right: 10px; }
 /* The Claude mark inside a Claude pill: text-sized, no tile, so the pill stays one line tall */
-.flow-pill .claude-mark, .tip-label .claude-mark { width: 14px; height: 14px; padding: 0; margin: 0 5px 0 0; background: none; vertical-align: -2px; }
+.flow-pill .claude-mark, .tip-label .claude-mark { width: 14px; height: 14px; padding: 0; margin: 0; background: none; vertical-align: -2px; }
 .tip-label .claude-mark { width: 15px; height: 15px; margin-right: 6px; vertical-align: -3px; }
 .flow-pill.ai { border-color: var(--accent); }
-.flow-pill.review { border-color: var(--medium); }
+.flow-pill.flow-review { border-color: var(--medium); }
 .flow-pill.result { font-weight: 600; }
 .decision ol { margin: 0; padding-left: 1.3em; display: flex; flex-direction: column; gap: 8px; }
 .decision .step-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
@@ -1371,8 +1384,9 @@ details.review-fold > summary { display: none; }
   /* Steps move under "Identified by" and wrap: smaller pills, and a step that agrees with the result shows only its confidence. */
   .decision-flow.in-nav { display: none; }
   .decision-flow.in-info { display: flex; margin: 2px 0 0; font-size: .72rem; gap: 4px 0; }
-  .decision-flow .flow-pill { padding: 1px 7px; white-space: nowrap; }
+  .decision-flow .flow-pill { height: 20px; padding: 0 7px 1px; }
   .decision-flow .flow-pill + .flow-pill { margin-left: 15px; }
+  .decision-flow .flow-pill.line-start { margin-left: 0; }
   .decision-flow .flow-pill + .flow-pill::before { left: -12px; }
   .decision-flow .flow-label { font-size: .65rem; margin-right: 8px; }
   .decision-flow .said-same { display: none; }
@@ -1710,7 +1724,7 @@ body.embed main { padding-top: 10px; }
 .embed-keys { margin: 0 0 0 auto; font-size: .8rem; }
 /* The start-to-finish pills get their own row under Close and the arrows. */
 body.embed .visit-nav { flex-wrap: wrap; row-gap: 10px; }
-body.embed .decision-flow.in-nav { flex-basis: 100%; margin-left: 0; }
+body.embed .decision-flow.in-nav { flex: 1 1 100%; margin-left: 0; }
 kbd {
   display: inline-block; min-width: 1.5em; padding: 0 5px; margin: 0 2px; text-align: center;
   font: inherit; font-size: .9em; line-height: 1.45; color: var(--text);

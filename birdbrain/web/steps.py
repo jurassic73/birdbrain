@@ -104,22 +104,31 @@ def _calls(visit) -> dict:
         return {}
 
 
-def gate_reason(guess: dict, settled: dict, night: bool, crowd, mode: str) -> str:
-    """Why the BioCLIP 2 species check's guess did not name the visit, in the order classifier.gate_pick tests."""
+def miss_text(code: str | None, guess: dict, settled: dict | None = None) -> str:
+    """Plain words for a classifier.gate_miss code (live numbers from the classifier's constants)."""
     top = (guess.get("top") or [{}])[0]
+    if code == "night":
+        return "night photos are infrared, which BioCLIP 2 was not trained on"
+    if code == "none":
+        return "no local species came up"
+    if code == "score":
+        return f"its top guess was {_pct(top.get('score') or 0)}, under the {_pct(classifier.GATE_MIN_SCORE)} it needs"
+    if code == "local":
+        return f"less than {_share(classifier.GATE_MIN_LOCAL)} of its belief was on local species"
+    if code == "unsettled":
+        return f"{top.get('name')} is not settled here yet ({db.CONFIRMED_MIN} sure visits needed)"
+    if code == "crowd":
+        return "more than one animal was in view"
+    if code == "changed":
+        return "it would name this one today, but it was not trusted to when the photo was taken"
+    return f"the {SPECIES} did not trust the guess"
+
+
+def gate_reason(guess: dict, settled: dict, night: bool, crowd, mode: str) -> str:
+    """Why the BioCLIP 2 species check's guess did not name the visit, in the order classifier.gate_miss tests."""
     if mode != "gate":
         return f"the {SPECIES} is in {mode} mode, so it only keeps score"
-    if night:
-        return "night photos are infrared, which BioCLIP 2 was not trained on"
-    if (top.get("score") or 0) < classifier.GATE_MIN_SCORE:
-        return f"its top guess was {_pct(top.get('score') or 0)}, under the {_pct(classifier.GATE_MIN_SCORE)} it needs"
-    if (guess.get("local_share") or 0) < classifier.GATE_MIN_LOCAL:
-        return f"less than {_share(classifier.GATE_MIN_LOCAL)} of its belief was on local species"
-    if settled.get(top.get("name"), "none") in ("none", "other"):
-        return f"{top.get('name')} is not settled here yet ({db.CONFIRMED_MIN} sure visits needed)"
-    if crowd:
-        return "more than one animal was in view"
-    return f"the {SPECIES} did not trust the guess"
+    return miss_text(classifier.gate_miss(guess, settled, night, crowd), guess)
 
 
 def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, settled: dict, current_visitor: str,
@@ -135,7 +144,8 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
     checked = bool(visit["confirmed_at"] or visit["corrected_visitor"] or visit["corrected_species"])
     skipped_empty = any(s.get("presence") and s.get("skipped_claude") for s in steps)
     claude_steps = [s for s in steps if s["model"] in ("Haiku", "Sonnet")]
-    guess_step = next((s for s in steps if s.get("shadow")), None)
+    guess_step = next((s for s in steps if s.get("gated") or s.get("scorecard")), None)
+    first_step = next((s for s in steps if s.get("first_look") and not s.get("gated")), None)
 
     # 1. Motion detector
     where = f" It spotted movement {decision['trigger']}." if decision.get("trigger") else ""
@@ -183,11 +193,16 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
         body = f"<b>Not reached:</b> the photo was empty, so the {SPECIES} had nothing to name."
         if current_visitor != "none" and species:
             body += f" You corrected it to {label}; the correction counts toward {label} being settled here."
-    elif guess_step:
+    elif guess_step or first_step:
         pill = ("guess only", "step-muted")
-        raw_guess = calls.get("classifier") or {}
-        why = gate_reason(raw_guess, settled, bool(raw_guess.get("night")), guess_step.get("crowd"), mode)
-        body = (f"<b>Guessed {e((guess_step['guesses'] or ['nothing local'])[0])}</b> but did not name the visit: "
+        if first_step:  # the first look's own reason, recorded when it was made
+            shown = first_step
+            why = miss_text(first_step.get("why"), calls.get("classifier_gate") or {})
+        else:
+            shown = guess_step
+            raw_guess = calls.get("classifier") or {}
+            why = gate_reason(raw_guess, settled, bool(raw_guess.get("night")), guess_step.get("crowd"), mode)
+        body = (f"<b>Guessed {e((shown['guesses'] or ['nothing local'])[0])}</b> but did not name the visit: "
                 f"{e(why)}. {CLAUDE} was asked.")
     else:
         pill = ("no guess", "step-muted")

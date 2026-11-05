@@ -24,6 +24,7 @@ IR night frames are grayscale; it hasn't been checked on them yet.
 
 CLI: python -m birdbrain.classifier photo.jpg            (top 3 for whole photos)
      python -m birdbrain.classifier --backfill [--limit N] [--redo]   (score stored visits)
+     python -m birdbrain.classifier --backfill-gate [--limit N] [--redo] [--dry-run]   (first looks, no images)
 """
 
 import argparse
@@ -543,17 +544,41 @@ def from_embedding(emb: np.ndarray, night: bool, local=None, clf=None) -> dict |
             "seconds": 0.0}
 
 
+def gate_miss(guess: dict | None, settled: dict[str, str], night: bool, crowd=None) -> str | None:
+    """Why a guess would not name the visit without Claude, in the order the gate tests it: "night", "none" (no
+    local species at all), "score" (top guess under GATE_MIN_SCORE), "local" (under GATE_MIN_LOCAL of its belief on
+    local species), "unsettled" (the species isn't settled here yet) or "crowd" (`crowd` is truthy: several
+    animals in view). None when it would name it. One place for the order: gate_pick, the watcher's stored first
+    look and the visit page all read it."""
+    if night:
+        return "night"
+    if not guess or not guess.get("top"):
+        return "none"
+    top = guess["top"][0]
+    if top["score"] < GATE_MIN_SCORE:
+        return "score"
+    if (guess.get("local_share") or 0) < GATE_MIN_LOCAL:
+        return "local"
+    visitor = settled.get(top["name"])
+    if not visitor or visitor in ("none", "other"):
+        return "unsettled"
+    return "crowd" if crowd else None
+
+
 def gate_pick(guess: dict | None, settled: dict[str, str], night: bool) -> tuple[str, str] | None:
     """(species, visitor) when the guess is trusted to name the visit without Claude: daytime only (it hasn't
     seen infrared), a strong first guess mostly on local species, and a species with enough settled visits
     here (`settled`: label -> visitor type, from db.settled_species)."""
-    if night or not guess or not guess.get("top"):
+    if gate_miss(guess, settled, night):
         return None
-    top = guess["top"][0]
-    if top["score"] < GATE_MIN_SCORE or (guess.get("local_share") or 0) < GATE_MIN_LOCAL:
-        return None
-    visitor = settled.get(top["name"])
-    return (top["name"], visitor) if visitor and visitor not in ("none", "other") else None
+    name = guess["top"][0]["name"]
+    return name, settled[name]
+
+
+def first_look(guess: dict, settled: dict[str, str], night: bool, crowd=None) -> dict:
+    """The gate's guess as the watcher stores it (raw_json.calls.classifier_gate) when it did not name the
+    visit: the guess plus why (gate_miss). The guess made on Claude's circle afterwards stays calls.classifier."""
+    return {**guess, "why": gate_miss(guess, settled, night, crowd)}
 
 
 def gate_check(emb, night: bool, settled: dict[str, str]) -> tuple[dict | None, tuple[str, str] | None]:
@@ -640,24 +665,91 @@ def backfill(limit: int | None = None, redo: bool = False, clf=None, local=None)
     return done
 
 
+def backfill_gate(limit: int | None = None, redo: bool = False, dry_run: bool = False, clf=None, local=None,
+                  settled: dict | None = None, every: int = 25, say=print) -> dict:
+    """Write the first look (raw_json.calls.classifier_gate) for older visits that went to Claude, newest first,
+    from the Pi animal check's stored embedding: only the text side is used, so no image is read or encoded.
+    Done for daytime real visits Claude answered, not ones the Pi named or called empty, with no first look yet
+    (`redo` makes them again). The record says `backfilled` and is made with today's settled list, which may
+    differ from the one at the time; an embedding of an older view says which (`view_note`). A guess that would
+    name the visit today gets why = "changed". Returns the counts."""
+    clf = clf or load()
+    if clf is None:
+        raise SystemExit("the classifier is off (CLASSIFIER=off)")
+    local = local_species() if local is None else local
+    with db.session() as conn:
+        settled = db.settled_species(conn) if settled is None else settled
+        now_zones = zones.load(conn).to_dict()  # for visits that saved none
+        rows = conn.execute(
+            f"""SELECT v.id, v.is_night, v.raw_json, e.vec, e.view FROM visits v
+                JOIN embeddings e ON e.visit_id = v.id
+                WHERE {db.REAL} AND v.is_night = 0
+                ORDER BY v.id DESC""").fetchall()
+    counts = {"done": 0, "skipped": 0, "named_now": 0, "old_view": 0}
+    total = len(rows)
+    for n, r in enumerate(rows, 1):
+        if limit is not None and counts["done"] >= limit:
+            break
+        try:
+            raw = json.loads(r["raw_json"] or "{}") or {}
+        except (ValueError, TypeError):
+            raw = {}
+        calls = raw.get("calls") if isinstance(raw, dict) else None
+        calls = calls if isinstance(calls, dict) else {}
+        asked = calls.get("haiku") or calls.get("sonnet") or calls.get("error")
+        if (not asked or calls.get("settled_by") or calls.get("skipped_claude")
+                or (calls.get("classifier_gate") and not redo)):
+            counts["skipped"] += 1
+        else:
+            emb = np.frombuffer(r["vec"], np.float16).astype(np.float32)
+            crowd = calls.get("gate_crowd") or ((raw.get("animals_seen") or 0) > 1 or None)
+            guess = from_embedding(emb, False, local=local, clf=clf)
+            view = r["view"]
+            guess["crop"] = view_kind(raw.get("zones") or now_zones, raw.get("trigger")) if view == PRESENCE_VIEW else "box"
+            record = first_look(guess, settled, False, crowd)
+            if record["why"] is None:
+                record["why"] = "changed"
+                counts["named_now"] += 1
+            record["backfilled"] = True
+            if view != PRESENCE_VIEW:
+                record["view_note"] = "its fingerprint is of the older, center-cut view of the crop box"
+                counts["old_view"] += 1
+            if not dry_run:
+                with db.session() as conn:
+                    db.set_raw_entry(conn, r["id"], "$.calls.classifier_gate", record)
+            counts["done"] += 1
+        if n % every == 0 or n == total:
+            say(f"{n}/{total} looked at, {counts['done']} {'would be ' if dry_run else ''}written")
+    return counts
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m birdbrain.classifier")
     parser.add_argument("photos", nargs="*", help="classify whole photos and print the top 3")
     parser.add_argument("--backfill", action="store_true", help="score stored visits that have no guess yet")
-    parser.add_argument("--limit", type=int, help="with --backfill: at most this many visits, newest first")
-    parser.add_argument("--redo", action="store_true", help="with --backfill: score visits again")
+    parser.add_argument("--limit", type=int, help="with --backfill or --backfill-gate: at most this many visits, newest first")
+    parser.add_argument("--redo", action="store_true", help="with --backfill or --backfill-gate: do visits again")
+    parser.add_argument("--backfill-gate", action="store_true",
+                        help="write the first look (BioCLIP 2 guess before Claude) for older visits, from stored embeddings")
+    parser.add_argument("--dry-run", action="store_true", help="with --backfill-gate: count, write nothing")
     args = parser.parse_args()
     if args.backfill:
         with db.session() as conn:
             db.init_db(conn)
         print(f"classifier scored {backfill(args.limit, args.redo)} visits")
+    elif args.backfill_gate:
+        with db.session() as conn:
+            db.init_db(conn)
+        c = backfill_gate(args.limit, args.redo, args.dry_run)
+        print(f"first look {'would be written' if args.dry_run else 'written'} for {c['done']} visits "
+              f"({c['named_now']} that it would name today, {c['old_view']} from an older view, {c['skipped']} skipped)")
     elif args.photos:
         import cv2
 
         for p in args.photos:
             print(p, json.dumps(classify(cv2.imread(p), None, None, False)))
     else:
-        parser.error("nothing to do (give photos or --backfill)")
+        parser.error("nothing to do (give photos, --backfill or --backfill-gate)")
     sys.exit(0)
 
 

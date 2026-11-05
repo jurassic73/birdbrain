@@ -168,13 +168,15 @@ def client(conn):
         yield c
 
 
-def test_visit_page_shows_the_guess_as_shadow(client, add_visit):
+def test_visit_page_shows_the_guess_as_shadow(client, add_visit, monkeypatch):
     vid = add_visit(species="Bushtit", raw_json=json.dumps({"calls": {
         "haiku": {"answer": {"visitor": "bird", "species": "Bushtit", "confidence": "high"}},
         "classifier": guess("Bushtit", "Dark-eyed Junco")}}))
     html = client.get(f"/visit/{vid}").text
     assert "BioCLIP 2 species check" in html and "Bushtit (50%), Dark-eyed Junco (50%)" in html
-    assert 'class="badge shadow" data-tip="Shadow:' in html
+    assert 'class="badge shadow" data-tip="Scorecard:' in html and "Shadow:" not in html  # gate mode: no longer "shadow"
+    monkeypatch.setattr(config, "CLASSIFIER", "shadow")
+    assert 'class="badge shadow" data-tip="Shadow:' in client.get(f"/visit/{vid}").text
     assert "asked Sonnet" not in html  # the classifier step after Haiku isn't a second look
 
 
@@ -338,7 +340,10 @@ def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit
 
     emb["v"] = one_hot(0, 0.01)  # unsure: Claude names it
     assert watch.handle_event() == "bird" and asked
-    assert conn.execute("SELECT species FROM visits ORDER BY id DESC").fetchone()[0] == "Bushtit"
+    row = conn.execute("SELECT species, raw_json FROM visits ORDER BY id DESC").fetchone()
+    assert row["species"] == "Bushtit"
+    first = json.loads(row["raw_json"])["calls"]["classifier_gate"]  # the look that didn't name it is kept
+    assert first["why"] == "score" and first["top"][0]["name"] == "Dark-eyed Junco" and first["crop"] != "circle"
 
     # Sure, but two animals in view: one guess names one animal, so Claude counts them.
     emb["v"], asked[:] = one_hot(0), []
@@ -348,12 +353,14 @@ def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit
     calls = json.loads(row["raw_json"])["calls"]
     assert row["species"] == "Bushtit" and calls["animals_seen"] == 2
     assert calls["gate_crowd"] == {"species": "Dark-eyed Junco", "animals": 2}
+    assert calls["classifier_gate"]["why"] == "crowd"
 
     monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop: 1)  # one: the Pi names it
     asked[:] = []
     assert watch.handle_event() == "bird" and not asked
     calls = json.loads(conn.execute("SELECT raw_json FROM visits ORDER BY id DESC").fetchone()[0])["calls"]
     assert calls["settled_by"] == "classifier" and calls["animals_seen"] == 1 and "gate_crowd" not in calls
+    assert "classifier_gate" not in calls  # the guess that named it is calls.classifier
 
 
 def test_visit_page_says_why_a_group_went_to_claude(client, add_visit):
@@ -375,3 +382,89 @@ def test_missing_model_without_release_url_fails_soft(monkeypatch, tmp_path):
     assert not config.CLASSIFIER_RELEASE_URL
     with pytest.raises(RuntimeError, match="CLASSIFIER_RELEASE_URL"):
         classifier.download_model(tmp_path)
+
+
+def test_gate_miss_gives_the_reason_in_the_gates_order():
+    sure = {"top": [{"name": "Dark-eyed Junco", "score": 0.99}], "local_share": 0.9}
+    settled = {"Dark-eyed Junco": "bird"}
+    assert classifier.gate_miss(sure, settled, False) is None
+    assert classifier.gate_miss(sure, settled, True) == "night"
+    assert classifier.gate_miss(None, settled, False) == "none"
+    assert classifier.gate_miss(dict(sure, top=[{"name": "Bushtit", "score": 0.5}]), settled, False) == "score"
+    assert classifier.gate_miss(dict(sure, local_share=0.1), settled, False) == "local"
+    assert classifier.gate_miss(sure, {}, False) == "unsettled"
+    assert classifier.gate_miss(sure, settled, False, crowd="Dark-eyed Junco") == "crowd"
+    # an unsure guess of an unsettled species says "score" first, like gate_pick's tests
+    assert classifier.gate_miss(dict(sure, top=[{"name": "Bushtit", "score": 0.5}]), {}, False) == "score"
+    assert classifier.gate_pick(sure, settled, False) == ("Dark-eyed Junco", "bird")
+
+
+def first_look_raw(why="score", name="Black-capped Chickadee", score=0.61, **extra):
+    gate = {"model": classifier.MODEL_NAME, "crop": "bowl", "night": False, "seconds": 0.0, "why": why,
+            "top": [{"name": name, "scientific": "", "score": score}, {"name": "Bushtit", "scientific": "", "score": 0.2}],
+            "local_share": 0.9, **extra}
+    return json.dumps({"calls": {"classifier_gate": gate, "classifier": guess("Bushtit"),
+                                 "haiku": {"frames": 1, "answer": {"visitor": "bird", "species": "Bushtit",
+                                                                   "confidence": "high"}}}})
+
+
+def test_visit_page_shows_the_first_look_before_claude(client, add_visit):
+    vid = add_visit(species="Bushtit", raw_json=first_look_raw())
+    html = client.get(f"/visit/{vid}").text
+    steps = html[html.index("How it was decided"):]
+    assert steps.index("Black-capped Chickadee (61%)") < steps.index("<strong>Haiku</strong>") < steps.index("Bushtit (50%)")
+    assert "Did not name the visit: its top guess was 61%, under the 93% it needs. Claude was asked." in html
+    assert 'data-tip="First look:' in html and 'data-tip="Second look:' in html and "Shadow:" not in html
+    flow = html[html.index('aria-label="Detection path"'):]
+    flow = flow[:flow.index("</ol>")]
+    assert flow.index("Black-capped Chickadee (61%)") < flow.index("Haiku") < flow.index("Bushtit (50%)")  # both pills
+    assert "2nd look" in flow
+    crowd = add_visit(raw_json=first_look_raw("crowd", "Dark-eyed Junco", 0.99))
+    assert "more than one animal was in view" in client.get(f"/visit/{crowd}").text
+
+
+def test_old_visit_without_a_first_look_renders_as_before(client, add_visit):
+    vid = add_visit(species="Bushtit", raw_json=json.dumps({"calls": {
+        "haiku": {"answer": {"visitor": "bird", "species": "Bushtit", "confidence": "high"}},
+        "classifier": guess("Bushtit")}}))
+    html = client.get(f"/visit/{vid}").text
+    assert "2nd look" not in html and "before Claude" not in html and "Its own guess, not used for the label" in html
+
+
+def test_backfill_gate_writes_first_looks_from_stored_embeddings(conn, add_visit, monkeypatch):
+    from birdbrain import presence
+
+    monkeypatch.setattr(classifier, "local_species", lambda: LOCAL)
+    asked = {"haiku": {"answer": {"visitor": "bird", "species": "Bushtit", "confidence": "high"}}}
+
+    def visit(emb, calls=None, view=classifier.PRESENCE_VIEW, **fields):
+        vid = add_visit(raw_json=json.dumps({"calls": calls or asked}), **fields)
+        presence.store(conn, vid, emb, view)
+        return vid
+
+    unsure = visit(one_hot(0, 0.01))
+    sure = visit(one_hot(0))
+    old_view = visit(one_hot(0, 0.01), view=None)
+    named = visit(one_hot(0), {"settled_by": "classifier", "skipped_claude": True})
+    night = visit(one_hot(0, 0.01), is_night=1)
+    done = visit(one_hot(0, 0.01), {**asked, "classifier_gate": {"why": "score", "top": []}})
+    no_embedding = add_visit(raw_json=json.dumps({"calls": asked}))
+    settled = {"Dark-eyed Junco": "bird"}
+    clf = FakeTextClassifier()
+
+    def gate(vid):
+        raw = json.loads(conn.execute("SELECT raw_json FROM visits WHERE id = ?", (vid,)).fetchone()[0])
+        return raw["calls"].get("classifier_gate")
+
+    lines = []
+    c = classifier.backfill_gate(dry_run=True, clf=clf, local=LOCAL, settled=settled, say=lines.append)
+    assert c["done"] == 3 and gate(unsure) is None and lines[-1].startswith("5/5")  # nothing written
+    c = classifier.backfill_gate(clf=clf, local=LOCAL, settled=settled, say=lambda m: None)
+    assert (c["done"], c["named_now"], c["old_view"]) == (3, 1, 1)
+    assert gate(unsure)["why"] == "score" and gate(unsure)["backfilled"] and gate(unsure)["crop"] == "frame"  # the test yard has no ring or crop
+    assert gate(sure)["why"] == "changed"  # it would name this one today, but Claude was asked then
+    assert gate(old_view)["crop"] == "box" and "older" in gate(old_view)["view_note"]
+    assert gate(named) is None and gate(night) is None and gate(no_embedding) is None
+    assert gate(done) == {"why": "score", "top": []}  # already has one
+    classifier.backfill_gate(redo=True, limit=1, clf=clf, local=LOCAL, settled=settled, say=lambda m: None)
+    assert gate(done)["backfilled"]  # newest first, redone
