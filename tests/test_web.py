@@ -2020,3 +2020,16 @@ def test_stats_share_chart_card_only_once_bioclip_named_a_visitor(client, add_vi
     assert 'id="id-share"' in html and "Share of IDs by BioCLIP 2, per day" in html
     assert 'shareChart("idshare", [{' in html and '"bioclip":1' in html.replace(" ", "")
     assert html.index('id="today"') < html.index('id="id-share"')
+
+
+def test_p_key_plays_the_burst_and_is_listed_only_with_a_burst(client, burst_visit, stored_visit):
+    vid, _, _ = burst_visit()
+    html = client.get(f"/visit/{vid}").text
+    rows, _ = _keys_dialog(html)
+    assert ("P", "Play or stop the burst") in rows
+    assert "P)" in html and "e.key.toLowerCase() !== \"p\"" in html
+    emb = client.get(f"/visit/{vid}?ft=1&embed=1").text
+    assert "birdbrain:play" in emb and "<kbd>P</kbd> play burst" in emb
+    assert "birdbrain:play" in client.get("/false-triggers").text
+    plain = stored_visit(visitor="none", species=None)
+    assert ("P", "Play or stop the burst") not in _keys_dialog(client.get(f"/visit/{plain}").text)[0]

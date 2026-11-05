@@ -2,6 +2,7 @@
 // desktop only) and the "Keyboard shortcuts" pop-up (#keys-dialog in base.html, looks: the Pop-ups section of
 // style.css). A page lists its own keys in its {% block keys_page %}; the site-wide keys are listed in base.html.
 //   ?  opens the pop-up     1 2 3 4  Visits, Species, Live, Stats     T  light/dark     P  next palette
+// (A visit page with a burst takes P for play/stop instead of the palette.)
 // Pages with their own keys (home, visit, species-nav.js) keep them; window.bbShortcuts.free(e) is the shared
 // "is this key press ours to use" check, so every handler skips the same situations. Not loaded in embeds.
 (() => {
