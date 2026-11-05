@@ -462,9 +462,14 @@ class Classifier:
 
     def probs(self, bgr: np.ndarray) -> np.ndarray:
         """Softmax over every eBird bird and iNaturalist mammal (rank() narrows it to the local ones)."""
-        z = LOGIT_SCALE * (self.text @ self.embed(bgr))
+        return self.look(bgr)[1]
+
+    def look(self, bgr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """(the image embedding, probs() of it): one encoder run gives both."""
+        emb = self.embed(bgr)
+        z = LOGIT_SCALE * (self.text @ emb)
         e = np.exp(z - z.max())
-        return e / e.sum()
+        return emb, e / e.sum()
 
 
 _classifier: Classifier | None = None
@@ -517,12 +522,39 @@ def classify(img: np.ndarray, circle: dict | None, box, night: bool, local=None,
     margins = CIRCLE_MARGINS if circle and circle.get("r") else (CIRCLE_MARGIN,)
     start = time.perf_counter()
     crops = [crop_for(img, circle, box, m) for m in margins]
-    probs = np.mean([clf.probs(patch) for patch, _ in crops], axis=0)
+    # One encoder run per crop gives the guess and the embedding; a fake classifier with only probs() has no
+    # embedding to keep.
+    looks = [clf.look(patch) if hasattr(clf, "look") else (None, clf.probs(patch)) for patch, _ in crops]
+    probs = np.mean([p for _, p in looks], axis=0)
     used = crops[0][1]
     seconds = time.perf_counter() - start
     local = local_species() if local is None else local
-    return {"model": MODEL_NAME, "crop": used, "night": bool(night), **rank(probs, clf.labels, local),
-            "seconds": round(seconds, 3)}
+    # The embedding of the first margin's square (the one the guess's "crop" describes) is kept for training
+    # (see with_embedding), but only of a square around a circle: that's the tight view.
+    result = {"model": MODEL_NAME, "crop": used, "night": bool(night), **rank(probs, clf.labels, local),
+              "seconds": round(seconds, 3)}
+    if used == "circle" and looks[0][0] is not None:
+        _mine.embedding = looks[0][0]  # only once the whole guess exists
+    return result
+
+
+# The tight views' embeddings ("fingerprints", 768 float16 = 1.5 KB) are kept as training data for a species model
+# trained on this yard's photos. classify() leaves the embedding of its circle square here (per thread, so the
+# watcher and the web process's Ask buttons never see each other's) and with_embedding() collects it, so the
+# guesses (stored as JSON) stay exactly what they were and nothing is encoded twice.
+TIGHT_VIEW = 1  # version of that view: the square CIRCLE_MARGINS[0] radii around a circle (circle_square), 224 bicubic
+_mine = threading.local()
+
+
+def with_embedding(fn, *args, **kwargs):
+    """(fn(*args, **kwargs), the embedding of the tight square it classified or None). The embedding is only
+    ever of a classify() call made inside this one; if fn raises, so does this."""
+    _mine.embedding = None
+    try:
+        result = fn(*args, **kwargs)
+        return result, getattr(_mine, "embedding", None)
+    finally:
+        _mine.embedding = None
 
 
 # Gate mode, rule H: two looks, each with its own bar. The first look reuses the Pi animal check's embedding of the
@@ -761,20 +793,58 @@ def backfill_gate(limit: int | None = None, redo: bool = False, dry_run: bool = 
     return counts
 
 
+def backfill_circle_embeddings(limit: int | None = None, redo: bool = False, clf=None, say=print) -> int:
+    """Keep the tight embedding of Claude's circle (embeddings.circle_vec) for older real visits that have a
+    wide embedding row but no circle_vec, from their stored photos (newest first, one encoder run each, about
+    6 s on a Pi 4). Only Claude's circle counts (not the owner's marks); the model is sonnet for an escalated
+    visit, else haiku. Returns how many were saved."""
+    import cv2
+
+    from . import presence
+
+    clf = clf or load()
+    if clf is None:
+        raise SystemExit("the classifier is off (CLASSIFIER=off)")
+    with db.session() as conn:
+        rows = conn.execute(
+            f"""SELECT v.id, v.image_path, v.escalated, v.raw_json FROM visits v JOIN embeddings e ON e.visit_id = v.id
+                WHERE {db.REAL} {'' if redo else 'AND e.circle_vec IS NULL'} ORDER BY v.id DESC""").fetchall()
+    rows = [r for r in rows if ((json.loads(r["raw_json"] or "{}") or {}).get("calls") or {}).get("circle")]
+    total, done = (min(len(rows), limit) if limit is not None else len(rows)), 0
+    for n, r in enumerate(rows[:total], 1):
+        circle = json.loads(r["raw_json"])["calls"]["circle"]
+        img = cv2.imread(str(config.IMAGES_DIR / r["image_path"]))
+        if img is not None:
+            patch, kind = crop_for(img, circle, None, CIRCLE_MARGINS[0])
+            if kind == "circle":
+                with db.session() as conn:
+                    done += presence.store_tight(conn, r["id"], circle=clf.embed(patch),
+                                                 circle_model="sonnet" if r["escalated"] else "haiku")
+        if n % 25 == 0 or n == total:
+            say(f"{n}/{total} looked at, {done} saved")
+    return done
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m birdbrain.classifier")
     parser.add_argument("photos", nargs="*", help="classify whole photos and print the top 3")
     parser.add_argument("--backfill", action="store_true", help="score stored visits that have no guess yet")
-    parser.add_argument("--limit", type=int, help="with --backfill or --backfill-gate: at most this many visits, newest first")
-    parser.add_argument("--redo", action="store_true", help="with --backfill or --backfill-gate: do visits again")
+    parser.add_argument("--limit", type=int, help="with a backfill: at most this many visits, newest first")
+    parser.add_argument("--redo", action="store_true", help="with a backfill: do visits again")
     parser.add_argument("--backfill-gate", action="store_true",
                         help="write the first look (BioCLIP 2 guess before Claude) for older visits, from stored embeddings")
+    parser.add_argument("--backfill-circle-embeddings", action="store_true",
+                        help="keep the tight embedding of Claude's circle for older visits (about 6 s each on a Pi)")
     parser.add_argument("--dry-run", action="store_true", help="with --backfill-gate: count, write nothing")
     args = parser.parse_args()
     if args.backfill:
         with db.session() as conn:
             db.init_db(conn)
         print(f"classifier scored {backfill(args.limit, args.redo)} visits")
+    elif args.backfill_circle_embeddings:
+        with db.session() as conn:
+            db.init_db(conn)
+        print(f"tight embeddings saved for {backfill_circle_embeddings(args.limit, args.redo)} visits")
     elif args.backfill_gate:
         with db.session() as conn:
             db.init_db(conn)
@@ -787,7 +857,7 @@ def main() -> None:
         for p in args.photos:
             print(p, json.dumps(classify(cv2.imread(p), None, None, False)))
     else:
-        parser.error("nothing to do (give photos, --backfill or --backfill-gate)")
+        parser.error("nothing to do (give photos, --backfill, --backfill-gate or --backfill-circle-embeddings)")
     sys.exit(0)
 
 

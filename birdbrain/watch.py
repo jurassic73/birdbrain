@@ -621,6 +621,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     crowd = None
     named = None  # which BioCLIP 2 look named the visit: "bowl" (the first look) or "tight"
     circle = found = None  # the circle from the motion, once it was looked for
+    tight_vec = circle_vec = circle_model = None  # BioCLIP 2 embeddings of the tight squares, kept as training data
+    haiku_look = []  # the embedding of the look on Haiku's circle, if one was made
     if not empty:  # the species gate: a sure daytime name of a species already settled here skips Claude
         with db.session() as conn:
             settled = db.settled_species(conn)
@@ -640,7 +642,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             circle, found = motion_circle.live(best, scene.empty if scene else None, z, trigger,
                                                captured_at.isoformat(), night)
             if circle:
-                tight, pick = classifier.tight_check(best, circle, crop, night, settled)
+                (tight, pick), tight_vec = classifier.with_embedding(
+                    classifier.tight_check, best, circle, crop, night, settled)
                 if pick:
                     named = "tight"
                     log.info("species gate: the tight look named %s (%.2f); the first look had %s at %.2f", pick[0],
@@ -671,7 +674,14 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             site = db.prompt_site(conn)
             confirmed = db.confirmed_species(conn)
         # By day the Pi's own guess on Haiku's circle can veto skipping Sonnet (not checked on infrared yet).
-        local_check = None if night else (lambda circle: classifier.run(best, circle, crop, night))
+
+        def local_check(circle):
+            guess, vec = classifier.with_embedding(classifier.run, best, circle, crop, night)
+            haiku_look[:] = [vec]
+            return guess
+
+        if night:
+            local_check = None
         try:
             result = identify.identify(best, captured_at, crop, lessons, extra_frames=ranked[1:], site=site,
                                        confirmed=confirmed, local_check=local_check, night=night)
@@ -685,9 +695,17 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     unanswered = "error" in result.raw
     # When Claude answered, the classifier records its guess from Claude's circle for the Stats scorecard (already
     # made on Haiku's circle when it decided whether to ask Sonnet; again on Sonnet's circle if Sonnet answered).
-    if (not pick and result.sighting.visitor != "none" and (result.escalated or "classifier" not in result.raw)
-            and (guess := classifier.run(best, result.raw.get("circle"), crop, night))):
-        result.raw["classifier"] = guess
+    if not pick and result.sighting.visitor != "none":
+        # The tight square around Claude's circle is also kept as training data: the look the stored guess is of.
+        circle_model = "sonnet" if result.escalated else "haiku"
+        if result.escalated or "classifier" not in result.raw:
+            guess, circle_vec = classifier.with_embedding(classifier.run, best, result.raw.get("circle"), crop, night)
+            if guess:
+                result.raw["classifier"] = guess
+            else:
+                circle_vec = None  # no new guess: don't keep a vector the stored guess isn't of
+        elif haiku_look:
+            circle_vec = haiku_look[0]
     if looked and named != "bowl":
         # The BioCLIP 2 species check's first look did not name the visit: keep the guess and why, so the visit
         # page can show it before the tight look or Claude (the guess on Claude's circle above is the later
@@ -758,6 +776,10 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         )
         if emb is not None:
             presence.store(conn, visit_id, emb)  # training data once its label is known (and corrected)
+            if tight_vec is not None or circle_vec is not None:
+                # Fingerprints of the tight views, for a species model of this yard later; never worth a visit.
+                fail_soft("keeping the tight fingerprints", presence.store_tight, conn, visit_id, tight_vec,
+                          circle_vec, circle_model if circle_vec is not None else None)
     last_visit_id = visit_id
     # From here on the visit is stored: whatever goes wrong below is logged, and the stored visitor still returned.
     if false_trigger:

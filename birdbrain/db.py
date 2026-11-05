@@ -72,7 +72,17 @@ CREATE TABLE IF NOT EXISTS embeddings (  -- BioCLIP 2 embedding of each frame's 
     animal_vec BLOB,
     animal_frame INTEGER,
     animal_score REAL,
-    animal_by_owner INTEGER
+    animal_by_owner INTEGER,
+    -- Training data for a species model of this yard (collected only; nothing reads it yet): BioCLIP 2
+    -- embeddings (float16, 1.5 KB each) of the TIGHT squares around the animal, not the wide view above.
+    -- tight_vec: the square around the Motion detector's circle (rule H's tight look); circle_vec: the square
+    -- around Claude's circle for the final answer, circle_model "haiku" or "sonnet" (whose circle). *_view is
+    -- classifier.TIGHT_VIEW. See presence.store_tight.
+    tight_vec BLOB,
+    tight_view INTEGER,
+    circle_vec BLOB,
+    circle_view INTEGER,
+    circle_model TEXT
 );
 CREATE TABLE IF NOT EXISTS pi_checks (  -- one row per Ask the Pi click; no foreign key, so deleting visits keeps them
     id INTEGER PRIMARY KEY,
@@ -155,7 +165,9 @@ HAS_PHOTO = "photo_deleted_at IS NULL"
 # The photo itself is there, full size or thinned, not just the thumbnail: for checks that look at the frame.
 FULL_FRAME = f"({HAS_PHOTO} AND photo_level IS NOT 'thumb')"
 EMBEDDING_ADDED_COLUMNS = {"animal_vec": "BLOB", "animal_frame": "INTEGER", "animal_score": "REAL",
-                           "animal_by_owner": "INTEGER", "view": "INTEGER"}
+                           "animal_by_owner": "INTEGER", "view": "INTEGER",
+                           "tight_vec": "BLOB", "tight_view": "INTEGER", "circle_vec": "BLOB",
+                           "circle_view": "INTEGER", "circle_model": "TEXT"}
 
 # How many corrections and notes join each identify prompt.
 LESSON_LIMIT = 15
