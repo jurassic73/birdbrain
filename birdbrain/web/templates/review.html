@@ -2,7 +2,7 @@
 {% block title %}Review | Birdbrain{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Review queue <span class="muted">{{ total }}</span></h1></div>
-<p class="muted">Visits Claude was unsure about, oldest first, including photos it couldn't call empty with any confidence. Open one to confirm or correct it.{% if total > visits | length %} Showing the oldest {{ visits | length }} of {{ total }}; the rest follow as you review these.{% endif %}</p>
+<p class="muted">Animals Claude couldn't name ("Other", hidden from visitors) come first, then visits it was unsure about, each oldest first, including photos it couldn't call empty with any confidence. Open one to confirm or correct it.{% if total > visits | length %} Showing the first {{ visits | length }} of {{ total }}; the rest follow as you review these.{% endif %}</p>
 {% if visits %}
 <div class="grid">
   {% include "_cards.html" %}

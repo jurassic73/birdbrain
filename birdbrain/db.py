@@ -4,6 +4,7 @@ import sqlite3
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -184,6 +185,16 @@ VISITOR = "COALESCE(corrected_visitor, visitor)"
 # Older rows corrected before corrected_visitor existed only set corrected_species.
 REAL = f"({VISITOR} != 'none' OR (corrected_visitor IS NULL AND corrected_species IS NOT NULL))"
 FALSE_TRIGGER = f"NOT {REAL}"
+# "Other": an animal Claude couldn't put in a visitor type (a cat, a person, a deer), or its placeholder when it
+# couldn't answer at all. The owner's correction wins, as everywhere. Every such visit waits in the review queue
+# (identify.Result) and is the admin's only, like a false trigger: visitors and the public mirror never see it.
+OTHER = f"{VISITOR} = 'other'"
+NOT_OTHER = f"{VISITOR} != 'other'"
+# The real visits a visitor may see. REAL stays a term of its own (no brackets around the pair), so the visits_real
+# partial index still serves every query built on it; its columns include the two NOT_OTHER reads.
+PUBLIC = f"{REAL} AND {NOT_OTHER}"
+# A visit only the admin may open: a false trigger or an "other" (its page, its burst frames).
+ADMIN_ONLY = f"({FALSE_TRIGGER} OR {OTHER})"
 # Nobody has confirmed or corrected this one yet (the False triggers page lists only these by default).
 UNCHECKED = "(confirmed_at IS NULL AND corrected_visitor IS NULL AND corrected_species IS NULL)"
 # The other kinds of animal in a visit's photo besides the main one, as JSON [{visitor, species, count, ...}]:
@@ -226,6 +237,33 @@ INDEXES = (
 INDEX_COLUMNS = {"captured_at", "visitor", "corrected_visitor", "corrected_species", "species", "confidence", "is_night",
                  "thumb_path", "also", "corrected_also", "needs_review", "confirmed_at", "photo_deleted_at"}
 MAX_ID = "visits.max_id"  # settings: the highest visit id ever handed out (insert_visit), so no id is used twice
+# settings: set once init_db has sent the "other" visits stored before they always waited for review to the queue
+OTHER_REVIEW_DONE = "migrated.other_review"
+
+# Whether the request being answered is a visitor's (not the admin's): the web app's read_only middleware turns it on
+# for every request that isn't the admin's, the public mirror's included. Then the queries the pages read leave out
+# the "other" visits (shown(), hiding_other()). The watcher, the CLIs and the tests never set it, so they see all.
+_visitor_view: ContextVar[bool] = ContextVar("visitor_view", default=False)
+
+
+@contextmanager
+def visitor_view(on: bool = True) -> Iterator[None]:
+    """Answer as a visitor (on) or as the admin (off) inside the block."""
+    token = _visitor_view.set(on)
+    try:
+        yield
+    finally:
+        _visitor_view.reset(token)
+
+
+def hiding_other() -> bool:
+    """Whether "other" visits are left out right now (a visitor's request)."""
+    return _visitor_view.get()
+
+
+def shown() -> str:
+    """The real visits whoever is looking may see: REAL for the admin, PUBLIC (no "other") for a visitor."""
+    return PUBLIC if hiding_other() else REAL
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -298,6 +336,14 @@ def init_db(conn: sqlite3.Connection) -> None:
             except sqlite3.OperationalError as e:  # the other process built it between IF NOT EXISTS' look and now
                 if "already exists" not in str(e):
                     raise
+    # "Other" visits always wait for review now; the ones stored before that rule and never looked at (not confirmed,
+    # corrected or given a note) join the queue, once: one the owner clears later must not come back on a restart.
+    if {"needs_review", "confirmed_at", "corrected_visitor", "feedback", "corrected_also"} <= _columns(conn, "visits") \
+            and get_value(conn, OTHER_REVIEW_DONE) is None:
+        conn.execute(f"UPDATE visits SET needs_review = 1 WHERE needs_review = 0 AND {OTHER} AND confirmed_at IS NULL"
+                     f" AND NOT {CORRECTED}")
+        conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                     (OTHER_REVIEW_DONE, datetime.now().isoformat(timespec="seconds")))
     # A species cover (yellow star) is always kept; covers picked before that rule get their keep mark here.
     picks = list(species_photos(conn).values())
     if picks:
@@ -414,7 +460,7 @@ def weather_report(conn: sqlite3.Connection, now: datetime | None = None) -> dic
     whours = {r["hour"]: r for r in weather_hours(conn, a, b)}
     days_where, days_args = _days(a, b)
     seen = [datetime.fromisoformat(t) for (t,) in conn.execute(
-        f"SELECT captured_at FROM visits WHERE {REAL} AND {days_where} ORDER BY captured_at", days_args)]
+        f"SELECT captured_at FROM visits WHERE {shown()} AND {days_where} ORDER BY captured_at", days_args)]
     false = {r[0]: r[1] for r in conn.execute(
         f"SELECT date(captured_at), COUNT(*) FROM visits WHERE {FALSE_TRIGGER} AND {days_where} GROUP BY 1", days_args)}
     for d, n in conn.execute("SELECT day, SUM(n) FROM counters WHERE name = 'probe_empty' AND day BETWEEN ? AND ?"
@@ -423,7 +469,7 @@ def weather_report(conn: sqlite3.Connection, now: datetime | None = None) -> dic
     species: dict[str, list[tuple[str, int]]] = {}
     for r in conn.execute(
             f"""SELECT date(captured_at) AS d, label, COUNT(DISTINCT id) AS n
-                FROM ({_seen(f"{REAL} AND {days_where}")}) WHERE {SPECIES_ONLY}
+                FROM ({_seen(f"{shown()} AND {days_where}")}) WHERE {SPECIES_ONLY}
                 GROUP BY d, label ORDER BY d, n DESC, label""", days_args * 2):
         species.setdefault(r["d"], []).append((r["label"], r["n"]))
     seen_by_day: dict[date, list[datetime]] = {}
@@ -511,7 +557,7 @@ def seen_labels(conn: sqlite3.Connection, start: str, end: str) -> list[sqlite3.
     label), one row per kind per photo, other animals in the photo included, "other" left out; oldest first."""
     where, args = _days(start, end)
     return conn.execute(
-        f"""SELECT DISTINCT id, captured_at, label FROM ({_seen(f"{REAL} AND {where}")})
+        f"""SELECT DISTINCT id, captured_at, label FROM ({_seen(f"{shown()} AND {where}")})
             WHERE {SPECIES_ONLY} ORDER BY captured_at, label""", args * 2).fetchall()
 
 
@@ -744,7 +790,9 @@ def _where(
 ) -> tuple[str, list]:
     # The review queue holds every visit waiting for the owner, false triggers included: "no animal" at low
     # confidence means something might have been one.
-    where = [FALSE_TRIGGER] if false_triggers else ([] if review else [REAL])
+    where = [FALSE_TRIGGER] if false_triggers else ([] if review else [shown()])
+    if review and hiding_other():
+        where.append(NOT_OTHER)
     args: list = []
     if has_photo:
         where.append(HAS_PHOTO)
@@ -903,9 +951,12 @@ def plan_also(visit, names: list[str], counts: list[str], visitor: str | None = 
 def list_visits(conn: sqlite3.Connection, *, limit: int = 24, offset: int = 0, **filters) -> list[sqlite3.Row]:
     where, args = _where(**filters)
     order = "ASC" if filters.get("review") else "DESC"
+    # The review queue: the "other" visits first (an animal nobody could name waits for the owner), then the rest,
+    # each oldest first.
+    first = f"{OTHER} DESC, " if filters.get("review") else ""
     sql = (
         f"SELECT *, {LABEL} AS label FROM visits WHERE {where} "
-        f"ORDER BY captured_at {order}, id {order} LIMIT ? OFFSET ?"
+        f"ORDER BY {first}captured_at {order}, id {order} LIMIT ? OFFSET ?"
     )
     return conn.execute(sql, (*args, limit, offset)).fetchall()
 
@@ -923,9 +974,16 @@ def is_false_trigger(conn: sqlite3.Connection, visit_id: int) -> bool:
     return conn.execute(f"SELECT {FALSE_TRIGGER} FROM visits WHERE id = ?", (visit_id,)).fetchone()[0] == 1
 
 
-def is_false_trigger_photo(conn: sqlite3.Connection, image_rel: str) -> bool:
-    """Whether a visit photo path (visits.image_path) is a false trigger's; one lookup on visits_image_path."""
-    return conn.execute(f"SELECT 1 FROM visits WHERE image_path = ? AND {FALSE_TRIGGER} LIMIT 1",
+def is_admin_only(conn: sqlite3.Connection, visit_id: int) -> bool:
+    """Whether only the admin may open this visit: a false trigger or an "other" (ADMIN_ONLY)."""
+    row = conn.execute(f"SELECT {ADMIN_ONLY} FROM visits WHERE id = ?", (visit_id,)).fetchone()
+    return bool(row and row[0])
+
+
+def is_admin_only_photo(conn: sqlite3.Connection, image_rel: str) -> bool:
+    """Whether a visit photo path (visits.image_path) is a false trigger's or an "other" visit's (the admin's only);
+    one lookup on visits_image_path."""
+    return conn.execute(f"SELECT 1 FROM visits WHERE image_path = ? AND {ADMIN_ONLY} LIMIT 1",
                         (image_rel,)).fetchone() is not None
 
 
@@ -937,7 +995,7 @@ def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool 
     species: only that species' visits, the set its page lists (other animals in the photo count too). The
     visit itself needn't be in it (relabelled): its position by time is used.
     """
-    where, args = (f"{FALSE_TRIGGER} AND {HAS_PHOTO}", []) if false_triggers else (REAL, [])
+    where, args = (f"{FALSE_TRIGGER} AND {HAS_PHOTO}", []) if false_triggers else (shown(), [])
     if species and not false_triggers:
         where, args = _where(species=species)
     if false_triggers and unchecked:
@@ -960,7 +1018,8 @@ def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool 
 
 
 def latest_visit(conn: sqlite3.Connection, real_only: bool = True) -> sqlite3.Row | None:
-    where = REAL if real_only else "1"
+    """The newest real visit (real_only), or the newest motion event of any kind; never an "other" for a visitor."""
+    where = shown() if real_only else (NOT_OTHER if hiding_other() else "1")
     return conn.execute(
         f"SELECT *, {LABEL} AS label FROM visits WHERE {where} ORDER BY captured_at DESC, id DESC LIMIT 1"
     ).fetchone()
@@ -976,7 +1035,7 @@ def today_summary(conn: sqlite3.Connection) -> dict:
     day_where, day_args = _days(today, today)
     real_today = conn.execute(
         f"""SELECT COUNT(DISTINCT id) AS n, COUNT(DISTINCT CASE WHEN {SPECIES_ONLY} THEN label END) AS species
-            FROM ({_seen(f"{REAL} AND {day_where}")})""",
+            FROM ({_seen(f"{shown()} AND {day_where}")})""",
         day_args * 2,
     ).fetchone()
     return {
@@ -994,7 +1053,7 @@ def today_summary(conn: sqlite3.Connection) -> dict:
 def scoreboard(conn: sqlite3.Connection, date_from: str | None = None, date_to: str | None = None) -> list:
     """Each animal seen between two dates (inclusive, None is open): label, sightings n, last_at; most seen first."""
     days_where, args = _days(date_from, date_to)
-    where = f"{REAL} AND {days_where}"
+    where = f"{shown()} AND {days_where}"
     return conn.execute(
         f"SELECT label, COUNT(DISTINCT id) AS n, MAX(captured_at) AS last_at FROM ({_seen(where)})"
         f" GROUP BY label ORDER BY n DESC, last_at DESC",
@@ -1005,7 +1064,7 @@ def scoreboard(conn: sqlite3.Connection, date_from: str | None = None, date_to: 
 def scoreboard_total(conn: sqlite3.Connection, date_from: str | None = None, date_to: str | None = None) -> int:
     """Real visits (photos with an animal) between two dates, same bounds as `scoreboard`; each photo counts once."""
     days_where, args = _days(date_from, date_to)
-    return conn.execute(f"SELECT COUNT(*) FROM visits WHERE {REAL} AND {days_where}", args).fetchone()[0]
+    return conn.execute(f"SELECT COUNT(*) FROM visits WHERE {shown()} AND {days_where}", args).fetchone()[0]
 
 
 def plan_correction(visit: sqlite3.Row, visitor: str, species: str) -> tuple[str | None, str | None]:
@@ -1283,7 +1342,7 @@ def _save_species_photos(conn: sqlite3.Connection, photos: dict[str, int]) -> No
 
 def shows_species(conn: sqlite3.Connection, visit_id: int, label: str) -> bool:
     """Whether a real visit has this species in it, as the main animal or one of the others."""
-    return conn.execute(f"SELECT 1 FROM ({_seen(REAL + ' AND id = ?')}) WHERE label = ? LIMIT 1",
+    return conn.execute(f"SELECT 1 FROM ({_seen(shown() + ' AND id = ?')}) WHERE label = ? LIMIT 1",
                         (visit_id, visit_id, label)).fetchone() is not None
 
 
@@ -1407,7 +1466,7 @@ def species_row(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
 
 
 def species_names(conn: sqlite3.Connection) -> list[str]:
-    return [r[0] for r in conn.execute(f"SELECT DISTINCT label FROM ({_seen(REAL)}) ORDER BY label")]
+    return [r[0] for r in conn.execute(f"SELECT DISTINCT label FROM ({_seen(shown())}) ORDER BY label")]
 
 
 def known_species(conn: sqlite3.Connection) -> set[str]:
@@ -1427,7 +1486,7 @@ def known_species(conn: sqlite3.Connection) -> set[str]:
 def species_kinds(conn: sqlite3.Connection) -> list[tuple[str, str]]:
     """Every name seen so far with its visitor type (the most common one, if it was ever labelled two ways)."""
     rows = conn.execute(
-        f"""SELECT label, seen_visitor, COUNT(DISTINCT id) AS n FROM ({_seen(REAL)})
+        f"""SELECT label, seen_visitor, COUNT(DISTINCT id) AS n FROM ({_seen(shown())})
             GROUP BY label, seen_visitor ORDER BY label, n DESC"""
     ).fetchall()
     kinds: dict[str, str] = {}
@@ -1473,8 +1532,8 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
     day_where, day_args = _days(day, day)
     r = conn.execute(
         f"""SELECT
-              SUM({REAL}) AS visitors,
-              (SELECT COUNT(DISTINCT label) FROM ({_seen(f"{REAL} AND {day_where}")}) WHERE {SPECIES_ONLY}) AS species,
+              SUM({shown()}) AS visitors,
+              (SELECT COUNT(DISTINCT label) FROM ({_seen(f"{shown()} AND {day_where}")}) WHERE {SPECIES_ONLY}) AS species,
               SUM({FALSE_TRIGGER}) AS stored_false,
               SUM(model IN ('yolox-tiny', 'bioclip-presence', 'bioclip-2')) AS settled_on_pi,
               SUM(model LIKE 'claude%') AS sent,
@@ -1766,6 +1825,7 @@ def classifier_report(conn: sqlite3.Connection, days: int | None = None) -> dict
                    json_extract(raw_json, '$.calls.classifier') AS guess
             FROM visits
             WHERE {VISITOR} != 'none' AND json_extract(raw_json, '$.calls.classifier.top') IS NOT NULL {where}
+              {f"AND {NOT_OTHER}" if hiding_other() else ""}
               -- a visit it named itself only scores it once the owner has checked or corrected it
               AND (model != '{CLASSIFIER_MODEL}' OR confirmed_at IS NOT NULL
                    OR corrected_species IS NOT NULL OR corrected_visitor IS NOT NULL)

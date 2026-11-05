@@ -89,16 +89,17 @@ def route_of(scope) -> str | None:
     return partial
 
 
-def false_trigger_burst(rel: str) -> bool:
-    """Whether a file under /images is a false trigger's burst frame (or a burst frame's thumbnail). Only file names
-    shaped like a burst frame (images.burst_file) are looked up, with one indexed query, so the gallery's photos and
-    thumbnails never touch the database. A real visit's burst (a false trigger the owner corrected) stays public."""
+def admin_only_burst(rel: str) -> bool:
+    """Whether a file under /images is a burst frame (or a burst frame's thumbnail) of a visit only the admin may open:
+    a false trigger or an "other" (db.ADMIN_ONLY). Only file names shaped like a burst frame (images.burst_file) are
+    looked up, with one indexed query, so the gallery's photos and thumbnails never touch the database. A real
+    visit's burst (a false trigger the owner corrected to an animal) stays public."""
     rel = os.path.normpath(rel.lstrip("/"))  # as StaticFiles reads it: "//", "./" and ".." steps resolved
     parsed = images.burst_file(os.path.basename(rel))
     if not parsed:
         return False
     with db.session() as conn:
-        return db.is_false_trigger_photo(conn, os.path.join(os.path.dirname(rel), parsed[0] + ".jpg"))
+        return db.is_admin_only_photo(conn, os.path.join(os.path.dirname(rel), parsed[0] + ".jpg"))
 
 
 @app.middleware("http")
@@ -139,9 +140,12 @@ async def read_only(request: Request, call_next):
             return Response("Read-only: log in as admin to change things.", status_code=403)
         if auth.admin_only(path):
             return RedirectResponse("/login?" + urlencode({"next": path}), status_code=303)
-        if path.startswith("/images/") and false_trigger_burst(path.removeprefix("/images/")):
-            return not_found()  # false triggers are the admin's: their burst frames too, by exact URL
-    response = await call_next(request)
+        if path.startswith("/images/") and admin_only_burst(path.removeprefix("/images/")):
+            return not_found()  # false triggers and "other" visits are the admin's: their burst frames too, by exact URL
+    # Everything a visitor's request reads leaves out the "other" visits (db.shown): lists, counts, the latest
+    # visitor, arrows, species and stats. The admin sees them all.
+    with db.visitor_view(not admin):
+        response = await call_next(request)
     if gate_on and not viewer.is_open(path):
         # Behind the gate, photos and pages are for signed-in guests only: a shared cache in front must not keep
         # them (or serve a guest's photo to someone without the cookie). The browser's own cache still may.
@@ -658,10 +662,11 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
     if not visit:
         raise HTTPException(404)
     is_ft = db.is_false_trigger(conn, visit_id)
-    if not request.state.admin and (is_ft or ft):
-        # False triggers are for the admin only: a visitor gets the same 404 as for an id that doesn't exist (the
-        # mirror has none of them either), and the ft flag can't switch a real visit's arrows over to them.
-        if is_ft:
+    if not request.state.admin:
+        # False triggers and "other" visits are for the admin only: a visitor gets the same 404 as for an id that
+        # doesn't exist (the mirror has none of them either), and the ft flag can't switch a real visit's arrows
+        # over to them.
+        if db.is_admin_only(conn, visit_id):
             raise HTTPException(404)
         ft = False
     is_ft = ft or is_ft

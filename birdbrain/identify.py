@@ -114,6 +114,12 @@ class Result:
     needs_review: bool
     raw: dict
 
+    def __post_init__(self) -> None:
+        # An animal Claude couldn't put in a visitor type ("other", also its placeholder when it couldn't answer)
+        # always waits for the owner, whatever its confidence and whichever path stored it.
+        if self.sighting.visitor == "other":
+            self.needs_review = True
+
 
 _client: anthropic.Anthropic | None = None
 
