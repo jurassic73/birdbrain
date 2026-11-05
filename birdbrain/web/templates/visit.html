@@ -151,10 +151,9 @@
     </div>
     <dl>
       <dt>Seen</dt><dd>{{ visit.captured_at | nice_time }}{% if visit.is_night %} (night){% endif %}{% if stayed(visit) %}, {{ stayed(visit) }}{% endif %}</dd>
-      <dt>{{ answerer(visit.model) }} said</dt><dd>{{ visit.species or ('no animal' if visit.visitor == 'none' else visit.visitor) }}{% if visit.confidence %} {{ badge(visit.confidence, "conf-" ~ visit.confidence, by=answerer(visit.model)) }}{% endif %}{% if visit.species and visit.confidence == "medium" %} {{ confirm_badge(visit.species) }}{% endif %}
-        {%- for a in claude_also %}{{ " with " if loop.first else ", " }}{{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% if a.confidence %} {{ badge(a.confidence, "conf-" ~ a.confidence, by=answerer(visit.model)) }}{% endif %}{% endfor %}</dd>
+      {% if claude_also %}<dt>Also</dt><dd>{% for a in claude_also %}{{ ", " if not loop.first }}{{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% if a.confidence %} {{ badge(a.confidence, "conf-" ~ a.confidence, by=answerer(visit.model)) }}{% endif %}{% endfor %}</dd>{% endif %}
       {% if visit.notes %}<dt>{{ answerer(visit.model) ~ "'s notes" if answerer(visit.model) == "Claude" else "Notes" }}</dt><dd class="clamp" onclick="this.classList.toggle('clamp')">{{ visit.notes }}</dd>{% endif %}
-      {% if visit.model %}<dt>Identified by</dt><dd>{{ visit.model if answerer(visit.model) == "Claude" else answerer(visit.model) }}{% if visit.escalated %} (escalated){% endif %}</dd>{% endif %}
+      {% if visit.model or visit.confidence %}<dt>Identified by</dt><dd>{{ (visit.model if answerer(visit.model) == "Claude" else answerer(visit.model)) if visit.model else "Claude" }}{% if visit.escalated %} (escalated){% endif %}{% if visit.confidence %} {{ badge(visit.confidence, "conf-" ~ visit.confidence, by=answerer(visit.model)) }}{% endif %}{% if visit.species and visit.confidence == "medium" %} {{ confirm_badge(visit.species) }}{% endif %}</dd>{% endif %}
     </dl>
     {{ flow("in-info") }}
     {# What this photo does to each of the four components (steps.for_visit; admins only). #}

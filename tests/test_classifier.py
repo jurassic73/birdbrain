@@ -757,9 +757,12 @@ def test_visit_settled_on_the_pi_never_says_claude_answered(client, add_visit):
     note = "Named on the Pi by the BioCLIP 2 species check (99% sure); Claude was not asked."
     vid = add_visit(model="bioclip-2", notes=note, raw_json=tight_raw(named=True, score=0.97))
     html = client.get(f"/visit/{vid}").text
-    assert "<dt>BioCLIP 2 species check said</dt>" in html and "<dt>Notes</dt>" in html
+    assert "<dt>Species</dt>" not in html and "<dt>Also</dt>" not in html and "<dt>Notes</dt>" in html
+    assert "species check said</dt>" not in html
     assert "<dt>Claude said</dt>" not in html and "<dt>Claude's notes</dt>" not in html
-    assert "<dt>Identified by</dt><dd>BioCLIP 2 species check</dd>" in html and "bioclip-2</dd>" not in html
+    assert "<dt>Identified by</dt><dd>BioCLIP 2 species check <span" in html and "bioclip-2</dd>" not in html
+    ident = html.split("<dt>Identified by</dt>")[1].split("</dl>")[0]
+    assert ident.rstrip().endswith("</span></dd>") and "rpi-icon" in ident and "conf-high" in ident
     client.post(f"/visit/{vid}/correct", data={"visitor": "bird", "species": "House Finch"})
     assert "Corrected by you. BioCLIP 2 species check said: Dark-eyed Junco." in client.get(f"/visit/{vid}").text
 
@@ -775,8 +778,10 @@ def test_who_answered_a_visit():
 def test_visit_answered_by_claude_still_says_claude(client, add_visit):
     vid = add_visit(notes="Looks like a junco.")
     html = client.get(f"/visit/{vid}").text
-    assert "<dt>Claude said</dt>" in html and "<dt>Claude&#39;s notes</dt>" in html or "<dt>Claude's notes</dt>" in html
-    assert "<dt>Identified by</dt><dd>claude-haiku-5-5</dd>" in html
+    assert "<dt>Claude said</dt>" not in html and ("<dt>Claude&#39;s notes</dt>" in html or "<dt>Claude's notes</dt>" in html)
+    assert "<dt>Identified by</dt><dd>claude-haiku-5-5 <span" in html
+    ident = html.split("<dt>Identified by</dt>")[1].split("</dl>")[0]
+    assert ident.rstrip().endswith("</span></dd>") and "claude-mark" in ident
 
 
 def _conf_pill(html):
