@@ -30,6 +30,20 @@
   </section>
 </div>
 <section class="today-motion" id="today-motion">
+  {% set ids = a.id_bioclip + a.id_claude %}
+  {% if ids %}
+  {% set pb = (100 * a.id_bioclip / ids) | round | int %}
+  <div class="idbar" id="today-ids">
+    <div class="bar" role="img" aria-label="Today's visitors named: {{ a.id_bioclip }} by the BioCLIP 2 species check, {{ a.id_claude }} by Claude" data-tip="Who named today's visitors: the BioCLIP 2 species check on the Pi (free) or Claude">
+      {% if a.id_bioclip %}<span class="b1" style="flex: {{ a.id_bioclip }}" data-tip="Named free on the Pi by the BioCLIP 2 species check"></span>{% endif %}
+      {% if a.id_claude %}<span class="b2" style="flex: {{ a.id_claude }}" data-tip="Named by Claude (Haiku, or Sonnet when unsure)"></span>{% endif %}
+    </div>
+    <div class="barlab">
+      <span data-tip="Named free on the Pi by the BioCLIP 2 species check"><i class="k1"></i><b class="tally-n">{{ a.id_bioclip }}</b> <span class="tally-label">ID'd by BioCLIP 2</span> <span class="tally-why">{{ pb }}%</span></span>
+      <span data-tip="Named by Claude (Haiku, or Sonnet when unsure)"><i class="k2"></i><b class="tally-n">{{ a.id_claude }}</b> <span class="tally-label">ID'd by Claude</span> <span class="tally-why">{{ 100 - pb }}%</span></span>
+    </div>
+  </div>
+  {% endif %}
   <ol class="tally" aria-label="Today's numbers">
     <li data-tip="Motion with no animal: rain, wind, ripples">
       <span class="tally-n">{{ a.false_alarms }}</span> {% if request.state.admin %}<a class="tally-label" href="/false-triggers">False alarms</a>{% else %}<span class="tally-label">False alarms</span>{% endif %}

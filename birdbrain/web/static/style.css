@@ -462,6 +462,15 @@ section.visits { border-top: 1px solid var(--line); padding-top: 16px; }
 .page-total { white-space: nowrap; }
 .today-motion { margin: 18px 0; }
 .today-motion h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.idbar { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 8px; }
+.idbar .bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; }
+.idbar .b1, .idbar .k1 { background: var(--accent); }
+.idbar .b2, .idbar .k2 { background: var(--muted); opacity: .55; }
+.idbar .b1, .idbar .b2 { min-width: 0; }
+.barlab { display: flex; flex-wrap: wrap; gap: 4px 22px; margin-top: 8px; }
+.barlab > span { display: inline-flex; align-items: center; gap: 0 6px; white-space: nowrap; }
+.barlab .tally-why { display: inline; }
+.barlab i { flex: none; width: 10px; height: 10px; border-radius: 3px; }
 .tally-facts { margin: 8px 0 0; padding: 0 0 0 18px; color: var(--muted); font-size: .85rem; }
 .tally-facts li { margin: 2px 0; }
 .tally {

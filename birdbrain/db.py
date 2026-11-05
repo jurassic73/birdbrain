@@ -1538,6 +1538,7 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
     visitors + false_alarms = all motion events
     false_alarms = kept_on_pi (discarded probes + visits the Pi settled) + false alarms Claude checked
     sent_to_claude = every visit Claude was asked about (visitors and false alarms), with what it cost
+    id_bioclip + id_claude = today's visitors by who named them (the BioCLIP 2 species check or Claude)
     would_keep = Claude calls the animal check would have skipped in gate mode (it judged them empty)
     """
     day = day or clock.today().isoformat()
@@ -1546,6 +1547,8 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
         f"""SELECT
               SUM({shown()}) AS visitors,
               (SELECT COUNT(DISTINCT label) FROM ({_seen(f"{shown()} AND {day_where}")}) WHERE {SPECIES_ONLY}) AS species,
+              SUM({shown()} AND model = 'bioclip-2') AS id_bioclip,
+              SUM({shown()} AND model LIKE 'claude%') AS id_claude,
               SUM({FALSE_TRIGGER}) AS stored_false,
               SUM(model IN ('yolox-tiny', 'bioclip-presence', 'bioclip-2')) AS settled_on_pi,
               SUM(model LIKE 'claude%') AS sent,
@@ -1566,6 +1569,8 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
     return {
         "visitors": n("visitors"),
         "species": n("species"),
+        "id_bioclip": n("id_bioclip"),
+        "id_claude": n("id_claude"),
         "false_alarms": n("stored_false") + probes,
         "kept_on_pi": probes + n("settled_on_pi"),
         "sent_to_claude": n("sent"),
