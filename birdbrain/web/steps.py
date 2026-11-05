@@ -14,7 +14,8 @@ MOTION, PI, SPECIES, CLAUDE = "Motion detector", "Pi animal check", "BioCLIP 2 s
 
 
 def _pct(x: float) -> str:
-    return f"{x * 100:g}%"
+    """Whole percents, rounded the way the pills round them (bioclip_step's :.0%): 0.528 is 53%, 0.8 is 80%."""
+    return f"{x:.0%}"
 
 
 def _share(x: float) -> str:
@@ -25,7 +26,7 @@ def components() -> list[dict]:
     """The four steps: n, name, question, pill (text, class), short (one or two sentences), does, train, control and
     the label on the arrow that leads to the next step. All HTML is written here, never taken from user input."""
     frames, weight, retrain = config.TRIGGER_FRAMES, f"{presence.CONFIRMED_WEIGHT:g}x", presence.RETRAIN_CHECK
-    score, share = _pct(classifier.GATE_MIN_SCORE), _share(classifier.GATE_MIN_LOCAL)
+    bowl, tight, share = _pct(classifier.GATE_MIN_SCORE_BOWL), _pct(classifier.GATE_MIN_SCORE_TIGHT), _share(classifier.GATE_MIN_LOCAL)
     settled, limit, every = db.CONFIRMED_MIN, db.LESSON_LIMIT, lessons.AUTO_EVERY
     minute = "about a minute" if retrain <= 60 else f"about {round(retrain / 60)} minutes"
     return [
@@ -60,13 +61,17 @@ def components() -> list[dict]:
          "control": "<p>Your labels: Confirm, or the animal you pick.</p>"},
         {"n": 3, "name": SPECIES, "question": "Which species?",
          "pill": ("not trained, uses your checks", "step-medium"), "next": "species not settled",
-         "short": f"The {SPECIES} names the animal on the Pi, without {CLAUDE}, only for familiar daytime regulars. "
-                  f"Otherwise the photo goes to {CLAUDE}.",
+         "short": f"The {SPECIES} names the animal on the Pi, without {CLAUDE}, only for familiar daytime regulars: a "
+                  f"first look at the whole bowl, then, when that is not sure enough, a tight look at the patch that "
+                  f"moved. Otherwise the photo goes to {CLAUDE}.",
          "does": f"<p>The {SPECIES} compares the fingerprint with every bird and mammal name on the eBird and iNaturalist "
                  f"lists and picks the closest species.</p>"
                  f"<p>The {SPECIES} names the animal itself, without {CLAUDE}, only when <b>all</b> are true:</p><ul>"
                  f"<li>Daytime (never on night infrared photos).</li>"
-                 f"<li>Very sure: top guess at least {score}, at least {share} of the belief on local species.</li>"
+                 f"<li>Very sure: top guess at least {bowl} on the first look, the {PI}&rsquo;s view of the whole bowl. When "
+                 f"the first look falls short, the {SPECIES} takes one tight look at a square around the patch that moved "
+                 f"(about 6 seconds more on the Pi), which must reach {tight}. Either way, at least {share} of the belief "
+                 f"on local species.</li>"
                  f"<li>The species is settled here: at least {settled} earlier visits answered with high confidence by {CLAUDE} "
                  f"or labelled by you. Visits the {SPECIES} named itself count only after you checked them.</li>"
                  f"<li>Only one animal in view.</li></ul>"
@@ -104,15 +109,16 @@ def _calls(visit) -> dict:
         return {}
 
 
-def miss_text(code: str | None, guess: dict, settled: dict | None = None) -> str:
-    """Plain words for a classifier.gate_miss code (live numbers from the classifier's constants)."""
+def miss_text(code: str | None, guess: dict, settled: dict | None = None, view: str = "bowl") -> str:
+    """Plain words for a classifier.gate_miss code (live numbers from the classifier's constants). `view` is which
+    look the guess was ("bowl" or "tight"), since each has its own bar (classifier.gate_bar)."""
     top = (guess.get("top") or [{}])[0]
     if code == "night":
         return "night photos are infrared, which BioCLIP 2 was not trained on"
     if code == "none":
         return "no local species came up"
     if code == "score":
-        return f"its top guess was {_pct(top.get('score') or 0)}, under the {_pct(classifier.GATE_MIN_SCORE)} it needs"
+        return f"its top guess was {_pct(top.get('score') or 0)}, under the {_pct(classifier.gate_bar(view))} it needs"
     if code == "local":
         return f"less than {_share(classifier.GATE_MIN_LOCAL)} of its belief was on local species"
     if code == "unsettled":
@@ -124,11 +130,11 @@ def miss_text(code: str | None, guess: dict, settled: dict | None = None) -> str
     return f"the {SPECIES} did not trust the guess"
 
 
-def gate_reason(guess: dict, settled: dict, night: bool, crowd, mode: str) -> str:
+def gate_reason(guess: dict, settled: dict, night: bool, crowd, mode: str, view: str = "bowl") -> str:
     """Why the BioCLIP 2 species check's guess did not name the visit, in the order classifier.gate_miss tests."""
     if mode != "gate":
         return f"the {SPECIES} is in {mode} mode, so it only keeps score"
-    return miss_text(classifier.gate_miss(guess, settled, night, crowd), guess)
+    return miss_text(classifier.gate_miss(guess, settled, night, crowd, view), guess, view=view)
 
 
 def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, settled: dict, current_visitor: str,
@@ -146,6 +152,8 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
     claude_steps = [s for s in steps if s["model"] in ("Haiku", "Sonnet")]
     guess_step = next((s for s in steps if s.get("gated") or s.get("scorecard")), None)
     first_step = next((s for s in steps if s.get("first_look") and not s.get("gated")), None)
+    tight_step = next((s for s in steps if s.get("tight") and not s.get("gated")), None)
+    TIGHT = "a tight look at the patch that moved"
 
     # 1. Motion detector
     where = f" It spotted movement {decision['trigger']}." if decision.get("trigger") else ""
@@ -187,7 +195,8 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
             tail = f"You said it was {said}, so the visit does not count toward {label} being settled here."
         else:
             tail = f"Press Looks right and the visit counts toward {label or 'the species'} being settled here."
-        body = f"<b>Named the animal on the Pi:</b> {e(', '.join(guess_step['guesses'][:1]))}. {CLAUDE} was not asked. {tail}"
+        how = f", on {TIGHT} after a first look at the whole bowl fell short" if guess_step.get("tight") else ""
+        body = f"<b>Named the animal on the Pi:</b> {e(', '.join(guess_step['guesses'][:1]))}{how}. {CLAUDE} was not asked. {tail}"
     elif skipped_empty:
         pill = ("not reached", "step-muted")
         body = f"<b>Not reached:</b> the photo was empty, so the {SPECIES} had nothing to name."
@@ -202,8 +211,13 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
             shown = guess_step
             raw_guess = calls.get("classifier") or {}
             why = gate_reason(raw_guess, settled, bool(raw_guess.get("night")), guess_step.get("crowd"), mode)
-        body = (f"<b>Guessed {e((shown['guesses'] or ['nothing local'])[0])}</b> but did not name the visit: "
-                f"{e(why)}. {CLAUDE} was asked.")
+        body = f"<b>Guessed {e((shown['guesses'] or ['nothing local'])[0])}</b> but did not name the visit: {e(why)}."
+        if tight_step:  # the tight look's own reason, recorded when it was made
+            record = calls.get("classifier_tight") or {}
+            why2 = miss_text(tight_step.get("why"), record, view="tight")
+            name2 = ((record.get("top") or [{}])[0]).get("name") or "nothing local"
+            body += f" Then {TIGHT} guessed {e(name2)}, but {e(why2)}."
+        body += f" {CLAUDE} was asked."
     else:
         pill = ("no guess", "step-muted")
         why = ("night photos are infrared" if visit["is_night"] else

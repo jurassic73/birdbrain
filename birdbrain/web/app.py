@@ -896,7 +896,8 @@ CIRCLE_WHY = {"nothing": "no clear patch of change near the zone that fired",
 # Where the species check looked: classifier.run's crops, and for a gate guess made from the Pi animal check's
 # embedding, that view's kind (classifier.view_kind; "padded" is the ground crop or the crop box, by trigger).
 CLASSIFIER_CROPS = {"circle": "around Claude's circle", "box": "on the crop box", "frame": "on the whole frame",
-                    "bowl": "on a square around the whole bowl"}
+                    "bowl": "on a square around the whole bowl",
+                    classifier.TIGHT_CROP: "on a tight square around the patch that moved"}
 
 
 miss_text = steps.miss_text  # decision_steps has a local called steps
@@ -969,20 +970,32 @@ def decision_steps(raw_json: str | None) -> dict:
             "notes": answer.get("notes"),
         })
     guess = calls.get("classifier")
-    named = calls.get("settled_by") == "classifier"  # the Pi named the visit: that guess was its only look
+    named = calls.get("settled_by") == "classifier"  # the Pi named the visit: that guess was its last look
     if guess and guess.get("top") is not None:
-        steps.append({**bioclip_step(guess, raw), "gated": named, "first_look": named, "crowd": calls.get("gate_crowd"),
-                      "scorecard": not named})
+        # Named by the tight look (rule H): the guess is of a square around the patch that moved, after a first look
+        # on the bowl (kept as classifier_gate) fell short.
+        tight = named and guess.get("crop") == classifier.TIGHT_CROP
+        steps.append({**bioclip_step(guess, raw), "gated": named, "first_look": named and not tight, "tight": tight,
+                      "crowd": calls.get("gate_crowd"), "scorecard": not named})
+    # Where a look made before Claude goes: ahead of Claude's answers, or of the look that named the visit.
+    before_claude = lambda: next((i for i, st in enumerate(steps) if st["model"] in ("Haiku", "Sonnet") or st.get("gated")),
+                                 len(steps))
     first = calls.get("classifier_gate")
     if first and first.get("top") is not None:
         # The first look, before Claude: made from the Pi animal check's embedding; it did not name the visit.
-        at = next((i for i, st in enumerate(steps) if st["model"] in ("Haiku", "Sonnet")), len(steps))
-        steps.insert(at, {**bioclip_step(first, raw), "gated": False, "first_look": True, "scorecard": False,
-                          "why": first.get("why"), "reason": miss_text(first.get("why"), first), "crowd": calls.get("gate_crowd"),
-                          "backfilled": bool(first.get("backfilled")), "view_note": first.get("view_note")})
+        steps.insert(before_claude(), {**bioclip_step(first, raw), "gated": False, "first_look": True, "scorecard": False,
+                                       "why": first.get("why"), "reason": miss_text(first.get("why"), first),
+                                       "crowd": calls.get("gate_crowd"), "backfilled": bool(first.get("backfilled")),
+                                       "view_note": first.get("view_note")})
         for st in steps:
             if st.get("scorecard"):
                 st["second_look"] = True
+    second = calls.get("classifier_tight")
+    if second and second.get("top") is not None:
+        # The tight look (rule H), after the first look and before Claude: it did not name the visit either.
+        steps.insert(before_claude(), {**bioclip_step(second, raw), "gated": False, "first_look": False, "tight": True,
+                                       "scorecard": False, "why": second.get("why"),
+                                       "reason": miss_text(second.get("why"), second, view="tight")})
     found = calls.get("motion_circle")
     if isinstance(found, dict):
         steps.append({
@@ -997,6 +1010,7 @@ def decision_steps(raw_json: str | None) -> dict:
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),
             "owner_checks": owner_checks(calls), "failed": any(s.get("error") for s in steps),
             "has_first_look": any(st.get("first_look") and not st.get("gated") for st in steps),
+            "has_tight_look": any(st.get("tight") for st in steps),
             "skipped_sonnet": bool(calls.get("skipped_sonnet")), "asked_sonnet": bool(calls.get("sonnet")),
             "local_disagreed": calls.get("local_disagreed"), "local_agreed": bool(calls.get("local_agreed"))}
 

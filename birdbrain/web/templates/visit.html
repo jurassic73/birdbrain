@@ -24,7 +24,7 @@
     <li class="flow-pill">Motion{% if decision.trigger %} {{ decision.trigger }}{% endif %}</li>
     {% for step in decision.steps %}
     {% if step.bioclip %}
-    <li class="flow-pill pi"><strong>BioCLIP 2 species check</strong>{% if step.scorecard and decision.has_first_look %} <span class="flow-conf">2nd look</span>{% endif %} <span class="flow-guess" data-tip="{{ step.guesses | join(', ') if step.guesses else 'no local species' }}">{{ step.said }}</span></li>
+    <li class="flow-pill pi"><strong>BioCLIP 2 species check</strong>{% if step.scorecard and decision.has_first_look %} <span class="flow-conf">2nd look</span>{% elif step.tight %} <span class="flow-conf">tight look</span>{% endif %} <span class="flow-guess" data-tip="{{ step.guesses | join(', ') if step.guesses else 'no local species' }}">{{ step.said }}</span></li>
     {% else %}
     <li class="flow-pill {{ 'local' if step.local else 'ai' }}">{% if not (step.local or step.presence or step.motion_circle) %}{{ claude_mark() }}{% endif %}<strong>{{ 'Detector' if step.local else step.model }}</strong> {% if not step.refused and step.said == visit.label %}<span class="said-same">{{ step.said }}</span>{% else %}{{ 'no answer' if step.error else 'declined' if step.refused else step.said }}{% endif %}{% if step.confidence %} <span class="flow-conf">({{ step.confidence }})</span>{% endif %}</li>
     {% endif %}
@@ -173,14 +173,18 @@
           {% if step.bioclip %}
           <div class="step-head">
             <strong>BioCLIP 2 species check</strong>
-            {% if step.gated %}{{ badge("RPi", "pi-only") }}{% elif step.first_look %}{{ badge("first look", "pi-only") }}{% elif classifier_mode == "shadow" %}{{ badge("shadow", "shadow") }}{% else %}{{ badge("second look" if decision.has_first_look else "scorecard", "shadow") }}{% endif %}
-            <span class="muted">on the Pi, {{ step.crop }}{% if step.seconds %}, {{ step.seconds }} s{% endif %}{% if step.first_look and not step.gated %}, before Claude{% endif %}</span>
+            {% if step.gated %}{{ badge("RPi", "pi-only") }}{% if step.tight %} {{ badge("tight look", "pi-only") }}{% endif %}{% elif step.tight %}{{ badge("tight look", "pi-only") }}{% elif step.first_look %}{{ badge("first look", "pi-only") }}{% elif classifier_mode == "shadow" %}{{ badge("shadow", "shadow") }}{% else %}{{ badge("second look" if decision.has_first_look else "scorecard", "shadow") }}{% endif %}
+            <span class="muted">on the Pi, {{ step.crop }}{% if step.seconds %}, {{ step.seconds }} s{% endif %}{% if (step.first_look or step.tight) and not step.gated %}, before Claude{% endif %}</span>
           </div>
           <div>{% if step.guesses %}{{ step.guesses | join(", ") }}{% else %}no local species{% endif %}</div>
-          {% if step.gated %}
+          {% if step.gated and step.tight %}
+          <div class="step-why">The first look at the whole bowl fell short, but on a tight look around the patch that moved it was sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
+          {% elif step.gated %}
           <div class="step-why">Sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
+          {% elif step.tight %}
+          <div class="step-why">Did not name the visit either: {{ step.reason }}. Claude was asked.</div>
           {% elif step.first_look %}
-          <div class="step-why">Did not name the visit: {{ step.reason }}. Claude was asked.</div>
+          <div class="step-why">Did not name the visit: {{ step.reason }}. {% if decision.has_tight_look %}The Pi took a tight look at the patch that moved next.{% else %}Claude was asked.{% endif %}</div>
           {% if step.backfilled %}<div class="muted step-notes">Worked out afterwards from the stored fingerprint of this photo, using today's settled species{% if step.view_note %}; {{ step.view_note }}{% endif %}.</div>{% endif %}
           {% elif step.crowd and not decision.has_first_look %}
           <div class="step-why">Sure it was {{ step.crowd.species }}, but the Pi saw {{ step.crowd.animals }} animals in view, so Claude was asked to count them and name any other kind.</div>

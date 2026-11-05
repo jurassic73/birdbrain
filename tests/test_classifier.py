@@ -399,6 +399,288 @@ def test_gate_miss_gives_the_reason_in_the_gates_order():
     assert classifier.gate_pick(sure, settled, False) == ("Dark-eyed Junco", "bird")
 
 
+def test_gate_miss_and_pick_judge_each_look_against_its_own_bar(monkeypatch):
+    monkeypatch.setattr(classifier, "GATE_MIN_SCORE_BOWL", 0.8)
+    monkeypatch.setattr(classifier, "GATE_MIN_SCORE_TIGHT", 0.95)
+    settled = {"Dark-eyed Junco": "bird"}
+    middling = {"top": [{"name": "Dark-eyed Junco", "score": 0.9}], "local_share": 0.9}
+    assert classifier.gate_bar() == 0.8 and classifier.gate_bar("tight") == 0.95 and classifier.gate_bar("bowl") == 0.8
+    # 0.9 clears the bowl's bar but not the tight look's
+    assert classifier.gate_miss(middling, settled, False) is None
+    assert classifier.gate_miss(middling, settled, False, view="bowl") is None
+    assert classifier.gate_miss(middling, settled, False, view="tight") == "score"
+    assert classifier.gate_pick(middling, settled, False) == ("Dark-eyed Junco", "bird")
+    assert classifier.gate_pick(middling, settled, False, view="tight") is None
+    sure = dict(middling, top=[{"name": "Dark-eyed Junco", "score": 0.96}])
+    assert classifier.gate_pick(sure, settled, False, view="tight") == ("Dark-eyed Junco", "bird")
+    assert classifier.gate_miss(dict(sure, local_share=0.1), settled, False, view="tight") == "local"
+    assert classifier.gate_miss(sure, {}, False, view="tight") == "unsettled"
+    assert classifier.gate_miss(sure, settled, True, view="tight") == "night"
+    assert classifier.gate_miss(sure, settled, False, crowd="Dark-eyed Junco", view="tight") == "crowd"
+    # the stored record says why against the look's own bar
+    assert classifier.first_look(middling, settled, False)["why"] is None
+    assert classifier.first_look(middling, settled, False, view="tight")["why"] == "score"
+    # the bars come from .env through config, like the other tunables
+    assert config.GATE_MIN_SCORE_BOWL == 0.8 and config.GATE_MIN_SCORE_TIGHT == 0.95
+
+
+def test_tight_check_classifies_a_square_around_the_motion_circle(monkeypatch):
+    monkeypatch.setattr(config, "CLASSIFIER", "gate")
+    img = np.full((1080, 1920, 3), (40, 120, 200), np.uint8)
+    jpeg = cv2.imencode(".jpg", img)[1].tobytes()
+    fake = FakeClassifier(probs=(0.9, 0.05, 0.02, 0.0, 0.0, 0.03, 0.0))
+    monkeypatch.setattr(classifier, "load", lambda: fake)
+    monkeypatch.setattr(classifier, "local_species", lambda: LOCAL)
+    circle = {"x": 0.5, "y": 0.5, "r": 0.05, "pi": True}
+    settled = {"Dark-eyed Junco": "bird"}
+    guess, pick = classifier.tight_check(jpeg, circle, (0.25, 0.25, 0.5, 0.5), False, settled)
+    assert classifier.CIRCLE_MARGIN == 2.0 and classifier.CIRCLE_MARGINS == (2.0,)
+    side = round(2 * 0.05 * 1920 * 2.0)  # one square, 2.0 radii from the center to each side
+    assert fake.shapes == [(side, side, 3)]
+    assert guess["crop"] == "motion" and guess["top"][0]["name"] == "Dark-eyed Junco" and guess["top"][0]["score"] > 0.95
+    assert pick == ("Dark-eyed Junco", "bird")
+    # under the tight bar: a guess, no pick
+    fake._probs = np.array((0.5, 0.05, 0.3, 0.0, 0.0, 0.15, 0.0), np.float32)
+    guess, pick = classifier.tight_check(jpeg, circle, None, False, settled)
+    assert pick is None and guess["crop"] == "motion"
+    # never at night, without a circle, in shadow mode, or when the model breaks: Claude is asked
+    assert classifier.tight_check(jpeg, circle, None, True, settled) == (None, None)
+    assert classifier.tight_check(jpeg, None, None, False, settled) == (None, None)
+    assert classifier.tight_check(jpeg, {"x": 0.5, "y": 0.5}, None, False, settled) == (None, None)
+    monkeypatch.setattr(config, "CLASSIFIER", "shadow")
+    assert classifier.tight_check(jpeg, circle, None, False, settled) == (None, None)
+    monkeypatch.setattr(config, "CLASSIFIER", "gate")
+    fake.fail = True
+    assert classifier.tight_check(jpeg, circle, None, False, settled) == (None, None)
+
+
+def sure(name, score):
+    """A one-species guess with the given score (guess() above scores every name 0.5)."""
+    return {"model": classifier.MODEL_NAME, "crop": "circle", "night": False, "seconds": 0.05, "local_share": 0.9,
+            "top": [{"name": name, "scientific": "", "score": score}]}
+
+
+MOTION_CIRCLE = {"x": 0.48, "y": 0.5, "r": 0.04, "pi": True}
+MOTION_FOUND = {"found": True, "source": "empty", "where": "land", "seconds": 0.02}
+
+
+@pytest.fixture
+def gate_yard(monkeypatch, conn, add_visit):
+    """A yard in gate mode with Dark-eyed Junco settled, a fake BioCLIP 2 for both looks and a stubbed motion circle.
+    Returns a dict of knobs: the embedding for the first look, the tight look's answer, the motion circle, the
+    animals counted, whether Claude was asked, and what the tight look and the circle finder were called with."""
+    for _ in range(3):
+        add_visit(species="Dark-eyed Junco")
+    frame = np.full((1080, 1920, 3), (40, 120, 200), np.uint8)
+    burst = [cv2.imencode(".jpg", frame)[1].tobytes()] * 3
+    knobs = {"emb": one_hot(0, 0.01), "tight": sure("Dark-eyed Junco", 0.97), "circle": (MOTION_CIRCLE, MOTION_FOUND),
+             "animals": 1, "asked": [], "tight_calls": [], "circle_calls": []}
+    monkeypatch.setattr(watch, "capture_burst", lambda: burst)
+    monkeypatch.setattr(watch, "presence_mode", lambda: "gate")
+    monkeypatch.setattr(config, "CLASSIFIER", "gate")
+    monkeypatch.setattr(watch.classifier, "box_embedding", lambda jpeg, zones, trigger: knobs["emb"])
+    monkeypatch.setattr(watch.presence, "check", lambda conn, e, view=None: {"model": "bioclip-presence", "score": 0.9,
+                                                                             "threshold": 0.4, "empty": False})
+    monkeypatch.setattr(watch.presence, "store", lambda conn, vid, e: None)
+    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop: knobs["animals"])
+    monkeypatch.setattr(classifier, "load", lambda: FakeTextClassifier())
+    monkeypatch.setattr(classifier, "local_species", lambda: LOCAL)
+
+    def fake_classify(img, circle, box, night, local=None, clf=None):
+        if circle:  # the tight look; the scorecard look after Claude has no circle here (fake_identify draws none)
+            knobs["tight_calls"].append((circle, box, night))
+        return None if knobs["tight"] is None else {**knobs["tight"], "crop": "circle", "seconds": 5.9}
+
+    monkeypatch.setattr(classifier, "classify", fake_classify)
+
+    def fake_live(jpeg, empty, z, trigger, captured_at, night):
+        knobs["circle_calls"].append((trigger, night))
+        return knobs["circle"]
+
+    monkeypatch.setattr(watch.motion_circle, "live", fake_live)
+
+    def fake_identify(*args, **kwargs):
+        from birdbrain.identify import Result, Sighting
+        knobs["asked"].append(kwargs.get("night"))
+        return Result(Sighting(visitor="bird", species="Bushtit", count=1, confidence="high", notes="", circle=None,
+                               also=[]), "claude-haiku-5-5", False, False, {})
+
+    monkeypatch.setattr(watch.identify, "identify", fake_identify)
+    return knobs
+
+
+def latest_calls(conn):
+    row = conn.execute("SELECT species, model, raw_json FROM visits ORDER BY id DESC").fetchone()
+    return row, json.loads(row["raw_json"])["calls"]
+
+
+def test_watcher_names_the_visit_on_the_tight_look(gate_yard, conn):
+    # The first look (one_hot(0, 0.01): a junco at about 65%) is under the bowl's bar; the tight look is sure.
+    assert watch.handle_event() == "bird"
+    row, calls = latest_calls(conn)
+    assert not gate_yard["asked"] and row["species"] == "Dark-eyed Junco" and row["model"] == "bioclip-2"
+    assert gate_yard["circle_calls"] == [("rim", False)]
+    assert gate_yard["tight_calls"] == [(MOTION_CIRCLE, config.CROP_ROI, False)]
+    assert calls["settled_by"] == "classifier" and calls["skipped_claude"]
+    assert calls["classifier"]["crop"] == "motion" and calls["classifier"]["top"][0]["score"] == 0.97
+    assert calls["circle"] == MOTION_CIRCLE and calls["motion_circle"] == MOTION_FOUND
+    first = calls["classifier_gate"]  # the bowl look is kept, with why, so the page shows both
+    assert first["why"] == "score" and first["top"][0]["name"] == "Dark-eyed Junco" and 0.6 < first["top"][0]["score"] < 0.8
+    assert first["crop"] == "frame"  # the test yard has no ring or crop box
+    assert "classifier_tight" not in calls and calls["animals_seen"] == 1
+    assert db.valid_json(json.dumps(calls))
+
+
+def test_tight_look_that_is_not_sure_stores_itself_and_asks_claude(gate_yard, conn):
+    gate_yard["tight"] = sure("Dark-eyed Junco", 0.9)  # over the bowl's 80% but under the tight look's 95%
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
+    row, calls = latest_calls(conn)
+    assert row["species"] == "Bushtit" and row["model"] == "claude-haiku-5-5"
+    assert calls["classifier_gate"]["why"] == "score"
+    tight = calls["classifier_tight"]
+    assert tight["why"] == "score" and tight["crop"] == "motion" and tight["top"][0]["score"] == 0.9
+    assert tight["circle"] == MOTION_CIRCLE and tight["seconds"] == 5.9
+    assert "settled_by" not in calls and "circle" not in calls and "motion_circle" not in calls
+    # unsettled on the tight look: the same, with its reason
+    gate_yard["tight"], gate_yard["asked"][:] = sure("House Finch", 0.99), []
+    assert watch.handle_event() == "bird" and gate_yard["asked"]
+    assert latest_calls(conn)[1]["classifier_tight"]["why"] == "unsettled"
+
+
+def test_no_patch_of_motion_means_the_old_behaviour(gate_yard, conn):
+    gate_yard["circle"] = (None, {"found": False, "why": "nothing", "source": "empty"})
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
+    row, calls = latest_calls(conn)
+    assert row["species"] == "Bushtit" and not gate_yard["tight_calls"]
+    assert calls["classifier_gate"]["why"] == "score"
+    assert "classifier_tight" not in calls and "motion_circle" not in calls and "circle" not in calls
+
+
+def test_no_tight_look_at_night(gate_yard, conn, monkeypatch):
+    monkeypatch.setattr(watch, "is_night", lambda jpeg: True)
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [True]
+    row, calls = latest_calls(conn)
+    assert not gate_yard["circle_calls"] and not gate_yard["tight_calls"]
+    assert "classifier_gate" not in calls and "classifier_tight" not in calls
+
+
+def test_no_tight_look_for_a_crowd(gate_yard, conn):
+    gate_yard["animals"] = 2
+    assert watch.handle_event() == "bird" and gate_yard["asked"]  # the first look unsure, two animals: Claude
+    row, calls = latest_calls(conn)
+    assert not gate_yard["circle_calls"] and not gate_yard["tight_calls"] and "classifier_tight" not in calls
+    assert calls["classifier_gate"]["why"] == "score" and calls["animals_seen"] == 2
+    gate_yard["emb"], gate_yard["asked"][:] = one_hot(0), []  # the first look sure of one of a crowd: Claude counts
+    assert watch.handle_event() == "bird" and gate_yard["asked"]
+    row, calls = latest_calls(conn)
+    assert not gate_yard["circle_calls"] and calls["classifier_gate"]["why"] == "crowd"
+    assert calls["gate_crowd"] == {"species": "Dark-eyed Junco", "animals": 2}
+
+
+def test_a_sure_first_look_still_names_the_visit_without_a_tight_look(gate_yard, conn, monkeypatch):
+    monkeypatch.setattr(config, "CIRCLE_FROM_MOTION", True)
+    gate_yard["emb"] = one_hot(0)
+    assert watch.handle_event() == "bird" and not gate_yard["asked"]
+    row, calls = latest_calls(conn)
+    assert row["model"] == "bioclip-2" and not gate_yard["tight_calls"]
+    assert calls["classifier"]["crop"] == "frame" and "classifier_gate" not in calls
+    assert gate_yard["circle_calls"] == [("rim", False)] and calls["circle"] == MOTION_CIRCLE  # circled, as before
+
+
+def test_tight_look_failing_asks_claude(gate_yard, conn, monkeypatch):
+    def broken(*a, **k):
+        raise RuntimeError("model broke")
+    monkeypatch.setattr(classifier, "classify", broken)
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
+    calls = latest_calls(conn)[1]
+    assert "classifier_tight" not in calls and calls["classifier_gate"]["why"] == "score"
+
+
+def tight_raw(why="score", name="Dark-eyed Junco", score=0.9, named=False, **first):
+    """A visit's raw_json with a first look on the bowl, a tight look, and either Claude's answers with the
+    scorecard look or (named) the tight look as the guess that named the visit."""
+    tight = {"model": classifier.MODEL_NAME, "crop": "motion", "night": False, "seconds": 5.9,
+             "top": [{"name": name, "scientific": "", "score": score}, {"name": "Bushtit", "scientific": "", "score": 0.05}],
+             "local_share": 0.9, "circle": MOTION_CIRCLE}
+    calls = json.loads(first_look_raw(**first))["calls"]
+    if named:
+        calls = {"classifier_gate": calls["classifier_gate"], "classifier": tight, "skipped_claude": True,
+                 "settled_by": "classifier", "circle": MOTION_CIRCLE, "motion_circle": MOTION_FOUND}
+    else:
+        calls["classifier_tight"] = {**tight, "why": why}
+        calls["sonnet"] = {"frames": 3, "answer": {"visitor": "bird", "species": "Bushtit", "confidence": "high"}}
+    return json.dumps({"calls": calls})
+
+
+def pills_explained(html):
+    import re
+    return html.count('class="badge ') == len(re.findall(r'class="badge [^"]*" data-tip=', html))
+
+
+def test_visit_page_shows_the_tight_look_between_the_first_look_and_claude(client, add_visit):
+    vid = add_visit(species="Bushtit", raw_json=tight_raw())
+    html = client.get(f"/visit/{vid}").text
+    steps = html[html.index("How it was decided"):]
+    order = ["Black-capped Chickadee (61%)", "Dark-eyed Junco (90%)", "<strong>Haiku</strong>", "<strong>Sonnet</strong>",
+             "Bushtit (50%)"]
+    assert [steps.index(s) for s in order] == sorted(steps.index(s) for s in order)
+    assert 'data-tip="First look:' in html and 'data-tip="Tight look:' in html and 'data-tip="Second look:' in html
+    assert "Did not name the visit: its top guess was 61%, under the 80% it needs. The Pi took a tight look" in html
+    assert "Did not name the visit either: its top guess was 90%, under the 95% it needs. Claude was asked." in html
+    assert "on a tight square around the patch that moved, 5.9 s, before Claude" in html
+    flow = html[html.index('aria-label="Detection path"'):]
+    flow = flow[:flow.index("</ol>")]
+    order = ["Black-capped Chickadee (61%)", "tight look", "Dark-eyed Junco (90%)", "Haiku", "Sonnet", "2nd look", "Bushtit (50%)"]
+    assert [flow.index(s) for s in order] == sorted(flow.index(s) for s in order)
+    assert pills_explained(html)
+    # the What this photo trains box tells both looks apart
+    assert ("but did not name the visit: its top guess was 61%, under the 80% it needs. Then a tight look at the patch "
+            "that moved guessed Dark-eyed Junco, but its top guess was 90%, under the 95% it needs. Claude was asked.") in html
+
+
+def test_visit_page_says_the_tight_look_named_it(client, add_visit):
+    vid = add_visit(model="bioclip-2", raw_json=tight_raw(named=True, score=0.97))
+    html = client.get(f"/visit/{vid}").text
+    steps = html[html.index("How it was decided"):]
+    assert steps.index("Black-capped Chickadee (61%)") < steps.index("Dark-eyed Junco (97%)")
+    assert 'data-tip="RPi:' in html and 'data-tip="Tight look:' in html and 'data-tip="First look:' in html
+    assert "Did not name the visit: its top guess was 61%, under the 80% it needs. The Pi took a tight look" in html
+    assert "on a tight look around the patch that moved it was sure enough" in html and "Claude wasn't asked" in html
+    assert "Named on the Pi, no circle" not in html
+    assert ("Named the animal on the Pi:</b> Dark-eyed Junco (97%), on a tight look at the patch that moved after a "
+            "first look at the whole bowl fell short.") in html
+    assert "Second look:" not in html and "2nd look" not in html and pills_explained(html)
+    flow = html[html.index('aria-label="Detection path"'):]
+    flow = flow[:flow.index("</ol>")]
+    assert flow.index("Black-capped Chickadee (61%)") < flow.index("tight look") < flow.index("Dark-eyed Junco (97%)")
+
+
+def test_visits_without_a_tight_look_render_as_before(client, add_visit):
+    first_only = add_visit(species="Bushtit", raw_json=first_look_raw())
+    html = client.get(f"/visit/{first_only}").text
+    def no_tight_pill(html):  # neither the badge nor the Detection path's marker (the first look's tip may say the words)
+        return ">tight look</span>" not in html and 'data-tip="Tight look:' not in html
+    assert no_tight_pill(html) and "Did not name the visit either" not in html
+    assert "Did not name the visit: its top guess was 61%, under the 80% it needs. Claude was asked." in html
+    bowl_named = add_visit(model="bioclip-2", raw_json=json.dumps({"calls": {
+        "classifier": guess("Dark-eyed Junco"), "skipped_claude": True, "settled_by": "classifier"}}))
+    html = client.get(f"/visit/{bowl_named}").text
+    assert no_tight_pill(html) and 'data-tip="RPi:' in html and "Named on the Pi, no circle" in html
+    assert "<b>Named the animal on the Pi:</b> Dark-eyed Junco (50%). Claude was not asked." in html
+    nothing = add_visit(species="Bushtit", raw_json=json.dumps({"calls": {
+        "haiku": {"answer": {"visitor": "bird", "species": "Bushtit", "confidence": "high"}}}}))
+    assert no_tight_pill(client.get(f"/visit/{nothing}").text)
+
+
+def test_reasons_use_whole_percents_like_the_pills():
+    from birdbrain.web import steps
+    assert steps._pct(0.528) == "53%" and steps._pct(0.8) == "80%" and steps._pct(0.95) == "95%" and steps._pct(1) == "100%"
+    look = {"top": [{"name": "Bushtit", "score": 0.528}]}
+    assert steps.miss_text("score", look) == "its top guess was 53%, under the 80% it needs"
+    assert steps.miss_text("score", look, view="tight") == "its top guess was 53%, under the 95% it needs"
+    assert steps._share(0.5) == "half"
+
+
 def first_look_raw(why="score", name="Black-capped Chickadee", score=0.61, **extra):
     gate = {"model": classifier.MODEL_NAME, "crop": "bowl", "night": False, "seconds": 0.0, "why": why,
             "top": [{"name": name, "scientific": "", "score": score}, {"name": "Bushtit", "scientific": "", "score": 0.2}],
@@ -413,7 +695,7 @@ def test_visit_page_shows_the_first_look_before_claude(client, add_visit):
     html = client.get(f"/visit/{vid}").text
     steps = html[html.index("How it was decided"):]
     assert steps.index("Black-capped Chickadee (61%)") < steps.index("<strong>Haiku</strong>") < steps.index("Bushtit (50%)")
-    assert "Did not name the visit: its top guess was 61%, under the 93% it needs. Claude was asked." in html
+    assert "Did not name the visit: its top guess was 61%, under the 80% it needs. Claude was asked." in html
     assert 'data-tip="First look:' in html and 'data-tip="Second look:' in html and "Shadow:" not in html
     flow = html[html.index('aria-label="Detection path"'):]
     flow = flow[:flow.index("</ol>")]

@@ -223,6 +223,13 @@ DETECTOR_MIN_SCORE = float(_env("DETECTOR_MIN_SCORE", "0.15"))  # low on purpose
 CLASSIFIER = _env("CLASSIFIER", "gate").strip().lower()
 if CLASSIFIER not in ("off", "shadow", "gate"):
     raise ValueError(f"CLASSIFIER must be off, shadow or gate, not {CLASSIFIER!r}")
+# Gate mode's two bars for the top guess (birdbrain/classifier.py, rule H): the first look on the Pi animal check's
+# wide view of the bowl, and the tight look around the motion circle made when the first falls short.
+GATE_MIN_SCORE_BOWL = float(_env("GATE_MIN_SCORE_BOWL", "0.8"))
+GATE_MIN_SCORE_TIGHT = float(_env("GATE_MIN_SCORE_TIGHT", "0.95"))
+for _name, _bar in (("GATE_MIN_SCORE_BOWL", GATE_MIN_SCORE_BOWL), ("GATE_MIN_SCORE_TIGHT", GATE_MIN_SCORE_TIGHT)):
+    if not 0 < _bar <= 1:
+        raise ValueError(f"{_name} must be between 0 and 1, not {_bar!r}")
 PRESENCE = _env("PRESENCE", "shadow").strip().lower()  # local animal check: off, shadow or gate (Settings wins)
 if PRESENCE not in ("off", "shadow", "gate"):
     raise ValueError(f"PRESENCE must be off, shadow or gate, not {PRESENCE!r}")

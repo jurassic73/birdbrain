@@ -1633,7 +1633,8 @@ def test_the_false_triggers_intro_shows_the_four_components_with_live_numbers(cl
     html = client.get("/false-triggers").text
     strips = re.findall(r'<div class="hs-strip" id="step-\d">', html)
     assert len(strips) == 4 and all(n in html for n in FOUR)
-    assert f"{config.TRIGGER_FRAMES} frames in a row" in html and f"{classifier.GATE_MIN_SCORE * 100:g}%" in html
+    assert f"{config.TRIGGER_FRAMES} frames in a row" in html and f"{classifier.GATE_MIN_SCORE_BOWL:.0%}" in html
+    assert f"{classifier.GATE_MIN_SCORE_TIGHT:.0%}" in html
     assert f"newest {db.LESSON_LIMIT} lessons" in html and "<summary>More</summary>" in html
     assert "delete confirmed photos to save space" in html and 'id="ft-delete-link"' in html
     # The strips live in a pop-up opened from a link; the page keeps a one-line intro.
@@ -1654,7 +1655,8 @@ def test_about_has_the_four_steps_as_numbered_cards_with_live_numbers(client):
     for name in FOUR:
         assert f"What the {name} does" in section and f"How the {name} is trained" in section
     assert "What you control" in section
-    assert f"{config.TRIGGER_FRAMES} frames in a row" in section and f"{classifier.GATE_MIN_SCORE * 100:g}%" in section
+    assert f"{config.TRIGGER_FRAMES} frames in a row" in section and f"{classifier.GATE_MIN_SCORE_BOWL:.0%}" in section
+    assert f"{classifier.GATE_MIN_SCORE_TIGHT:.0%}" in section
     assert f"at least {db.CONFIRMED_MIN} earlier visits" in section and f"newest {db.LESSON_LIMIT} lessons" in section
     assert f"After every {lessons.AUTO_EVERY} new lessons" in section
     assert len(re.findall(r"<summary>More</summary>", section)) == 4  # training and controls fold under More

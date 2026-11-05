@@ -615,23 +615,48 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             db.bump(conn, "probe_empty")
         return PROBE_EMPTY
     empty = bool(check and check.get("empty"))
-    guess = pick = looked = None
+    guess = pick = looked = tight = None
     animals = None if empty else count_animals(scene, best, crop)
+    crowded = bool(animals and animals > 1)
     crowd = None
+    named = None  # which BioCLIP 2 look named the visit: "bowl" (the first look) or "tight"
+    circle = found = None  # the circle from the motion, once it was looked for
     if not empty:  # the species gate: a sure daytime name of a species already settled here skips Claude
         with db.session() as conn:
             settled = db.settled_species(conn)
         guess, pick = classifier.gate_check(emb, night, settled)
         if guess:  # it reused the Pi animal check's embedding: say which view that was of
             guess = {**guess, "crop": classifier.view_kind(z, trigger)}
-        if pick and animals and animals > 1:
+        if pick and crowded:
             # One BioCLIP guess names one animal; Claude counts them and names any other kind.
             log.info("species gate: %d animals in view, asking Claude instead of naming %s", animals, pick[0])
             crowd, pick = pick[0], None
         looked = guess  # the first look: kept below if it didn't name the visit (the Claude branch overwrites guess)
+        if pick:
+            named = "bowl"
+        elif looked and not crowded and not night:
+            # Rule H: the wide view is the bottleneck, so before asking Claude take one tight look at a square
+            # around the patch that moved (about 6 s on a Pi 4), with a higher bar. No patch: Claude, as before.
+            circle, found = motion_circle.live(best, scene.empty if scene else None, z, trigger,
+                                               captured_at.isoformat(), night)
+            if circle:
+                tight, pick = classifier.tight_check(best, circle, crop, night, settled)
+                if pick:
+                    named = "tight"
+                    log.info("species gate: the tight look named %s (%.2f); the first look had %s at %.2f", pick[0],
+                             tight["top"][0]["score"], looked["top"][0]["name"] if looked.get("top") else "nothing",
+                             looked["top"][0]["score"] if looked.get("top") else 0.0)
+                elif tight:
+                    log.info("species gate: the tight look did not name the visit; asking Claude")
+            else:
+                log.info("species gate: no patch of motion for a tight look (%s); asking Claude",
+                         (found or {}).get("why") or "unknown")
     if pick:
-        result = identify.settled_by_classifier(guess, pick, check)
-        if config.CIRCLE_FROM_MOTION:
+        result = identify.settled_by_classifier(tight if named == "tight" else guess, pick, check)
+        if named == "tight":
+            # The tight look's square was around the circle from the motion: that circle is the visit's.
+            result.raw["motion_circle"], result.raw["circle"] = found, circle
+        elif config.CIRCLE_FROM_MOTION:
             # BioCLIP says what, not where: circle the biggest patch of change from the empty scene instead.
             circle, found = motion_circle.live(best, scene.empty if scene else None, z, trigger,
                                                captured_at.isoformat(), night)
@@ -663,10 +688,15 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     if (not pick and result.sighting.visitor != "none" and (result.escalated or "classifier" not in result.raw)
             and (guess := classifier.run(best, result.raw.get("circle"), crop, night))):
         result.raw["classifier"] = guess
-    if looked and not pick:
-        # The BioCLIP 2 species check looked first and did not name the visit: keep the guess and why, so the visit
-        # page can show it before Claude (the guess on Claude's circle above is the later scorecard one).
+    if looked and named != "bowl":
+        # The BioCLIP 2 species check's first look did not name the visit: keep the guess and why, so the visit
+        # page can show it before the tight look or Claude (the guess on Claude's circle above is the later
+        # scorecard one; when the tight look named the visit, that look is calls.classifier).
         result.raw["classifier_gate"] = classifier.first_look(looked, settled, night, crowd)
+    if tight and not pick:
+        # The tight look did not name it either: kept with its reason and the circle it looked around, so the
+        # visit page can show it after the first look. Claude was asked and reuses nothing from it.
+        result.raw["classifier_tight"] = {**classifier.first_look(tight, settled, night, view="tight"), "circle": circle}
     if animals is not None:
         result.raw["animals_seen"] = animals  # scored against Claude's count later
     if crowd:
