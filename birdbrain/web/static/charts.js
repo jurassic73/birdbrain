@@ -40,13 +40,13 @@ function barChart(id, labels, data) {
   birdbrainCharts.push(chart);
 }
 
-// 100% stacked bars, one per day: BioCLIP 2 (accent) under Claude (muted). days: [{day, bioclip, claude}]; a day with
+// 100% stacked bars, one per day: BioCLIP 2 (accent) under Claude (terracotta, --claude). days: [{day, bioclip, claude}]; a day with
 // no IDs is an empty slot. Used by Stats.
 function styleShare(chart) {
   const c = chartColors();
   const [bio, claude] = chart.data.datasets;
   bio.backgroundColor = c.bar;
-  claude.backgroundColor = `color-mix(in srgb, ${cssVar("--muted")} 55%, ${cssVar("--surface")})`;
+  claude.backgroundColor = `color-mix(in srgb, ${cssVar("--claude")} 60%, ${cssVar("--surface")})`;
   bio.borderColor = claude.borderColor = cssVar("--surface");
   chart.options.scales.x.ticks.color = c.text;
   chart.options.scales.y.ticks.color = c.text;
