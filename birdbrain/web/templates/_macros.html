@@ -104,9 +104,9 @@
 {%- set by_claude = is_conf and by == "Claude" -%}
 {%- set by_pi = is_conf and by != "Claude" -%}
 {%- set pi_tips = {
-  "high": "High confidence: " ~ by ~ " was very sure of this answer.",
-  "medium": "Medium confidence: " ~ by ~ " thought this was likely, but was not fully sure.",
-  "low": "Low confidence: " ~ by ~ " was only guessing at this answer.",
+  "high": "High confidence: the " ~ by ~ " was very sure of this answer.",
+  "medium": "Medium confidence: the " ~ by ~ " thought this was likely, but was not fully sure.",
+  "low": "Low confidence: the " ~ by ~ " was only guessing at this answer.",
 } -%}
 <{{ tag }} class="badge {{ cls }}{{ ' by-claude' if by_claude }}{{ ' has-rpi' if text == 'RPi' or by_pi }}"{% if by_pi %} data-tip="{{ pi_tips[text] }}"{% elif tips[key or text] %} data-tip="{{ tips[key or text] }}"{% endif %}>{% if by_claude %}{{ claude_mark() }}{% endif %}{% if text == "RPi" or by_pi %}{{ rpi_icon() }}{% endif %}{{ text }}</{{ tag }}>
 {%- endmacro %}

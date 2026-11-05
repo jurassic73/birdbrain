@@ -788,7 +788,7 @@ def test_confidence_pill_of_a_pi_visit_has_the_pi_icon_not_claude(client, add_vi
     pi = add_visit(model="bioclip-2", raw_json=tight_raw(named=True, score=0.97))
     page = _conf_pill(client.get(f"/visit/{pi}").text)
     assert "rpi-icon" in page and "claude-mark" not in page and "by-claude" not in page
-    assert "BioCLIP 2 species check was very sure" in page and "Claude" not in page
+    assert "the BioCLIP 2 species check was very sure" in page and "Claude" not in page
     claude = add_visit()
     page = _conf_pill(client.get(f"/visit/{claude}").text)
     assert "claude-mark" in page and "by-claude" in page and "rpi-icon" not in page
