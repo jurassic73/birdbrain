@@ -222,3 +222,9 @@ def test_watcher_stores_the_other_animals_and_alerts_on_a_new_one(monkeypatch, c
     v = db.latest_visit(conn)
     assert [db.also_label(a) for a in db.also_of(v)] == ["Bushtit"]
     assert sent == ["New species: Bushtit!"]
+
+
+def test_visit_page_lists_other_animals_in_an_also_row(client, add_visit):
+    html = client.get(f"/visit/{add_visit(also=json.dumps(BUSHTITS))}").text
+    assert "<dt>Also</dt><dd>Bushtit x2 <span" in html and "<dt>Species</dt>" not in html
+    assert "<dt>Also</dt>" not in client.get(f"/visit/{add_visit()}").text

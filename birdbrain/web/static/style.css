@@ -855,6 +855,7 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .visit dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 12px 0; }
 .visit dt { color: var(--muted); }
 .visit dd { margin: 0; }
+.visit .identified { white-space: nowrap; }  /* the name and its pills stay on one line */
 .review {
   display: flex; flex-direction: column; gap: 12px; margin: 16px 0 8px; padding: 16px 22px;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
