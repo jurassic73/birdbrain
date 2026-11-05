@@ -157,6 +157,17 @@ def test_medium_after_escalation_is_kept_without_review(fake_ask):
     assert (r.model, r.needs_review) == (SONNET, False)
 
 
+def test_an_other_animal_always_waits_for_review_however_sure(fake_ask):
+    """"Other" (a cat, a person, a deer) is the admin's to look at: it is flagged even at high confidence, and so is
+    a visit settled on the Pi that names one."""
+    fake_ask({HAIKU: sighting(visitor="other", species="Domestic Cat")})
+    r = identify.identify(jpeg(), WHEN)
+    assert (r.sighting.visitor, r.needs_review) == ("other", True)
+    guess = {"top": [{"name": "Domestic Cat", "score": 0.97}], "model": "bioclip-2"}
+    assert identify.settled_by_classifier(guess, ("Domestic Cat", "other"), None).needs_review is True
+    assert identify.settled_by_classifier(guess, ("Bushtit", "bird"), None).needs_review is False
+
+
 def test_still_low_after_escalation_goes_to_review(fake_ask):
     fake_ask({HAIKU: sighting(confidence="low"), SONNET: sighting(confidence="low")})
     assert identify.identify(jpeg(), WHEN).needs_review is True

@@ -1622,7 +1622,7 @@ def test_review_heading_shows_the_real_total(client, add_visit, monkeypatch):
         add_visit(needs_review=1, captured_at=f"2026-11-01T10:00:{i:02d}")
     html = client.get("/review").text
     assert 'Review queue <span class="muted">3</span>' in html and html.count('class="card"') == 2
-    assert "Showing the oldest 2 of 3" in html
+    assert "Showing the first 2 of 3" in html
 
 
 FOUR = ("Motion detector", "Pi animal check", "BioCLIP 2 species check", "Claude")
