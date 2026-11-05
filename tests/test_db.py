@@ -430,6 +430,16 @@ def test_activity_rows_add_up_for_today(conn, add_visit):
     assert db.activity(conn, day=(TODAY - timedelta(days=2)).isoformat())["kept_on_pi"] == 1
 
 
+def test_activity_splits_visitors_by_who_named_them(conn, add_visit):
+    add_visit(species="Bushtit", model="bioclip-2")
+    add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5")
+    add_visit(species="Steller's Jay", model="claude-sonnet-5-5")
+    add_visit(visitor="none", species=None, model="claude-haiku-5-5")  # a false trigger isn't a named visitor
+    add_visit(species="Bushtit", model="bioclip-2", captured_at=at(3))  # another day
+    a = db.activity(conn)
+    assert (a["id_bioclip"], a["id_claude"], a["visitors"]) == (1, 2, 3)
+
+
 def test_delete_visit_returns_the_row_once(conn, add_visit):
     vid = add_visit(image_path="a.jpg")
     assert db.delete_visit(conn, vid)["image_path"] == "a.jpg"

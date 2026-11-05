@@ -695,6 +695,18 @@ def test_visit_page_shows_the_local_detector_step(client, add_visit):
     assert "bird (62%)" in html and "Bushtit" in html and "Claude wasn't asked" not in html
 
 
+def test_stats_shows_the_id_split_bar_only_with_ids(client, add_visit):
+    assert 'id="today-ids"' not in client.get("/stats").text
+    add_visit(species="Bushtit", model="bioclip-2")
+    add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5")
+    add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5")
+    html = client.get("/stats").text
+    assert 'id="today-ids"' in html and "ID'd by BioCLIP 2" in html and "ID'd by Claude" in html
+    assert "1 by the BioCLIP 2 species check, 2 by Claude" in html
+    assert ">33%<" in html and ">67%<" in html
+    assert html.index('id="today-ids"') < html.index('class="tally"')
+
+
 def test_home_shows_visitor_count_as_text_and_stats_has_the_rest(client, add_visit, monkeypatch):
     raw = json.dumps({"calls": {"haiku": {"input_tokens": 2000, "output_tokens": 200}, "presence": {"empty": True}}})
     add_visit(species="Bushtit")
