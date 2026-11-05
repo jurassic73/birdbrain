@@ -1968,3 +1968,13 @@ def test_species_and_home_show_how_long_ago(client, add_visit):
     page = client.get("/species/Bushtit").text
     assert re.search(r'class="ago" data-age="300">\(5 min ago\)<', page)  # the fallback ticks too
     assert 'src="/static/ago.js' in page
+
+
+def test_stats_share_chart_card_only_once_bioclip_named_a_visitor(client, add_visit):
+    add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5")
+    assert 'id="id-share"' not in client.get("/stats").text
+    add_visit(species="Bushtit", model="bioclip-2")
+    html = client.get("/stats").text
+    assert 'id="id-share"' in html and "Share of IDs by BioCLIP 2, per day" in html
+    assert 'shareChart("idshare", [{' in html and '"bioclip":1' in html.replace(" ", "")
+    assert html.index('id="today-motion"') < html.index('id="id-share"')

@@ -65,6 +65,14 @@
   </ul>
   {% endif %}
 </section>
+{% if id_split %}
+<section class="share-card" id="id-share">
+  <h2 data-tip="Each bar is one day's named visitors: the part the BioCLIP 2 species check named on the Pi (free) against the part Claude named">Share of IDs by BioCLIP 2, per day</h2>
+  <p class="muted">Since the BioCLIP 2 species check started naming visitors; hover a bar for the counts.</p>
+  <div class="share-legend"><span><i class="k1"></i>BioCLIP 2</span><span><i class="k2"></i>Claude</span></div>
+  <div class="share-chart"><canvas id="idshare" role="img" aria-label="Share of each day's named visitors that the BioCLIP 2 species check named"></canvas></div>
+</section>
+{% endif %}
 {% if classifier_on or classifier.checked %}
 <section class="detector-report" id="classifier">
   <h2>BioCLIP 2 species check <span class="muted">{% if classifier_mode == 'gate' %}gate mode: names sure daytime regulars on the Pi, Claude names the rest{% else %}shadow mode: guesses the species on the Pi, Claude still names every visitor{% endif %}</span></h2>
@@ -96,5 +104,6 @@
 <script>
   barChart("daily", {{ daily | map(attribute=0) | list | tojson }}.map(d => d.slice(5)), {{ daily | map(attribute=1) | list | tojson }});
   barChart("hourly", hourLabels(), {{ hourly | tojson }});
+  {% if id_split %}shareChart("idshare", {{ id_split | tojson }});{% endif %}
 </script>
 {% endblock %}

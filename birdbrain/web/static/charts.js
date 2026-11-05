@@ -40,6 +40,60 @@ function barChart(id, labels, data) {
   birdbrainCharts.push(chart);
 }
 
+// 100% stacked bars, one per day: BioCLIP 2 (accent) under Claude (muted). days: [{day, bioclip, claude}]; a day with
+// no IDs is an empty slot. Used by Stats.
+function styleShare(chart) {
+  const c = chartColors();
+  const [bio, claude] = chart.data.datasets;
+  bio.backgroundColor = c.bar;
+  claude.backgroundColor = `color-mix(in srgb, ${cssVar("--muted")} 55%, ${cssVar("--surface")})`;
+  bio.borderColor = claude.borderColor = cssVar("--surface");
+  chart.options.scales.x.ticks.color = c.text;
+  chart.options.scales.y.ticks.color = c.text;
+  chart.options.scales.y.grid.color = c.grid;
+}
+
+function shareChart(id, days) {
+  const el = document.getElementById(id);
+  if (!el || typeof Chart === "undefined") return;
+  const pct = (n, d) => (d ? (100 * n) / d : null);
+  const dataset = (label, key, share) => ({
+    label, stack: "s", borderRadius: 3, borderWidth: { top: 2 },
+    data: days.map(d => { const t = d.bioclip + d.claude; return t ? share(d, t) : null; }),
+  });
+  const chart = new Chart(el, {
+    type: "bar",
+    data: {
+      labels: days.map(d => shortDay(d.day)),
+      datasets: [dataset("BioCLIP 2", "bioclip", (d, t) => pct(d.bioclip, t)), dataset("Claude", "claude", (d, t) => pct(d.claude, t))],
+    },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => shortDay(days[items[0].dataIndex].day),
+            label: item => {
+              const d = days[item.dataIndex];
+              return item.datasetIndex ? `Claude: ${d.claude} (${Math.round(item.raw)}%)` : `BioCLIP 2: ${d.bioclip} (${Math.round(item.raw)}%)`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } },
+        y: { stacked: true, min: 0, max: 100, grid: {}, ticks: { stepSize: 25, callback: v => v + "%" } },
+      },
+    },
+  });
+  chart.$restyle = styleShare;
+  styleShare(chart);
+  chart.update();
+  birdbrainCharts.push(chart);
+}
+
 // One dot per item, each labelled beside it where there's room (crowded dots keep their date for the hover tip). points: [{rain, rate,
 // visitors, daylight, day 'YYYY-MM-DD', partial}]; partial dots are hollow. Used by the Weather & visits page.
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
