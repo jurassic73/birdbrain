@@ -52,6 +52,7 @@
        when the visitors list leaves no room for it beside the photo (the panel never grows past the photo). #}
     {% if lv and latest_facts %}
     <section class="today-facts" aria-label="Facts about the {{ lv.label }}">
+      <span class="facts-kicker">{{ kicker }}</span>
       <h3>About the <a href="/species/{{ lv.label | urlencode }}">{{ lv.label }}</a></h3>
       <ul>
         {% for f in latest_facts %}<li>{{ f }}</li>{% endfor %}

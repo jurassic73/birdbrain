@@ -120,6 +120,18 @@ def test_home_facts_box_shows_the_latest_species_facts_with_a_link(client, conn,
     assert client.get("/").text.count('class="today-facts"') == 1
 
 
+def test_home_facts_box_kicker_says_latest_or_last_before_today(client, conn, add_visit):
+    add_visit(species="Dark-eyed Junco")
+    _card(conn, "Dark-eyed Junco", facts=["Juncos flash white tail feathers."])
+    box = client.get("/").text.split('class="today-facts"')[1].split("</section>")[0]
+    assert '<span class="facts-kicker">Latest visitor</span>' in box
+    assert box.index("facts-kicker") < box.index("<h3>")
+    conn.execute("UPDATE visits SET captured_at = ?", ((FROZEN_NOW - timedelta(days=2)).isoformat(),))
+    conn.commit()
+    box = client.get("/").text.split('class="today-facts"')[1].split("</section>")[0]
+    assert '<span class="facts-kicker">Last visitor, before today</span>' in box
+
+
 def test_home_facts_box_is_left_out_without_a_card_or_facts(client, conn, add_visit):
     assert 'class="today-facts"' not in client.get("/").text  # no visitors at all
     add_visit(species="Dark-eyed Junco")
