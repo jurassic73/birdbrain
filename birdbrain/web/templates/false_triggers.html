@@ -125,6 +125,13 @@
     closeTimer = setTimeout(() => dlg.close(), 400);
     try { frame.contentWindow.postMessage("birdbrain:closing", location.origin); } catch (err) { dlg.close(); }
   };
+  // P with the focus on this page (not in the frame): play or stop the burst in the visit.
+  document.addEventListener("keydown", e => {
+    if (!dlg.open || e.key.toLowerCase() !== "p" || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat || e.defaultPrevented) return;
+    if (document.querySelector("dialog[open]:not(#ft-visit)")) return;
+    e.preventDefault();
+    try { frame.contentWindow.postMessage("birdbrain:play", location.origin); } catch (err) {}
+  });
   window.addEventListener("message", e => {
     if (e.origin !== location.origin || !dlg.open) return;
     if (e.data === "birdbrain:close") { clearTimeout(closeTimer); dlg.close(); }
