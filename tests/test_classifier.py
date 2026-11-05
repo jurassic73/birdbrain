@@ -777,3 +777,19 @@ def test_visit_answered_by_claude_still_says_claude(client, add_visit):
     html = client.get(f"/visit/{vid}").text
     assert "<dt>Claude said</dt>" in html and "<dt>Claude&#39;s notes</dt>" in html or "<dt>Claude's notes</dt>" in html
     assert "<dt>Identified by</dt><dd>claude-haiku-5-5</dd>" in html
+
+
+def _conf_pill(html):
+    import re
+    return re.search(r'<span class="badge conf-high[^"]*"[^>]*>.*?</span>', html, re.S).group(0)
+
+
+def test_confidence_pill_of_a_pi_visit_has_the_pi_icon_not_claude(client, add_visit):
+    pi = add_visit(model="bioclip-2", raw_json=tight_raw(named=True, score=0.97))
+    page = _conf_pill(client.get(f"/visit/{pi}").text)
+    assert "rpi-icon" in page and "claude-mark" not in page and "by-claude" not in page
+    assert "BioCLIP 2 species check was very sure" in page and "Claude" not in page
+    claude = add_visit()
+    page = _conf_pill(client.get(f"/visit/{claude}").text)
+    assert "claude-mark" in page and "by-claude" in page and "rpi-icon" not in page
+    assert "Claude was sure" in page

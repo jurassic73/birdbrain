@@ -31,7 +31,7 @@
 
 {# A status pill. Every pill says what it means in a hover tooltip (static/tips.js); add new pills here. #}
 {# `key` picks the tooltip when the text alone is ambiguous (the alert pills' "on"/"off" vs the local step's "off"). #}
-{% macro badge(text, cls, tag="span", key=none) -%}
+{% macro badge(text, cls, tag="span", key=none, by="Claude") -%}
 {%- set tips = {
   "high": "High confidence: Claude was sure of this answer.",
   "your photo": "Your photo: you picked this burst frame as the visit's photo, so the big photo and the card show it. Claude saw another frame, and its answer, its circle and what the Pi animal check learns still go by that one. Use Claude's photo puts it back.",
@@ -100,8 +100,20 @@
   "no lesson yet": "No lesson yet: Confirm alone and circles alone are not lessons. A correction or a Note for Claude is.",
   "too old": "Too old: newer lessons fill the prompt, so this one isn't sent any more. Switching newer ones off brings it back.",
 } -%}
-{%- set by_claude = cls in ("conf-high", "conf-medium", "conf-low") and text in ("high", "medium", "low") -%}
-<{{ tag }} class="badge {{ cls }}{{ ' by-claude' if by_claude }}{{ ' has-rpi' if text == 'RPi' }}"{% if tips[key or text] %} data-tip="{{ tips[key or text] }}"{% endif %}>{% if by_claude %}{{ claude_mark() }}{% endif %}{% if text == "RPi" %}<svg class="rpi-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="2.200" fill="#4c9a3a"/><g fill="#d6224f"><circle cx="8.500" cy="11" r="3.200"/><circle cx="15.500" cy="11" r="3.200"/><circle cx="12" cy="13.500" r="3.200"/><circle cx="8.500" cy="17" r="3"/><circle cx="15.500" cy="17" r="3"/><circle cx="12" cy="19.500" r="2.500"/></g></svg>{% endif %}{{ text }}</{{ tag }}>
+{%- set is_conf = cls in ("conf-high", "conf-medium", "conf-low") and text in ("high", "medium", "low") -%}
+{%- set by_claude = is_conf and by == "Claude" -%}
+{%- set by_pi = is_conf and by != "Claude" -%}
+{%- set pi_tips = {
+  "high": "High confidence: " ~ by ~ " was very sure of this answer.",
+  "medium": "Medium confidence: " ~ by ~ " thought this was likely, but was not fully sure.",
+  "low": "Low confidence: " ~ by ~ " was only guessing at this answer.",
+} -%}
+<{{ tag }} class="badge {{ cls }}{{ ' by-claude' if by_claude }}{{ ' has-rpi' if text == 'RPi' or by_pi }}"{% if by_pi %} data-tip="{{ pi_tips[text] }}"{% elif tips[key or text] %} data-tip="{{ tips[key or text] }}"{% endif %}>{% if by_claude %}{{ claude_mark() }}{% endif %}{% if text == "RPi" or by_pi %}{{ rpi_icon() }}{% endif %}{{ text }}</{{ tag }}>
+{%- endmacro %}
+
+{# The Raspberry Pi mark: on the RPi pill and on a confidence pill the Pi gave. #}
+{% macro rpi_icon() -%}
+<svg class="rpi-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="2.200" fill="#4c9a3a"/><g fill="#d6224f"><circle cx="8.500" cy="11" r="3.200"/><circle cx="15.500" cy="11" r="3.200"/><circle cx="12" cy="13.500" r="3.200"/><circle cx="8.500" cy="17" r="3"/><circle cx="15.500" cy="17" r="3"/><circle cx="12" cy="19.500" r="2.500"/></g></svg>
 {%- endmacro %}
 
 {# Whether a species is confirmed here (db.confirmed_species); needs `confirmed` from the route. #}
