@@ -760,9 +760,10 @@ def test_visit_settled_on_the_pi_never_says_claude_answered(client, add_visit):
     assert "<dt>Species</dt>" not in html and "<dt>Also</dt>" not in html and "<dt>Notes</dt>" in html
     assert "species check said</dt>" not in html
     assert "<dt>Claude said</dt>" not in html and "<dt>Claude's notes</dt>" not in html
-    assert "<dt>Identified by</dt><dd>BioCLIP 2 species check <span" in html and "bioclip-2</dd>" not in html
+    assert '<dt>Identified by</dt><dd><span class="identified">BioCLIP 2 species check <span' in html
+    assert "bioclip-2" not in html and "data-tip=\"Model:" not in html
     ident = html.split("<dt>Identified by</dt>")[1].split("</dl>")[0]
-    assert ident.rstrip().endswith("</span></dd>") and "rpi-icon" in ident and "conf-high" in ident
+    assert ident.rstrip().endswith("</span></span></dd>") and "rpi-icon" in ident and "conf-high" in ident
     client.post(f"/visit/{vid}/correct", data={"visitor": "bird", "species": "House Finch"})
     assert "Corrected by you. BioCLIP 2 species check said: Dark-eyed Junco." in client.get(f"/visit/{vid}").text
 
@@ -779,9 +780,17 @@ def test_visit_answered_by_claude_still_says_claude(client, add_visit):
     vid = add_visit(notes="Looks like a junco.")
     html = client.get(f"/visit/{vid}").text
     assert "<dt>Claude said</dt>" not in html and ("<dt>Claude&#39;s notes</dt>" in html or "<dt>Claude's notes</dt>" in html)
-    assert "<dt>Identified by</dt><dd>claude-haiku-5-5 <span" in html
+    assert '<dt>Identified by</dt><dd><span class="identified"><span data-tip="Model: claude-haiku-5-5">Claude</span> <span' in html
+    assert "claude-haiku-5-5 (escalated)" not in html and "(escalated)" not in html
     ident = html.split("<dt>Identified by</dt>")[1].split("</dl>")[0]
-    assert ident.rstrip().endswith("</span></dd>") and "claude-mark" in ident
+    assert ident.rstrip().endswith("</span></span></dd>") and "claude-mark" in ident
+
+
+def test_escalated_claude_visit_names_sonnet_in_the_tip(client, add_visit):
+    vid = add_visit(model="claude-sonnet-5-5", escalated=1)
+    html = client.get(f"/visit/{vid}").text
+    assert '<span data-tip="Model: claude-sonnet-5-5, escalated from Haiku">Claude</span>' in html
+    assert "(escalated)" not in html and "claude-sonnet-5-5 " not in html.split("<dt>Identified by</dt>")[1].split("</dl>")[0]
 
 
 def _conf_pill(html):
