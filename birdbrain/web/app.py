@@ -686,6 +686,7 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         visitors=db.VISITORS,
         species_kinds=db.species_kinds(conn),
         decision=decision,
+        classifier_mode=config.CLASSIFIER,
         marks=start_marks(visit),
         prev_id=prev_id,
         next_id=next_id,
@@ -898,6 +899,24 @@ CLASSIFIER_CROPS = {"circle": "around Claude's circle", "box": "on the crop box"
                     "bowl": "on a square around the whole bowl"}
 
 
+miss_text = steps.miss_text  # decision_steps has a local called steps
+
+
+def bioclip_step(guess: dict, raw: dict) -> dict:
+    """One BioCLIP 2 species check look for the visit page: its top guesses and where it looked."""
+    top = guess["top"][0] if guess.get("top") else None
+    return {
+        "model": "BioCLIP 2 species check",
+        "bioclip": True,
+        "guesses": [f"{g['name']} ({g['score']:.0%})" for g in guess["top"]],
+        "said": f"{top['name']} ({top['score']:.0%})" if top else "no local species",
+        "seconds": guess.get("seconds"),
+        "crop": (("on the ground crop" if raw.get("trigger") == "ground" else "on the crop box")
+                 if guess.get("crop") == "padded" else CLASSIFIER_CROPS.get(guess.get("crop"), "")),
+        "night": bool(guess.get("night")),
+    }
+
+
 def decision_steps(raw_json: str | None) -> dict:
     """The identification trail saved with a visit: each model's answer, in order, for the visit page."""
     try:
@@ -950,18 +969,20 @@ def decision_steps(raw_json: str | None) -> dict:
             "notes": answer.get("notes"),
         })
     guess = calls.get("classifier")
+    named = calls.get("settled_by") == "classifier"  # the Pi named the visit: that guess was its only look
     if guess and guess.get("top") is not None:
-        steps.append({
-            "model": "BioCLIP 2 species check",
-            "shadow": True,
-            "gated": calls.get("settled_by") == "classifier",
-            "crowd": calls.get("gate_crowd"),
-            "guesses": [f"{g['name']} ({g['score']:.0%})" for g in guess["top"]],
-            "seconds": guess.get("seconds"),
-            "crop": (("on the ground crop" if raw.get("trigger") == "ground" else "on the crop box")
-                     if guess.get("crop") == "padded" else CLASSIFIER_CROPS.get(guess.get("crop"), "")),
-            "night": bool(guess.get("night")),
-        })
+        steps.append({**bioclip_step(guess, raw), "gated": named, "first_look": named, "crowd": calls.get("gate_crowd"),
+                      "scorecard": not named})
+    first = calls.get("classifier_gate")
+    if first and first.get("top") is not None:
+        # The first look, before Claude: made from the Pi animal check's embedding; it did not name the visit.
+        at = next((i for i, st in enumerate(steps) if st["model"] in ("Haiku", "Sonnet")), len(steps))
+        steps.insert(at, {**bioclip_step(first, raw), "gated": False, "first_look": True, "scorecard": False,
+                          "why": first.get("why"), "reason": miss_text(first.get("why"), first), "crowd": calls.get("gate_crowd"),
+                          "backfilled": bool(first.get("backfilled")), "view_note": first.get("view_note")})
+        for st in steps:
+            if st.get("scorecard"):
+                st["second_look"] = True
     found = calls.get("motion_circle")
     if isinstance(found, dict):
         steps.append({
@@ -975,6 +996,7 @@ def decision_steps(raw_json: str | None) -> dict:
         })
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),
             "owner_checks": owner_checks(calls), "failed": any(s.get("error") for s in steps),
+            "has_first_look": any(st.get("first_look") and not st.get("gated") for st in steps),
             "skipped_sonnet": bool(calls.get("skipped_sonnet")), "asked_sonnet": bool(calls.get("sonnet")),
             "local_disagreed": calls.get("local_disagreed"), "local_agreed": bool(calls.get("local_agreed"))}
 

@@ -163,6 +163,13 @@ uv run python -m birdbrain.classifier --backfill            # every real visit w
 uv run python -m birdbrain.classifier --backfill --limit 50 # just the newest 50
 ```
 
+In gate mode the guess made before Claude (the "first look", from the Pi animal check's own view of the photo) is kept when it didn't name the visit, with the reason (`raw_json.calls.classifier_gate`), and the visit page shows it as a step before Haiku; the guess made afterwards on Claude's circle stays as the scorecard ("second look"). Visits from before this existed can get a first look worked out from their stored embeddings (text side only, no image is read, a few seconds in all; it uses today's settled species, says so, and skips night, Pi-named and Pi-empty visits):
+
+```bash
+uv run python -m birdbrain.classifier --backfill-gate --dry-run   # count, write nothing
+uv run python -m birdbrain.classifier --backfill-gate             # write them (--limit N, --redo)
+```
+
 It knows mammals too (every iNaturalist mammal, limited to your place's), so squirrels get a species.
 
 The species model says what, not where, so on a visit the Pi named itself it also **circles the animal from the motion** (`birdbrain/motion_circle.py`, plain OpenCV, a fraction of a second on a Pi 4): it compares the photo with the empty scene from just before the motion, matches the exposure, ignores changes that keep the scene's pattern (a patch of sun), leaves out the open water (it mirrors the moving sky; one small, solid patch there still counts, for a bathing bird) and circles the biggest solid patch of change that touches the zone that fired. Two patches of a similar size, or one too big for an animal, give no circle. The circle is stored like Claude's (`raw_json.calls.circle`, with `"pi": true`) and drawn like Claude's (a faded white ring); without one the photo says "Named on the Pi, no circle". `CIRCLE_FROM_MOTION=0` turns it off. For visits named before this existed (the empty view is then the median of the nearest stored photos of the same view and light):

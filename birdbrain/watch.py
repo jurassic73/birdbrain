@@ -615,7 +615,7 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             db.bump(conn, "probe_empty")
         return PROBE_EMPTY
     empty = bool(check and check.get("empty"))
-    guess = pick = None
+    guess = pick = looked = None
     animals = None if empty else count_animals(scene, best, crop)
     crowd = None
     if not empty:  # the species gate: a sure daytime name of a species already settled here skips Claude
@@ -628,6 +628,7 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             # One BioCLIP guess names one animal; Claude counts them and names any other kind.
             log.info("species gate: %d animals in view, asking Claude instead of naming %s", animals, pick[0])
             crowd, pick = pick[0], None
+        looked = guess  # the first look: kept below if it didn't name the visit (the Claude branch overwrites guess)
     if pick:
         result = identify.settled_by_classifier(guess, pick, check)
         if config.CIRCLE_FROM_MOTION:
@@ -662,6 +663,10 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     if (not pick and result.sighting.visitor != "none" and (result.escalated or "classifier" not in result.raw)
             and (guess := classifier.run(best, result.raw.get("circle"), crop, night))):
         result.raw["classifier"] = guess
+    if looked and not pick:
+        # The BioCLIP 2 species check looked first and did not name the visit: keep the guess and why, so the visit
+        # page can show it before Claude (the guess on Claude's circle above is the later scorecard one).
+        result.raw["classifier_gate"] = classifier.first_look(looked, settled, night, crowd)
     if animals is not None:
         result.raw["animals_seen"] = animals  # scored against Claude's count later
     if crowd:
