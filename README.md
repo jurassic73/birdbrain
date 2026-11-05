@@ -170,6 +170,12 @@ uv run python -m birdbrain.classifier --backfill-gate --dry-run   # count, write
 uv run python -m birdbrain.classifier --backfill-gate             # write them (--limit N, --redo)
 ```
 
+Training data for later: each tight look's fingerprint is also kept (768 numbers, about 1.5 KB) in the `embeddings` table, as `tight_vec` for the square around the motion's circle and `circle_vec` for the square around Claude's circle on the final answer (`circle_model` says whether Haiku's or Sonnet's circle). Nothing reads them yet; they are collected so a species model trained on your own yard's photos can be built once there are enough. They are only kept next to the Pi animal check's own fingerprint of the visit (so not with `CLASSIFIER=off`), are deleted with the visit, and never reach the public mirror. If `CIRCLE_MARGINS` ever holds several margins, the first one's square is the one kept. To make `circle_vec` for older visits from their stored photos (about 6 s each on a Pi 4, progress every 25):
+
+```bash
+uv run python -m birdbrain.classifier --backfill-circle-embeddings            # --limit N, --redo
+```
+
 It knows mammals too (every iNaturalist mammal, limited to your place's), so squirrels get a species.
 
 The species model says what, not where, so on a visit the Pi named itself it also **circles the animal from the motion** (`birdbrain/motion_circle.py`, plain OpenCV, a fraction of a second on a Pi 4): it compares the photo with the empty scene from just before the motion, matches the exposure, ignores changes that keep the scene's pattern (a patch of sun), leaves out the open water (it mirrors the moving sky; one small, solid patch there still counts, for a bathing bird) and circles the biggest solid patch of change that touches the zone that fired. Two patches of a similar size, or one too big for an animal, give no circle. The circle is stored like Claude's (`raw_json.calls.circle`, with `"pi": true`) and drawn like Claude's (a faded white ring); without one the photo says "Named on the Pi, no circle". `CIRCLE_FROM_MOTION=0` turns it off. For visits named before this existed (the empty view is then the median of the nearest stored photos of the same view and light):

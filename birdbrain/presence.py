@@ -132,6 +132,31 @@ def store(conn, visit_id: int, emb: np.ndarray, view: int = classifier.PRESENCE_
     conn.commit()
 
 
+def store_tight(conn, visit_id: int, tight=None, circle=None, circle_model: str | None = None,
+                view: int = classifier.TIGHT_VIEW) -> int:
+    """Keep the tight views' embeddings (training data for a yard-trained species model; nothing reads them yet):
+    `tight` is BioCLIP 2's embedding of the square around the Motion detector's circle, `circle` of the square
+    around Claude's (circle_model "haiku" or "sonnet" says whose). Only fills columns given and only on a row
+    that exists (the wide embedding made by `store`), so it never touches vec, view or animal_*; a visit with no
+    wide embedding (the Pi animal check off) keeps none, because vec is NOT NULL. Non-finite vectors are
+    skipped. Returns how many it saved."""
+    saved = 0
+    for col, emb, extra in (("tight", tight, None), ("circle", circle, circle_model)):
+        if emb is None:
+            continue
+        arr = np.asarray(emb, np.float32).ravel()
+        if not arr.size or not np.isfinite(arr).all():
+            continue
+        sets, args = [f"{col}_vec = ?", f"{col}_view = ?"], [arr.astype(np.float16).tobytes(), view]
+        if extra:
+            sets.append(f"{col}_model = ?")
+            args.append(extra)
+        saved += conn.execute(f"UPDATE embeddings SET {', '.join(sets)} WHERE visit_id = ?",
+                              (*args, visit_id)).rowcount
+    conn.commit()
+    return saved
+
+
 def visit_zones(raw: dict, conn=None, captured_at: str | None = None) -> dict | None:
     """The zones a visit's frames were judged in: raw_json.zones, else (with `conn`) the zones at the time."""
     z = raw.get("zones")
