@@ -151,10 +151,10 @@
     </div>
     <dl>
       <dt>Seen</dt><dd>{{ visit.captured_at | nice_time }}{% if visit.is_night %} (night){% endif %}{% if stayed(visit) %}, {{ stayed(visit) }}{% endif %}</dd>
-      <dt>Claude said</dt><dd>{{ visit.species or ('no animal' if visit.visitor == 'none' else visit.visitor) }}{% if visit.confidence %} {{ badge(visit.confidence, "conf-" ~ visit.confidence) }}{% endif %}{% if visit.species and visit.confidence == "medium" %} {{ confirm_badge(visit.species) }}{% endif %}
+      <dt>{{ answerer(visit.model) }} said</dt><dd>{{ visit.species or ('no animal' if visit.visitor == 'none' else visit.visitor) }}{% if visit.confidence %} {{ badge(visit.confidence, "conf-" ~ visit.confidence) }}{% endif %}{% if visit.species and visit.confidence == "medium" %} {{ confirm_badge(visit.species) }}{% endif %}
         {%- for a in claude_also %}{{ " with " if loop.first else ", " }}{{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% if a.confidence %} {{ badge(a.confidence, "conf-" ~ a.confidence) }}{% endif %}{% endfor %}</dd>
-      {% if visit.notes %}<dt>Claude's notes</dt><dd class="clamp" onclick="this.classList.toggle('clamp')">{{ visit.notes }}</dd>{% endif %}
-      {% if visit.model %}<dt>Identified by</dt><dd>{{ visit.model }}{% if visit.escalated %} (escalated){% endif %}</dd>{% endif %}
+      {% if visit.notes %}<dt>{{ answerer(visit.model) ~ "'s notes" if answerer(visit.model) == "Claude" else "Notes" }}</dt><dd class="clamp" onclick="this.classList.toggle('clamp')">{{ visit.notes }}</dd>{% endif %}
+      {% if visit.model %}<dt>Identified by</dt><dd>{{ visit.model if answerer(visit.model) == "Claude" else answerer(visit.model) }}{% if visit.escalated %} (escalated){% endif %}</dd>{% endif %}
     </dl>
     {{ flow("in-info") }}
     {# What this photo does to each of the four components (steps.for_visit; admins only). #}

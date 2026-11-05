@@ -5,7 +5,7 @@
   {% if others %}<p class="also-line">With {% for a in others %}{{ sp_name(also_label(a)) }}{% if a.count and a.count > 1 %} <span class="muted">x{{ a.count }}</span>{% endif %}{{ ", " if not loop.last }}{% endfor %}</p>{% endif %}
   {% if visit.corrected_visitor or visit.corrected_species or visit.corrected_also is not none %}
   {% set claude_also = also_of({"also": visit.also}) %}
-  <p class="muted">Corrected by you. Claude said: {{ visit.species or ('no animal' if visit.visitor == 'none' else visit.visitor) }}{% for a in claude_also %}{{ " with " if loop.first else ", " }}{{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}.</p>
+  <p class="muted">Corrected by you. {{ answerer(visit.model) }} said: {{ visit.species or ('no animal' if visit.visitor == 'none' else visit.visitor) }}{% for a in claude_also %}{{ " with " if loop.first else ", " }}{{ also_label(a) }}{% if a.count and a.count > 1 %} x{{ a.count }}{% endif %}{% endfor %}.</p>
   {% endif %}
   {% if visit.feedback %}
   <p class="feedback-note">Your note: {{ visit.feedback }}</p>

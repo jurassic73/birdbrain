@@ -333,6 +333,7 @@ templates.env.globals["photo_marks"] = lambda visit: [m for m in start_marks(vis
                                                      if db.mark_frame(m) == db.photo_frame(visit)]
 templates.env.globals["no_circle_note"] = lambda visit: no_circle_note(visit)
 templates.env.globals["also_of"] = db.also_of
+templates.env.globals["answerer"] = db.answerer
 # The biggest photo of a visit still on disk (just the thumbnail once the photo budget cut it down).
 templates.env.globals["photo_src"] = db.photo_rel
 templates.env.globals["thumb_src"] = db.thumb_rel

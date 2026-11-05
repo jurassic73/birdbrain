@@ -750,3 +750,30 @@ def test_backfill_gate_writes_first_looks_from_stored_embeddings(conn, add_visit
     assert gate(done) == {"why": "score", "top": []}  # already has one
     classifier.backfill_gate(redo=True, limit=1, clf=clf, local=LOCAL, settled=settled, say=lambda m: None)
     assert gate(done)["backfilled"]  # newest first, redone
+
+
+def test_visit_settled_on_the_pi_never_says_claude_answered(client, add_visit):
+    """Visit 995: named by the BioCLIP 2 species check, Claude not asked. The answer lines name who really answered."""
+    note = "Named on the Pi by the BioCLIP 2 species check (99% sure); Claude was not asked."
+    vid = add_visit(model="bioclip-2", notes=note, raw_json=tight_raw(named=True, score=0.97))
+    html = client.get(f"/visit/{vid}").text
+    assert "<dt>BioCLIP 2 species check said</dt>" in html and "<dt>Notes</dt>" in html
+    assert "<dt>Claude said</dt>" not in html and "<dt>Claude's notes</dt>" not in html
+    assert "<dt>Identified by</dt><dd>BioCLIP 2 species check</dd>" in html and "bioclip-2</dd>" not in html
+    client.post(f"/visit/{vid}/correct", data={"visitor": "bird", "species": "House Finch"})
+    assert "Corrected by you. BioCLIP 2 species check said: Dark-eyed Junco." in client.get(f"/visit/{vid}").text
+
+
+def test_who_answered_a_visit():
+    from birdbrain import db
+    assert db.answerer("bioclip-2") == "BioCLIP 2 species check"
+    assert db.answerer("bioclip-presence") == "Pi animal check"
+    assert db.answerer("yolox-tiny") == "Local detector"
+    assert [db.answerer(m) for m in ("claude-haiku-5-5", "claude-sonnet-5-5", None, "")] == ["Claude"] * 4
+
+
+def test_visit_answered_by_claude_still_says_claude(client, add_visit):
+    vid = add_visit(notes="Looks like a junco.")
+    html = client.get(f"/visit/{vid}").text
+    assert "<dt>Claude said</dt>" in html and "<dt>Claude&#39;s notes</dt>" in html or "<dt>Claude's notes</dt>" in html
+    assert "<dt>Identified by</dt><dd>claude-haiku-5-5</dd>" in html
