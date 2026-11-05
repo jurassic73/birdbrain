@@ -1,6 +1,8 @@
-"""Local bird species classifier, in shadow mode: it guesses the species on the Pi and records the guess,
-while Claude stays in charge of every label. The Stats page scores the guesses against the final labels
-(owner corrections win, else Claude's), the first step toward identifying birds without Claude.
+"""Local bird species classifier. In shadow mode it guesses the species on the Pi and records the guess, while
+Claude stays in charge of every label; the Stats page scores the guesses against the final labels (owner
+corrections win, else Claude's). In gate mode (rule H, below gate_miss) a sure daytime guess of a species already
+settled in the yard names the visit without Claude: a first look on the Pi animal check's wide view, then, when
+that falls short, one tight look around the circle from the motion.
 
 Model: BioCLIP 2 (Imageomics Institute, MIT), a CLIP model trained on the Tree of Life (incl. iNaturalist).
 Its image encoder is exported to ONNX with 8-bit weights (300 MB, run by onnxruntime, ~6 s per crop on a Pi 4,
@@ -523,11 +525,22 @@ def classify(img: np.ndarray, circle: dict | None, box, night: bool, local=None,
             "seconds": round(seconds, 3)}
 
 
-# Gate mode. Checked 2026-10-31 on 66 real visits re-scored from the crop box (what the gate sees, since Claude's
-# circle doesn't exist yet): these limits named 30 with no mistakes. The one confident miss (a junco called a
-# California Scrub-Jay at 0.98) is stopped by requiring a species already settled in the yard.
-GATE_MIN_SCORE = 0.93
+# Gate mode, rule H: two looks, each with its own bar. The first look reuses the Pi animal check's embedding of the
+# wide view (the bowl square), which costs nothing extra but is the bottleneck: on 197 real visits its top guess was
+# right 63 to 70% of the time, against 92 to 97% on a tight square around the bird. So when the bowl look falls
+# short, one more look is made on a square CIRCLE_MARGIN radii around the motion circle (about 6 s on a Pi 4), with
+# a higher bar. Before 2026-11-05 the one bar was 0.93 (checked 2026-10-31 on 66 visits re-scored from the crop box:
+# 30 named, no mistakes). The one confident miss then (a junco called a California Scrub-Jay at 0.98) is stopped by
+# requiring a species already settled in the yard. Both bars can be overridden from .env (config.py).
+GATE_MIN_SCORE_BOWL = config.GATE_MIN_SCORE_BOWL    # the first look, on the Pi animal check's wide view
+GATE_MIN_SCORE_TIGHT = config.GATE_MIN_SCORE_TIGHT  # the tight look, around the motion circle
 GATE_MIN_LOCAL = 0.5  # share of its belief on local species; low means it saw something it doesn't know
+GATE_VIEWS = ("bowl", "tight")  # the two looks, in the order the gate makes them
+
+
+def gate_bar(view: str = "bowl") -> float:
+    """The top-guess bar for a look: GATE_MIN_SCORE_TIGHT for the tight look, GATE_MIN_SCORE_BOWL for the first."""
+    return GATE_MIN_SCORE_TIGHT if view == "tight" else GATE_MIN_SCORE_BOWL
 
 
 def from_embedding(emb: np.ndarray, night: bool, local=None, clf=None) -> dict | None:
@@ -544,18 +557,19 @@ def from_embedding(emb: np.ndarray, night: bool, local=None, clf=None) -> dict |
             "seconds": 0.0}
 
 
-def gate_miss(guess: dict | None, settled: dict[str, str], night: bool, crowd=None) -> str | None:
+def gate_miss(guess: dict | None, settled: dict[str, str], night: bool, crowd=None, view: str = "bowl") -> str | None:
     """Why a guess would not name the visit without Claude, in the order the gate tests it: "night", "none" (no
-    local species at all), "score" (top guess under GATE_MIN_SCORE), "local" (under GATE_MIN_LOCAL of its belief on
-    local species), "unsettled" (the species isn't settled here yet) or "crowd" (`crowd` is truthy: several
-    animals in view). None when it would name it. One place for the order: gate_pick, the watcher's stored first
-    look and the visit page all read it."""
+    local species at all), "score" (top guess under the look's bar, gate_bar(view)), "local" (under GATE_MIN_LOCAL
+    of its belief on local species), "unsettled" (the species isn't settled here yet) or "crowd" (`crowd` is
+    truthy: several animals in view). None when it would name it. `view` is which look this is: "bowl" (the first
+    look, GATE_MIN_SCORE_BOWL) or "tight" (the look around the motion circle, GATE_MIN_SCORE_TIGHT). One place for
+    the order: gate_pick, the watcher's stored looks and the visit page all read it."""
     if night:
         return "night"
     if not guess or not guess.get("top"):
         return "none"
     top = guess["top"][0]
-    if top["score"] < GATE_MIN_SCORE:
+    if top["score"] < gate_bar(view):
         return "score"
     if (guess.get("local_share") or 0) < GATE_MIN_LOCAL:
         return "local"
@@ -565,24 +579,26 @@ def gate_miss(guess: dict | None, settled: dict[str, str], night: bool, crowd=No
     return "crowd" if crowd else None
 
 
-def gate_pick(guess: dict | None, settled: dict[str, str], night: bool) -> tuple[str, str] | None:
+def gate_pick(guess: dict | None, settled: dict[str, str], night: bool, view: str = "bowl") -> tuple[str, str] | None:
     """(species, visitor) when the guess is trusted to name the visit without Claude: daytime only (it hasn't
-    seen infrared), a strong first guess mostly on local species, and a species with enough settled visits
-    here (`settled`: label -> visitor type, from db.settled_species)."""
-    if gate_miss(guess, settled, night):
+    seen infrared), a strong first guess (the look's bar, gate_bar(view)) mostly on local species, and a species
+    with enough settled visits here (`settled`: label -> visitor type, from db.settled_species)."""
+    if gate_miss(guess, settled, night, view=view):
         return None
     name = guess["top"][0]["name"]
     return name, settled[name]
 
 
-def first_look(guess: dict, settled: dict[str, str], night: bool, crowd=None) -> dict:
-    """The gate's guess as the watcher stores it (raw_json.calls.classifier_gate) when it did not name the
-    visit: the guess plus why (gate_miss). The guess made on Claude's circle afterwards stays calls.classifier."""
-    return {**guess, "why": gate_miss(guess, settled, night, crowd)}
+def first_look(guess: dict, settled: dict[str, str], night: bool, crowd=None, view: str = "bowl") -> dict:
+    """A gate look as the watcher stores it when it did not name the visit (raw_json.calls.classifier_gate for the
+    first look on the bowl, calls.classifier_tight for the tight look): the guess plus why (gate_miss, judged
+    against the look's own bar). The guess made on Claude's circle afterwards stays calls.classifier."""
+    return {**guess, "why": gate_miss(guess, settled, night, crowd, view)}
 
 
 def gate_check(emb, night: bool, settled: dict[str, str]) -> tuple[dict | None, tuple[str, str] | None]:
-    """Fail-soft gate step for the watcher: (the guess, the pick or None)."""
+    """Fail-soft first gate look for the watcher, from the Pi animal check's embedding of its wide view, against
+    GATE_MIN_SCORE_BOWL: (the guess, the pick or None)."""
     if config.CLASSIFIER != "gate" or emb is None or night:
         return None, None
     try:
@@ -591,6 +607,28 @@ def gate_check(emb, night: bool, settled: dict[str, str]) -> tuple[dict | None, 
         log.exception("local classifier gate failed; asking Claude")
         return None, None
     return guess, gate_pick(guess, settled, night)
+
+
+TIGHT_CROP = "motion"  # the stored guess's "crop" for the tight look: a square around the motion circle
+
+
+def tight_check(jpeg: bytes, circle: dict | None, box, night: bool, settled: dict[str, str]
+                ) -> tuple[dict | None, tuple[str, str] | None]:
+    """Fail-soft second gate look for the watcher (rule H), made only when the first look did not name the visit:
+    the photo is classified on a square CIRCLE_MARGIN radii around the motion circle (classify's crop of a circle),
+    judged against GATE_MIN_SCORE_TIGHT. (the guess with crop TIGHT_CROP, the pick or None); (None, None) when
+    not in gate mode, at night, without a circle or when anything fails (the watcher then asks Claude)."""
+    if config.CLASSIFIER != "gate" or night or not circle or not circle.get("r"):
+        return None, None
+    try:
+        guess = run(jpeg, circle, box, night)
+        if not guess:
+            return None, None
+        guess = {**guess, "crop": TIGHT_CROP}
+        return guess, gate_pick(guess, settled, night, view="tight")
+    except Exception:
+        log.exception("the tight look failed; asking Claude")
+        return None, None
 
 
 def box_embedding(jpeg: bytes, z, trigger: str | None) -> np.ndarray | None:
