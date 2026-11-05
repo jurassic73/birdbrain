@@ -1788,6 +1788,19 @@ CONFIRMED_MIN = 3  # visits before a species counts as confirmed here
 CLASSIFIER_MODEL = "bioclip-2"  # visits named by the local classifier in gate mode (classifier.MODEL_NAME)
 
 
+# Who answered a visit, in the project's component names, keyed by the `visits.model` value. Anything else
+# (claude-haiku-*, claude-sonnet-*, or no model at all on old rows) was Claude.
+ANSWERERS = {CLASSIFIER_MODEL: "BioCLIP 2 species check", "bioclip-presence": "Pi animal check",
+             "yolox-tiny": "Local detector"}
+
+
+def answerer(model: str | None) -> str:
+    """The name to show for whoever settled a visit: a Pi check when the model column says so, else Claude.
+    The visit page says "<name> said" and "Identified by <name>" from it, so a visit the Pi settled never
+    claims Claude answered."""
+    return ANSWERERS.get(model or "", "Claude")
+
+
 def confirmed_species(conn: sqlite3.Connection, minimum: int = CONFIRMED_MIN) -> set[str]:
     """Species with at least `minimum` visits that are settled: answered with high confidence and not
     corrected to something else, or labelled by the owner. Haiku naming one of these at medium confidence
