@@ -782,7 +782,7 @@ def backfill_gate(limit: int | None = None, redo: bool = False, dry_run: bool = 
                 counts["named_now"] += 1
             record["backfilled"] = True
             if view != PRESENCE_VIEW:
-                record["view_note"] = "its fingerprint is of the older, center-cut view of the crop box"
+                record["view_note"] = "its embedding is of the older, center-cut view of the crop box"
                 counts["old_view"] += 1
             if not dry_run:
                 with db.session() as conn:

@@ -186,7 +186,7 @@
           <div class="step-why">Did not name the visit either: {{ step.reason }}. Claude was asked.</div>
           {% elif step.first_look %}
           <div class="step-why">Did not name the visit: {{ step.reason }}. {% if decision.has_tight_look %}The Pi took a tight look at the patch that moved next.{% else %}Claude was asked.{% endif %}</div>
-          {% if step.backfilled %}<div class="muted step-notes">Worked out afterwards from the stored fingerprint of this photo, using today's settled species{% if step.view_note %}; {{ step.view_note }}{% endif %}.</div>{% endif %}
+          {% if step.backfilled %}<div class="muted step-notes">Worked out afterwards from the stored embedding (like a fingerprint) of this photo, using today's settled species{% if step.view_note %}; {{ step.view_note }}{% endif %}.</div>{% endif %}
           {% elif step.crowd and not decision.has_first_look %}
           <div class="step-why">Sure it was {{ step.crowd.species }}, but the Pi saw {{ step.crowd.animals }} animals in view, so Claude was asked to count them and name any other kind.</div>
           {% else %}

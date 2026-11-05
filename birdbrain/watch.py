@@ -777,8 +777,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         if emb is not None:
             presence.store(conn, visit_id, emb)  # training data once its label is known (and corrected)
             if tight_vec is not None or circle_vec is not None:
-                # Fingerprints of the tight views, for a species model of this yard later; never worth a visit.
-                fail_soft("keeping the tight fingerprints", presence.store_tight, conn, visit_id, tight_vec,
+                # Embeddings of the tight views, for a species model of this yard later; never worth a visit.
+                fail_soft("keeping the tight embeddings", presence.store_tight, conn, visit_id, tight_vec,
                           circle_vec, circle_model if circle_vec is not None else None)
     last_visit_id = visit_id
     # From here on the visit is stored: whatever goes wrong below is logged, and the stored visitor still returned.

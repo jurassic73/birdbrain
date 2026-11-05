@@ -52,7 +52,7 @@ def components() -> list[dict]:
          "does": f"<p>The {PI} asks: &ldquo;Is an animal in the dashed box?&rdquo; <b>No:</b> the photo goes to False triggers; "
                  f"nothing else runs and {CLAUDE} is not asked. <b>Yes:</b> the photo goes on to the {SPECIES}.</p>",
          "train": f"<p>The {PI} <b>is</b> trainable:</p><ul>"
-                  f"<li>BioCLIP 2 turns the dashed box into a fingerprint (a list of numbers).</li>"
+                  f"<li>BioCLIP 2 turns the dashed box into an embedding (like a fingerprint): a list of numbers that sums up what the box shows.</li>"
                   f"<li>The yes/no scorer of the {PI} learns from every labelled photo: pressing Confirm labels the photo "
                   f"&ldquo;empty&rdquo;, picking an animal labels the photo &ldquo;animal&rdquo;. Your labels count {weight} as much "
                   f"as {CLAUDE}&rsquo;s labels.</li>"
@@ -64,7 +64,7 @@ def components() -> list[dict]:
          "short": f"The {SPECIES} names the animal on the Pi, without {CLAUDE}, only for familiar daytime regulars: a "
                   f"first look at the whole bowl, then, when that is not sure enough, a tight look at the patch that "
                   f"moved. Otherwise the photo goes to {CLAUDE}.",
-         "does": f"<p>The {SPECIES} compares the fingerprint with every bird and mammal name on the eBird and iNaturalist "
+         "does": f"<p>The {SPECIES} compares the embedding (like a fingerprint) with every bird and mammal name on the eBird and iNaturalist "
                  f"lists and picks the closest species.</p>"
                  f"<p>The {SPECIES} names the animal itself, without {CLAUDE}, only when <b>all</b> are true:</p><ul>"
                  f"<li>Daytime (never on night infrared photos).</li>"
@@ -163,7 +163,7 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
     # 2. Pi animal check
     if teaches is None:
         pill = ("no example", "step-muted")
-        body = (f"<b>Nothing.</b> The {PI} stored no fingerprint for this photo, so the {PI} learns nothing from it.")
+        body = (f"<b>Nothing.</b> The {PI} stored no embedding (like a fingerprint) for this photo, so the {PI} learns nothing from it.")
     elif not teaches["animal"]:
         if teaches["checked"]:
             pill, body = (f"counted {weight}", "step-accent"), f"<b>An empty frame, counted {weight}:</b> you checked it."
