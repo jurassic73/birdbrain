@@ -593,3 +593,26 @@ def test_neighbors_with_species_skip_other_species_and_count_also(conn, add_visi
     # a visit not in the set still steps by its time
     assert db.get_neighbors(conn, relabelled, species="Bushtit") == (new, mid)
     assert db.get_neighbors(conn, mid) != db.get_neighbors(conn, mid, species="Bushtit")
+
+
+def test_id_split_by_day_starts_at_the_first_bioclip_day(conn, add_visit):
+    assert db.id_split_by_day(conn) == []
+    add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5", captured_at=at(5))  # before BioCLIP 2 named anyone
+    assert db.id_split_by_day(conn) == []
+    add_visit(species="Bushtit", model="bioclip-2", captured_at=at(3))
+    add_visit(species="Bushtit", model="bioclip-2", captured_at=at(3, 10))
+    add_visit(species="Steller's Jay", model="claude-sonnet-5-5", captured_at=at(3, 11))
+    add_visit(visitor="none", species=None, model="claude-haiku-5-5", captured_at=at(2))  # false trigger: not counted
+    add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5", captured_at=at(0))
+    out = db.id_split_by_day(conn)
+    assert [d["day"] for d in out] == [(TODAY - timedelta(days=n)).isoformat() for n in (3, 2, 1, 0)]
+    assert [(d["bioclip"], d["claude"]) for d in out] == [(2, 1), (0, 0), (0, 0), (0, 1)]
+
+
+def test_id_split_by_day_is_capped_at_the_last_days(conn, add_visit):
+    add_visit(species="Bushtit", model="bioclip-2", captured_at=at(60))
+    add_visit(species="Bushtit", model="bioclip-2", captured_at=at(29))
+    add_visit(species="Bushtit", model="claude-haiku-5-5", captured_at=at(30))
+    out = db.id_split_by_day(conn, days=30)
+    assert len(out) == 30 and out[0]["day"] == (TODAY - timedelta(days=29)).isoformat() and out[-1]["day"] == TODAY.isoformat()
+    assert (out[0]["bioclip"], out[0]["claude"]) == (1, 0) and sum(d["claude"] for d in out) == 0

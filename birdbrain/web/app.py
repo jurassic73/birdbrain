@@ -1378,6 +1378,7 @@ def stats(request: Request, conn=Depends(get_conn)):
         "stats.html",
         daily=db.daily_counts(conn, days=30),
         hourly=db.hourly_counts(conn),
+        id_split=db.id_split_by_day(conn),
         leaders=db.species_summary(conn, sort="visits", limit=10),
         newest=db.species_summary(conn, sort="newest", limit=5),
         total=db.count_visits(conn),

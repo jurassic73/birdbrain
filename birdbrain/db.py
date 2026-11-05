@@ -1948,6 +1948,33 @@ def daily_counts(conn: sqlite3.Connection, days: int = 30, species: str | None =
     return [(d, counts.get(d, 0)) for d in days_list]
 
 
+def id_split_by_day(conn: sqlite3.Connection, days: int = 30) -> list[dict]:
+    """Visitors named by the BioCLIP 2 species check vs Claude, per day, oldest first, for the Stats share chart.
+
+    Starts on the first day any visitor was named by BioCLIP 2 (earlier days are left out) and covers at most the
+    last `days` days up to today; days in between with no IDs are zeros. Same definitions as `activity`. Empty
+    when BioCLIP 2 has never named a visitor."""
+    first = conn.execute(f"SELECT MIN(date(captured_at)) FROM visits WHERE {shown()} AND model = 'bioclip-2'").fetchone()[0]
+    if not first:
+        return []
+    today = clock.today()
+    start = max(date.fromisoformat(first), today - timedelta(days=days - 1))
+    where, args = _days(start.isoformat())
+    rows = conn.execute(
+        f"""SELECT date(captured_at) AS d,
+                   SUM(model = 'bioclip-2') AS bioclip, SUM(model LIKE 'claude%') AS claude
+            FROM visits WHERE {shown()} AND {where} GROUP BY d""",
+        args,
+    )
+    counts = {r["d"]: (r["bioclip"] or 0, r["claude"] or 0) for r in rows}
+    out = []
+    for i in range((today - start).days + 1):
+        d = (start + timedelta(days=i)).isoformat()
+        b, c = counts.get(d, (0, 0))
+        out.append({"day": d, "bioclip": b, "claude": c})
+    return out
+
+
 def month_counts(conn: sqlite3.Connection, species: str) -> list[int]:
     """Our own visits of one species per calendar month (Jan first), all years together."""
     where, args = _where(species=species)
