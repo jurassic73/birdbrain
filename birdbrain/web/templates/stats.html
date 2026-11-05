@@ -2,10 +2,70 @@
 {% block title %}Stats | Birdbrain{% endblock %}
 {% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Stats</h1><span class="muted page-total">{{ total }} visits</span></div>
+<div class="page-head"><h1>Stats</h1><span class="muted page-total" id="all-time">{% if total %}All time: {{ '{:,}'.format(total) }} visit{{ 's' if total != 1 }}{% if first_visit %} since {{ first_visit | nice_date }} <span class="nowrap">({{ first_visit | since_ago }})</span>{% endif %}{% else %}0 visits{% endif %}</span></div>
 {% set a = activity %}
-<section class="today-visits" id="today-visits">
-  <h2 data-tip="Birds and animals identified today">Today's Visits <span class="tally-n good">{{ a.visitors }}</span></h2>
+{% set empty = a.motion - a.visitors %}
+{% set ids = a.id_bioclip + a.id_claude %}
+<section class="today-card" id="today" aria-label="Today">
+  <div class="today-head"><h2>Today</h2><span class="when">{{ today_label }}, so far</span></div>
+  {% if a.motion %}
+  <div class="funnel">
+    <div class="stage" data-tip="Every time the camera saw movement today, whether or not an animal was there">
+      <span class="name">Motion events</span>
+      <span class="n">{{ a.motion }}</span>
+      <span class="sub">rain, wind, leaves and animals</span>
+    </div>
+    <div class="arrow">
+      <span class="drop" data-tip="Motion with no animal in it.{% if presence_mode != 'off' %} {{ a.empty_on_pi }} were settled on the Pi by the Pi animal check, for free.{% endif %}{% if a.empty_by_claude %} Claude was asked about {{ a.empty_by_claude }} and found nothing.{% endif %}"><b>&minus;{{ empty }}</b> {% if request.state.admin %}<a href="/false-triggers">empty</a>{% else %}empty{% endif %}</span>
+      <svg viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7h22M18 2l6 5-6 5"/></svg>
+      {% if empty and presence_mode == 'off' %}
+      <span class="drop">checked by Claude</span>
+      {% elif a.empty_by_claude and a.empty_on_pi %}
+      <span class="drop"><b>{{ a.empty_on_pi }}</b> on the Pi<br><b>{{ a.empty_by_claude }}</b> via Claude</span>
+      {% elif a.empty_by_claude %}
+      <span class="drop">checked by Claude</span>
+      {% elif empty %}
+      <span class="drop">kept on the Pi</span>
+      {% endif %}
+    </div>
+    <div class="stage" data-tip="{% if presence_mode == 'off' %}Motion events with an animal in them{% else %}The Pi animal check looks at each motion event and decides whether an animal is in it{% if presence_mode == 'shadow' %} (shadow mode: it only scores, so Claude still looks at nearly every photo){% endif %}{% endif %}">
+      <span class="name">{{ 'Pi animal check' if presence_mode != 'off' else 'Animals' }}</span>
+      <span class="n">{{ a.visitors }}</span>
+      <span class="sub">had an animal</span>
+    </div>
+    <div class="arrow">
+      <svg viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7h22M18 2l6 5-6 5"/></svg>
+      <span class="drop">who names it</span>
+    </div>
+    <div class="stage">
+      <span class="name">Named by</span>
+      {% if a.visitors %}
+      <div class="two-rows">
+        <div class="row" data-tip="Named free on the Pi by the BioCLIP 2 species check"><i class="k1"></i><span class="n">{{ a.id_bioclip }}</span><span class="t">BioCLIP 2 &middot; free</span></div>
+        <div class="row" data-tip="Named by Claude (Haiku, or Sonnet when unsure). Cost today {{ a.claude_usd | usd }}{% if a.empty_by_claude %}, including {{ a.empty_by_claude }} empty photo{{ 's' if a.empty_by_claude != 1 }} it checked{% endif %}{% if presence_mode == 'shadow' and a.would_keep %}; gate mode would have kept {{ a.would_keep }} on the Pi, saving about {{ a.would_keep_usd | usd }}{% endif %}."><i class="k2"></i><span class="n">{{ a.id_claude }}</span><span class="t">Claude &middot; {{ a.claude_usd | usd }}</span></div>
+        {% if a.visitors > ids %}<div class="row" data-tip="Visits named another way, for example by you"><i class="k3"></i><span class="n">{{ a.visitors - ids }}</span><span class="t">other</span></div>{% endif %}
+      </div>
+      {% else %}
+      <span class="sub">no visitors to name yet</span>
+      {% endif %}
+    </div>
+    <div class="arrow">
+      <svg viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7h22M18 2l6 5-6 5"/></svg>
+      <span class="drop">=</span>
+    </div>
+    <div class="stage last">
+      <span class="name">Visitors</span>
+      <span class="n good">{{ a.visitors }}</span>
+      <span class="sub">{{ a.species }} species</span>
+    </div>
+  </div>
+  <div class="funnel-foot">
+    <span><b>{{ (100 * a.visitors / a.motion) | round | int }}%</b> of motion was a real animal</span>
+    {% if a.visitors and a.claude_usd %}{% set per = a.claude_usd / a.visitors %}<span>{{ 'about ' if per >= 0.001 }}<b>{{ per | usd }}</b> per visitor</span>{% endif %}
+  </div>
+  {% else %}
+  <p class="muted today-none">No motion yet today.</p>
+  {% endif %}
 </section>
 <div class="charts">
   <figure><figcaption>Visits per day, last 30 days <a class="fig-link" href="/weather">How weather changes visits</a></figcaption><canvas id="daily"></canvas></figure>
@@ -29,42 +89,6 @@
     </ul>
   </section>
 </div>
-<section class="today-motion" id="today-motion">
-  {% set ids = a.id_bioclip + a.id_claude %}
-  {% if ids %}
-  {% set pb = (100 * a.id_bioclip / ids) | round | int %}
-  <div class="idbar" id="today-ids">
-    <div class="bar" role="img" aria-label="Today's visitors named: {{ a.id_bioclip }} by the BioCLIP 2 species check, {{ a.id_claude }} by Claude" data-tip="Who named today's visitors: the BioCLIP 2 species check on the Pi (free) or Claude">
-      {% if a.id_bioclip %}<span class="b1" style="flex: {{ a.id_bioclip }}" data-tip="Named free on the Pi by the BioCLIP 2 species check"></span>{% endif %}
-      {% if a.id_claude %}<span class="b2" style="flex: {{ a.id_claude }}" data-tip="Named by Claude (Haiku, or Sonnet when unsure)"></span>{% endif %}
-    </div>
-    <div class="barlab">
-      <span data-tip="Named free on the Pi by the BioCLIP 2 species check"><i class="k1"></i><b class="tally-n">{{ a.id_bioclip }}</b> <span class="tally-label">ID'd by BioCLIP 2</span> <span class="tally-why">{{ pb }}%</span></span>
-      <span data-tip="Named by Claude (Haiku, or Sonnet when unsure)"><i class="k2"></i><b class="tally-n">{{ a.id_claude }}</b> <span class="tally-label">ID'd by Claude</span> <span class="tally-why">{{ 100 - pb }}%</span></span>
-    </div>
-  </div>
-  {% endif %}
-  <ol class="tally" aria-label="Today's numbers">
-    <li data-tip="Motion with no animal: rain, wind, ripples">
-      <span class="tally-n">{{ a.false_alarms }}</span> {% if request.state.admin %}<a class="tally-label" href="/false-triggers">False alarms</a>{% else %}<span class="tally-label">False alarms</span>{% endif %}
-    </li>
-    {% if presence_mode != 'off' %}
-    <li data-tip="False alarms the Pi animal check screened out for free"><span class="tally-n">{{ a.kept_on_pi }}</span> <span class="tally-label">Kept on the Pi</span></li>
-    {% endif %}
-    <li data-tip="Cost {{ a.claude_usd | usd }} today{% if presence_mode == 'shadow' and a.would_keep %}; gate mode would have kept {{ a.would_keep }} on the Pi{% endif %}">
-      <span class="tally-n">{{ a.sent_to_claude }}</span> <span class="tally-label">Sent to Claude</span> <span class="tally-why">{{ a.claude_usd | usd }}</span>
-    </li>
-  </ol>
-  {% set motion = a.visitors + a.false_alarms %}
-  {% if motion %}
-  <ul class="tally-facts">
-    <li>{{ (100 * a.visitors / motion) | round | int }}% of today's {{ motion }} motion events were a real animal; the rest were rain, wind, leaves or ripples.</li>
-    {% if a.visitors %}<li>Each visitor cost about {{ (a.claude_usd / a.visitors) | usd }} in Claude calls.</li>{% endif %}
-    {% if a.kept_on_pi %}<li>The Pi animal check settled {{ a.kept_on_pi }} false alarm{{ 's' if a.kept_on_pi != 1 }} on the Pi without asking Claude.</li>{% endif %}
-    {% if presence_mode == 'shadow' and a.would_keep %}<li>Gate mode would have kept {{ a.would_keep }} more on the Pi, saving about {{ a.would_keep_usd | usd }}.</li>{% endif %}
-  </ul>
-  {% endif %}
-</section>
 {% if id_split %}
 <section class="share-card" id="id-share">
   <h2 data-tip="Each bar is one day's named visitors: the part the BioCLIP 2 species check named on the Pi (free) against the part Claude named">Share of IDs by BioCLIP 2, per day</h2>

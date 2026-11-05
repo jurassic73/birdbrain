@@ -695,39 +695,69 @@ def test_visit_page_shows_the_local_detector_step(client, add_visit):
     assert "bird (62%)" in html and "Bushtit" in html and "Claude wasn't asked" not in html
 
 
-def test_stats_shows_the_id_split_bar_only_with_ids(client, add_visit):
-    assert 'id="today-ids"' not in client.get("/stats").text
+def test_stats_today_card_is_a_funnel_that_adds_up(client, add_visit):
+    html = client.get("/stats").text
+    assert 'id="today"' in html and "No motion yet today." in html and 'class="funnel"' not in html
     add_visit(species="Bushtit", model="bioclip-2")
     add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5")
     add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5")
+    add_visit(visitor="none", species=None, model="bioclip-presence")
     html = client.get("/stats").text
-    assert 'id="today-ids"' in html and "ID'd by BioCLIP 2" in html and "ID'd by Claude" in html
-    assert "1 by the BioCLIP 2 species check, 2 by Claude" in html
-    assert ">33%<" in html and ">67%<" in html
-    assert html.index('id="today-ids"') < html.index('class="tally"')
+    card = html[html.index('id="today"'):html.index('class="charts"')]
+    assert "Today</h2>" in card and ", so far" in card
+    assert "Motion events" in card and "Pi animal check" in card and "Named by" in card and "Visitors" in card
+    assert '<span class="n">4</span>' in card and "&minus;1</b>" in card and '<span class="n good">3</span>' in card
+    assert "2 species" in card and "BioCLIP 2 &middot; free" in card
+    assert '<span class="n">1</span><span class="t">BioCLIP 2' in card and '<span class="n">2</span><span class="t">Claude' in card
+    assert "75%</b> of motion was a real animal" in card
+    assert "Today's Visits" not in html and "Today's motion" not in html and "tally" not in html
+    assert html.index('id="today"') < html.index("Visits per day") < html.index("Most frequent")
 
 
-def test_home_shows_visitor_count_as_text_and_stats_has_the_rest(client, add_visit, monkeypatch):
+def test_stats_today_card_zero_states(client, add_visit):
+    add_visit(visitor="none", species=None, model="bioclip-presence")  # motion, but nobody came
+    card = client.get("/stats").text
+    card = card[card.index('id="today"'):card.index('class="charts"')]
+    assert "no visitors to name yet" in card and '<span class="n good">0</span>' in card
+    assert "0%</b> of motion" in card and "per visitor" not in card
+
+
+def test_stats_today_card_says_when_claude_checked_empties_and_gate_would_help(client, add_visit, monkeypatch):
     raw = json.dumps({"calls": {"haiku": {"input_tokens": 2000, "output_tokens": 200}, "presence": {"empty": True}}})
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None, raw_json=raw)
-    html = client.get("/").text
-    assert "tally-box" not in html and html.count("Visitor today") == 1  # the scoreboard's count only
-    assert "Sent to Claude" not in html and "Kept on the Pi" not in html
-    assert html.index("Visitor today") < html.index("More filters")
     stats = client.get("/stats").text
-    rows = ["False alarms", "Kept on the Pi", "Sent to Claude"]
-    assert "Today's Visits" in stats and "Today's motion" not in stats
-    assert 'id="presence"' not in stats and "#presence" not in stats
-    assert "visits</span>" in stats and stats.index("Today's Visits") < stats.index("Most frequent")
-    start = stats.index("New to the yard")
-    assert [stats.index(r, start) for r in rows] == sorted(stats.index(r, start) for r in rows)
-    assert "gate mode would have kept 1 on the Pi" in stats
-    assert "50% of today's 2 motion events were a real animal" in stats
+    assert "checked by Claude" in stats and "Claude was asked about 1 and found nothing" in stats
+    assert "gate mode would have kept 1 on the Pi, saving about" in stats
+    assert "50%</b> of motion was a real animal" in stats
+    assert 'href="/false-triggers">empty</a>' in stats  # no password set: everyone is the admin
     monkeypatch.setattr(config, "PRESENCE", "gate")
     assert "gate mode would have kept" not in client.get("/stats").text
     monkeypatch.setattr(config, "PRESENCE", "off")
-    assert "Kept on the Pi" not in client.get("/stats").text
+    off = client.get("/stats").text
+    assert "Pi animal check" not in off[off.index('id="today"'):off.index('class="charts"')]
+
+
+def test_home_has_no_motion_funnel(client, add_visit):
+    add_visit(species="Bushtit")
+    html = client.get("/").text
+    assert "tally-box" not in html and html.count("Visitor today") == 1
+    assert "Sent to Claude" not in html and "Kept on the Pi" not in html
+
+
+def test_stats_all_time_label(client, add_visit, conn):
+    assert 'class="muted page-total" id="all-time">0 visits<' in client.get("/stats").text
+    add_visit(species="Bushtit", captured_at=(webapp.clock.now() - timedelta(days=10)).isoformat(timespec="seconds"))
+    add_visit(species="Bushtit")
+    html = client.get("/stats").text
+    label = html[html.index('id="all-time">'):html.index("</span>", html.index('id="all-time">'))]
+    assert label.startswith('id="all-time">All time: 2 visits since ') and label.endswith("(~10 days ago)")
+
+
+@pytest.mark.parametrize("days, text", [(0, "today"), (1, "yesterday"), (5, "~5 days ago"), (21, "~3 weeks ago"),
+                                         (100, "~3 months ago"), (400, "~13 months ago"), (900, "~2 years ago")])
+def test_since_ago(days, text):
+    assert webapp.since_ago((webapp.clock.now() - timedelta(days=days)).isoformat(timespec="seconds")) == text
 
 
 @pytest.mark.parametrize("value, text", [(0, "$0"), (0.0004, "under $0.001"), (0.031, "$0.031"), (0.42, "$0.42")])
@@ -1977,4 +2007,4 @@ def test_stats_share_chart_card_only_once_bioclip_named_a_visitor(client, add_vi
     html = client.get("/stats").text
     assert 'id="id-share"' in html and "Share of IDs by BioCLIP 2, per day" in html
     assert 'shareChart("idshare", [{' in html and '"bioclip":1' in html.replace(" ", "")
-    assert html.index('id="today-motion"') < html.index('id="id-share"')
+    assert html.index('id="today"') < html.index('id="id-share"')
