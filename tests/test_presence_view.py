@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import FROZEN_NOW
+from helpers.clock import FROZEN_NOW
 from birdbrain import classifier, db, images, presence, watch, zones
 from birdbrain.web import app as webapp
 

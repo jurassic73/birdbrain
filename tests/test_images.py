@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
-from conftest import image_size
+from helpers.images import image_size
 from birdbrain import images
 
 

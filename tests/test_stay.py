@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import cv2
 import numpy as np
-from conftest import FROZEN_NOW
+from helpers.clock import FROZEN_NOW
 
 from birdbrain import stay, watch
 from birdbrain.web import app as webapp

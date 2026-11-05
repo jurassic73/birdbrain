@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from birdbrain import camera, config, db, names, species_info
 from birdbrain.web import app as webapp
 
-from test_species_info import CARD
+from helpers.cards import CARD
 
 
 def _stale(conn, data=CARD):

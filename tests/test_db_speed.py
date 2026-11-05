@@ -10,7 +10,8 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from conftest import FROZEN_NOW
+from helpers.clock import FROZEN_NOW
+from helpers.sql import plans
 from birdbrain import clock, db, watch
 
 DAY = "2026-11-01"
@@ -175,18 +176,6 @@ def test_watcher_counts_todays_claude_calls_by_day(conn, add_visit):
     add_visit(captured_at=f"{today - timedelta(days=1)}T23:59:59")
     add_visit(captured_at=f"{today}T12:00:00", model="bioclip-presence")
     assert watch.calls_today() == 1 and watch.calls_today(ground=True) == 1
-
-
-def plans(conn, run) -> dict[str, list[str]]:
-    """EXPLAIN QUERY PLAN of every SELECT that run(conn) executes, by statement."""
-    seen: list[str] = []
-    conn.set_trace_callback(seen.append)
-    try:
-        run(conn)
-    finally:
-        conn.set_trace_callback(None)
-    return {sql: [r[3] for r in conn.execute("EXPLAIN QUERY PLAN " + sql)]
-            for sql in seen if sql.lstrip().upper().startswith(("SELECT", "WITH"))}
 
 
 def test_todays_summary_and_the_nav_counts_come_from_indexes(boundary):

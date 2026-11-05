@@ -1,48 +1,67 @@
+import atexit
 import os
+import shutil
 import socket
 import sys
 import tempfile
 from datetime import date as _real_date, datetime as _real_datetime
 from pathlib import Path
 
-# Before birdbrain is imported: never read the real .env (camera password, API key), and keep images in a temp dir.
+# Before birdbrain is imported: never read the real .env (camera password, API key), and keep data in a temp dir.
+# The folder is this process's fallback for anything that runs before the per-test `data_dirs` fixture (every
+# xdist worker and the controller make their own); `_remove_session_dir` takes it away when the session ends.
 os.environ["BIRDBRAIN_NO_DOTENV"] = "1"
-os.environ["BIRDBRAIN_DATA"] = tempfile.mkdtemp(prefix="birdbrain-test-")
+_SESSION_DIR = tempfile.mkdtemp(prefix="birdbrain-test-")
+os.environ["BIRDBRAIN_DATA"] = _SESSION_DIR
 os.environ["ANTHROPIC_API_KEY"] = "test-key-never-sent"
 os.environ["RTSP_PASS"] = "p@ss#word!"
 
 import pytest  # noqa: E402
 
 from birdbrain import config, db  # noqa: E402
+from helpers.clock import FROZEN_NOW, FrozenDate, FrozenDatetime  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# "Now" for every test: midday on the day the run started, so a run that crosses midnight (or starts just past it)
-# sees one fixed day. Tests that need a time relative to now use the `now` fixture or `from conftest import FROZEN_NOW`.
-FROZEN_NOW = _real_datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+
+def _remove_session_dir() -> None:
+    shutil.rmtree(_SESSION_DIR, ignore_errors=True)
 
 
-class _Meta(type):
-    def __instancecheck__(cls, obj):
-        return isinstance(obj, cls.__mro__[1])
+atexit.register(_remove_session_dir)  # a backstop for a process that never reaches pytest_unconfigure
 
 
-class FrozenDatetime(_real_datetime, metaclass=_Meta):
-    @classmethod
-    def now(cls, tz=None):
-        if tz is None:
-            return FROZEN_NOW
-        return FROZEN_NOW.astimezone().astimezone(tz)
-
-    @classmethod
-    def today(cls):
-        return FROZEN_NOW
+def pytest_unconfigure(config):  # noqa: ARG001  (pytest's config, not birdbrain's)
+    _remove_session_dir()
 
 
-class FrozenDate(_real_date, metaclass=_Meta):
-    @classmethod
-    def today(cls):
-        return FROZEN_NOW.date()
+# --- markers and tiers -------------------------------------------------------------------------------------------
+
+TIERS = ("unit", "component", "integration")
+GUARD_FILES = {"test_no_personal_info.py"}
+TEST_TIMEOUT = 60  # seconds per test when pytest-timeout is installed (plain pytest runs without a limit)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark each test with its tier from its folder (tests/unit/** -> unit, ...), the guard files `guard`, and give
+    every test a time limit when pytest-timeout is present."""
+    tests_dir = Path(str(config.rootpath)) / "tests"
+    timeout = config.pluginmanager.hasplugin("timeout")
+    for item in items:
+        path = Path(str(item.path))
+        try:
+            rel = path.relative_to(tests_dir)
+        except ValueError:
+            rel = None
+        if rel is not None and rel.parts and rel.parts[0] in TIERS:
+            item.add_marker(getattr(pytest.mark, rel.parts[0]))
+        if path.name in GUARD_FILES:
+            item.add_marker(pytest.mark.guard)
+        if timeout and item.get_closest_marker("timeout") is None:
+            item.add_marker(pytest.mark.timeout(TEST_TIMEOUT))
+
+
+# --- the clock ---------------------------------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -59,16 +78,66 @@ def frozen_clock(monkeypatch):
             monkeypatch.setattr(mod, "date", FrozenDate)
 
 
-def image_size(path) -> tuple[int, int]:
-    """An image file's (width, height), closing the file again."""
-    from PIL import Image
-    with Image.open(path) as im:
-        return im.size
-
-
 @pytest.fixture
 def now():
     return FROZEN_NOW
+
+
+# --- isolation: folders, database, module state ------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def data_dirs(tmp_path_factory, monkeypatch):
+    """Every test gets its own data folder: config.DATA_DIR, IMAGES_DIR and DB_PATH point into a fresh folder next
+    to tmp_path (not inside it: some tests list tmp_path), and so does BIRDBRAIN_DATA for anything a test starts in
+    a subprocess. Every path birdbrain derives from them (the web app's live.jpg, the retention lock, the
+    calibration/reference pictures, the admin secret, the privacy cache, the name lists, the models folder) is
+    computed from config at call time, so this covers them all but one: the /images mount, whose folder StaticFiles
+    fixed when the app was imported, is pointed at the new IMAGES_DIR too. A file one test writes is never seen by
+    the next; `conn` still puts the test database at tmp_path/test.db."""
+    data = tmp_path_factory.mktemp("data")
+    images = data / "images"
+    monkeypatch.setattr(config, "DATA_DIR", data)
+    monkeypatch.setattr(config, "IMAGES_DIR", images)
+    monkeypatch.setattr(config, "DB_PATH", data / "birdbrain.db")
+    monkeypatch.setenv("BIRDBRAIN_DATA", str(data))
+    from starlette.routing import Mount
+    from birdbrain.web import app as webapp
+    for route in webapp.app.routes:
+        if isinstance(route, Mount) and route.name == "images":
+            monkeypatch.setattr(route.app, "directory", images)
+            monkeypatch.setattr(route.app, "all_directories", [images])
+
+
+@pytest.fixture(autouse=True)
+def fresh_module_state(monkeypatch):
+    """Module globals that would otherwise carry over from one test to the next (caches, lockout counters, the
+    live frame, background flags) start every test at their import-time values. Tests that want another value
+    set it themselves on top of this."""
+    from birdbrain import circle_check, identify, lessons, privacy, retention, watch, weather
+    from birdbrain.web import app as webapp, auth, viewer
+    monkeypatch.setattr(auth, "_fails", {})
+    monkeypatch.setattr(auth, "_secrets", {})
+    monkeypatch.setattr(viewer, "_fails", {})
+    monkeypatch.setattr(viewer, "_cache", {})
+    monkeypatch.setattr(webapp, "_live", {"jpeg": None, "at": 0.0, "tried": 0.0})
+    monkeypatch.setattr(webapp, "_run_state", {"running": False, "result": None, "error": ""})
+    monkeypatch.setattr(watch, "_hold_cache", (0.0, False))
+    monkeypatch.setattr(watch, "last_visit_id", None)
+    monkeypatch.setattr(watch, "_last_logged", {})
+    monkeypatch.setattr(watch, "_push", None)
+    monkeypatch.setattr(watch, "_push_started", 0.0)
+    monkeypatch.setattr(circle_check, "_last_used", 0.0)
+    monkeypatch.setattr(lessons, "_running", False)
+    monkeypatch.setattr(lessons, "BACKGROUND", False)  # the automatic distill runs in the request, never a thread
+    monkeypatch.setattr(db, "_totals_cache", {})
+    monkeypatch.setattr(identify, "_client", None)
+    monkeypatch.setattr(privacy, "_det", None)
+    monkeypatch.setattr(privacy, "_status", (0.0, {}))
+    monkeypatch.setattr(weather, "_failed_at", 0.0)
+    retention.forget()  # cached usage, breakdown and forecast; the flock file itself lives under this test's DATA_DIR
+    yield
+    retention.forget()
 
 
 @pytest.fixture(scope="session", autouse=True)
