@@ -131,7 +131,7 @@ def test_visitors_never_see_an_other_visit(client, yard, locked):
     assert f"/visit/{cat}" not in client.get(f"/visit/{bird}").text  # no arrow to it
     assert "Domestic Cat" not in client.get("/species").text
     assert client.get("/species/Domestic Cat").status_code == 404
-    assert '<span class="muted page-total">1 visits</span>' in client.get("/stats").text
+    assert "All time: 1 visit since " in client.get("/stats").text
 
 
 def test_the_admin_sees_other_visits_everywhere(client, yard, locked):
@@ -141,7 +141,7 @@ def test_the_admin_sees_other_visits_everywhere(client, yard, locked):
     assert client.get("/api/latest-visit").json()["id"] == cat
     assert client.get(f"/visit/{cat}").status_code == 200
     assert f"/visit/{cat}" in client.get(f"/visit/{bird}").text
-    assert '<span class="muted page-total">2 visits</span>' in client.get("/stats").text
+    assert "All time: 2 visits since " in client.get("/stats").text
 
 
 def test_the_admins_review_page_starts_with_the_other_visits(client, conn, add_visit, locked):

@@ -456,37 +456,46 @@ section.visits { border-top: 1px solid var(--line); padding-top: 16px; }
 @media (max-width: 640px) { .card.hero-dup { display: none; } }
 .visits-bar .filters-toggle { margin-left: auto; flex: none; }
 .visits-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 16px; margin-bottom: 8px; }
-.today-visits { margin: 0 0 8px; }
-.today-visits h2 { margin: 0; font-size: 1.1rem; }
-.today-visits h2 .tally-n { margin-left: 6px; }
 .page-total { white-space: nowrap; }
-.today-motion { margin: 18px 0; }
-.today-motion h2 { margin: 0 0 8px; font-size: 1.1rem; }
-.idbar { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 8px; }
-.idbar .bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; }
-.idbar .b1, .idbar .k1 { background: var(--accent); }
-.idbar .b2, .idbar .k2 { background: var(--muted); opacity: .55; }
-.idbar .b1, .idbar .b2 { min-width: 0; }
-.barlab { display: flex; flex-wrap: wrap; gap: 4px 22px; margin-top: 8px; }
-.barlab > span { display: inline-flex; align-items: center; gap: 0 6px; white-space: nowrap; }
-.barlab .tally-why { display: inline; }
-.barlab i { flex: none; width: 10px; height: 10px; border-radius: 3px; }
-.tally-facts { margin: 8px 0 0; padding: 0 0 0 18px; color: var(--muted); font-size: .85rem; }
-.tally-facts li { margin: 2px 0; }
-.tally {
-  list-style: none; margin: 0; padding: 8px 14px; display: flex; flex-wrap: wrap; align-items: baseline;
-  gap: 4px 22px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-}
-.tally li { white-space: nowrap; }
-.tally-label { color: var(--muted); text-decoration: none; }
-a.tally-label:hover { color: var(--accent); }
-.tally-n { font-size: 1.2rem; font-weight: 700; }
-.tally-n.good { color: var(--accent); }
-.tally-why { color: var(--muted); font-size: .84rem; }
-@media (max-width: 640px) {
-  .tally { flex-wrap: nowrap; justify-content: space-between; gap: 10px; padding: 6px 10px; font-size: .78rem; overflow-x: auto; scrollbar-width: none; }
-  .tally-why { display: none; }
-  .tally-n { font-size: 1rem; }
+.page-total .nowrap { white-space: nowrap; }
+/* Stats: the Today card, a funnel from motion events to named visitors. */
+.today-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px 16px; margin-bottom: 20px; }
+.today-head { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.today-head h2 { margin: 0; font-size: 1.1rem; }
+.today-head .when { color: var(--muted); font-size: .85rem; }
+.today-none { margin: 0; }
+.funnel { display: grid; grid-template-columns: minmax(0, 1.1fr) auto minmax(0, 1.1fr) auto minmax(0, 1.5fr) auto minmax(0, .9fr); align-items: stretch; }
+.stage { display: flex; flex-direction: column; justify-content: flex-start; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); min-width: 0; }
+.stage .name { color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+.stage .n { font-size: 1.9rem; font-weight: 700; line-height: 1.1; }
+.stage .n.good { color: var(--accent); }
+.stage .sub { color: var(--muted); font-size: .85rem; }
+.stage.last { border-color: var(--accent); }
+.funnel .arrow { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0 8px; min-width: 72px; color: var(--muted); text-align: center; }
+.funnel .arrow svg { width: 28px; height: 14px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.funnel .drop { font-size: .78rem; line-height: 1.3; }
+.funnel .drop b { color: var(--text); }
+.funnel .drop a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.funnel .drop a:hover { color: var(--accent); }
+.two-rows { display: flex; flex-direction: column; gap: 8px; }
+.two-rows .row { display: flex; align-items: baseline; gap: 8px; }
+.two-rows .row i { align-self: center; flex: none; width: 10px; height: 10px; border-radius: 3px; }
+.two-rows .row .n { font-size: 1.5rem; }
+.two-rows .row .t { color: var(--muted); font-size: .85rem; }
+.two-rows .k1 { background: var(--accent); }
+.two-rows .k2 { background: color-mix(in srgb, var(--muted) 55%, var(--surface)); }
+.two-rows .k3 { background: transparent; border: 1.5px solid var(--muted); }
+.funnel-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+.funnel-foot b { color: var(--text); }
+.funnel-foot span:last-child { margin-left: auto; }
+@media (max-width: 760px) {
+  .today-card { padding: 12px 14px 14px; }
+  .funnel { grid-template-columns: minmax(0, 1fr); }
+  .funnel .arrow { flex-direction: row; justify-content: flex-start; min-width: 0; padding: 6px 0 6px 14px; gap: 10px; }
+  .funnel .arrow svg { transform: rotate(90deg); width: 18px; height: 18px; }
+  .funnel .arrow .drop { text-align: left; }
+  .funnel-foot span:last-child { margin-left: 0; }
+  .page-total { white-space: normal; }
 }
 
 .notice {
@@ -1373,12 +1382,7 @@ details.review-fold > summary { display: none; }
   .topbar nav .long { display: none; }
   .topbar nav .short { display: inline; }
 
-  /* Home: numbers as a 2x2 block, chips on one sliding row. */
-  .tally { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; font-size: .85rem; overflow: visible; }
-  .tally li { overflow: hidden; text-overflow: ellipsis; }
-  /* Stats: three numbers, each a number over its label, so they sit in one even row instead of 2 + 1. */
-  .today-motion .tally { grid-template-columns: repeat(3, 1fr); gap: 0 8px; text-align: center; padding: 8px 6px; }
-  .today-motion .tally li { display: flex; flex-direction: column; align-items: center; line-height: 1.25; white-space: normal; }
+  /* Home: chips on one sliding row. */
   .hero { gap: 12px; margin-bottom: 16px; }
   .today { padding: 10px 12px; gap: 8px; }
   .visits-head .chips { flex: 1 1 0; min-width: 0; }

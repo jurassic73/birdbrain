@@ -978,6 +978,12 @@ def count_visits(conn: sqlite3.Connection, **filters) -> int:
     return conn.execute(f"SELECT COUNT(*) FROM visits WHERE {where}", args).fetchone()[0]
 
 
+def first_visit_at(conn: sqlite3.Connection, **filters) -> str | None:
+    """When the earliest visit that count_visits(**filters) counts was captured (None with no visits)."""
+    where, args = _where(**filters)
+    return conn.execute(f"SELECT MIN(captured_at) FROM visits WHERE {where}", args).fetchone()[0]
+
+
 def get_visit(conn: sqlite3.Connection, visit_id: int) -> sqlite3.Row | None:
     return conn.execute(f"SELECT *, {LABEL} AS label FROM visits WHERE id = ?", (visit_id,)).fetchone()
 
@@ -1532,12 +1538,18 @@ def avg_haiku_call_usd(conn: sqlite3.Connection, sample: int = 200) -> float:
     return call_usd(HAIKU_USD_PER_MTOK, {key: row[kind] for kind, key in TOKEN_KEYS.items()})
 
 
+# Models that settle a motion event on the Pi without asking Claude. Only the empty ones are false alarms:
+# bioclip-2 (the BioCLIP 2 species check) names real visitors, so it counts as a visitor, never as an empty event.
+PI_SETTLED = "'yolox-tiny', 'bioclip-presence', 'bioclip-2'"
+
+
 def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
     """One day's motion events, broken down so the rows add up:
 
-    visitors + false_alarms = all motion events
-    false_alarms = kept_on_pi (discarded probes + visits the Pi settled) + false alarms Claude checked
-    sent_to_claude = every visit Claude was asked about (visitors and false alarms), with what it cost
+    motion = visitors + false_alarms = all motion events
+    false_alarms = empty_on_pi (discarded probes + empty visits the Pi settled) + empty_by_claude (empty visits
+        Claude was asked about and found nothing in)
+    sent_to_claude = every visit Claude was asked about (visitors and empty ones), with what it cost
     id_bioclip + id_claude = today's visitors by who named them (the BioCLIP 2 species check or Claude)
     would_keep = Claude calls the animal check would have skipped in gate mode (it judged them empty)
     """
@@ -1550,7 +1562,7 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
               SUM({shown()} AND model = 'bioclip-2') AS id_bioclip,
               SUM({shown()} AND model LIKE 'claude%') AS id_claude,
               SUM({FALSE_TRIGGER}) AS stored_false,
-              SUM(model IN ('yolox-tiny', 'bioclip-presence', 'bioclip-2')) AS settled_on_pi,
+              SUM({FALSE_TRIGGER} AND model IN ({PI_SETTLED})) AS empty_settled,
               SUM(model LIKE 'claude%') AS sent,
               SUM(model LIKE 'claude%'
                   AND json_extract(raw_json, '$.calls.presence.empty') = 1) AS would_keep
@@ -1571,8 +1583,10 @@ def activity(conn: sqlite3.Connection, day: str | None = None) -> dict:
         "species": n("species"),
         "id_bioclip": n("id_bioclip"),
         "id_claude": n("id_claude"),
+        "motion": n("visitors") + n("stored_false") + probes,
         "false_alarms": n("stored_false") + probes,
-        "kept_on_pi": probes + n("settled_on_pi"),
+        "empty_on_pi": probes + n("empty_settled"),
+        "empty_by_claude": n("stored_false") - n("empty_settled"),
         "sent_to_claude": n("sent"),
         "claude_usd": spend,
         "would_keep": n("would_keep"),
@@ -1620,7 +1634,7 @@ def _totals(conn: sqlite3.Connection, max_age: float) -> dict:
               SUM({REAL}) AS visitors,
               (SELECT COUNT(DISTINCT label) FROM ({_seen(REAL)}) WHERE {SPECIES_ONLY}) AS species,
               SUM({FALSE_TRIGGER}) AS stored_false,
-              SUM(model IN ('yolox-tiny', 'bioclip-presence', 'bioclip-2')) AS settled_on_pi,
+              SUM({FALSE_TRIGGER} AND model IN ({PI_SETTLED})) AS empty_settled,
               SUM(model LIKE 'claude%') AS sent,
               SUM(escalated) AS escalated,
               SUM(needs_review) AS waiting_review,
@@ -1638,7 +1652,7 @@ def _totals(conn: sqlite3.Connection, max_age: float) -> dict:
         "visitors": n("visitors"),
         "species": n("species"),
         "false_alarms": n("stored_false") + probes,
-        "kept_on_pi": probes + n("settled_on_pi"),
+        "empty_on_pi": probes + n("empty_settled"),
         "sent_to_claude": n("sent"),
         "haiku_only": n("sent") - n("escalated"),
         "escalated": n("escalated"),

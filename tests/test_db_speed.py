@@ -103,10 +103,10 @@ def test_scoreboard_at_the_boundaries(boundary):
 
 def test_activity_at_the_boundaries(boundary):
     a = db.activity(boundary)
-    assert (a["visitors"], a["false_alarms"], a["kept_on_pi"], a["sent_to_claude"], a["would_keep"]) == (5, 4, 2, 7, 2)
+    assert (a["visitors"], a["false_alarms"], a["empty_on_pi"], a["sent_to_claude"], a["would_keep"]) == (5, 4, 2, 7, 2)
     assert a["claude_usd"] == pytest.approx(7 * 0.00015 + 0.009)
     b = db.activity(boundary, day="2026-10-31")
-    assert (b["visitors"], b["false_alarms"], b["kept_on_pi"], b["sent_to_claude"], b["would_keep"]) == (1, 2, 1, 2, 0)
+    assert (b["visitors"], b["false_alarms"], b["empty_on_pi"], b["sent_to_claude"], b["would_keep"]) == (1, 2, 1, 2, 0)
     assert db.activity(boundary, day="2026-09-30")["visitors"] == 1
     assert db.activity(boundary, day="2026-10-02")["false_alarms"] == 1
 

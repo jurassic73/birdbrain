@@ -71,7 +71,7 @@
   {% set a = activity %}
   <ol class="local-flow" aria-label="Today's photos, step by step">
     <li class="where-pi" data-tip="Motion events today: visitors plus false alarms"><span class="big">{{ a.visitors + a.false_alarms }}</span> photos today</li>
-    <li class="where-pi" data-tip="Judged empty by the Pi animal check and never sent to Claude"><span class="big">{{ a.kept_on_pi }}</span> kept on the Pi</li>
+    <li class="where-pi" data-tip="Judged empty by the Pi animal check and never sent to Claude"><span class="big">{{ a.empty_on_pi }}</span> kept on the Pi</li>
     <li class="where-claude" data-tip="Cost {{ a.claude_usd | usd }} today"><span class="big">{{ a.sent_to_claude }}</span> sent to Claude</li>
   </ol>
 

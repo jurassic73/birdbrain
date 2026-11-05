@@ -217,6 +217,23 @@ def _days_ago(days: int) -> str:
     return _plural(days // 365, "year")
 
 
+def since_ago(value: str) -> str:
+    """A rough 'how long since' for a date: 'today', 'yesterday', '~5 days ago', '~3 weeks ago', '~4 months ago',
+    '~2 years ago' (counted in calendar days, rounded to the nearest unit)."""
+    days = max(0, (clock.today() - datetime.fromisoformat(value).date()).days)
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"~{days} days ago"
+    if days < 60:
+        return f"~{round(days / 7)} weeks ago"
+    if days < 730:
+        return f"~{round(days / 30.4)} months ago"
+    return f"~{round(days / 365)} years ago"
+
+
 def age_seconds(value: str) -> int:
     """Seconds since an ISO time (0 for the future); the home page's script ticks from this."""
     return max(0, int((clock.now() - datetime.fromisoformat(value)).total_seconds()))
@@ -301,7 +318,7 @@ def temp_alt(c: float | None) -> str:
 templates.env.globals["temp_unit"] = TEMP_UNIT
 templates.env.globals["wind_unit"] = WIND_UNIT
 templates.env.filters.update(temp=temp, temp_alt=temp_alt, wind=wind, wind_alt=wind_alt)
-templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, short_time=short_time, ago=ago, age_seconds=age_seconds, usd=usd, mb=mb,
+templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, since_ago=since_ago, short_time=short_time, ago=ago, age_seconds=age_seconds, usd=usd, mb=mb,
                              month_name=lambda v: datetime.fromisoformat(v).strftime("%B"))
 templates.env.filters["tile_fact"] = species_info.fact_item
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
@@ -1382,6 +1399,8 @@ def stats(request: Request, conn=Depends(get_conn)):
         leaders=db.species_summary(conn, sort="visits", limit=10),
         newest=db.species_summary(conn, sort="newest", limit=5),
         total=db.count_visits(conn),
+        first_visit=db.first_visit_at(conn),
+        today_label=clock.today().strftime("%a, %b %-d"),
         activity=db.activity(conn),
         classifier=db.classifier_report(conn),
         presence_mode=presence.mode(conn),

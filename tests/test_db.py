@@ -423,11 +423,42 @@ def test_activity_rows_add_up_for_today(conn, add_visit):
     db.bump(conn, "probe_empty")
     db.bump(conn, "probe_empty", day=(TODAY - timedelta(days=2)).isoformat())
     a = db.activity(conn)
-    assert (a["visitors"], a["species"], a["false_alarms"], a["kept_on_pi"]) == (1, 1, 5, 3)
+    assert (a["visitors"], a["species"], a["false_alarms"], a["empty_on_pi"]) == (1, 1, 5, 3)
+    assert a["empty_by_claude"] == 2 and a["motion"] == 6
     assert (a["sent_to_claude"], a["would_keep"]) == (3, 1)
     assert a["visitors"] + a["false_alarms"] == 4 + 2  # every motion event today: 4 stored visits + 2 probes
     assert a["claude_usd"] == pytest.approx(0.0009) and a["would_keep_usd"] == pytest.approx(0.0003)
-    assert db.activity(conn, day=(TODAY - timedelta(days=2)).isoformat())["kept_on_pi"] == 1
+    assert db.activity(conn, day=(TODAY - timedelta(days=2)).isoformat())["empty_on_pi"] == 1
+
+
+def test_activity_funnel_adds_up_and_bioclip_visitors_are_not_empties(conn, add_visit):
+    add_visit(species="Bushtit", model="bioclip-2")                                   # real, named on the Pi
+    add_visit(species="Dark-eyed Junco", model="claude-haiku-5-5")                    # real, named by Claude
+    add_visit(visitor="none", species=None, model="bioclip-presence")                 # empty, settled on the Pi
+    add_visit(visitor="none", species=None, model="yolox-tiny")                       # empty, settled on the Pi
+    add_visit(visitor="none", species=None, model="claude-haiku-5-5")                 # empty, Claude checked
+    add_visit(visitor="none", species=None, model="bioclip-presence", captured_at=at(3))  # another day
+    for _ in range(4):
+        db.bump(conn, "probe_empty")
+    a = db.activity(conn)
+    assert (a["visitors"], a["false_alarms"], a["motion"]) == (2, 7, 9)
+    assert a["motion"] == a["visitors"] + a["false_alarms"]
+    assert (a["empty_on_pi"], a["empty_by_claude"]) == (2 + 4, 1)  # the bioclip-2 visitor is no empty
+    assert a["empty_on_pi"] + a["empty_by_claude"] == a["false_alarms"]
+    assert a["id_bioclip"] + a["id_claude"] == a["visitors"]
+
+
+def test_activity_with_no_motion_is_all_zeros(conn):
+    a = db.activity(conn)
+    assert (a["motion"], a["visitors"], a["species"], a["false_alarms"], a["empty_on_pi"], a["empty_by_claude"]) == (0,) * 6
+
+
+def test_first_visit_at_follows_the_total(conn, add_visit):
+    assert db.first_visit_at(conn) is None
+    add_visit(species="Bushtit", captured_at=at(5))
+    add_visit(species="Bushtit", captured_at=at(2))
+    add_visit(visitor="none", species=None, captured_at=at(9))  # a false trigger isn't in the total
+    assert db.first_visit_at(conn) == at(5) and db.count_visits(conn) == 2
 
 
 def test_activity_splits_visitors_by_who_named_them(conn, add_visit):
@@ -486,7 +517,7 @@ def test_totals_cover_every_day_and_add_up(conn, add_visit):
     t = db.totals(conn)
     assert t["since"] == at(10)
     assert (t["visitors"], t["species"], t["false_alarms"], t["events"]) == (4, 2, 5, 9)
-    assert (t["kept_on_pi"], t["sent_to_claude"], t["haiku_only"], t["escalated"]) == (3, 6, 5, 1)
+    assert (t["empty_on_pi"], t["sent_to_claude"], t["haiku_only"], t["escalated"]) == (3, 6, 5, 1)
     assert (t["waiting_review"], t["corrected"]) == (1, 1)
     assert t["claude_usd"] == pytest.approx(4 * 0.0003 + 0.009)
 
