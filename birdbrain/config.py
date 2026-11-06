@@ -159,6 +159,11 @@ STAY_MIN_BLOB = float(_env("STAY_MIN_BLOB", "0.0015"))  # fraction of the frame:
 STAY_LIGHT = float(_env("STAY_LIGHT", "0.4"))   # more of the watched area changed than this: the light changed
 STAY_REARM = int(_env("STAY_REARM", "10"))      # seconds after a stay ends before the next trigger
 GROUP_GAP = int(_env("GROUP_GAP", "8"))  # substream px: changes closer than this count as one animal
+# Count in colour: the watcher keeps a colour copy of the empty scene (updated every COLOR_BG_EVERY substream frames,
+# fading at the same rate as the grey one) and a change is the channel that changed most. In grey a grey squirrel or
+# a grey-blue jay standing on a pale rim shows only as a head and a tail, two "animals". COUNT_COLOR=0 counts in grey.
+COUNT_COLOR = _env("COUNT_COLOR", "1").strip() not in ("0", "false", "off", "no")
+COLOR_BG_EVERY = max(int(_env("COLOR_BG_EVERY", "3")), 1)
 
 # Circle from the motion (birdbrain/motion_circle.py): where the animal is in a photo the Pi named itself.
 CIRCLE_FROM_MOTION = _env("CIRCLE_FROM_MOTION", "1").strip() not in ("0", "false", "off", "no")

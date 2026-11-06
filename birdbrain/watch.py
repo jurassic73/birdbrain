@@ -218,6 +218,9 @@ class MotionDetector:
         self.box, self.min_area, self.ring, self.spots = (None if ring else box), min_area, ring, spots
         self.ground_zone = ground
         self.bg: np.ndarray | None = None  # whole frame; the rim score looks at its part of it
+        # A colour copy of the same background for counting animals (config.COUNT_COLOR), updated every
+        # COLOR_BG_EVERY frames with the same fade: a grey animal on the pale rim is invisible in grey.
+        self.bg_color: np.ndarray | None = None
         self.mask: np.ndarray | None = None
         self.water: WaterWatch | None = None
         self.ground: GroundWatch | None = None
@@ -245,6 +248,7 @@ class MotionDetector:
 
     def reset(self) -> None:
         self.bg = None
+        self.bg_color = None
         self.water_bg = None
         self.ground_bg = None
         self.frames = 0
@@ -270,6 +274,7 @@ class MotionDetector:
         if self.ground_zone and (self.ground is None or self.ground.mask.shape != full.shape):
             self.ground = GroundWatch(ground_mask(full.shape, self.ground_zone, self.ring))
         self.water_hit = self.ground_hit = False
+        self._update_color(frame)
         if self.bg is None:
             self.bg = full.astype("float32")
             self.water_bg = gray.astype("float32")
@@ -309,9 +314,24 @@ class MotionDetector:
             mask |= ground_mask(shape, self.ground_zone, self.ring)
         return mask
 
+    def _update_color(self, frame: np.ndarray) -> None:
+        """Keep the colour background in step with the grey one, on every COLOR_BG_EVERY-th frame (a 3-channel
+        blur and accumulate cost about three times the grey ones; the fade per update is raised to match)."""
+        if not config.COUNT_COLOR or frame.ndim != 3 or (self.frames - 1) % config.COLOR_BG_EVERY:
+            return
+        color = cv2.GaussianBlur(frame, (21, 21), 0)
+        if self.bg_color is None or self.bg_color.shape != color.shape:
+            self.bg_color = color.astype("float32")
+        else:
+            cv2.accumulateWeighted(color, self.bg_color, 1 - 0.95 ** config.COLOR_BG_EVERY)
+
     def empty_scene(self) -> np.ndarray | None:
         """The running background: the scene just before whatever triggered (a visitor fades in at 5%/frame)."""
         return None if self.bg is None else cv2.convertScaleAbs(self.bg)
+
+    def empty_scene_color(self) -> np.ndarray | None:
+        """The same scene in colour (BGR), when COUNT_COLOR is on and the frames were colour."""
+        return None if self.bg_color is None else cv2.convertScaleAbs(self.bg_color)
 
     def scene(self) -> Scene | None:
         """The empty scene with where visitors can be and the open water, for counting animals in the photo."""
@@ -319,22 +339,26 @@ class MotionDetector:
         if empty is None:
             return None
         water = water_mask(empty.shape, self.ring, self.spots) if self.ring else None
-        return Scene(empty, self.stay_mask(empty.shape), water)
+        return Scene(empty, self.stay_mask(empty.shape), water, self.empty_scene_color())
 
 
 class Scene(NamedTuple):
-    """The scene just before a trigger (blurred gray substream frame) and its masks, for stay.count_animals."""
+    """The scene just before a trigger (blurred gray substream frame, and the same in colour when kept) and its
+    masks, for stay.count_animals."""
     empty: np.ndarray
     mask: np.ndarray
     water: np.ndarray | None
+    empty_color: np.ndarray | None = None
 
 
 def count_animals(scene: Scene | None, jpeg: bytes, crop) -> int | None:
-    """Fail-soft: separate visitor-sized changes in the photo's crop box (None when it can't tell)."""
+    """Fail-soft: separate visitor-sized changes in the photo's crop box (None when it can't tell). Counted
+    against the colour scene when there is one (see stay.count_animals), else the grey one."""
     if scene is None:
         return None
     try:
-        return stay.count_animals(jpeg, scene.empty, scene.mask, crop, scene.water)
+        empty = scene.empty if scene.empty_color is None else scene.empty_color
+        return stay.count_animals(jpeg, empty, scene.mask, crop, scene.water)
     except Exception:
         log.exception("counting animals failed")
         return None
