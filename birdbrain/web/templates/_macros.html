@@ -129,6 +129,7 @@
 {% macro zone_svg(zones, frame=none) -%}
 <svg viewBox="0 0 {{ zones.w }} {{ zones.h }}" preserveAspectRatio="none" role="img" aria-label="Zones drawn over the camera view">
           {% if frame %}<image href="{{ frame }}" x="0" y="0" width="{{ zones.w }}" height="{{ zones.h }}" preserveAspectRatio="none"/>{% endif %}
+          <g transform="translate({{ zones.dx or 0 }} {{ zones.dy or 0 }})">
           {% if zones.ground %}<path class="z-ground" style="color: {{ zones.colors.ground }}" d="{{ zones.ground }}" fill-rule="evenodd"/>{% endif %}
           {% if zones.rim %}<path class="z-rim" style="color: {{ zones.colors.ring }}" d="{{ zones.rim }}" fill-rule="evenodd"/>{% endif %}
           {% if zones.water %}<path class="z-water" style="color: {{ zones.colors.water }}" d="{{ zones.water }}" fill-rule="evenodd"/>{% endif %}
@@ -136,6 +137,7 @@
           {% if zones.roi %}<rect class="z-rim" style="color: {{ zones.colors.ring }}" x="{{ zones.roi.x }}" y="{{ zones.roi.y }}" width="{{ zones.roi.w }}" height="{{ zones.roi.h }}"/>{% endif %}
           {% if zones.crop %}<rect class="z-crop" style="color: {{ zones.colors.crop }}" x="{{ zones.crop.x }}" y="{{ zones.crop.y }}" width="{{ zones.crop.w }}" height="{{ zones.crop.h }}"/>{% endif %}
           {% for l in zones.labels %}<text class="z-num" style="color: {{ l.color }}" x="{{ l.x }}" y="{{ l.y }}">{{ l.n }}</text>{% endfor %}
+          </g>
         </svg>
 {%- endmacro %}
 

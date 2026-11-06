@@ -1434,6 +1434,9 @@ def weather_page(request: Request, conn=Depends(get_conn)):
 
 # The About page draws zones in a 16:9 box, the shape of both camera streams.
 ZONE_W, ZONE_H = 160, 90
+# The About figure's fixed daytime photo was taken from a slightly different spot than the zones were set from, so
+# the zones are drawn nudged by this much (fractions of the frame: right, down). Picked by eye with the owner.
+ZONE_SHIFT = (0.03, 0.05)
 
 
 def ellipse_path(cx: float, cy: float, rx: float, ry: float, angle: float = 0.0) -> str:
@@ -1520,7 +1523,7 @@ def about(request: Request, conn=Depends(get_conn)):
         request,
         "about.html",
         cfg=config,
-        zones=zone_shapes(zones.load(conn)),
+        zones={**zone_shapes(zones.load(conn)), "dx": ZONE_SHIFT[0] * ZONE_W, "dy": ZONE_SHIFT[1] * ZONE_H},
         recal=zones.schedule(conn),
         recal_stored=zones.adjusted(conn),
         classifier_mode=config.CLASSIFIER,

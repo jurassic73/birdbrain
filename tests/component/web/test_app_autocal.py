@@ -76,6 +76,11 @@ def test_about_numbers_the_zones_like_settings(client, conn, env_zones):
     assert '<span class="znum" aria-hidden="true">1</span>' in html  # and the same number in the legend
 
 
+def test_about_nudges_the_zones_onto_the_fixed_photo(client, conn, env_zones):
+    html = client.get("/about").text
+    assert f'translate({webapp.ZONE_SHIFT[0] * webapp.ZONE_W:g} {webapp.ZONE_SHIFT[1] * webapp.ZONE_H:g})' in html
+
+
 def test_saving_sun_checkboxes(client, conn, vancouver):
     client.post("/settings/zones", data={"auto": "1", "time1": "", "sun1": "1", "time2": "15:15"})
     assert zones.schedule(conn)["times"] == ["sunrise", "15:15"]
