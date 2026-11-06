@@ -54,7 +54,13 @@ def _run_pytest(*args, cwd=REPO_ROOT, timeout=60) -> subprocess.CompletedProcess
 # --- G1: per-test data folders -------------------------------------------------------------------------------------
 
 _written: list[Path] = []  # paths the first test of each pair wrote, for the second to check
+_seen_data_dirs: list[Path] = []  # config.DATA_DIR as each first-of-a-pair test saw it
 _G4_DIRTY = object()  # a sentinel the G4 pairs plant in client/detector globals
+
+
+def _is_session_folder(path: Path) -> bool:
+    """True when `path` is, or lies under, a shared `birdbrain-test-*` session folder (the mkdtemp prefix)."""
+    return any(part.startswith("birdbrain-test-") for part in path.resolve().parts)
 
 
 def test_g1_1_a_test_writes_under_data_dir_and_images_dir():
@@ -65,34 +71,49 @@ def test_g1_1_a_test_writes_under_data_dir_and_images_dir():
     data_file.write_text("left behind by test_g1_1")
     image_file.write_bytes(b"\xff\xd8not really a jpeg")
     _written.extend([data_file, image_file])
+    _seen_data_dirs.append(config.DATA_DIR.resolve())
     assert data_file.exists() and image_file.exists()
 
 
 def test_g1_2_files_from_the_previous_test_are_not_visible():
-    """Second of the pair: a later test never sees the files, under its own paths or the old ones."""
-    assert _written, "test_g1_1 must run first (file order)"
-    leaked = [old for old in _written if old.exists()]
-    for old in leaked:
-        old.unlink()  # never let the leak reach the rest of the suite, whatever this test says
-    assert not leaked, f"files written by an earlier test are still there: {leaked}"
-    assert not (config.DATA_DIR / "g1_leak.txt").exists()
-    assert not (config.IMAGES_DIR / "g1_leak.jpg").exists()
+    """Second of the pair: the same relative names under this test's DATA_DIR and IMAGES_DIR do not exist, and
+    this test's DATA_DIR is not the one the previous test wrote into. The old absolute paths may well still be on
+    disk (pytest keeps a few old tmp folders); the contract only promises they are not visible from here."""
+    assert _written and _seen_data_dirs, "test_g1_1 must run first (file order)"
+    here_data = config.DATA_DIR / "g1_leak.txt"
+    here_image = config.IMAGES_DIR / "g1_leak.jpg"
+    leaked = [p for p in (here_data, here_image) if p.exists()]
+    for p in leaked:
+        p.unlink()  # never let the leak reach the rest of the suite, whatever this test says
+    assert not leaked, f"files written by an earlier test are visible under this test's paths: {leaked}"
+    assert config.DATA_DIR.resolve() != _seen_data_dirs[-1], "two tests in a row share one DATA_DIR"
+    assert not any(old.resolve().is_relative_to(config.DATA_DIR.resolve()) for old in _written), \
+        "the previous test's files lie under this test's DATA_DIR"
 
 
 def test_g1_data_dir_is_fresh_per_test_not_the_session_folder(tmp_path_factory):
-    """DATA_DIR and IMAGES_DIR point under pytest's temp tree for this test, not at the session BIRDBRAIN_DATA."""
-    session_dir = Path(os.environ["BIRDBRAIN_DATA"]).resolve()
+    """DATA_DIR and IMAGES_DIR point under pytest's temp tree for this test, never at a shared birdbrain-test-*
+    session folder, and consecutive tests get different folders (checked across the g1_1/g1_2 pair)."""
     base = Path(tmp_path_factory.getbasetemp()).resolve()
     data_dir = config.DATA_DIR.resolve()
-    assert data_dir != session_dir, "config.DATA_DIR is still the shared session folder"
     assert data_dir.is_relative_to(base), f"{data_dir} is not under pytest's tmp_path tree {base}"
+    assert not _is_session_folder(data_dir), f"config.DATA_DIR {data_dir} is a shared session folder"
+    assert not data_dir.name.startswith("birdbrain-test-"), data_dir
     assert config.IMAGES_DIR.resolve().is_relative_to(data_dir), "IMAGES_DIR does not follow DATA_DIR"
-    assert config.IMAGES_DIR.resolve() != (session_dir / "images")
+    assert not _is_session_folder(config.IMAGES_DIR), f"IMAGES_DIR {config.IMAGES_DIR} is in a session folder"
+    assert _seen_data_dirs, "test_g1_1 must run first (file order)"
+    assert data_dir not in _seen_data_dirs, "this test sees a DATA_DIR an earlier test already used"
+    _seen_data_dirs.append(data_dir)
 
 
-def test_g1_db_path_follows_the_per_test_data_dir():
-    assert config.DB_PATH.resolve().is_relative_to(config.DATA_DIR.resolve())
-    assert not config.DB_PATH.resolve().is_relative_to(Path(os.environ["BIRDBRAIN_DATA"]).resolve())
+def test_g1_db_path_follows_the_per_test_data_dir(tmp_path, tmp_path_factory):
+    """DB_PATH lives under this test's DATA_DIR (or its tmp tree), never under a shared session folder."""
+    db_path = config.DB_PATH.resolve()
+    base = Path(tmp_path_factory.getbasetemp()).resolve()
+    assert db_path.is_relative_to(config.DATA_DIR.resolve()) or db_path.is_relative_to(tmp_path.resolve()), \
+        f"DB_PATH {db_path} does not follow DATA_DIR {config.DATA_DIR} or tmp_path {tmp_path}"
+    assert db_path.is_relative_to(base), f"DB_PATH {db_path} is outside pytest's tmp tree {base}"
+    assert not _is_session_folder(db_path), f"DB_PATH {db_path} is in a shared session folder"
 
 
 def test_g1_web_app_live_frame_file_is_under_the_test_data_dir(tmp_path_factory):
@@ -126,40 +147,54 @@ def test_g1_3_live_frame_written_here_is_gone_in_the_next_test():
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"\xff\xd8frame")
     _written.append(path)
+    _seen_data_dirs.append(config.DATA_DIR.resolve())
     assert path.exists()
 
 
 def test_g1_4_live_frame_from_the_previous_test_is_gone():
+    """The live frame the previous test saved is not visible here: this test's live_file() does not exist and is
+    not the previous test's file, and the DATA_DIR it derives from is a different folder."""
     from birdbrain.web import app as webapp
     assert _written and _written[-1].name == "live.jpg", "test_g1_3 must run first (file order)"
-    leaked = _written[-1].exists()
+    old = _written[-1].resolve()
+    here = webapp.live_file()
+    leaked = here.exists()
     if leaked:
-        _written[-1].unlink()  # never let the leak reach the rest of the suite
-    assert not leaked, "live.jpg leaks from one test into the next"
-    assert not webapp.live_file().exists()
+        here.unlink()  # never let the leak reach the rest of the suite
+    assert not leaked, f"live.jpg leaks from one test into the next: {here}"
+    assert here.resolve() != old, "two tests in a row share one live frame file"
+    assert config.DATA_DIR.resolve() != _seen_data_dirs[-1], "two tests in a row share one DATA_DIR"
+    assert not old.is_relative_to(config.DATA_DIR.resolve()), "the previous test's live.jpg lies under this DATA_DIR"
 
 
 # --- G2: the session folder is removed when the session ends --------------------------------------------------------
 
 def test_g2_session_data_folder_is_removed_when_the_session_ends(tmp_path):
-    """A tiny pytest session using the repo's conftest leaves no birdbrain-test-* folder in $TMPDIR."""
+    """A tiny pytest session using the repo's conftest creates a birdbrain-test-* folder in $TMPDIR while it runs
+    and leaves none behind. The session runs with a private TMPDIR so no other process can create or remove
+    folders in the dir being watched."""
+    private_tmp = tmp_path / "t"
+    private_tmp.mkdir()
     probe = tmp_path / "test_probe_session.py"
     probe.write_text(
-        "import os\n"
-        "def test_where_the_session_folder_is():\n"
-        "    print('SESSION_DATA=' + os.environ['BIRDBRAIN_DATA'])\n"
+        "import tempfile\n"
+        "from pathlib import Path\n"
+        "def test_a_session_folder_exists_while_the_session_runs():\n"
+        "    tmp = Path(tempfile.gettempdir())\n"
+        "    found = sorted(p.name for p in tmp.glob('birdbrain-test-*') if p.is_dir())\n"
+        "    print('SESSION_FOLDERS=' + ','.join(found))\n"
+        "    assert found, f'no birdbrain-test-* folder in {tmp}'\n"
     )
-    tmp = Path(tempfile.gettempdir())
-    before = {p for p in tmp.glob("birdbrain-test-*")}
-    result = _run_pytest("-p", "tests.conftest", "-s", str(probe))
+    env = dict(os.environ, TMPDIR=str(private_tmp), TMP=str(private_tmp), TEMP=str(private_tmp))
+    cmd = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "--rootdir", str(REPO_ROOT),
+           "-c", str(PYPROJECT), "-p", "tests.conftest", "-s", str(probe)]
+    result = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=60, env=env)
     assert result.returncode == 0, result.stdout + result.stderr
-    match = re.search(r"SESSION_DATA=(\S+)", result.stdout)
-    assert match, result.stdout
-    session_dir = Path(match.group(1))
-    assert session_dir.name.startswith("birdbrain-test-"), session_dir
-    assert not session_dir.exists(), f"session folder {session_dir} was left behind"
-    left = {p for p in tmp.glob("birdbrain-test-*")} - before
-    assert not left, f"new leftover folders: {sorted(p.name for p in left)}"
+    match = re.search(r"SESSION_FOLDERS=(\S+)", result.stdout)
+    assert match, "the probe did not report a session folder:\n" + result.stdout
+    assert all(name.startswith("birdbrain-test-") for name in match.group(1).split(",")), match.group(1)
+    left = sorted(p.name for p in private_tmp.glob("birdbrain-test-*"))
+    assert not left, f"session folders left behind in {private_tmp}: {left}"
 
 
 # --- G4: module globals are reset between tests ---------------------------------------------------------------------
@@ -400,8 +435,16 @@ def test_g8_addopts_never_forces_xdist_workers():
 def test_g8_timeout_applies_when_the_plugin_is_installed(request):
     """With pytest-timeout installed every test gets a 60 s limit; without it the ini must not break the run."""
     if request.config.pluginmanager.hasplugin("timeout"):
-        timeout = request.config.getoption("timeout", default=None) or request.config.getini("timeout")
-        assert float(timeout or 0) == 60, f"pytest-timeout limit is {timeout!r}, not 60 s"
+        # Any way of applying the limit counts: a `timeout` marker on this item (closest wins), the --timeout
+        # option, or the ini key. The contract asks for the 60 s limit, not for one mechanism.
+        marker = request.node.get_closest_marker("timeout")
+        if marker is not None:
+            limit = marker.args[0] if marker.args else marker.kwargs.get("timeout")
+            source = "timeout marker"
+        else:
+            limit = request.config.getoption("timeout", default=None) or request.config.getini("timeout")
+            source = "--timeout option or ini"
+        assert float(limit or 0) == 60, f"pytest-timeout limit ({source}) is {limit!r}, not 60 s"
     else:
         ini = _ini()
         assert "timeout" not in ini, "a timeout ini key without pytest-timeout installed warns on every run"
