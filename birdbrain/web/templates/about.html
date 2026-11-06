@@ -120,10 +120,9 @@
   <div class="about-split">
     <figure class="zones">
       <div class="zones-frame">
-        {% if has_frame %}<img src="/live/latest.jpg" alt="The camera's latest view" onerror="this.remove()">{% endif %}
-        {{ zone_svg(zones) }}
+        {{ zone_svg(zones, '/static/about-zones.jpg?v=' ~ asset_version) }}
       </div>
-      <figcaption class="muted small">The zones in use{{ ', as last adjusted automatically' if recal_stored }}, drawn over {{ 'the latest frame' if has_frame else 'a blank frame (no camera frame saved yet)' }}.</figcaption>
+      <figcaption class="muted small">The zones in use{{ ', as last adjusted automatically' if recal_stored }}, drawn over a daytime photo of a robin visiting.</figcaption>
     </figure>
     <ul class="zone-legend">
       {% if zones.rim %}
