@@ -343,6 +343,14 @@ def test_about_draws_the_recalibrated_zones(client, conn, env_zones):
     assert "as last adjusted automatically" in html and "Kept in place" in html
 
 
+def test_about_zones_are_part_of_the_photo(client, conn, env_zones):
+    html = client.get("/about").text
+    svg = html[html.index('<div class="zones-frame">'):]
+    svg = svg[:svg.index("</svg>")]
+    assert '<image href="/static/about-zones.jpg' in svg and 'class="z-rim"' in svg  # one picture, zones inside it
+    assert "<img" not in svg
+
+
 # --- Sunrise and sunset slots ---
 
 @pytest.fixture

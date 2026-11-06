@@ -1499,7 +1499,6 @@ def about(request: Request, conn=Depends(get_conn)):
         zones=zone_shapes(zones.load(conn)),
         recal=zones.schedule(conn),
         recal_stored=zones.stored(conn) is not None,
-        has_frame=_live["jpeg"] is not None or live_file().exists(),
         classifier_mode=config.CLASSIFIER,
         presence_mode=presence.mode(conn),
         haiku=identify.HAIKU,

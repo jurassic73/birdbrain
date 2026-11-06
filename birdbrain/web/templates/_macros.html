@@ -124,9 +124,11 @@
 {# The Claude mark, on every button that asks Claude something (and so costs a little). #}
 {% macro claude_mark() %}<svg class="claude-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.6 12.1L7.3 0.1L5.9 0.7L10.4 13.5Z"/><path d="M13.7 13.1L14.8 0.7L13.4 0.5L10.3 12.5Z"/><path d="M13.4 13.9L20.4 3.7L19.2 2.7L10.6 11.7Z"/><path d="M12.5 14.5L23.6 10.1L23.2 8.7L11.5 11.1Z"/><path d="M11.8 14.6L23.4 14.5L23.6 13.1L12.2 11.0Z"/><path d="M11.0 14.3L22.0 20.1L22.8 18.9L13.0 11.3Z"/><path d="M10.5 13.7L16.6 22.5L17.8 21.9L13.5 11.9Z"/><path d="M10.2 12.7L10.8 23.8L12.2 23.8L13.8 12.9Z"/><path d="M10.5 11.8L5.2 21.7L6.4 22.5L13.5 13.8Z"/><path d="M11.1 11.3L2.2 17.9L3.0 19.1L12.9 14.3Z"/><path d="M12.2 11.1L0.4 10.5L0.2 11.9L11.8 14.5Z"/><path d="M13.1 11.4L2.5 4.8L1.7 6.0L10.9 14.2Z"/><path d="M8.8 12.8a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0 -6.4 0Z"/></svg>{% endmacro %}
 
-{# The zones (app.zone_shapes) as an SVG to lay over a camera frame in a .zones-frame, each in its Settings color. #}
-{% macro zone_svg(zones) -%}
-<svg viewBox="0 0 {{ zones.w }} {{ zones.h }}" preserveAspectRatio="none" aria-label="Zones drawn over the camera view">
+{# The zones (app.zone_shapes) drawn in their Settings colors. With `frame` (an image URL) the camera frame is the
+   SVG's first layer, so picture and zones are one image and always line up. #}
+{% macro zone_svg(zones, frame=none) -%}
+<svg viewBox="0 0 {{ zones.w }} {{ zones.h }}" preserveAspectRatio="none" role="img" aria-label="Zones drawn over the camera view">
+          {% if frame %}<image href="{{ frame }}" x="0" y="0" width="{{ zones.w }}" height="{{ zones.h }}" preserveAspectRatio="none"/>{% endif %}
           {% if zones.ground %}<path class="z-ground" style="color: {{ zones.colors.ground }}" d="{{ zones.ground }}" fill-rule="evenodd"/>{% endif %}
           {% if zones.rim %}<path class="z-rim" style="color: {{ zones.colors.ring }}" d="{{ zones.rim }}" fill-rule="evenodd"/>{% endif %}
           {% if zones.water %}<path class="z-water" style="color: {{ zones.colors.water }}" d="{{ zones.water }}" fill-rule="evenodd"/>{% endif %}
