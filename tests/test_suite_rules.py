@@ -1,8 +1,9 @@
 """Rules the test suite itself must follow (contract #2a Groundwork, G1-G9).
 
 Written blind, before the groundwork landed: these tests pin down the behaviour the contract promises, using the
-names it gives. Paired tests (``_1_`` then ``_2_``) rely on file order: the first dirties something, the second
-checks that the suite cleaned it up in between.
+names it gives. The "one test dirties, the next must be clean" checks run as a tiny two-test probe file in a pytest
+subprocess with the repo's conftest (``LEAK_PROBE``, one run per module, shared by the tests that read it), so they
+pass in any order, on any xdist worker, and still catch a leak.
 """
 import importlib
 import os
@@ -51,49 +52,196 @@ def _run_pytest(*args, cwd=REPO_ROOT, timeout=60) -> subprocess.CompletedProcess
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
 
 
+# --- the leak probe: one test dirties files and globals, the next must start clean -----------------------------------
+
+LEAK_PROBE = r'''"""Probe run by tests/test_suite_rules.py in a subprocess with the repo's conftest (`-p tests.conftest`).
+test_1 leaves files under DATA_DIR / IMAGES_DIR / live_file() and dirties every module global the contract names;
+test_2 reports which of them are still visible as `LEAKS=a,b,c` (empty when the suite cleaned up) and fails on any.
+test_3 prints the per-test time limit pytest-timeout will enforce on it (`none` without the plugin)."""
+from pathlib import Path
+
+from birdbrain import circle_check, clock, config, db, identify, lessons, privacy, retention, watch
+from birdbrain.web import app as webapp, auth, viewer
+
+_seen = {}
+DIRTY = object()
+IP = "203.0.113.9"
+
+
+def _session_folder(path):
+    return any(part.startswith("birdbrain-test-") for part in Path(path).resolve().parts)
+
+
+def test_1_dirty_files_and_globals(tmp_path_factory):
+    _seen["base"] = Path(tmp_path_factory.getbasetemp()).resolve()
+    _seen["data"] = config.DATA_DIR.resolve()
+    _seen["images"] = config.IMAGES_DIR.resolve()
+    config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    (config.DATA_DIR / "leak.txt").write_text("left behind by test_1")
+    (config.IMAGES_DIR / "leak.jpg").write_bytes(b"\xff\xd8not really a jpeg")
+    live = webapp.live_file()
+    live.parent.mkdir(parents=True, exist_ok=True)
+    live.write_bytes(b"\xff\xd8frame")
+    _seen["live"] = live.resolve()
+    auth._fails[IP] = [1.0, 2.0, 3.0]
+    auth._secrets["probe"] = b"not-a-real-secret"
+    viewer._fails[IP] = [1.0]
+    viewer._cache["probe"] = (0.0, "dirty")
+    webapp._live["jpeg"] = b"\xff\xd8dirty"
+    webapp._live["at"] = 12345.0
+    webapp._run_state["running"] = True
+    db._totals_cache[("probe", "nowhere.db")] = (0.0, {"dirty": True})
+    lessons._running = True
+    watch.last_visit_id = 999_999
+    watch._last_logged["probe dirty"] = 1.0
+    watch._hold_cache = (999_999.0, True)
+    circle_check._last_used = 999_999.0
+    identify._client = DIRTY
+    privacy._det = DIRTY
+    clock.set_zone("Pacific/Kiritimati")
+    retention._thread = DIRTY
+    retention._wake.set()
+
+
+def test_2_everything_is_clean_again():
+    assert _seen, "test_1 must run first (the probe is run with -p no:randomly)"
+    data = config.DATA_DIR.resolve()
+    leaks = []
+    if not data.is_relative_to(_seen["base"]):
+        leaks.append("data_dir_outside_pytest_tmp")
+    if _session_folder(data) or _session_folder(config.IMAGES_DIR):
+        leaks.append("data_dir_is_session_folder")
+    if not config.IMAGES_DIR.resolve().is_relative_to(data):
+        leaks.append("images_dir_not_under_data_dir")
+    if data == _seen["data"]:
+        leaks.append("data_dir_shared")
+    if (config.DATA_DIR / "leak.txt").exists():
+        leaks.append("data_file_visible")
+    if (config.IMAGES_DIR / "leak.jpg").exists():
+        leaks.append("image_file_visible")
+    if (_seen["data"] / "leak.txt").is_relative_to(data) or (_seen["images"] / "leak.jpg").is_relative_to(data):
+        leaks.append("old_files_under_new_data_dir")
+    live = webapp.live_file()
+    if live.exists():
+        leaks.append("live_file_visible")
+    if live.resolve() == _seen["live"]:
+        leaks.append("live_file_shared")
+    if _seen["live"].is_relative_to(data):
+        leaks.append("old_live_under_new_data_dir")
+    if IP in auth._fails:
+        leaks.append("auth._fails")
+    if "probe" in auth._secrets:
+        leaks.append("auth._secrets")
+    if IP in viewer._fails:
+        leaks.append("viewer._fails")
+    if "probe" in viewer._cache:
+        leaks.append("viewer._cache")
+    if webapp._live["jpeg"] is not None or webapp._live["at"] != 0.0:
+        leaks.append("webapp._live")
+    if webapp._run_state["running"] is not False:
+        leaks.append("webapp._run_state")
+    if ("probe", "nowhere.db") in db._totals_cache:
+        leaks.append("db._totals_cache")
+    if lessons._running is not False:
+        leaks.append("lessons._running")
+    if lessons.BACKGROUND is not False:
+        leaks.append("lessons.BACKGROUND")
+    if watch.last_visit_id == 999_999:
+        leaks.append("watch.last_visit_id")
+    if "probe dirty" in watch._last_logged:
+        leaks.append("watch._last_logged")
+    if watch._hold_cache == (999_999.0, True):
+        leaks.append("watch._hold_cache")
+    if circle_check._last_used == 999_999.0:
+        leaks.append("circle_check._last_used")
+    if identify._client is not None:
+        leaks.append("identify._client")
+    if privacy._det is not None:
+        leaks.append("privacy._det")
+    if clock._zone["tz"] is not None or clock._zone["checked"] != 0.0:
+        leaks.append("clock._zone")
+    if retention._thread is not None:
+        leaks.append("retention._thread")
+    if retention._wake.is_set():
+        leaks.append("retention._wake")
+    print("LEAKS=" + ",".join(leaks))
+    assert not leaks, f"leaks from one test into the next: {leaks}"
+
+
+def test_3_effective_timeout(request):
+    try:
+        import pytest_timeout
+    except ImportError:
+        print("EFFECTIVE_TIMEOUT=none")
+        return
+    print(f"EFFECTIVE_TIMEOUT={pytest_timeout._get_item_settings(request.node).timeout}")
+'''
+
+G1_FILE_LEAKS = {"data_dir_shared", "data_file_visible", "image_file_visible", "old_files_under_new_data_dir"}
+G1_FRESH_DIR_LEAKS = {"data_dir_outside_pytest_tmp", "data_dir_is_session_folder", "images_dir_not_under_data_dir",
+                      "data_dir_shared"}
+G1_LIVE_LEAKS = {"live_file_visible", "live_file_shared", "old_live_under_new_data_dir"}
+G4_WEB_LEAKS = {"auth._fails", "auth._secrets", "viewer._fails", "viewer._cache", "webapp._live", "webapp._run_state",
+                "db._totals_cache", "lessons._running", "lessons.BACKGROUND"}
+G4_OTHER_LEAKS = {"watch.last_visit_id", "watch._last_logged", "watch._hold_cache", "circle_check._last_used",
+                  "identify._client", "privacy._det"}
+G4_CLOCK_LEAKS = {"clock._zone", "retention._thread", "retention._wake"}
+
+
+def _run_probe(folder: Path, *options, select: str = "", env_extra: dict | None = None) -> subprocess.CompletedProcess:
+    """Run LEAK_PROBE (all of it, or the `select` node id such as "::test_3_effective_timeout") in a pytest
+    subprocess that loads the repo's conftest, with a private TMPDIR (the session folder lands there) and none of
+    this run's own timeout settings leaking in; `options` go on the pytest command line."""
+    private_tmp = folder / "t"
+    private_tmp.mkdir(exist_ok=True)
+    probe = folder / "test_leak_probe.py"
+    if not probe.exists():
+        probe.write_text(LEAK_PROBE)
+    env = dict(os.environ, TMPDIR=str(private_tmp), TMP=str(private_tmp), TEMP=str(private_tmp))
+    for key in ("PYTEST_TIMEOUT", "PYTEST_ADDOPTS"):
+        env.pop(key, None)
+    env.update(env_extra or {})
+    cmd = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-p", "no:randomly", "-p", "no:xdist",
+           "--rootdir", str(REPO_ROOT), "-c", str(PYPROJECT), "-p", "tests.conftest", "-s", *options,
+           str(probe) + select]
+    return subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, timeout=60, env=env)
+
+
+@pytest.fixture(scope="module")
+def leak_probe(tmp_path_factory):
+    """One run of LEAK_PROBE for this module: the process result and the set of leaks test_2 reported. Missing
+    report line = the probe did not get that far; the tests below then fail with its whole output."""
+    res = _run_probe(tmp_path_factory.mktemp("leak_probe"))
+    out = res.stdout + res.stderr
+    m = re.search(r"LEAKS=(.*)$", res.stdout, re.M)  # the progress dot precedes it
+    leaks = set(filter(None, m.group(1).strip().split(","))) if m else None
+    return res, out, leaks
+
+
+def _assert_no_leak_in(leak_probe, names: set[str]) -> None:
+    res, out, leaks = leak_probe
+    assert leaks is not None, "the probe did not report LEAKS=:\n" + out
+    found = sorted(leaks & names)
+    assert not found, f"leaks from one test into the next: {found}\n{out}"
+
+
 # --- G1: per-test data folders -------------------------------------------------------------------------------------
-
-_written: list[Path] = []  # paths the first test of each pair wrote, for the second to check
-_seen_data_dirs: list[Path] = []  # config.DATA_DIR as each first-of-a-pair test saw it
-_G4_DIRTY = object()  # a sentinel the G4 pairs plant in client/detector globals
-
 
 def _is_session_folder(path: Path) -> bool:
     """True when `path` is, or lies under, a shared `birdbrain-test-*` session folder (the mkdtemp prefix)."""
     return any(part.startswith("birdbrain-test-") for part in path.resolve().parts)
 
 
-def test_g1_1_a_test_writes_under_data_dir_and_images_dir():
-    """First of a pair: leave files under DATA_DIR and IMAGES_DIR and remember where they went."""
-    config.IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    data_file = config.DATA_DIR / "g1_leak.txt"
-    image_file = config.IMAGES_DIR / "g1_leak.jpg"
-    data_file.write_text("left behind by test_g1_1")
-    image_file.write_bytes(b"\xff\xd8not really a jpeg")
-    _written.extend([data_file, image_file])
-    _seen_data_dirs.append(config.DATA_DIR.resolve())
-    assert data_file.exists() and image_file.exists()
+def test_g1_files_written_by_one_test_are_not_visible_in_the_next(leak_probe):
+    """The probe's first test writes under DATA_DIR and IMAGES_DIR; its second finds the same relative names absent,
+    a different DATA_DIR, and the old files not under it. The old absolute paths may well still be on disk (pytest
+    keeps a few old tmp folders); the contract only promises they are not visible from the next test."""
+    _assert_no_leak_in(leak_probe, G1_FILE_LEAKS)
 
 
-def test_g1_2_files_from_the_previous_test_are_not_visible():
-    """Second of the pair: the same relative names under this test's DATA_DIR and IMAGES_DIR do not exist, and
-    this test's DATA_DIR is not the one the previous test wrote into. The old absolute paths may well still be on
-    disk (pytest keeps a few old tmp folders); the contract only promises they are not visible from here."""
-    assert _written and _seen_data_dirs, "test_g1_1 must run first (file order)"
-    here_data = config.DATA_DIR / "g1_leak.txt"
-    here_image = config.IMAGES_DIR / "g1_leak.jpg"
-    leaked = [p for p in (here_data, here_image) if p.exists()]
-    for p in leaked:
-        p.unlink()  # never let the leak reach the rest of the suite, whatever this test says
-    assert not leaked, f"files written by an earlier test are visible under this test's paths: {leaked}"
-    assert config.DATA_DIR.resolve() != _seen_data_dirs[-1], "two tests in a row share one DATA_DIR"
-    assert not any(old.resolve().is_relative_to(config.DATA_DIR.resolve()) for old in _written), \
-        "the previous test's files lie under this test's DATA_DIR"
-
-
-def test_g1_data_dir_is_fresh_per_test_not_the_session_folder(tmp_path_factory):
+def test_g1_data_dir_is_fresh_per_test_not_the_session_folder(tmp_path_factory, leak_probe):
     """DATA_DIR and IMAGES_DIR point under pytest's temp tree for this test, never at a shared birdbrain-test-*
-    session folder, and consecutive tests get different folders (checked across the g1_1/g1_2 pair)."""
+    session folder, and consecutive tests get different folders (checked across the probe's pair)."""
     base = Path(tmp_path_factory.getbasetemp()).resolve()
     data_dir = config.DATA_DIR.resolve()
     assert data_dir.is_relative_to(base), f"{data_dir} is not under pytest's tmp_path tree {base}"
@@ -101,9 +249,7 @@ def test_g1_data_dir_is_fresh_per_test_not_the_session_folder(tmp_path_factory):
     assert not data_dir.name.startswith("birdbrain-test-"), data_dir
     assert config.IMAGES_DIR.resolve().is_relative_to(data_dir), "IMAGES_DIR does not follow DATA_DIR"
     assert not _is_session_folder(config.IMAGES_DIR), f"IMAGES_DIR {config.IMAGES_DIR} is in a session folder"
-    assert _seen_data_dirs, "test_g1_1 must run first (file order)"
-    assert data_dir not in _seen_data_dirs, "this test sees a DATA_DIR an earlier test already used"
-    _seen_data_dirs.append(data_dir)
+    _assert_no_leak_in(leak_probe, G1_FRESH_DIR_LEAKS)
 
 
 def test_g1_db_path_follows_the_per_test_data_dir(tmp_path, tmp_path_factory):
@@ -141,30 +287,10 @@ def test_g1_admin_secret_file_is_under_the_test_data_dir(tmp_path_factory):
     assert not secret.exists(), "an admin secret from an earlier test is still there"
 
 
-def test_g1_3_live_frame_written_here_is_gone_in_the_next_test():
-    from birdbrain.web import app as webapp
-    path = webapp.live_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(b"\xff\xd8frame")
-    _written.append(path)
-    _seen_data_dirs.append(config.DATA_DIR.resolve())
-    assert path.exists()
-
-
-def test_g1_4_live_frame_from_the_previous_test_is_gone():
-    """The live frame the previous test saved is not visible here: this test's live_file() does not exist and is
-    not the previous test's file, and the DATA_DIR it derives from is a different folder."""
-    from birdbrain.web import app as webapp
-    assert _written and _written[-1].name == "live.jpg", "test_g1_3 must run first (file order)"
-    old = _written[-1].resolve()
-    here = webapp.live_file()
-    leaked = here.exists()
-    if leaked:
-        here.unlink()  # never let the leak reach the rest of the suite
-    assert not leaked, f"live.jpg leaks from one test into the next: {here}"
-    assert here.resolve() != old, "two tests in a row share one live frame file"
-    assert config.DATA_DIR.resolve() != _seen_data_dirs[-1], "two tests in a row share one DATA_DIR"
-    assert not old.is_relative_to(config.DATA_DIR.resolve()), "the previous test's live.jpg lies under this DATA_DIR"
+def test_g1_live_frame_written_by_one_test_is_gone_in_the_next(leak_probe):
+    """The live frame the probe's first test saved is not visible to its second: live_file() does not exist, is not
+    the same file, and the DATA_DIR it derives from is another folder (the known live.jpg bug, G3)."""
+    _assert_no_leak_in(leak_probe, G1_LIVE_LEAKS)
 
 
 # --- G2: the session folder is removed when the session ends --------------------------------------------------------
@@ -199,53 +325,10 @@ def test_g2_session_data_folder_is_removed_when_the_session_ends(tmp_path):
 
 # --- G4: module globals are reset between tests ---------------------------------------------------------------------
 
-def test_g4_1_dirty_module_globals():
-    """First of a pair: leave state in the globals the contract names."""
-    from birdbrain import lessons
-    from birdbrain.web import app as webapp, auth, viewer
-    auth._fails["203.0.113.9"] = [1.0, 2.0, 3.0]
-    auth._secrets["g4"] = b"not-a-real-secret"
-    viewer._fails["203.0.113.9"] = [1.0]
-    viewer._cache["g4"] = (0.0, "dirty")
-    webapp._live["jpeg"] = b"\xff\xd8dirty"
-    webapp._live["at"] = 12345.0
-    webapp._run_state["running"] = True
-    db._totals_cache[("g4", "nowhere.db")] = (0.0, {"dirty": True})
-    lessons._running = True
-    assert auth._fails and webapp._live["jpeg"] is not None and db._totals_cache
-
-
-def test_g4_2_module_globals_are_clean_again():
-    """Second of the pair: every global the previous test dirtied starts clean."""
-    from birdbrain import lessons
-    from birdbrain.web import app as webapp, auth, viewer
-    leaks = []
-    if "203.0.113.9" in auth._fails:
-        leaks.append("auth._fails")
-        auth._fails.pop("203.0.113.9")
-    if "g4" in auth._secrets:
-        leaks.append("auth._secrets")
-        auth._secrets.pop("g4")
-    if "203.0.113.9" in viewer._fails:
-        leaks.append("viewer._fails")
-        viewer._fails.pop("203.0.113.9")
-    if "g4" in viewer._cache:
-        leaks.append("viewer._cache")
-        viewer._cache.pop("g4")
-    if webapp._live["jpeg"] is not None or webapp._live["at"] != 0.0:
-        leaks.append("webapp._live")
-        webapp._live.update(jpeg=None, at=0.0, tried=0.0)
-    if webapp._run_state["running"] is not False:
-        leaks.append("webapp._run_state")
-        webapp._run_state["running"] = False
-    if ("g4", "nowhere.db") in db._totals_cache:
-        leaks.append("db._totals_cache")
-        db._totals_cache.pop(("g4", "nowhere.db"))
-    if lessons._running is not False:
-        leaks.append("lessons._running")
-        lessons._running = False
-    # The leaks above were undone first so a failure here never spoils the rest of the suite.
-    assert not leaks, f"module globals leak between tests: {leaks}"
+def test_g4_module_globals_are_clean_in_the_next_test(leak_probe):
+    """The probe dirties auth._fails/_secrets, viewer._fails/_cache, webapp._live/_run_state, db._totals_cache and
+    lessons._running; the next test finds every one of them at its import-time value."""
+    _assert_no_leak_in(leak_probe, G4_WEB_LEAKS)
 
 
 def test_g4_lessons_background_is_off_for_every_test():
@@ -253,41 +336,16 @@ def test_g4_lessons_background_is_off_for_every_test():
     assert lessons.BACKGROUND is False, "lessons.BACKGROUND must be False in tests (no distill thread outlives a test)"
 
 
-def test_g4_3_dirty_the_other_named_globals():
-    """First of a pair: the globals that hold a client, a detector or the watcher's memory of its last visit."""
-    from birdbrain import circle_check, identify, privacy, watch
-    watch.last_visit_id = 999_999
-    watch._last_logged["g4 dirty"] = 1.0
-    watch._hold_cache = (999_999.0, True)
-    circle_check._last_used = 999_999.0
-    identify._client = _G4_DIRTY
-    privacy._det = _G4_DIRTY
+def test_g4_the_other_named_globals_are_clean_in_the_next_test(leak_probe):
+    """The globals that hold a client, a detector or the watcher's memory of its last visit (watch.last_visit_id,
+    _last_logged, _hold_cache, circle_check._last_used, identify._client, privacy._det) start clean too."""
+    _assert_no_leak_in(leak_probe, G4_OTHER_LEAKS)
 
 
-def test_g4_4_the_other_named_globals_are_clean_again():
-    from birdbrain import circle_check, identify, privacy, watch
-    leaks = []
-    if watch.last_visit_id == 999_999:
-        leaks.append("watch.last_visit_id")
-        watch.last_visit_id = None
-    if "g4 dirty" in watch._last_logged:
-        leaks.append("watch._last_logged")
-        watch._last_logged.pop("g4 dirty")
-    if watch._hold_cache == (999_999.0, True):
-        leaks.append("watch._hold_cache")
-        watch._hold_cache = (0.0, False)
-    if circle_check._last_used == 999_999.0:
-        leaks.append("circle_check._last_used")
-        circle_check._last_used = 0.0
-    if identify._client is _G4_DIRTY:
-        leaks.append("identify._client")
-        identify._client = None
-    if privacy._det is _G4_DIRTY:
-        leaks.append("privacy._det")
-        privacy._det = None
-    # Undone first so a failure here never spoils the rest of the suite.
-    assert not leaks, f"module globals leak between tests: {leaks}"
-    assert identify._client is None and privacy._det is None
+def test_g4_clock_zone_and_retention_thread_are_clean_in_the_next_test(leak_probe):
+    """clock.set_zone() in one test must not move every later test's clock (until the 60 s recheck), and the
+    retention loop's _thread/_wake start at their defined values."""
+    _assert_no_leak_in(leak_probe, G4_CLOCK_LEAKS)
 
 
 # --- G5: the species card helper stamps the frozen clock ----------------------------------------------------------
@@ -432,24 +490,74 @@ def test_g8_addopts_never_forces_xdist_workers():
     assert "-n" not in opts and not any(o.startswith("--numprocesses") or o.startswith("-n") for o in opts), opts
 
 
+def _given_timeout(config):
+    """The limit this run was started with (--timeout or PYTEST_TIMEOUT), else None."""
+    given = config.getoption("timeout", default=None)
+    if given is None and os.environ.get("PYTEST_TIMEOUT"):
+        given = float(os.environ["PYTEST_TIMEOUT"])
+    return given
+
+
 def test_g8_timeout_applies_when_the_plugin_is_installed(request):
     """With pytest-timeout installed every test gets a 60 s limit; without it the ini must not break the run."""
     if request.config.pluginmanager.hasplugin("timeout"):
         # Any way of applying the limit counts: a `timeout` marker on this item (closest wins), the --timeout
         # option, or the ini key. The contract asks for the 60 s limit, not for one mechanism.
         marker = request.node.get_closest_marker("timeout")
+        given = _given_timeout(request.config)
+        if given is not None:
+            # This run was started with its own limit, which must win over the 60 s default (see the probes below):
+            # no default marker may sit on this item, so the plugin reads the given one.
+            assert marker is None, f"a timeout marker {marker.args} overrides the run's own --timeout={given}"
+            pytest.skip(f"this run sets its own limit ({given} s); the 60 s default is checked by the probes")
         if marker is not None:
             limit = marker.args[0] if marker.args else marker.kwargs.get("timeout")
             source = "timeout marker"
         else:
-            limit = request.config.getoption("timeout", default=None) or request.config.getini("timeout")
-            source = "--timeout option or ini"
+            limit = request.config.getini("timeout")
+            source = "ini"
         assert float(limit or 0) == 60, f"pytest-timeout limit ({source}) is {limit!r}, not 60 s"
     else:
         ini = _ini()
         assert "timeout" not in ini, "a timeout ini key without pytest-timeout installed warns on every run"
         assert not any(o.startswith("--timeout") for o in _addopts()), "--timeout in addopts breaks plain pytest"
         pytest.skip("pytest-timeout is not installed in this environment")
+
+
+def _effective_timeout(res: subprocess.CompletedProcess) -> str:
+    out = res.stdout + res.stderr
+    assert res.returncode == 0, out
+    m = re.search(r"EFFECTIVE_TIMEOUT=(\S+)$", res.stdout, re.M)
+    assert m, "the probe did not report its effective timeout:\n" + out
+    return m.group(1)
+
+
+def test_g8_default_limit_is_60_s_when_the_run_sets_none(request, leak_probe):
+    """A test in a run without --timeout, PYTEST_TIMEOUT or an ini key is given 60 s (the limit pytest-timeout
+    itself resolves for the item, not just the presence of a marker)."""
+    if not request.config.pluginmanager.hasplugin("timeout"):
+        pytest.skip("pytest-timeout is not installed in this environment")
+    res, out, _ = leak_probe
+    value = _effective_timeout(res)
+    assert value != "none", "the probe could not import pytest_timeout:\n" + out
+    assert float(value) == 60, f"effective limit in a plain run is {value}, not 60 s\n{out}"
+
+
+@pytest.mark.parametrize("how", ["--timeout=300", "PYTEST_TIMEOUT=300"])
+def test_g8_an_explicit_timeout_wins_over_the_60_s_default(request, tmp_path, how):
+    """pytest-timeout reads a `timeout` marker before --timeout, PYTEST_TIMEOUT and the ini key, so a 60 s default
+    marker on every test would silently defeat `pytest --timeout=300`. A run started with 300 must give its tests
+    300, not 60."""
+    if not request.config.pluginmanager.hasplugin("timeout"):
+        pytest.skip("pytest-timeout is not installed in this environment")
+    if how.startswith("--"):
+        res = _run_probe(tmp_path, how, select="::test_3_effective_timeout")
+    else:
+        key, _, value = how.partition("=")
+        res = _run_probe(tmp_path, select="::test_3_effective_timeout", env_extra={key: value})
+    value = _effective_timeout(res)
+    assert value != "none", "the probe could not import pytest_timeout:\n" + res.stdout + res.stderr
+    assert float(value) == 300, f"{how} was ignored: the effective limit is {value}, not 300\n{res.stdout}{res.stderr}"
 
 
 # --- G3: the live.jpg pair in both orders (the known bug) -----------------------------------------------------------

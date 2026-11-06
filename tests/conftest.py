@@ -4,6 +4,7 @@ import shutil
 import socket
 import sys
 import tempfile
+import threading
 from datetime import date as _real_date, datetime as _real_datetime
 from pathlib import Path
 
@@ -42,11 +43,25 @@ GUARD_FILES = {"test_no_personal_info.py"}
 TEST_TIMEOUT = 60  # seconds per test when pytest-timeout is installed (plain pytest runs without a limit)
 
 
+def _timeout_given(config) -> bool:
+    """True when the run already has a limit of its own: `--timeout`, `PYTEST_TIMEOUT` or an ini `timeout` key.
+    pytest-timeout reads a `timeout` marker before all three, so the default marker below must step aside for them
+    (`--timeout=0` counts too: it switches the limit off). Only called when the plugin is loaded."""
+    if config.getoption("timeout", default=None) is not None:
+        return True
+    if os.environ.get("PYTEST_TIMEOUT"):
+        return True
+    try:
+        return bool(config.getini("timeout"))
+    except ValueError:  # the key is only registered by the plugin
+        return False
+
+
 def pytest_collection_modifyitems(config, items):
     """Mark each test with its tier from its folder (tests/unit/** -> unit, ...), the guard files `guard`, and give
-    every test a time limit when pytest-timeout is present."""
+    every test a TEST_TIMEOUT limit when pytest-timeout is present and the run was not given a timeout itself."""
     tests_dir = Path(str(config.rootpath)) / "tests"
-    timeout = config.pluginmanager.hasplugin("timeout")
+    timeout = config.pluginmanager.hasplugin("timeout") and not _timeout_given(config)
     for item in items:
         path = Path(str(item.path))
         try:
@@ -114,8 +129,11 @@ def fresh_module_state(monkeypatch):
     """Module globals that would otherwise carry over from one test to the next (caches, lockout counters, the
     live frame, background flags) start every test at their import-time values. Tests that want another value
     set it themselves on top of this."""
-    from birdbrain import circle_check, identify, lessons, privacy, retention, watch, weather
+    from birdbrain import circle_check, clock, identify, lessons, privacy, retention, watch, weather
     from birdbrain.web import app as webapp, auth, viewer
+    monkeypatch.setattr(clock, "_zone", {"tz": None, "checked": 0.0})  # set_zone() would move every later test's clock
+    monkeypatch.setattr(retention, "_thread", None)
+    monkeypatch.setattr(retention, "_wake", threading.Event())
     monkeypatch.setattr(auth, "_fails", {})
     monkeypatch.setattr(auth, "_secrets", {})
     monkeypatch.setattr(viewer, "_fails", {})
