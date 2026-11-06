@@ -22,6 +22,7 @@ def labels(rows) -> list[str]:
     return [r["label"] for r in rows]
 
 
+@pytest.mark.smoke
 def test_init_db_adds_new_columns_to_an_old_database(tmp_path):
     path = tmp_path / "old.db"
     old = sqlite3.connect(path)
@@ -647,3 +648,15 @@ def test_species_order_matches_the_list(conn, add_visit):
     add_visit(species="Bushtit", visitor="bird", also=json.dumps([{"visitor": "bird", "species": "Steller's Jay", "count": 1, "confidence": "high"}]))
     for sort in db.SPECIES_SORTS:
         assert db.species_order(conn, sort) == [r["label"] for r in db.species_summary(conn, sort=sort)]
+
+
+@pytest.mark.smoke
+def test_a_bare_nan_row_never_breaks_a_json_query():
+    """What counts as JSON moves with the SQLite version (3.42+ reads a bare NaN, the Pi's 3.40 doesn't): the guard
+    must return NULL for such a row instead of raising "malformed JSON" for the whole query."""
+    import sqlite3
+    c = sqlite3.connect(":memory:")
+    c.execute("CREATE TABLE t (raw TEXT)")
+    c.executemany("INSERT INTO t VALUES (?)", [('{"a": 1}',), ('{"a": NaN}',)])
+    rows = c.execute(f"SELECT json_extract({db.valid_json('raw')}, '$.a') FROM t").fetchall()
+    assert len(rows) == 2 and rows[0][0] == 1

@@ -68,6 +68,7 @@ def test_about_zones_are_part_of_the_photo(client, conn, env_zones):
     assert "<img" not in svg
 
 
+@pytest.mark.smoke
 def test_about_numbers_the_zones_like_settings(client, conn, env_zones):
     html = client.get("/about").text
     svg = html[html.index('<div class="zones-frame">'):]

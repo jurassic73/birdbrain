@@ -27,6 +27,7 @@ def test_prepare_crops_before_shrinking():
 
 
 @pytest.mark.parametrize("confidence", ["low", "medium"])
+@pytest.mark.smoke
 def test_unsure_bird_escalates_to_sonnet_with_all_burst_frames(fake_ask, confidence):
     calls = fake_ask({HAIKU: sighting(confidence=confidence), SONNET: sighting(species="Song Sparrow")})
     r = identify.identify(jpeg(), WHEN, extra_frames=[jpeg(), jpeg()])

@@ -10,6 +10,7 @@ from helpers.autocal import H, RING, ROCKS, SPOT, W, Z, env_zones, gray, run_at,
 from birdbrain import autocal, config, db, zones
 
 
+@pytest.mark.smoke
 def test_zones_come_from_env_until_recalibrated(conn, env_zones):
     assert zones.load(conn) == Z
     moved = zones.Zones(**{**Z.to_dict(), "spots": ((0.42, 0.45, 0.03, 0.04),)})

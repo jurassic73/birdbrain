@@ -1,5 +1,6 @@
 """Component tests of the web app through TestClient on a temp database: auth read only."""
 
+import pytest
 from helpers.clock import FROZEN_NOW
 from birdbrain import db, images, species_info
 from birdbrain.web import app as webapp
@@ -136,6 +137,7 @@ def test_latest_visit_api_waiting_counts_only_for_admin(client, add_visit, locke
     assert client.get("/api/latest-visit").json()["waiting"] == zero
 
 
+@pytest.mark.smoke
 def test_visitors_cannot_draw_circles(client, add_visit, locked):
     vid = add_visit(visitor="bird", species="Bushtit")  # a false trigger isn't shown to visitors at all
     html = client.get(f"/visit/{vid}").text

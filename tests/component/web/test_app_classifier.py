@@ -1,5 +1,6 @@
 """Component tests of the web app through TestClient on a temp database: classifier."""
 
+import pytest
 import json
 
 from helpers.classifier import MOTION_CIRCLE, MOTION_FOUND, guess, raw
@@ -18,6 +19,7 @@ def test_visit_page_shows_the_guess_as_shadow(client, add_visit, monkeypatch):
     assert "asked Sonnet" not in html  # the classifier step after Haiku isn't a second look
 
 
+@pytest.mark.smoke
 def test_stats_page_shows_the_scorecard(client, add_visit):
     assert "No visits scored yet" in client.get("/stats").text
     add_visit(species="Bushtit", raw_json=raw("Bushtit"))

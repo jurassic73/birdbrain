@@ -1,5 +1,6 @@
 """Component tests of the web app through TestClient on a temp database: species."""
 
+import pytest
 import json
 import re
 from datetime import timedelta
@@ -22,6 +23,7 @@ def test_confirmed_pill_after_three_sure_visits(client, add_visit, monkeypatch):
     assert ">Confirmed<" in client.get(f"/visit/{medium}").text
 
 
+@pytest.mark.smoke
 def test_species_pages(client, add_visit):
     add_visit(species="Bushtit")
     assert "Bushtit" in client.get("/species").text

@@ -1,5 +1,6 @@
 """Component tests of the web app through TestClient on a temp database: home."""
 
+import pytest
 import json
 import re
 import time
@@ -45,6 +46,7 @@ def test_home_empty_state_hides_filters(client):
     assert "No visitors yet." in html and 'class="filters-toggle"' not in html and 'id="more-filters"' not in html
 
 
+@pytest.mark.smoke
 def test_home_lists_visits_with_chips_and_filters_toggle(client, add_visit):
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None)

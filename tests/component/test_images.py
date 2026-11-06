@@ -22,6 +22,7 @@ def jpeg(size=(1920, 1080)) -> bytes:
     return buf.getvalue()
 
 
+@pytest.mark.smoke
 def test_store_frame_writes_dated_image_and_small_thumbnail(tmp_path):
     data = jpeg()
     image_rel, thumb_rel = images.store_frame(data, datetime(2026, 10, 25, 9, 26, 25), tmp_path)

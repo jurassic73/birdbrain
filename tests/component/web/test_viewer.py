@@ -98,6 +98,7 @@ def test_share_link_is_not_slowed_by_everyone_else_guessing(gated, tmp_path, mon
     assert r.status_code == 303 and viewer.COOKIE in r.headers["set-cookie"] and not slept
 
 
+@pytest.mark.smoke
 def test_a_look_at_the_login_page_never_adds_a_throttle_entry(gated):
     for n in range(50):
         assert gated.get("/guest-login", headers=ip(n)).status_code == 200

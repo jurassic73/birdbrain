@@ -202,6 +202,7 @@ def test_settings_shows_the_local_checks_as_one_flow(client, conn, monkeypatch):
     assert client.post("/settings/detector", data={"mode": "gate"}).status_code in (404, 405)
 
 
+@pytest.mark.smoke
 def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, conn, calibrated):
     add_visit(species="Bushtit")
     add_visit(visitor="none", species=None)
@@ -237,6 +238,7 @@ def test_about_page_explains_the_pipeline_with_live_values(client, add_visit, co
     assert "in-context learning, not fine-tuning" in learn and f"{db.CONFIRMED_MIN} sure visits" in learn
 
 
+@pytest.mark.smoke
 def test_about_page_without_calibration_or_data(client, monkeypatch):
     monkeypatch.setattr(config, "MOTION_RING", None)
     monkeypatch.setattr(config, "MOTION_ROI", None)

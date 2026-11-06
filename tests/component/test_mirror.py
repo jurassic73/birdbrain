@@ -33,6 +33,7 @@ def pi_db(conn, add_visit, tmp_path):
     return vid, copy
 
 
+@pytest.mark.smoke
 def test_copy_keeps_only_the_settings_the_public_pages_read(pi_db):
     _, copy = pi_db
     keys = {k for (k,) in sqlite3.connect(copy).execute("SELECT key FROM settings")}
@@ -60,6 +61,7 @@ def test_copy_strips_private_fields_and_tables_but_keeps_what_pages_show(pi_db, 
     assert db.get_value(conn, "ntfy_topic") == "secret-topic"
 
 
+@pytest.mark.smoke
 def test_copy_reads_an_old_database_without_the_newer_columns(conn, add_visit, tmp_path):
     add_visit()
     old = tmp_path / "old.db"
@@ -259,6 +261,7 @@ def test_copy_keeps_nothing_trim_removed_in_its_free_pages(conn, add_visit, tmp_
     assert db.get_visit(conn, vid)["lesson_off"] == 1  # the Pi's own database is untouched
 
 
+@pytest.mark.smoke
 def test_copy_carries_the_zones_in_force_so_the_mirror_draws_them(conn, tmp_path, monkeypatch):
     ring = (0.5, 0.5, 0.13, 0.15, 0.11, 0.11, 0.5)
     monkeypatch.setattr(config, "MOTION_RING", ring)  # from .env on the Pi, nothing saved in the database
