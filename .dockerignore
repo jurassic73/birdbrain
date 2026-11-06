@@ -1,0 +1,27 @@
+# Keep secrets, private notes, data and big local files out of the build context and the image.
+.git
+.claude
+.venv
+venv
+__pycache__
+*.pyc
+
+.env
+.env.*
+!.env.example
+
+data
+models
+snapshots
+firmware-backup
+*.db
+*.sqlite
+*.dmg
+
+CLAUDE.md
+CLAUDE.history.md
+
+tests
+scripts
+docs
+deploy

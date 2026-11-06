@@ -280,6 +280,22 @@ find /var/lib/birdbrain/images -type f -exec chmod 660 {} +
 
 Each push ends with a self-check: a small listing of the mirror's photo folders (modes only; the rrsync lock allows listing and rsync's listing carries no owner or group), and any folder without `rws` for its group is named on stderr and in the Pi's system log (`journalctl -t push_public`, where a failed push step is logged too). A photo the service can't read shows as a broken image (401 or 500 from `/images/...`) while the pages still load. `rsync --chown=:servicegroup` is not used: rrsync does pass it on (`--groupmap`), but a push user that isn't root can only hand files to a group it belongs to, and when it can't, rsync keeps quiet; the setgid folder works for any push user. Behind the friends & family gate, photos and pages are sent with `Cache-Control: private` and the sign-in redirect with `no-store`, so a CDN in front (Cloudflare caches `.jpg` URLs by default, whatever cookie the request carried) neither keeps a guest's photo for others nor keeps a redirect that would show as broken images to everyone.
 
+### Public mirror in Docker
+
+The `Dockerfile` builds only the mirror (`BIRDBRAIN_PUBLIC=1`, `BIRDBRAIN_BASE=/birdbrain`): Python 3.11, the locked dependencies without OpenCV and ONNX Runtime (the web process never loads them; `tests/integration/test_mirror_image.py` keeps it so), a non-root user (uid 10001) and a health check. `.dockerignore` keeps `.env`, private notes, data and models out of the image. Build on the machine that runs it (a Raspberry Pi is arm64):
+
+```bash
+docker build -t birdbrain-mirror .
+docker run -d --name birdbrain-mirror --restart unless-stopped \
+  -p 127.0.0.1:8000:8000 --group-add <gid of the group that owns the pushed files> \
+  -v /srv/birdbrain-data:/data -v birdbrain-state:/state birdbrain-mirror
+```
+
+- **Data:** mount the folder the pushes write to at `/data`, read-write: the database is opened in WAL mode, which writes `-wal` and `-shm` files beside it (a `:ro` mount makes the site fail to start with "unable to open database file"). The pushed folders are 2770 and the files 660 for their group, so name that group with `--group-add` (compose: `group_add`); without it the site cannot open the database.
+- **Port:** publish on `127.0.0.1` only and put the tunnel or reverse proxy in front (Docker bypasses ufw for a bare `-p 8000:8000`). The app serves at `/` and expects the proxy to strip the `/birdbrain` prefix, as `deploy/nginx-birdbrain.conf` does. A proxy on another address goes in `VIEWER_TRUSTED_PROXIES`, so the real client IP is read from `CF-Connecting-IP`.
+- **Friends & family password and invite links:** kept in the `/state` volume (`VIEWER_PASSWORD_FILE`, `VIEWER_INVITE_FILE`). Set them with `docker exec -it birdbrain-mirror python -m birdbrain.web.viewer` (and `... viewer link <site URL>`).
+- **Updates:** rebuild the image and recreate the container; the data and state live outside it.
+
 ## What stays out of git
 
 Everything specific to your installation stays on your machines (see `.gitignore`):
