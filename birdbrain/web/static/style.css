@@ -1307,6 +1307,10 @@ button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 
 .sw-ground { background: color-mix(in srgb, currentColor 14%, transparent); }
 .sw-crop { border-style: dashed; }
 .sw-group { flex: none; display: flex; gap: 3px; }
+.zone-legend .sw { display: block; box-sizing: border-box; width: 18px; height: 18px; margin: 2px 0 0; border: 2px solid currentColor; border-radius: 4px; }
+.zone-legend .sw-rim, .zone-legend .sw-water, .zone-legend .sw-ground { background: currentColor; }  /* solid, like the dots on Settings */
+.zone-legend .sw-water { border-style: dashed; background: color-mix(in srgb, currentColor 75%, transparent); }
+.zone-legend .sw-crop { border-style: dashed; }
 
 /* Detection rules */
 .rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; align-items: start; }
