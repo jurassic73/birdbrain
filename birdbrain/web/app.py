@@ -1471,7 +1471,31 @@ def zone_shapes(z: zones.Zones | None = None) -> dict:
         points = " L".join(f"{x * ZONE_W:.2f},{y * ZONE_H:.2f}" for x, y in z.ground)
         shapes["ground"] = " ".join(filter(None, [f"M{points} Z", outer]))
     shapes.update(zone_colors(z))
+    shapes.update(zone_labels(z, shapes["colors"], shapes["spot_colors"]))
     return shapes
+
+
+def zone_labels(z: zones.Zones, colors: dict, spot_colors: list) -> dict:
+    """The number of each zone, as on Settings > Zones (its place in zones.objects), and where to write it on the
+    About figure: `labels` (n, x, y in figure units, color) and `nums` (role -> number, rocks -> a list)."""
+    labels, nums, n = [], {}, 0
+
+    def add(role, x, y, color):
+        nonlocal n
+        n += 1
+        labels.append({"n": n, "x": x * ZONE_W, "y": y * ZONE_H, "color": color})
+        return n
+
+    if z.ring:
+        rim, pool = config.ring_ellipses(z.ring)
+        nums["ring"] = add("ring", rim[0] - rim[2], rim[1], colors["ring"])  # the rim's left end
+        nums["water"] = add("water", pool[0], pool[1] - pool[3], colors.get("water", colors["ring"]))  # water's top
+        nums["spots"] = [add("spot", s[0], s[1], spot_colors[i]) for i, s in enumerate(z.spots)]
+    if z.ground:
+        nums["ground"] = add("ground", *z.ground[0], colors["ground"])
+    if z.crop:
+        nums["crop"] = add("crop", z.crop[0], z.crop[1], colors["crop"])
+    return {"labels": labels, "nums": nums}
 
 
 def zone_colors(z: zones.Zones) -> dict:
@@ -1498,7 +1522,7 @@ def about(request: Request, conn=Depends(get_conn)):
         cfg=config,
         zones=zone_shapes(zones.load(conn)),
         recal=zones.schedule(conn),
-        recal_stored=zones.stored(conn) is not None,
+        recal_stored=zones.adjusted(conn),
         classifier_mode=config.CLASSIFIER,
         presence_mode=presence.mode(conn),
         haiku=identify.HAIKU,

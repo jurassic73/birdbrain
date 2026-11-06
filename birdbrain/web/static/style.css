@@ -1294,6 +1294,9 @@ button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 
 .z-water { fill-opacity: .2; stroke-width: 2; stroke-dasharray: 6 4; }
 .z-ground { fill-opacity: .14; stroke-width: 1.5; }
 .z-crop { fill: none; stroke-width: 2.5; stroke-dasharray: 8 5; }
+.z-num { fill: currentColor; stroke: #000; stroke-width: 2.4px; paint-order: stroke; font: 700 5px/1 system-ui, sans-serif;
+  text-anchor: middle; dominant-baseline: central; vector-effect: non-scaling-stroke; }
+.zone-legend .znum { font-weight: 700; min-width: 1.1em; text-align: right; opacity: .85; }
 .zone-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
 .zone-legend li { display: flex; gap: 10px; align-items: flex-start; font-size: .92rem; }
 .zone-legend strong { display: block; }

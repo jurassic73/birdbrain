@@ -135,6 +135,7 @@
           {% for s in zones.spots %}<path class="z-spot" style="color: {{ zones.spot_colors[loop.index0] }}" d="{{ s }}"/>{% endfor %}
           {% if zones.roi %}<rect class="z-rim" style="color: {{ zones.colors.ring }}" x="{{ zones.roi.x }}" y="{{ zones.roi.y }}" width="{{ zones.roi.w }}" height="{{ zones.roi.h }}"/>{% endif %}
           {% if zones.crop %}<rect class="z-crop" style="color: {{ zones.colors.crop }}" x="{{ zones.crop.x }}" y="{{ zones.crop.y }}" width="{{ zones.crop.w }}" height="{{ zones.crop.h }}"/>{% endif %}
+          {% for l in zones.labels %}<text class="z-num" style="color: {{ l.color }}" x="{{ l.x }}" y="{{ l.y }}">{{ l.n }}</text>{% endfor %}
         </svg>
 {%- endmacro %}
 

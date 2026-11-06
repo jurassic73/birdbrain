@@ -115,6 +115,8 @@
 </section>
 
 {# ---------- 4. Zones ---------- #}
+{# The zone's number as drawn on the figure (empty for the fallback rows, which have no number). #}
+{% macro znum(n) %}<span class="znum" aria-hidden="true">{{ n if n else '' }}</span>{% endmacro %}
 <section class="about-section" id="zones">
   <h2>Where it looks</h2>
   <div class="about-split">
@@ -126,16 +128,16 @@
     </figure>
     <ul class="zone-legend">
       {% if zones.rim %}
-      <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Rim</strong>The edge of the bowl, where most birds land.</div></li>
-      {% if zones.spots %}<li><span class="sw-group">{% for c in zones.spot_colors %}<span class="sw sw-rim" style="color: {{ c }}"></span>{% endfor %}</span><div><strong>Rocks</strong>{{ zones.spots | length }} landing spot{{ 's' if zones.spots | length != 1 }} inside the water, watched like the rim.</div></li>{% endif %}
-      <li><span class="sw sw-water" style="color: {{ zones.colors.water }}"></span><div><strong>Open water</strong>{% if cfg.WATER_WATCH %}Ripples, rain and sky live here, so it has a stricter rule (below).{% else %}Ignored: the open-water rule is turned off.{% endif %}</div></li>
+      <li>{{ znum(zones.nums.ring) }}<span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Rim</strong>The edge of the bowl, where most birds land.</div></li>
+      <li>{{ znum(zones.nums.water) }}<span class="sw sw-water" style="color: {{ zones.colors.water }}"></span><div><strong>Open water</strong>{% if cfg.WATER_WATCH %}Ripples, rain and sky live here, so it has a stricter rule (below).{% else %}Ignored: the open-water rule is turned off.{% endif %}</div></li>
+      {% if zones.spots %}<li>{{ znum(zones.nums.spots | join('/')) }}<span class="sw-group">{% for c in zones.spot_colors %}<span class="sw sw-rim" style="color: {{ c }}"></span>{% endfor %}</span><div><strong>Rocks</strong>{{ zones.spots | length }} landing spot{{ 's' if zones.spots | length != 1 }} inside the water, watched like the rim.</div></li>{% endif %}
       {% elif zones.roi %}
       <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Watched area</strong>A rectangle; no birdbath ring is calibrated yet.</div></li>
       {% else %}
       <li><span class="sw sw-rim" style="color: {{ zones.colors.ring }}"></span><div><strong>Whole frame</strong>No zones calibrated yet, so any motion counts.</div></li>
       {% endif %}
-      {% if zones.ground %}<li><span class="sw sw-ground" style="color: {{ zones.colors.ground }}"></span><div><strong>Ground</strong>The lawn and mulch around the bath, for critters passing by (its own rule below).</div></li>{% endif %}
-      <li><span class="sw sw-crop" style="color: {{ zones.colors.crop or '#ccc' }}"></span><div><strong>Crop box</strong>{% if zones.crop %}The only part of the photo Claude sees{% if zones.rim %} (the Pi animal check looks at a square around the whole bowl){% else %}, and the part the Pi checks{% endif %}.{% else %}Not set, so Claude sees the whole photo.{% endif %}</div></li>
+      {% if zones.ground %}<li>{{ znum(zones.nums.ground) }}<span class="sw sw-ground" style="color: {{ zones.colors.ground }}"></span><div><strong>Ground</strong>The lawn and mulch around the bath, for critters passing by (its own rule below).</div></li>{% endif %}
+      <li>{{ znum(zones.nums.crop) }}<span class="sw sw-crop" style="color: {{ zones.colors.crop or '#ccc' }}"></span><div><strong>Crop box</strong>{% if zones.crop %}The only part of the photo Claude sees{% if zones.rim %} (the Pi animal check looks at a square around the whole bowl){% else %}, and the part the Pi checks{% endif %}.{% else %}Not set, so Claude sees the whole photo.{% endif %}</div></li>
     </ul>
   </div>
   <p class="about-note"><strong>Kept in place.</strong> Rocks get nudged and cameras shift, so

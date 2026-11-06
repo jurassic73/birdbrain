@@ -107,10 +107,15 @@ def copy_db(src: Path, dst: Path, timezone: str = "") -> None:
     """A consistent copy of the database even while the watcher is writing, trimmed, as one plain file (no WAL)
     carrying the Pi's time zone so the mirror's "today" matches the birdbath's."""
     source, copy = sqlite3.connect(src), sqlite3.connect(dst)
+    source.row_factory = sqlite3.Row  # zones.load reads settings by column name
     try:
         source.backup(copy)
         copy.execute("PRAGMA journal_mode=DELETE")
         trim(copy)
+        # The mirror has no zone settings in its .env, and a saved recalibration only counts where .env matches, so
+        # send the zones the Pi is using as a snapshot the mirror trusts (zones.stored, "pushed").
+        copy.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (zones.KEY, json.dumps({
+            "pushed": True, "adjusted": zones.adjusted(source), "zones": zones.load(source).to_dict()})))
         if timezone:
             copy.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (clock.KEY, timezone))
         copy.commit()

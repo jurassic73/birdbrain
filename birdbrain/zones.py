@@ -84,7 +84,15 @@ def stored(conn) -> dict | None:
         data = json.loads(raw)
     except ValueError:
         return None
+    if data.get("pushed"):  # the Pi's zones in force, put in the public mirror's copy (mirror.copy_db)
+        return data
     return data if data.get("env") == _env_snapshot() else None
+
+
+def adjusted(conn) -> bool:
+    """Whether the zones in force were saved by a recalibration or by hand (not just read from .env)."""
+    data = stored(conn)
+    return data is not None and data.get("adjusted", True)
 
 
 def load(conn) -> Zones:
