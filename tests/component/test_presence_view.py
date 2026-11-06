@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from helpers.clock import FROZEN_NOW
+from helpers.presence import left_out
 from helpers.presence_view import (BIG, GROUND_CROP, LIVE_CROP, LIVE_RING, NARROW_CROP, RIM_LEFT, SMALL, centered,
                                    fill_color, jpeg, live, need, noise)
 from birdbrain import classifier, db, images, presence, watch, zones
@@ -60,10 +61,6 @@ def stored_visit(add_visit, img, raw=None, **fields) -> int:
 
 def view_of(conn, vid):
     return conn.execute("SELECT view FROM embeddings WHERE visit_id = ?", (vid,)).fetchone()[0]
-
-
-def left_out(conn) -> dict:
-    return dict(presence.examples(conn)["left_out"])
 
 
 def test_a_ground_trigger_gets_the_ground_crop_padded_to_a_square():

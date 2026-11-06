@@ -556,16 +556,6 @@ def test_g7_tier_marker_follows_the_folder(tmp_path):
         "the probe tree must never be written inside the repo"
 
 
-def test_g7_no_personal_info_tests_are_marked_guard(tmp_path):
-    """Deselecting `guard` leaves nothing of tests/integration/test_no_personal_info.py."""
-    guard_file = str(TESTS_DIR / "integration" / "test_no_personal_info.py")
-    res = _run_pytest(tmp_path, "--collect-only", "-m", "not guard", guard_file)  # addopts already has one -q
-    out = res.stdout + res.stderr
-    assert "test_no_personal_info.py::" not in out, "test_no_personal_info.py items are not marked guard:\n" + out
-    res = _run_pytest(tmp_path, "--collect-only", "-m", "guard", guard_file)
-    assert res.returncode == 0 and "test_no_personal_info.py::" in res.stdout, res.stdout + res.stderr
-
-
 def test_g7_guard_marker_on_the_items_in_this_session(request):
     """When the privacy guard is part of this run, each of its items carries the guard marker."""
     items = [i for i in request.session.items if Path(str(i.fspath)).name == "test_no_personal_info.py"]
@@ -581,8 +571,13 @@ TIER_FOLDERS = ("unit", "component", "integration")
 
 
 def test_t3_tier_folders_are_packages_so_duplicate_basenames_import_cleanly():
-    """tests/unit/test_db.py and tests/component/test_db.py (and more such pairs) can only both be collected in the
-    default import mode if each folder holding tests is a package."""
+    """Why every tier folder (and every subfolder holding tests) is a package: in pytest's default import mode a
+    test file in a plain folder is imported under its bare basename with that folder put first on sys.path, so two
+    plain folders holding a test_db.py clash ("import file mismatch"). One plain folder beside a package only works
+    by accident (`test_db` next to `component.test_db`), and the plain folder on sys.path can shadow a real package
+    (tests/unit/scripts/ would stand in for the repo's scripts/). With packages, each module's name is its path from
+    tests/ (unit.test_db, component.web.test_app_home), only tests/ is added to sys.path, and duplicate basenames
+    across tiers are unique by construction. The second assert keeps the rule honest: it has pairs to guard."""
     folders = {TESTS_DIR / t for t in TIER_FOLDERS}
     folders |= {p.parent for t in TIER_FOLDERS for p in (TESTS_DIR / t).rglob("test_*.py")}
     missing = sorted(str(f.relative_to(REPO_ROOT)) for f in folders if not (f / "__init__.py").is_file())

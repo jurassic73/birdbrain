@@ -28,6 +28,10 @@ INSIDE = {"x": 0.5, "y": 0.5, "r": 0.05}  # a circle in the middle of the crop b
 ABOVE = {"x": 0.5, "y": 0.12, "r": 0.05}  # one above it (the dove of visit 693: only its tail was in the box)
 
 
+def left_out(conn) -> dict:
+    return dict(presence.examples(conn)["left_out"])
+
+
 def found_animal(conn, vid, circle=INSIDE, visitor="squirrel"):
     """The owner corrects a false trigger to an animal and circles it on the photo."""
     raw = json.loads(db.get_visit(conn, vid)["raw_json"] or "{}")

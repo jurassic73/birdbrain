@@ -5,8 +5,11 @@ Written blind, before the tests were moved: these tests pin down what the contra
 knowing how the builder did it. T4 collects the real repo in pytest subprocesses (one shared run per selection,
 all started together); T5 copies the repo's conftests into a throwaway tree under tmp_path, drops probe tests into
 its unit and component folders and reads the junit report by test name, so a probe that died for another reason
-never counts as "the guard works". Every subprocess runs with a private TMPDIR and none of this run's own pytest
-settings (addopts, timeout, xdist) in its environment. Timing (T8) and coverage (T7) are gates, not tests here.
+never counts as "the guard works". The probe tree is run twice, together: whole (both tiers' conftests loaded) and
+tests/unit alone, because a unit conftest that only works once some other file has imported the web app passed the
+whole-tree run and broke `pytest tests/unit/test_config.py`; one real unit test is also run by itself. Every
+subprocess runs with a private TMPDIR and none of this run's own pytest settings (addopts, timeout, xdist) in its
+environment. Timing (T8) and coverage (T7) are gates, not tests here.
 """
 import os
 import re
@@ -76,11 +79,6 @@ def _tier_of(rel: Path) -> str | None:
 
 # --- T1: layout -----------------------------------------------------------------------------------------------------
 
-def test_t1_no_test_file_sits_directly_in_tests():
-    stray = sorted(p.name for p in TESTS_DIR.glob("test_*.py"))
-    assert not stray, f"test files still directly in tests/ (move them into a tier folder): {stray}"
-
-
 def test_t1_every_tier_folder_exists_and_holds_tests():
     for tier in TIERS:
         folder = TESTS_DIR / tier
@@ -90,10 +88,12 @@ def test_t1_every_tier_folder_exists_and_holds_tests():
 
 
 def test_t1_every_test_file_lives_under_a_tier_folder():
+    """Also the "no test_*.py directly in tests/" rule: a stray tests/test_x.py is named in the message."""
     files = _test_files()
     assert files, "no test files found under tests/"
     outside = [str(p) for p in files if _tier_of(p) is None]
-    assert not outside, "test files outside tests/unit, tests/component and tests/integration:\n" + "\n".join(outside)
+    assert not outside, ("test files outside tests/unit, tests/component and tests/integration (move them into a "
+                         "tier folder):\n" + "\n".join(outside))
 
 
 def _source_for_unit_test(rel: Path, root: Path = REPO_ROOT) -> list[Path]:
@@ -169,10 +169,10 @@ def test_t1_mirror_rule_rejects_a_name_matching_no_module(rel):
     assert _source_for_unit_test(Path(rel)) == []
 
 
-def test_t1_guard_file_lives_in_a_tier_folder():
+def test_t1_there_is_exactly_one_guard_file():
+    """(That it sits in a tier folder is `test_t1_every_test_file_lives_under_a_tier_folder`'s job.)"""
     found = [p for p in _test_files() if p.name == GUARD_FILE]
     assert len(found) == 1, f"expected exactly one {GUARD_FILE} under tests/, found {found}"
-    assert _tier_of(found[0]) is not None, f"{found[0]} is not in a tier folder"
 
 
 # --- T4: markers and -m selections ----------------------------------------------------------------------------------
@@ -213,15 +213,9 @@ def _under(ids: set[str], tier: str) -> set[str]:
     return {i for i in ids if i.startswith(f"tests/{tier}/")}
 
 
-def test_t4_m_unit_selects_exactly_the_items_under_tests_unit(collected):
-    expected = _under(collected["all"], "unit")
-    assert expected, "no collected items under tests/unit/"
-    assert collected["unit"] == expected, (
-        f"-m unit: {sorted(collected['unit'] - expected)[:10]} selected but not under tests/unit; "
-        f"{sorted(expected - collected['unit'])[:10]} under tests/unit but not selected")
-
-
 def test_t4_m_unit_or_guard_adds_exactly_the_guard_tests(collected):
+    """Also the guard-marker rule: every item of the guard file carries `guard` (so `-m "not guard"` would leave
+    none of it) and nothing else does."""
     guard = {i for i in collected["all"] if Path(i.split("::")[0]).name == GUARD_FILE}
     assert guard, f"no collected items from {GUARD_FILE}"
     assert collected["unit"], "no items selected by -m unit"
@@ -245,24 +239,10 @@ def test_t4_every_collected_item_has_exactly_one_tier_marker(collected):
                 both = tiers[a] & tiers[b]
                 assert not both, f"items marked both {a} and {b}: {sorted(both)[:10]}"
     for tier, ids in tiers.items():
-        assert ids == _under(everything, tier), f"-m {tier} is not exactly the items under tests/{tier}/"
-
-
-def test_t4_tier_markers_in_this_session_follow_the_folder(request):
-    """Cheap in-process check of the same rule on whatever this run collected: each item's tier marker is the one
-    its folder names, and there is exactly one."""
-    tests_dir = TESTS_DIR.resolve()
-    wrong = []
-    for item in request.session.items:
-        marks = {m.name for m in item.iter_markers() if m.name in TIERS}
-        try:
-            rel = Path(str(item.path)).resolve().relative_to(tests_dir)
-        except ValueError:
-            rel = None
-        want = rel.parts[0] if rel is not None and rel.parts and rel.parts[0] in TIERS else None
-        if marks != ({want} if want else set()):
-            wrong.append(f"{item.nodeid}: folder says {want}, markers {sorted(marks)}")
-    assert not wrong, "items whose tier markers do not match their folder:\n" + "\n".join(wrong[:20])
+        assert ids, f"no collected items under tests/{tier}/"
+        assert ids == _under(everything, tier), (
+            f"-m {tier}: {sorted(ids - _under(everything, tier))[:10]} selected but not under tests/{tier}; "
+            f"{sorted(_under(everything, tier) - ids)[:10]} under tests/{tier} but not selected")
 
 
 # --- T5: the unit guard ---------------------------------------------------------------------------------------------
@@ -272,14 +252,19 @@ def test_t4_tier_markers_in_this_session_follow_the_folder(request):
 # not tmp_path, so a guard that also refuses mkdir cannot error the probes at setup.
 UNIT_PROBE = '''"""Probe tests dropped into the throwaway tree's unit folder by tests/integration/test_tier_rules.py."""
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
-from birdbrain import config
+import cv2
+import numpy as np
+
+from birdbrain import config, species_info
 
 
 def _target(name):
@@ -295,13 +280,36 @@ def test_u_sleep_positive():
     time.sleep(0.01)
 
 
+def test_u_sleep_alias_in_a_birdbrain_module():
+    species_info._sleep(0.01)  # bound to time.sleep at import, so patching time.sleep alone misses it
+
+
 def test_u_subprocess_run():
     subprocess.run([sys.executable, "-c", "pass"], check=True)
+
+
+def test_u_thread_start():
+    t = threading.Thread(target=lambda: None)
+    t.start()
+    t.join()
 
 
 def test_u_open_for_writing():
     with open(_target("open.txt"), "w") as f:
         f.write("x")
+
+
+def test_u_os_open_for_writing():
+    os.close(os.open(_target("osopen.txt"), os.O_WRONLY | os.O_CREAT))
+
+
+def test_u_path_touch():
+    _target("touch.txt").touch()
+
+
+def test_u_tempfile_mkstemp():
+    fd, _ = tempfile.mkstemp(prefix="unit-probe-")
+    os.close(fd)
 
 
 def test_u_path_write_text():
@@ -310,6 +318,66 @@ def test_u_path_write_text():
 
 def test_u_path_write_bytes():
     _target("bytes.bin").write_bytes(b"x")
+
+
+def test_u_cv2_imwrite():
+    assert cv2.imwrite(str(_target("frame.jpg")), np.zeros((4, 4, 3), np.uint8))
+
+
+def test_u_path_mkdir():
+    _target("dir1").mkdir()
+
+
+def test_u_os_mkdir():
+    os.mkdir(_target("dir2"))
+
+
+def test_u_os_makedirs():
+    os.makedirs(_target("dir3") / "deep")
+
+
+def test_u_os_remove():
+    os.remove(_target("gone1"))
+
+
+def test_u_os_unlink():
+    os.unlink(_target("gone2"))
+
+
+def test_u_os_rename():
+    os.rename(_target("from1"), _target("to1"))
+
+
+def test_u_os_replace():
+    os.replace(_target("from2"), _target("to2"))
+
+
+def test_u_os_rmdir():
+    os.rmdir(_target("gone3"))
+
+
+def test_u_shutil_rmtree():
+    shutil.rmtree(_target("gone4"))
+
+
+def test_u_os_system():
+    os.system("true")
+
+
+def test_u_tmp_path_fixture(tmp_path):
+    pass
+
+
+def test_u_tmp_path_factory_fixture(tmp_path_factory):
+    pass
+
+
+def test_u_tmpdir_fixture(tmpdir):
+    pass
+
+
+def test_u_tmpdir_factory_fixture(tmpdir_factory):
+    pass
 
 
 def test_u_sleep_zero_is_fine():
@@ -323,6 +391,12 @@ def test_u_pure_work_is_fine():
 
 def test_u_reading_a_file_is_fine():
     assert "test_u_reading_a_file_is_fine" in Path(__file__).read_text()
+
+
+def test_u_os_open_read_only_is_fine():
+    fd = os.open(__file__, os.O_RDONLY)
+    assert b"test_u_os_open_read_only_is_fine" in os.read(fd, 1 << 20)
+    os.close(fd)
 
 
 def test_u_data_dir_does_not_exist():
@@ -363,13 +437,21 @@ def test_c_data_dir_is_a_fresh_folder():
     (config.DATA_DIR / "probe.txt").write_text("x")
 '''
 
-UNIT_MUST_FAIL = ("test_u_sqlite_connect", "test_u_sleep_positive", "test_u_subprocess_run",
-                  "test_u_open_for_writing", "test_u_path_write_text", "test_u_path_write_bytes")
+UNIT_MUST_FAIL = ("test_u_sqlite_connect", "test_u_sleep_positive", "test_u_sleep_alias_in_a_birdbrain_module",
+                  "test_u_subprocess_run", "test_u_thread_start",
+                  "test_u_open_for_writing", "test_u_os_open_for_writing", "test_u_path_touch",
+                  "test_u_tempfile_mkstemp", "test_u_path_write_text", "test_u_path_write_bytes", "test_u_cv2_imwrite",
+                  "test_u_path_mkdir", "test_u_os_mkdir", "test_u_os_makedirs",
+                  "test_u_os_remove", "test_u_os_unlink", "test_u_os_rename", "test_u_os_replace", "test_u_os_rmdir",
+                  "test_u_shutil_rmtree", "test_u_os_system",
+                  "test_u_tmp_path_fixture", "test_u_tmp_path_factory_fixture", "test_u_tmpdir_fixture",
+                  "test_u_tmpdir_factory_fixture")
 UNIT_MUST_PASS = ("test_u_sleep_zero_is_fine", "test_u_pure_work_is_fine", "test_u_reading_a_file_is_fine",
-                  "test_u_data_dir_does_not_exist")
+                  "test_u_os_open_read_only_is_fine", "test_u_data_dir_does_not_exist")
 COMPONENT_MUST_PASS = ("test_c_sqlite_connect_to_a_tmp_file", "test_c_writes_under_tmp_path",
                        "test_c_sleep_and_subprocess", "test_c_data_dir_is_a_fresh_folder")
-ALL_PROBES = UNIT_MUST_FAIL + UNIT_MUST_PASS + COMPONENT_MUST_PASS
+UNIT_PROBES = UNIT_MUST_FAIL + UNIT_MUST_PASS
+ALL_PROBES = UNIT_PROBES + COMPONENT_MUST_PASS
 
 
 def _build_probe_tree(tree: Path) -> None:
@@ -407,30 +489,38 @@ def _junit_outcomes(report: Path) -> dict[str, tuple[str, str]]:
     return outcomes
 
 
-@pytest.fixture(scope="module")
-def unit_guard_probe(tmp_path_factory):
-    """One run of the probe tree for this module: name -> (outcome, message) for every probe, plus the run's output.
-    The run must have collected and run exactly the probes listed in ALL_PROBES (collection errors, a conftest that
-    fails to import, or a missing probe fail here with the whole output)."""
-    folder = tmp_path_factory.mktemp("unit_guard")
-    tree = folder / "repo"
-    _build_probe_tree(tree)
+def _run_probe_tree(folder: Path, tree: Path, *paths: str, expected: tuple[str, ...]) -> tuple[dict, str]:
+    """One pytest run of the probe tree on `paths` (relative to `tree`): name -> (outcome, message) for every probe
+    it ran, plus the run's output. The run must have collected and run exactly `expected` (collection errors, a
+    conftest that fails to import, or a missing probe fail here with the whole output)."""
+    folder.mkdir(exist_ok=True)
     report = folder / "junit.xml"
-    res = _pytest(folder, "-q", "--junitxml", str(report), str(tree / "tests"), rootdir=tree)
+    res = _pytest(folder, "-q", "--junitxml", str(report), *(str(tree / p) for p in paths), rootdir=tree)
     out = res.stdout + res.stderr
-    assert report.exists(), f"the probe run wrote no junit report (exit {res.returncode}):\n{out}"
+    assert report.exists(), f"the probe run on {paths} wrote no junit report (exit {res.returncode}):\n{out}"
     outcomes = _junit_outcomes(report)
-    assert set(outcomes) == set(ALL_PROBES), (
-        f"the probe run did not run exactly the expected probes: missing {sorted(set(ALL_PROBES) - set(outcomes))}, "
-        f"unexpected {sorted(set(outcomes) - set(ALL_PROBES))}\n{out}")
+    assert set(outcomes) == set(expected), (
+        f"the probe run on {paths} did not run exactly the expected probes: "
+        f"missing {sorted(set(expected) - set(outcomes))}, unexpected {sorted(set(outcomes) - set(expected))}\n{out}")
     assert "collected" in out or "passed" in out or "failed" in out, out
-    assert not any((TESTS_DIR / tier / "test_probe_unit_rules.py").exists() for tier in TIERS), \
-        "the probe tree must never be written inside the repo"
     return outcomes, out
 
 
-def test_t5_unit_conftest_exists():
-    assert (TESTS_DIR / "unit" / "conftest.py").is_file(), "tests/unit/conftest.py (the unit guard) is missing"
+@pytest.fixture(scope="module")
+def unit_guard_probe(tmp_path_factory):
+    """The probe tree run twice, together: "whole" is `pytest tests` (both tiers' conftests loaded, the component
+    probes included) and "unit_alone" is `pytest tests/unit` (only the base and unit conftests, as when one unit
+    file is run by itself). Each is (name -> (outcome, message), the run's output)."""
+    folder = tmp_path_factory.mktemp("unit_guard")
+    tree = folder / "repo"
+    _build_probe_tree(tree)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        whole = pool.submit(_run_probe_tree, folder / "whole", tree, "tests", expected=ALL_PROBES)
+        alone = pool.submit(_run_probe_tree, folder / "alone", tree, "tests/unit", expected=UNIT_PROBES)
+        results = {"whole": whole.result(), "unit_alone": alone.result()}
+    assert not any((TESTS_DIR / tier / "test_probe_unit_rules.py").exists() for tier in TIERS), \
+        "the probe tree must never be written inside the repo"
+    return results
 
 
 def _guard_message(message: str) -> bool:
@@ -438,36 +528,73 @@ def _guard_message(message: str) -> bool:
     return "unit" in text and "component" in text
 
 
+def _not_stopped_by_the_guard(outcomes: dict, probe: str) -> str:
+    """"" when the probe failed or errored with the guard's message, else what went wrong instead."""
+    outcome, message = outcomes[probe]
+    if outcome not in ("failure", "error"):
+        return f"{outcome} (the guard let it through)"
+    if not _guard_message(message):
+        return f"failed, but not with the guard's message (it should say the test is not pure and belongs in the " \
+               f"component tier):\n{message}"
+    return ""
+
+
 @pytest.mark.parametrize("probe", UNIT_MUST_FAIL)
 def test_t5_impure_call_fails_a_unit_test(unit_guard_probe, probe):
-    """sqlite3.connect, time.sleep(0.01), subprocess.run, open(..., "w"), Path.write_text and Path.write_bytes
-    each fail the unit test that makes them, with a message that says the test is not a unit test and where it
-    belongs ("unit" and "component" both in it)."""
-    outcomes, out = unit_guard_probe
-    outcome, message = outcomes[probe]
-    assert outcome in ("failure", "error"), f"{probe} {outcome} in tests/unit (the guard let it through):\n{out}"
-    assert _guard_message(message), (f"{probe} failed, but not with the guard's message (it should say the test "
-                                     f"is not pure and belongs in the component tier):\n{message}")
+    """sqlite3.connect, time.sleep(0.01) (also through a birdbrain module's import-time alias of it), subprocess.run,
+    Thread.start, a file opened for writing (open, os.open with a write or create flag, Path.touch, tempfile.mkstemp,
+    Path.write_text/write_bytes, cv2.imwrite), a new folder (Path.mkdir, os.mkdir, os.makedirs), a file removed,
+    renamed or replaced (os.remove/unlink/rename/replace/rmdir, shutil.rmtree), os.system and the tmp_path family of
+    fixtures each fail the unit test that uses them, with a message that says the test is not a unit test and where
+    it belongs ("unit" and "component" both in it)."""
+    outcomes, out = unit_guard_probe["whole"]
+    problem = _not_stopped_by_the_guard(outcomes, probe)
+    assert not problem, f"{probe} in tests/unit: {problem}\n{out}"
 
 
 def test_t5_pure_unit_probes_pass(unit_guard_probe):
-    """time.sleep(0), pure work and reading a file are allowed in a unit test."""
-    outcomes, out = unit_guard_probe
+    """time.sleep(0), pure work and reading a file (open and os.open read-only) are allowed in a unit test."""
+    outcomes, out = unit_guard_probe["whole"]
     failed = {p: outcomes[p] for p in ("test_u_sleep_zero_is_fine", "test_u_pure_work_is_fine",
-                                       "test_u_reading_a_file_is_fine") if outcomes[p][0] != "passed"}
+                                       "test_u_reading_a_file_is_fine", "test_u_os_open_read_only_is_fine")
+              if outcomes[p][0] != "passed"}
     assert not failed, "pure probes did not pass in tests/unit:\n" + "\n".join(f"{k}: {v}" for k, v in failed.items())
 
 
 def test_t5_unit_tests_get_no_data_folder(unit_guard_probe):
     """config.DATA_DIR, IMAGES_DIR and DB_PATH point at paths that do not exist during a unit test."""
-    outcomes, out = unit_guard_probe
+    outcomes, out = unit_guard_probe["whole"]
     outcome, message = outcomes["test_u_data_dir_does_not_exist"]
     assert outcome == "passed", f"a unit test saw a data folder:\n{message}"
+
+
+def test_t5_the_unit_folder_alone_behaves_the_same(unit_guard_probe):
+    """`pytest tests/unit` with nothing else collected (no component conftest, so nothing has imported the web app
+    before the unit conftest's fixtures run) gives every unit probe the same verdict as the whole-tree run: the
+    impure ones are stopped by the guard, the pure ones pass, the data folder does not exist. A unit conftest that
+    only worked after some other file had imported the app errored every probe here (OSError on a path that does
+    not exist) while the whole-tree run looked fine."""
+    outcomes, out = unit_guard_probe["unit_alone"]
+    wrong = {p: _not_stopped_by_the_guard(outcomes, p) for p in UNIT_MUST_FAIL}
+    wrong = {p: why for p, why in wrong.items() if why}
+    wrong.update({p: outcomes[p] for p in UNIT_MUST_PASS if outcomes[p][0] != "passed"})
+    assert not wrong, ("probes behave differently when tests/unit runs alone:\n"
+                       + "\n".join(f"{k}: {v}" for k, v in wrong.items()) + f"\n{out}")
+
+
+def test_t5_one_real_unit_test_runs_on_its_own(collected, tmp_path):
+    """The first unit test of the real repo, run as the only item of a session, passes: no unit test may need another
+    file's import or fixture to have run before it."""
+    node = min(collected["unit"])
+    res = _pytest(tmp_path, "-q", node)
+    out = res.stdout + res.stderr
+    assert res.returncode == 0, f"{node} fails when run on its own (exit {res.returncode}):\n{out}"
+    assert re.search(r"\b1 (passed|skipped)\b", out), f"{node} did not run as the one item of the session:\n{out}"
 
 
 def test_t5_component_tests_are_unaffected(unit_guard_probe):
     """In tests/component the same calls work: sqlite to a tmp file, writes under tmp_path, sleep and subprocess,
     and the per-test data folder is there to write into."""
-    outcomes, out = unit_guard_probe
+    outcomes, out = unit_guard_probe["whole"]
     failed = {p: outcomes[p] for p in COMPONENT_MUST_PASS if outcomes[p][0] != "passed"}
     assert not failed, "component probes did not pass:\n" + "\n".join(f"{k}: {v}" for k, v in failed.items())

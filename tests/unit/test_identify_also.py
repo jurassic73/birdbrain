@@ -1,17 +1,14 @@
 """Unit tests of birdbrain/identify: pure functions, no files, database or network."""
 
 import io
-from datetime import datetime
 
 import pytest
 from PIL import Image
 
 from helpers.also import junco
+from helpers.identify import WHEN
 from birdbrain import identify
 from birdbrain.identify import HAIKU, SONNET, Also, Circle, Sighting
-
-
-WHEN = datetime(2026, 10, 25, 9, 30)
 
 
 def jpeg() -> bytes:

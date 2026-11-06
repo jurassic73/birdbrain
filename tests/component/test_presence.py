@@ -6,7 +6,8 @@ import cv2
 import numpy as np
 import pytest
 
-from helpers.presence import ABOVE, CROP, DIM, INSIDE, FakeClf, burst_visit, found_animal, on_frame, vec, yard
+from helpers.presence import (ABOVE, CROP, DIM, INSIDE, FakeClf, burst_visit, found_animal, left_out, on_frame, vec,
+                              yard)
 from birdbrain import classifier, db, presence, watch
 
 
@@ -110,10 +111,6 @@ def test_shadow_records_the_score_and_still_asks_claude(monkeypatch, conn, yard)
     assert raw["calls"]["presence"]["empty"] and "skipped_claude" not in raw["calls"]
     r = db.presence_report(conn)
     assert (r["frames"], r["empty"], r["would_skip"], r["skipped"]) == (1, 1, 1, 0)
-
-
-def left_out(conn) -> dict:
-    return dict(presence.examples(conn)["left_out"])
 
 
 def test_a_corrected_false_trigger_teaches_animal_only_when_its_crop_shows_one(conn, yard):
