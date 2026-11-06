@@ -63,7 +63,10 @@ class Stay:
 def changes(gray: np.ndarray, empty: np.ndarray, mask: np.ndarray, min_px: float, area: int = 0) -> np.ndarray | None:
     """255 on every change of at least min_px pixels from the empty scene inside the mask; None if most of the
     masked area changed (the light, not a visitor)."""
-    changed = cv2.threshold(cv2.absdiff(gray, empty), config.STAY_DIFF, 255, cv2.THRESH_BINARY)[1]
+    diff = cv2.absdiff(gray, empty)
+    if diff.ndim == 3:
+        diff = diff.max(axis=2)  # colour frames: the channel that changed most
+    changed = cv2.threshold(diff, config.STAY_DIFF, 255, cv2.THRESH_BINARY)[1]
     changed = cv2.bitwise_and(changed, mask)
     if cv2.countNonZero(changed) / (area or max(cv2.countNonZero(mask), 1)) > config.STAY_LIGHT:
         return None
@@ -72,10 +75,10 @@ def changes(gray: np.ndarray, empty: np.ndarray, mask: np.ndarray, min_px: float
     return np.isin(labels, big).astype(np.uint8) * 255
 
 
-def like_substream(jpeg: bytes, shape: tuple[int, int]) -> np.ndarray:
-    """A main-stream frame made comparable with the empty scene: substream size, gray, blurred like
-    MotionDetector's frames."""
-    img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_GRAYSCALE)
+def like_substream(jpeg: bytes, shape: tuple[int, int], color: bool = False) -> np.ndarray:
+    """A main-stream frame made comparable with the empty scene: substream size, gray (or BGR when the empty scene
+    is in colour), blurred like MotionDetector's frames."""
+    img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR if color else cv2.IMREAD_GRAYSCALE)
     img = cv2.resize(img, (shape[1], shape[0]), interpolation=cv2.INTER_AREA)
     return cv2.GaussianBlur(img, (21, 21), 0)
 
@@ -94,10 +97,15 @@ def count_animals(jpeg: bytes, empty: np.ndarray, mask: np.ndarray, box=None, wa
     the local species gate (one BioCLIP guess can only name one animal). Changes closer than GROUP_GAP are one
     animal (a bird and its reflection or splash). A change that lies wholly on open water (`water`) doesn't
     count: sky reflections and drifting leaves move there, and a bird in the water nearly always touches the rim
-    or the rocks. None when it can't tell (the light changed)."""
-    gray = like_substream(jpeg, empty.shape)
-    area = mask & box_mask(empty.shape, box)
-    b = changes(gray, empty, area, config.STAY_MIN_BLOB * empty.size)
+    or the rocks. None when it can't tell (the light changed).
+
+    `empty` may be grey (H, W) or colour (H, W, 3); the photo is matched to it. Colour is what keeps one animal
+    whole: a grey squirrel or a grey-blue jay standing on the pale rim matches it in brightness, so in grey only
+    its head and tail changed and it counted as two animals (visits 830, 1017)."""
+    shape = empty.shape[:2]
+    gray = like_substream(jpeg, shape, color=empty.ndim == 3)
+    area = mask & box_mask(shape, box)
+    b = changes(gray, empty, area, config.STAY_MIN_BLOB * area.size)
     if b is None:
         return None
     grouped = b
