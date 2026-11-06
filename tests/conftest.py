@@ -145,7 +145,7 @@ def fresh_module_state(monkeypatch):
     monkeypatch.setattr(viewer, "_cache", {})
     monkeypatch.setattr(webapp, "_live", {"jpeg": None, "at": 0.0, "tried": 0.0})
     monkeypatch.setattr(webapp, "_run_state", {"running": False, "result": None, "error": ""})
-    monkeypatch.setattr(watch, "_hold_cache", (0.0, False))
+    monkeypatch.setattr(watch, "_hold_cache", (None, False))
     monkeypatch.setattr(watch, "last_visit_id", None)
     monkeypatch.setattr(watch, "_last_logged", {})
     monkeypatch.setattr(watch, "_push", None)
@@ -248,7 +248,7 @@ def offline_species_info(monkeypatch):
 def fresh_detector_mode(monkeypatch):
     """The watcher caches the detector mode for 15 s; tests must not see one another's."""
     from birdbrain import watch
-    monkeypatch.setattr(watch, "_presence_cache", (0.0, "", ""))
+    monkeypatch.setattr(watch, "_presence_cache", (None, "", ""))
 
 
 @pytest.fixture(autouse=True)

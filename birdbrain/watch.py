@@ -495,21 +495,22 @@ def streak_hit(motion: float) -> bool:
     return motion >= config.MOTION_MIN_AREA
 
 
-_presence_cache: tuple[float, str, str] = (0.0, "", "")  # (read at, .env default, mode)
+# (read at, .env default, mode); read at None = never (monotonic() counts from boot: 0.0 would look fresh for 15 s)
+_presence_cache: tuple[float | None, str, str] = (None, "", "")
 
 
 def presence_mode() -> str:
     """The local animal check's mode from Settings (else .env), re-read at most every 15 s."""
     global _presence_cache
     read_at, default, mode = _presence_cache
-    if time.monotonic() - read_at > 15 or default != config.PRESENCE:
+    if read_at is None or time.monotonic() - read_at > 15 or default != config.PRESENCE:
         with db.session() as conn:
             mode = presence.mode(conn)
         _presence_cache = (time.monotonic(), config.PRESENCE, mode)
     return mode
 
 
-_hold_cache: tuple[float, bool] = (0.0, False)  # (read at, held)
+_hold_cache: tuple[float | None, bool] = (None, False)  # (read at or None, held)
 
 
 def presence_held() -> bool:
@@ -517,7 +518,7 @@ def presence_held() -> bool:
     the mode."""
     global _hold_cache
     read_at, held = _hold_cache
-    if time.monotonic() - read_at > 15:
+    if read_at is None or time.monotonic() - read_at > 15:
         with db.session() as conn:
             held = presence.held(conn)
         _hold_cache = (time.monotonic(), held)

@@ -7,7 +7,7 @@ import pytest
 
 from helpers.cards import CARD
 from helpers.clock import FROZEN_NOW
-from helpers.species_info import F, HOME, FakeHaiku, fake_build, _save_card
+from helpers.species_info import F, HOME, SUMMER, FakeHaiku, fake_build, _save_card
 from helpers.web import _card
 from birdbrain import db, species_info
 
@@ -259,6 +259,16 @@ def test_backfill_pauses_between_cards(conn, monkeypatch, naps):
     _scripted(monkeypatch, FakeWiki())
     assert species_info.backfill_facts(conn, out=lambda m: None) == (3, 0)
     assert naps == [species_info.PACE, species_info.PACE]  # between cards, not before the first or after the last
+
+
+def test_cached_cards_are_read_on_a_freshly_booted_machine(conn, monkeypatch):
+    """time.monotonic() counts from boot on Linux: with 0.0 as the "never read" mark the first minute after a reboot
+    served no cards at all, so pages lost their season badges (and CI failed on a seconds-old runner VM)."""
+    db.save_species_info(conn, "Rufous Hummingbird", {**CARD, **SUMMER}, FROZEN_NOW.isoformat())
+    monkeypatch.setattr(species_info.time, "monotonic", lambda: 5.0)
+    species_info.forget_cached_cards()
+    assert species_info.cached_cards()["Rufous Hummingbird"]["expected_months"] == SUMMER["expected_months"]
+    assert species_info.visit_badge("Rufous Hummingbird", "2026-03-28T09:00:00") == "Early arrival"
 
 
 def test_cached_facts_returns_texts_for_both_formats(conn):

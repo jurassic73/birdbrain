@@ -531,19 +531,21 @@ def season_badge(info: dict | None, month: int) -> str | None:
     return "Unusual this time of year"
 
 
-_season_cache: tuple[float, dict] = (0.0, {})
+# (time.monotonic() of the last read, cards); None = never read. Not 0.0: monotonic() counts from boot on Linux,
+# so for the first minute after a reboot the empty cache looked fresh and every page lost its season badges.
+_season_cache: tuple[float | None, dict] = (None, {})
 
 
 def forget_cached_cards() -> None:
     global _season_cache
-    _season_cache = (0.0, {})
+    _season_cache = (None, {})
 
 
 def cached_cards() -> dict[str, dict]:
     """Every cached card by name, re-read at most once a minute (pages call this for each visit card)."""
     global _season_cache
     read_at, cards = _season_cache
-    if time.monotonic() - read_at > 60:
+    if read_at is None or time.monotonic() - read_at > 60:
         with db.session() as conn:
             cards = {r["name"]: json.loads(r["data"]) for r in conn.execute("SELECT name, data FROM species_info")}
         _season_cache = (time.monotonic(), cards)
