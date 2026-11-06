@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from conftest import FROZEN_NOW
+from helpers.clock import FROZEN_NOW
 from birdbrain import circle_check, classifier, db, identify, images
 from birdbrain.web import app as webapp
 

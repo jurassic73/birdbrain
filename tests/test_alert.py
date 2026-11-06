@@ -4,7 +4,7 @@ from datetime import datetime, time
 
 import pytest
 
-from conftest import FROZEN_NOW
+from helpers.clock import FROZEN_NOW
 from birdbrain import alert, db
 
 

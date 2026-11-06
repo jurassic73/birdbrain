@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 from birdbrain import classifier, config, db, presence, watch
-from test_classifier import (LABELS, LOCAL, MOTION_CIRCLE, FakeClassifier, gate_yard, one_hot,  # noqa: F401
-                             sure)
+from helpers.classifier import (LABELS, LOCAL, MOTION_CIRCLE, FakeClassifier, gate_yard, one_hot,  # noqa: F401
+                                sure)
 
 real_store = presence.store
 DIM = 8

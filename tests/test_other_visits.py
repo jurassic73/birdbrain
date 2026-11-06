@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from birdbrain import config, db, mirror
 from birdbrain.web import auth
 
-from conftest import FROZEN_NOW
-from test_db_speed import plans
+from helpers.clock import FROZEN_NOW
+from helpers.sql import plans
 
 TODAY = FROZEN_NOW.date().isoformat()
 

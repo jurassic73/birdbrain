@@ -7,7 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from conftest import FROZEN_NOW, image_size
+from helpers.clock import FROZEN_NOW
+from helpers.images import image_size
 from birdbrain import config, db, images, retention
 from birdbrain.web import app as webapp
 

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from conftest import image_size
+from helpers.images import image_size
 from birdbrain import config, db, images, presence, retention
 
 

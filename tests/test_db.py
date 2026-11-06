@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 
 import pytest
 
-from conftest import FROZEN_NOW
+from helpers.clock import FROZEN_NOW
 from birdbrain import config, db
 
 TODAY = FROZEN_NOW.date()

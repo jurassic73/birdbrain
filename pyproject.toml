@@ -21,9 +21,18 @@ dependencies = [
 dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
+    "pytest-timeout>=2.4.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
-addopts = "-q"
+pythonpath = [".", "tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "unit: pure logic, no I/O, no network, no sleeps; parallel safe (tests/unit/**)",
+    "component: one real local dependency such as a temp database or temp files (tests/component/**)",
+    "integration: real services, devices or network (tests/integration/**)",
+    "smoke: the short set run after a deploy",
+    "guard: repository hygiene checks that run on every push",
+]

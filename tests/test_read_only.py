@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import FROZEN_NOW
+from helpers.clock import FROZEN_NOW
 from birdbrain import db, images, species_info
 from birdbrain.web import app as webapp
 from birdbrain.web import auth

@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import pytest
 
-from conftest import FROZEN_NOW
+from helpers.clock import FROZEN_NOW
 from birdbrain import classifier, config, db, presence, watch, zones
 from birdbrain.web import app as webapp
 

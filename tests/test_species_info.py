@@ -1,24 +1,15 @@
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import httpx
 
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import FROZEN_NOW
 from birdbrain import db, species_info
 from birdbrain.web import app as webapp
-
-CARD = {
-    "name": "Bushtit", "query": "Bushtit", "common": "Bushtit", "sci_name": "Psaltriparus minimus", "inat_id": 14886,
-    "is_bird": True, "photo": {"url": "https://example.org/p.jpg", "credit": "(c) Someone, some rights reserved (CC BY)",
-                               "license": "CC BY"},
-    "description": "A tiny gray songbird.", "notes": ["Eats insects.", "Travels in chattering flocks."],
-    "local_counts": [5, 5, 6, 8, 9, 7, 6, 5, 4, 5, 6, 5], "status": "Year-round resident",
-    "expected_months": list(range(1, 13)), "place_name": "Clark County, US, WA", "map_center": [45.7, -122.5],
-    "links": [{"label": "eBird", "url": "https://ebird.org/species/bushti"}],
-}
+from helpers.cards import CARD, SOUNDS
+from helpers.clock import FROZEN_NOW
 
 
 @pytest.fixture
@@ -373,13 +364,9 @@ def test_short_status_for_tight_lists(monkeypatch):
 
 # --- a recording that won't play: the card is flagged, then its sounds are fetched again ---
 
-SOUNDS = [{"label": "Song", "file": "https://xeno-canto.org/1/download", "id": 1},
-          {"label": "Call", "file": "https://xeno-canto.org/2/download", "id": 2}]
-
-
 def _save_card(conn, **extra):
     db.save_species_info(conn, "Bushtit", {**CARD, "sounds": [dict(s) for s in SOUNDS], **extra},
-                         datetime.now().replace(microsecond=0).isoformat())
+                         FROZEN_NOW.isoformat())
 
 
 def _post(client, url, name="Bushtit", **kw):
@@ -747,7 +734,7 @@ def test_prompt_asks_for_whole_single_claim_sentences_with_a_lead():
 
 def _last_seen_visit(add_visit):
     from datetime import timedelta
-    from conftest import FROZEN_NOW
+    from helpers.clock import FROZEN_NOW
     add_visit(species="Bushtit", captured_at=(FROZEN_NOW - timedelta(days=2)).isoformat())
 
 
