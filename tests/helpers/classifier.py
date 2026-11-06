@@ -1,5 +1,7 @@
 """Fakes for the BioCLIP 2 species check: a fixed label list, classifiers with known answers, and `gate_yard`,
 a whole yard in gate mode for watcher tests (a fixture; import it into a test module to use it)."""
+import json
+
 import cv2
 import numpy as np
 import pytest
@@ -92,3 +94,12 @@ def gate_yard(monkeypatch, conn, add_visit):
 
     monkeypatch.setattr(watch.identify, "identify", fake_identify)
     return knobs
+
+
+def guess(*names, night=False):
+    return {"model": classifier.MODEL_NAME, "crop": "circle", "night": night, "seconds": 0.05,
+            "top": [{"name": n, "scientific": "", "score": 0.5} for n in names]}
+
+
+def raw(*names, night=False):
+    return json.dumps({"calls": {"classifier": guess(*names, night=night)}})
