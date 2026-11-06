@@ -1436,7 +1436,7 @@ def weather_page(request: Request, conn=Depends(get_conn)):
 ZONE_W, ZONE_H = 160, 90
 # The About figure's fixed daytime photo was taken from a slightly different spot than the zones were set from, so
 # the zones are drawn nudged by this much (fractions of the frame: right, down). Picked by eye with the owner.
-ZONE_SHIFT = (0.03, 0.05)
+ZONE_SHIFT = (0.01, 0.05)
 
 
 def ellipse_path(cx: float, cy: float, rx: float, ry: float, angle: float = 0.0) -> str:
