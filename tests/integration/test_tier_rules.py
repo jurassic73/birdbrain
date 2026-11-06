@@ -96,33 +96,33 @@ def test_t1_every_test_file_lives_under_a_tier_folder():
     assert not outside, "test files outside tests/unit, tests/component and tests/integration:\n" + "\n".join(outside)
 
 
-def _source_for_unit_test(rel: Path) -> list[Path]:
+def _source_for_unit_test(rel: Path, root: Path = REPO_ROOT) -> list[Path]:
     """The source file(s) a unit test file mirrors, derived from its path: tests/unit/test_<m>.py -> birdbrain/<m>.py,
     tests/unit/<sub>/test_<m>.py -> birdbrain/<sub>/<m>.py (so tests/unit/web/ -> birdbrain/web/), except
-    tests/unit/scripts/test_<m>.py -> scripts/<m>.* (any extension). Relative to the repo; may not exist."""
+    tests/unit/scripts/test_<m>.py -> scripts/<m>.* (any extension). A file may also be named test_<m>_<topic>.py
+    (T1 as amended): <m> is the longest existing module name the file name starts with, cut at a `_` boundary, so
+    test_db_speed.py mirrors db.py while test_dbx.py mirrors nothing. Relative to `root`; [] when no module matches."""
     sub = Path(*rel.parts[2:-1])  # the folders between tests/unit and the file
-    module = rel.stem.removeprefix("test_")
-    if sub.parts[:1] == ("scripts",):
-        return sorted(p.relative_to(REPO_ROOT) for p in (REPO_ROOT / "scripts" / Path(*sub.parts[1:])).glob(f"{module}.*"))
-    candidate = Path("birdbrain") / sub / f"{module}.py"
-    return [candidate] if (REPO_ROOT / candidate).is_file() else []
-
-
-def _expected_source_folder(rel: Path) -> str:
-    """Where `_source_for_unit_test` looks for the source of a unit test file, as text for a message."""
-    sub = rel.parts[2:-1]
-    if sub[:1] == ("scripts",):
-        return "/".join(sub) + "/"
-    return "/".join(("birdbrain",) + sub) + "/"
+    parts = rel.stem.removeprefix("test_").split("_")
+    for n in range(len(parts), 0, -1):  # longest candidate first
+        module = "_".join(parts[:n])
+        if sub.parts[:1] == ("scripts",):
+            found = sorted(p.relative_to(root) for p in (root / "scripts" / Path(*sub.parts[1:])).glob(f"{module}.*"))
+        else:
+            candidate = Path("birdbrain") / sub / f"{module}.py"
+            found = [candidate] if (root / candidate).is_file() else []
+        if found:
+            return found
+    return []
 
 
 def test_t1_unit_tests_mirror_the_source_tree():
-    """Every tests/unit/**/test_<m>.py has the source file its path names (see `_source_for_unit_test`), and the
-    mirror is checked against the real tree, not a list: a unit file named after a topic rather than a module, or
-    put in the wrong subfolder, shows up here."""
+    """Every tests/unit/**/test_<m>[_<topic>].py has the source file its path names (see `_source_for_unit_test`),
+    and the mirror is checked against the real tree, not a list: a unit file whose name starts with no module in
+    its folder, or put in the wrong subfolder, shows up here."""
     unit_files = [p for p in _test_files() if _tier_of(p) == "unit"]
     assert unit_files, "tests/unit/ holds no test files"
-    orphans = [f"{p}: no {_expected_source_folder(p)}{p.stem.removeprefix('test_')}.* to mirror"
+    orphans = [f"{p}: no {_expected_source_folder(p)}<m>.* that {p.stem.removeprefix('test_')} starts with"
                for p in unit_files if not _source_for_unit_test(p)]
     assert not orphans, "unit test files with no matching source module:\n" + "\n".join(orphans)
 
@@ -137,9 +137,36 @@ def test_t1_mirror_rule_maps_each_source_folder(rel, source):
     assert _source_for_unit_test(Path(rel)) == [Path(source)]
 
 
-def test_t1_mirror_rule_rejects_a_topic_name():
-    assert _source_for_unit_test(Path("tests/unit/test_db_speed.py")) == []
-    assert _source_for_unit_test(Path("tests/unit/test_app.py")) == []  # web module in the wrong folder
+@pytest.mark.parametrize("rel, source", [
+    ("tests/unit/test_db_speed.py", "birdbrain/db.py"),
+    ("tests/unit/web/test_app_routes.py", "birdbrain/web/app.py"),
+    ("tests/unit/scripts/test_readenv_quoting.py", "scripts/readenv.py"),
+])
+def test_t1_mirror_rule_maps_a_topic_file_to_its_module(rel, source):
+    """T1 as amended: test_<m>_<topic>.py mirrors <m> in the same folder."""
+    assert _source_for_unit_test(Path(rel)) == [Path(source)]
+
+
+def test_t1_mirror_rule_takes_the_longest_module_name(tmp_path):
+    """Where two modules share a prefix the longer match wins; the real tree has no such pair, so a made-up one."""
+    (tmp_path / "birdbrain").mkdir()
+    (tmp_path / "birdbrain" / "db.py").write_text("")
+    (tmp_path / "birdbrain" / "db_speed.py").write_text("")
+    assert _source_for_unit_test(Path("tests/unit/test_db_speed.py"), tmp_path) == [Path("birdbrain/db_speed.py")]
+    assert _source_for_unit_test(Path("tests/unit/test_db_speed_rows.py"), tmp_path) == [Path("birdbrain/db_speed.py")]
+    assert _source_for_unit_test(Path("tests/unit/test_db_rows.py"), tmp_path) == [Path("birdbrain/db.py")]
+
+
+@pytest.mark.parametrize("rel", [
+    "tests/unit/test_nosuchmodule.py",
+    "tests/unit/test_nosuchmodule_topic.py",
+    "tests/unit/test_app.py",  # web module in the wrong folder
+    "tests/unit/test_dbx.py",  # the prefix must end at a `_` boundary
+    "tests/unit/test_dbx_speed.py",
+    "tests/unit/scripts/test_readenvx.py",
+])
+def test_t1_mirror_rule_rejects_a_name_matching_no_module(rel):
+    assert _source_for_unit_test(Path(rel)) == []
 
 
 def test_t1_guard_file_lives_in_a_tier_folder():

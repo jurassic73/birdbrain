@@ -575,33 +575,9 @@ def test_g7_guard_marker_on_the_items_in_this_session(request):
     assert not unmarked, f"not marked guard: {unmarked}"
 
 
-# --- #7: the tier layout ---------------------------------------------------------------------------------------------
+# --- #7: the tier layout (T1 and T4 are in test_tier_rules.py) -----------------------------------------------------
 
 TIER_FOLDERS = ("unit", "component", "integration")
-
-
-def test_t1_no_test_module_sits_directly_in_tests():
-    """Every test module lives in a tier folder; tests/ itself holds only conftest.py and the helpers package."""
-    stray = sorted(p.name for p in TESTS_DIR.glob("test_*.py"))
-    assert not stray, f"test modules outside the tier folders: {stray}"
-    for tier in TIER_FOLDERS:
-        assert any((TESTS_DIR / tier).rglob("test_*.py")), f"tests/{tier}/ holds no test module"
-
-
-def test_t4_every_item_in_this_session_carries_exactly_its_folders_tier_marker(request):
-    """The collection hook marks each test unit, component or integration from the folder it lives in: never none,
-    never two (checked on the real items of this run, whatever subset was selected)."""
-    wrong = []
-    for item in request.session.items:
-        try:
-            rel = Path(str(item.path)).resolve().relative_to(TESTS_DIR.resolve())
-        except ValueError:
-            continue
-        marks = [m for m in TIER_FOLDERS if item.get_closest_marker(m) is not None]
-        want = rel.parts[0] if rel.parts and rel.parts[0] in TIER_FOLDERS else None
-        if marks != ([want] if want else []):
-            wrong.append(f"{item.nodeid}: folder says {want}, markers {marks}")
-    assert not wrong, "tier markers do not follow the folder:\n" + "\n".join(wrong[:20])
 
 
 def test_t3_tier_folders_are_packages_so_duplicate_basenames_import_cleanly():
