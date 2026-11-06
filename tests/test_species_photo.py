@@ -142,7 +142,7 @@ def test_a_pick_is_one_transaction(conn, add_visit, monkeypatch):
     import sqlite3
 
     vid = add_visit(species="Bushtit")
-    other = sqlite3.connect(config.DB_PATH, timeout=0.2)
+    other = sqlite3.connect(config.DB_PATH, timeout=0)  # no wait: the lock is either held or it is not
     with pytest.raises(ValueError, match="star state"):
         db.set_star(conn, "Bushtit", vid, "gold")
     assert not conn.in_transaction

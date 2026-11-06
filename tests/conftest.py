@@ -57,6 +57,11 @@ def _timeout_given(config) -> bool:
         return False
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_scrypt: hash the guest password with the production scrypt cost "
+                                       "(every other test gets the cheap one from the cheap_scrypt fixture)")
+
+
 def pytest_collection_modifyitems(config, items):
     """Mark each test with its tier from its folder (tests/unit/** -> unit, ...), the guard files `guard`, and give
     every test a TEST_TIMEOUT limit when pytest-timeout is present and the run was not given a timeout itself."""
@@ -288,6 +293,23 @@ def offline_classifier(monkeypatch):
     monkeypatch.setattr(classifier, "_place_failed_at", 0.0)
     monkeypatch.setattr(classifier, "download_model", no_network)
     monkeypatch.setattr(classifier, "fetch_place_species", no_network)
+
+
+@pytest.fixture(autouse=True)
+def cheap_scrypt(request, monkeypatch):
+    """The guest password is hashed with scrypt at n=2**14 (~50 ms a hash, two per login): every test that makes
+    or checks one gets the same hashlib.scrypt with n=2**4 instead, so the function's logic (salt, base64, the
+    constant-time compare in check_password) is unchanged and only the work factor drops. A test marked
+    `real_scrypt` keeps the production parameters, so one real hash is still made and checked every run."""
+    import hashlib
+    from birdbrain.web import viewer
+    if request.node.get_closest_marker("real_scrypt"):
+        return
+
+    def scrypt(password: str, salt: bytes) -> bytes:
+        return hashlib.scrypt(password.encode(), salt=salt, n=2**4, r=8, p=1, dklen=32)
+
+    monkeypatch.setattr(viewer, "_scrypt", scrypt)
 
 
 @pytest.fixture(autouse=True)

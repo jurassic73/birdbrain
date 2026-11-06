@@ -76,12 +76,13 @@ def test_light_or_ir_change_closes_the_stay():
     assert open_stay().update(base, STILL, True, 1.0) == stay.LIGHT
 
 
-def test_long_stays_are_capped():
+def test_long_stays_are_capped(monkeypatch):
+    monkeypatch.setattr(stay.config, "STAY_MAX", 20)  # the cap is read at each update; 20 frames instead of 900
     st, base = open_stay(), scene()
     t = 0
     while (r := st.update(with_bird(base, 100 + t % 50, 100), moving_at(100 + t % 50, 100), False, float(t))) is None:
         t += 1
-    assert r == stay.LONG and t == stay.config.STAY_MAX
+    assert r == stay.LONG and t == stay.config.STAY_MAX == 20
 
 
 def test_watcher_holds_triggers_during_a_stay_and_saves_the_end(monkeypatch, conn):

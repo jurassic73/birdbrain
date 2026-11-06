@@ -1,3 +1,4 @@
+import functools
 import io
 from datetime import datetime, timedelta
 
@@ -9,8 +10,10 @@ from helpers.images import image_size
 from birdbrain import config, db, images, presence, retention
 
 
+@functools.lru_cache(maxsize=None)
 def noisy_jpeg() -> bytes:
-    """A frame with real detail, so it has a realistic, non-trivial file size."""
+    """A frame with real detail, so it has a realistic, non-trivial file size. Made once and shared: the tests only
+    compare the stored photos' sizes with one another and with limits worked out from their total."""
     img = Image.effect_noise((640, 360), 60).convert("RGB")
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=95)
