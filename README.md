@@ -296,9 +296,13 @@ The code itself has no addresses, passwords or locations in it.
 ## Develop
 
 ```bash
-uv run pytest                                   # ~90 tests, a few seconds; never calls the camera or the API
+uv run pytest tests/unit                        # fast feedback, a few seconds; pure tests only
+uv run pytest                                   # everything (unit, component, integration); never calls the camera or the API
+uv run pytest -n 4                              # the same, in parallel
 uv run python -m birdbrain.devseed --reset      # fill the local database with fake visits for UI work
 ```
+
+Tests are in tiers (`tests/unit`, `tests/component`, `tests/integration`); where a new test goes and what CI runs is in [TESTING.md](TESTING.md).
 
 The code is small: `birdbrain/config.py` (settings from `.env`), `db.py` (all database queries), `identify.py` (Claude calls), `watch.py` (motion and capture), `web/` (FastAPI site with Jinja templates and htmx, no build step).
 
