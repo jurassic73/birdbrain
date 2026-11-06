@@ -351,6 +351,14 @@ def test_about_zones_are_part_of_the_photo(client, conn, env_zones):
     assert "<img" not in svg
 
 
+def test_about_numbers_the_zones_like_settings(client, conn, env_zones):
+    html = client.get("/about").text
+    svg = html[html.index('<div class="zones-frame">'):]
+    svg = svg[:svg.index("</svg>")]
+    assert svg.count('class="z-num"') >= 3  # rim, open water and the rest, each with its number on the photo
+    assert '<span class="znum" aria-hidden="true">1</span>' in html  # and the same number in the legend
+
+
 # --- Sunrise and sunset slots ---
 
 @pytest.fixture

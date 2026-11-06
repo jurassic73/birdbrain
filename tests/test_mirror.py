@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from birdbrain import config, db, mirror, privacy
+from birdbrain import config, db, mirror, privacy, zones
 
 
 @pytest.fixture
@@ -278,3 +278,18 @@ def test_copy_keeps_nothing_trim_removed_in_its_free_pages(conn, add_visit, tmp_
     assert c.execute("SELECT lesson_off FROM visits WHERE id = ?", (vid,)).fetchone() == (0,)
     assert c.execute("PRAGMA freelist_count").fetchone() == (0,)
     assert db.get_visit(conn, vid)["lesson_off"] == 1  # the Pi's own database is untouched
+
+
+def test_copy_carries_the_zones_in_force_so_the_mirror_draws_them(conn, tmp_path, monkeypatch):
+    ring = (0.5, 0.5, 0.13, 0.15, 0.11, 0.11, 0.5)
+    monkeypatch.setattr(config, "MOTION_RING", ring)  # from .env on the Pi, nothing saved in the database
+    copy = tmp_path / "copy.db"
+    mirror.copy_db(config.DB_PATH, copy)
+    monkeypatch.setattr(config, "MOTION_RING", None)  # the mirror's own .env has no zones
+    pub = sqlite3.connect(copy)
+    pub.row_factory = sqlite3.Row
+    try:
+        assert tuple(zones.load(pub).ring) == ring
+        assert zones.stored(pub) is not None and zones.adjusted(pub) is False
+    finally:
+        pub.close()
