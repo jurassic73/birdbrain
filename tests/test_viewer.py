@@ -228,7 +228,11 @@ def test_share_link_key_signs_in(gated, tmp_path, monkeypatch):
     assert gated.post("/guest-login", data={"key": key}, headers=ip(23)).status_code == 401
 
 
+@pytest.mark.real_scrypt  # the one login made and checked with the production scrypt cost (n=2**14)
 def test_password_still_works_without_a_link(gated):
+    assert viewer._scrypt.__module__ == viewer.__name__  # not the cheap stand-in every other test gets
+    assert viewer.stored_hash().startswith("scrypt$") and viewer.check_password("test-password-123")
+    assert not viewer.check_password("test-password-124")
     r = gated.post("/guest-login", data={"password": "test-password-123"}, headers=ip(30), follow_redirects=False)
     assert r.status_code == 303
 

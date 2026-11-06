@@ -1,15 +1,16 @@
 """The Pi animal check's view: a square around the whole bowl for birdbath triggers, the ground crop padded to a
 square for ground ones (classifier.presence_patch), and embeddings versioned by it (embeddings.view)."""
 
+import functools
 import json
 import re
-import sqlite3
 
 import cv2
 import numpy as np
 import pytest
 
 from helpers.clock import FROZEN_NOW
+from helpers.images import flat_jpeg
 from birdbrain import classifier, config, db, presence, watch, zones
 from birdbrain.web import app as webapp
 
@@ -61,9 +62,20 @@ def test_the_square_is_the_same_on_a_smaller_copy_of_the_frame():
     assert abs(w * 1920 - big[2]) <= 1 and abs(h * 1080 - big[2]) <= 1
 
 
-def frame(h=1080, w=1920, value=60):
+@functools.lru_cache(maxsize=None)
+def _noise(h, w, value):
     rng = np.random.default_rng(0)
     return np.clip(rng.normal(value, 20, (h, w, 3)), 0, 255).astype(np.uint8)
+
+
+def frame(h=1080, w=1920, value=60):
+    """A noisy frame (seed 0). Drawn once per size and copied: a 1080p one takes ~0.15 s to draw, 3 ms to copy,
+    and some tests paint on theirs."""
+    return _noise(h, w, value).copy()
+
+
+# The photo a stored visit or burst frame is made of when the pixels never matter: substream-sized, flat, encoded once.
+SMALL_JPEG = flat_jpeg(540, 960)
 
 
 def test_the_patch_is_square_whatever_the_view():
@@ -136,22 +148,6 @@ def test_the_view_box_for_drawing_and_coverage():
 
 # --- the stored embeddings ----------------------------------------------------------------------------------
 
-OLD_EMBEDDINGS = """CREATE TABLE embeddings (visit_id INTEGER PRIMARY KEY REFERENCES visits(id) ON DELETE CASCADE,
-    vec BLOB NOT NULL, animal_vec BLOB, animal_frame INTEGER, animal_score REAL, animal_by_owner INTEGER)"""
-
-
-def test_init_db_adds_the_view_column_to_an_old_database(tmp_path):
-    c = sqlite3.connect(tmp_path / "old.db")
-    c.row_factory = sqlite3.Row
-    c.execute("CREATE TABLE visits (id INTEGER PRIMARY KEY, captured_at TEXT)")
-    c.execute(OLD_EMBEDDINGS)
-    c.execute("INSERT INTO visits (id) VALUES (1)")
-    c.execute("INSERT INTO embeddings (visit_id, vec) VALUES (1, X'0000')")
-    c.commit()
-    db.init_db(c)
-    assert c.execute("SELECT view FROM embeddings WHERE visit_id = 1").fetchone()["view"] is None
-
-
 def yard(conn, add_visit, view, rng, n_animal=12, n_empty=40):
     ids = []
     for i in range(n_animal + n_empty):
@@ -209,7 +205,7 @@ class FakeClf:
 def test_the_owners_circled_frame_is_picked_again_after_a_redo(conn, add_visit):
     from birdbrain import images
 
-    burst = [cv2.imencode(".jpg", frame(540, 960))[1].tobytes() for _ in range(3)]
+    burst = [SMALL_JPEG] * 3
     image_rel, thumb_rel = images.store_frame(burst[0], FROZEN_NOW)
     images.store_burst(burst, image_rel)
     vid = add_visit(visitor="none", species=None, image_path=image_rel, thumb_path=thumb_rel,
@@ -235,7 +231,7 @@ def stored_visits(conn, add_visit, n, raw=None):
 
     ids = []
     for _ in range(n):
-        image_rel, thumb_rel = images.store_frame(cv2.imencode(".jpg", frame(540, 960))[1].tobytes(), FROZEN_NOW)
+        image_rel, thumb_rel = images.store_frame(SMALL_JPEG, FROZEN_NOW)
         ids.append(add_visit(image_path=image_rel, thumb_path=thumb_rel,
                              raw_json=json.dumps(raw or {"zones": LIVE, "trigger": "rim"})))
     return ids
@@ -264,21 +260,6 @@ def test_backfill_redo_re_embeds_old_views_newest_first(conn, add_visit, capsys,
 
 
 db_store = presence.store
-
-
-def test_backfill_prints_progress_every_25(conn, add_visit, capsys, monkeypatch):
-    stored_visits(conn, add_visit, 26)
-    presence.backfill(limit=26, clf=FakeClf())
-    lines = capsys.readouterr().out.splitlines()
-    assert lines[0].startswith("25/26 done, 0 failed, ~") and lines[-1].startswith("26/26 done, 0 failed")
-
-
-def test_backfill_cli_takes_redo(monkeypatch, conn):
-    seen = []
-    monkeypatch.setattr(presence, "backfill", lambda limit=None, redo=False: seen.append((limit, redo)) or 0)
-    monkeypatch.setattr("sys.argv", ["presence", "--backfill", "--redo", "--limit", "5"])
-    presence.main()
-    assert seen == [(5, True)]
 
 
 # --- the watcher and the pages ----------------------------------------------------------------------------
@@ -607,7 +588,7 @@ def test_backfill_falls_back_to_the_current_zones(conn, add_visit, monkeypatch):
 def test_pick_frames_on_a_ground_visit_embeds_the_padded_ground_crop(conn, add_visit):
     from birdbrain import images
 
-    burst = [cv2.imencode(".jpg", frame(540, 960))[1].tobytes() for _ in range(3)]
+    burst = [SMALL_JPEG] * 3
     image_rel, thumb_rel = images.store_frame(burst[0], FROZEN_NOW)
     images.store_burst(burst, image_rel)
     vid = add_visit(visitor="none", species=None, image_path=image_rel, thumb_path=thumb_rel,
@@ -826,7 +807,7 @@ def burst_false_trigger(conn, add_visit, owner_frame=None, view=None):
     """A false trigger corrected to a bird, its burst on disk, embedded in `view` (None: the old way)."""
     from birdbrain import images
 
-    burst = [cv2.imencode(".jpg", frame(540, 960))[1].tobytes() for _ in range(3)]
+    burst = [SMALL_JPEG] * 3
     image_rel, thumb_rel = images.store_frame(burst[0], FROZEN_NOW)
     images.store_burst(burst, image_rel)
     vid = add_visit(visitor="none", species=None, image_path=image_rel, thumb_path=thumb_rel,

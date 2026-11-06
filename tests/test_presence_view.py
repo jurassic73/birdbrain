@@ -4,6 +4,7 @@ Written from the contract only (classifier.presence_square / presence_patch / pr
 embeddings.view, presence.store(view=), backfill(redo=), check(view=)). New names are looked up inside the tests so a
 missing one fails that test, never the collection of the file.
 """
+import functools
 import json
 import re
 
@@ -38,8 +39,14 @@ def live(**kw) -> "zones.Zones":
     return zones.Zones(**{"ring": LIVE_RING, "crop": LIVE_CROP, "ground": GROUND_POLY, "ground_crop": GROUND_CROP, **kw})
 
 
-def noise(shape, seed=0) -> np.ndarray:
+@functools.lru_cache(maxsize=None)
+def _noise(shape, seed) -> np.ndarray:
     return np.random.default_rng(seed).integers(0, 256, shape, dtype=np.uint8)
+
+
+def noise(shape, seed=0) -> np.ndarray:
+    """Random pixels, drawn once per shape and seed and copied (a 1080p draw is ~20 ms, the copy ~3 ms)."""
+    return _noise(tuple(shape), seed).copy()
 
 
 def fill_color() -> np.ndarray:

@@ -1,4 +1,3 @@
-import io
 import json
 from datetime import datetime
 
@@ -6,9 +5,9 @@ import cv2
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
 
 from helpers.clock import FROZEN_NOW
+from helpers.images import flat_jpeg
 from birdbrain import classifier, config, db, images, watch
 from birdbrain.classifier import fetch_place_species as real_fetch_place_species
 from birdbrain.web import app as webapp
@@ -73,8 +72,12 @@ def test_place_species_are_fetched_page_by_page_and_cached(monkeypatch, tmp_path
     assert classifier.place_species("999") is None  # never fetched and offline: no limit
 
 
+# The watcher tests' burst: substream-sized and flat, since nothing in them looks at the pixels or the frame's size.
+BURST = [flat_jpeg(360, 640, (40, 120, 200))] * 3
+
+
 def test_watcher_stores_the_guess_without_changing_claudes_label(monkeypatch, conn):
-    burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), (40, 120, 200), np.uint8))[1].tobytes()] * 3
+    burst = BURST
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
     monkeypatch.setattr(watch, "presence_mode", lambda: "off")
 
@@ -170,10 +173,8 @@ def test_stats_page_shows_the_scorecard(client, add_visit):
 
 def test_backfill_scores_stored_visits(conn, add_visit):
     def stored(**fields):
-        buf = io.BytesIO()
-        Image.new("RGB", (1920, 1080), (90, 120, 200)).save(buf, "JPEG")
-        image_rel, thumb_rel = images.store_frame(buf.getvalue(), FROZEN_NOW)
-        return add_visit(image_path=image_rel, thumb_path=thumb_rel, **fields)
+        image_rel, thumb_rel = images.store_frame(flat_jpeg(1080, 1920), FROZEN_NOW)  # main-stream size: the circle's
+        return add_visit(image_path=image_rel, thumb_path=thumb_rel, **fields)      # square below is in its pixels
 
     old = stored(raw_json=json.dumps({"calls": {"circle": {"x": 0.5, "y": 0.5, "r": 0.02}}}))
     owner = stored()
@@ -193,9 +194,7 @@ def test_backfill_scores_stored_visits(conn, add_visit):
 
 
 def test_backfill_keeps_an_owner_check_stored_while_it_ran(conn, add_visit, monkeypatch):
-    buf = io.BytesIO()
-    Image.new("RGB", (1920, 1080), (90, 120, 200)).save(buf, "JPEG")
-    image_rel, thumb_rel = images.store_frame(buf.getvalue(), datetime.now())
+    image_rel, thumb_rel = images.store_frame(flat_jpeg(1080, 1920), datetime.now())
     vid = add_visit(image_path=image_rel, thumb_path=thumb_rel, raw_json=json.dumps({"trigger": "rim"}))
 
     def slow_classify(*args, **kwargs):  # the owner asks the Pi about the visit while the backfill is on it
@@ -280,7 +279,7 @@ def test_settled_species_ignores_visits_the_gate_named_itself(conn, add_visit):
 def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit):
     for _ in range(3):
         add_visit(species="Dark-eyed Junco")
-    burst = [cv2.imencode(".jpg", np.full((1080, 1920, 3), (40, 120, 200), np.uint8))[1].tobytes()] * 3
+    burst = BURST
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
     monkeypatch.setattr(watch, "presence_mode", lambda: "gate")
     monkeypatch.setattr(config, "CLASSIFIER", "gate")

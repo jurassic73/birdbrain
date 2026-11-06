@@ -1,4 +1,7 @@
-"""Small pictures for tests: a flat frame, its JPEG bytes, and the size of an image file."""
+"""Small pictures for tests: a flat frame, its JPEG bytes (made once per size when the content doesn't matter), and
+the size of an image file."""
+import functools
+
 import cv2
 import numpy as np
 
@@ -22,3 +25,11 @@ def jpeg(img: np.ndarray | None = None, **frame_kwargs) -> bytes:
     if img is None:
         img = frame(**frame_kwargs)
     return cv2.imencode(".jpg", img)[1].tobytes()
+
+
+@functools.lru_cache(maxsize=None)
+def flat_jpeg(h: int = 360, w: int = 640, color=(90, 110, 80)) -> bytes:
+    """jpeg(frame(h, w, color)) made once per process and handed out again (bytes can't be changed): for the many
+    tests that store a photo or a burst and never look at the pixels. A flat frame is also ~40x smaller than a noisy
+    one of the same size, so storing and re-reading it is quick."""
+    return jpeg(frame(h, w, color))

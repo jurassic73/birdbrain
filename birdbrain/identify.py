@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Literal
 
-import anthropic
 from PIL import Image
 from pydantic import BaseModel, ValidationError
 
@@ -121,12 +120,15 @@ class Result:
             self.needs_review = True
 
 
-_client: anthropic.Anthropic | None = None
+# The anthropic SDK is imported here on first use, not at module load: it takes ~0.5 s and pulls in a lot, and the web
+# app imports this module for the prompt builders and the Result types without ever needing a client of its own.
+_client = None  # an anthropic.Anthropic, made by client()
 
 
-def client() -> anthropic.Anthropic:
+def client():
     global _client
     if _client is None:
+        import anthropic
         _client = anthropic.Anthropic(timeout=60.0)
     return _client
 

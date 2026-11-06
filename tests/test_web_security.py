@@ -11,7 +11,7 @@ from fastapi import Request
 from fastapi.testclient import TestClient
 from starlette.routing import Route
 
-from birdbrain import db, species_info
+from birdbrain import config, db, species_info
 from birdbrain.web import app as webapp
 from birdbrain.web import auth, viewer
 
@@ -75,15 +75,50 @@ ROUTES = _routes()
 IDS = [f"{m} {p}" for m, _, p in ROUTES]
 
 
+@pytest.fixture(scope="module")
+def routes_db(tmp_path_factory):
+    """One initialized, empty database for every item of the two route sweeps below (170-odd items, one DB and
+    one client each before). Nothing an item does changes it: with a password set and no cookie every change is
+    refused before it reaches a handler, and on the mirror every change is a 404; the GETs read an empty site."""
+    path = tmp_path_factory.mktemp("routes") / "routes.db"
+    with db.session(path) as c:
+        db.init_db(c)
+    return path
+
+
+async def _no_camera():
+    return b""  # /live.jpg answers 503, nothing is contacted
+
+
+@pytest.fixture(scope="module")
+def routes_client(routes_db):
+    """The app started once on routes_db (the module's own MonkeyPatch, undone when the module is done)."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(config, "DB_PATH", routes_db)
+        mp.setattr(webapp, "grab_live_frame", _no_camera)
+        with TestClient(webapp.app) as c:
+            yield c
+
+
+@pytest.fixture
+def route_client(routes_client, routes_db, monkeypatch):
+    """routes_client for one item: the per-test data_dirs fixture pointed config.DB_PATH at a fresh folder, so it is
+    pointed back at the shared database for the length of the test (undone with the test's other patches)."""
+    monkeypatch.setattr(config, "DB_PATH", routes_db)
+    monkeypatch.setattr(webapp, "grab_live_frame", _no_camera)
+    return routes_client
+
+
 def test_route_list_is_real():
     assert ("GET", "/calibration/{name}", "/calibration/x") in ROUTES
     assert ("POST", "/settings/camera/reboot", "/settings/camera/reboot") in ROUTES
 
 
 @pytest.mark.parametrize("method,template,path", ROUTES, ids=IDS)
-def test_every_route_is_classified(client, locked, method, template, path):
+def test_every_route_is_classified(route_client, locked, method, template, path):
     """With a password set and no cookie: admin pages send you to /login, every change is refused, and
     anything else a visitor may fetch is on the allowlist above."""
+    client = route_client
     if method == "GET":
         r = client.get(path, follow_redirects=False)
         if auth.admin_only(template):
@@ -102,10 +137,10 @@ def test_every_route_is_classified(client, locked, method, template, path):
 
 
 @pytest.mark.parametrize("method,template,path", ROUTES, ids=IDS)
-def test_every_route_on_the_public_mirror(client, mirror, method, template, path):
+def test_every_route_on_the_public_mirror(route_client, mirror, method, template, path):
     """BIRDBRAIN_PUBLIC=1: no admin anything. The admin pages, the login, the admin's JSON and every change are the
     same 404 as a page that doesn't exist; only the guest sign-in takes a POST."""
-    r = client.request(method, path, follow_redirects=False)
+    r = route_client.request(method, path, follow_redirects=False)
     if template == "/guest-login":
         assert r.status_code != 404, path
     elif method == "GET" and template in MIRROR_GETS:

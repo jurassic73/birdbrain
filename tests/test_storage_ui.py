@@ -1,5 +1,6 @@
 """Settings > Storage: the usage bar, the limits form, preview and run now."""
-import time
+import threading
+import types
 from datetime import datetime, timedelta
 
 import pytest
@@ -19,6 +20,28 @@ def client(conn):
     with TestClient(webapp.app) as c:
         yield c
     retention.forget()
+
+
+@pytest.fixture
+def worker(monkeypatch):
+    """Run now's background thread, so a test joins it instead of sleep-polling _run_state. The route reaches the
+    thread class through the module's `threading` name, which is swapped for a copy whose Thread remembers every
+    thread it starts (the module's lock was made at import; nothing else in the module uses the name)."""
+    started = []
+
+    class Tracked(threading.Thread):
+        def start(self):
+            started.append(self)
+            super().start()
+
+    monkeypatch.setattr(webapp, "threading", types.SimpleNamespace(Thread=Tracked, Lock=threading.Lock))
+
+    def join() -> list:
+        for t in started:
+            t.join(timeout=10)
+        return started
+
+    return join
 
 
 def test_settings_shows_the_bar_and_limits_form(client, add_visit):
@@ -59,31 +82,25 @@ def test_save_limits_and_validation_error(client, conn):
     assert retention.options(conn)["budget_mb"] == 0
 
 
-def test_preview_and_run_now(client, conn, add_visit):
+def test_preview_and_run_now(client, conn, add_visit, worker):
     add_visit()
     assert "Nothing to do" in client.get("/settings/storage/preview").text
     r = client.post("/settings/storage/run")
     assert r.status_code == 200
-    for _ in range(50):
-        if not webapp._run_state["running"]:
-            break
-        time.sleep(0.1)
+    assert len(worker()) == 1
     assert not webapp._run_state["running"] and not webapp._run_state["error"]
     assert "Done." in client.get("/settings/storage/run").text
 
 
-def test_run_now_says_so_when_the_watcher_is_already_running(client, conn, add_visit):
+def test_run_now_says_so_when_the_watcher_is_already_running(client, conn, add_visit, worker):
     import fcntl
 
     add_visit()
     with open(retention.config.DATA_DIR / retention.LOCK_FILE, "a") as watcher:  # the watcher's daily run, mid-way
         fcntl.flock(watcher, fcntl.LOCK_EX | fcntl.LOCK_NB)
         client.post("/settings/storage/run")
-        for _ in range(50):
-            if not webapp._run_state["running"]:
-                break
-            time.sleep(0.1)
-    assert "already running" in webapp._run_state["error"]
+        assert len(worker()) == 1  # joined while the watcher still holds the lock
+    assert not webapp._run_state["running"] and "already running" in webapp._run_state["error"]
     assert "already running" in client.get("/settings/storage/run").text
 
 

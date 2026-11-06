@@ -1,3 +1,4 @@
+import functools
 import io
 import os
 from datetime import datetime
@@ -11,7 +12,9 @@ from helpers.images import image_size
 from birdbrain import images
 
 
+@functools.lru_cache(maxsize=None)
 def jpeg(size=(1920, 1080)) -> bytes:
+    """A flat frame's JPEG, encoded once per size (bytes can't be changed, so every caller may share them)."""
     buf = io.BytesIO()
     Image.new("RGB", size, (90, 120, 200)).save(buf, "JPEG")
     return buf.getvalue()

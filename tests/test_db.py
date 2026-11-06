@@ -93,7 +93,7 @@ def test_set_raw_entry_keeps_what_landed_meanwhile(conn, add_visit):
 
 
 def test_writing_takes_the_write_lock_before_reading(conn, add_visit):
-    other = sqlite3.connect(config.DB_PATH, timeout=0.2)
+    other = sqlite3.connect(config.DB_PATH, timeout=0)  # no wait: the lock is either held or it is not
     with db.writing(conn):
         with pytest.raises(sqlite3.OperationalError, match="locked"):
             other.execute("BEGIN IMMEDIATE")
