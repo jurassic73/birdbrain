@@ -1,6 +1,7 @@
 """Component tests of scripts/check_test_budget.py: `read_junit(path)` on a junit file under tmp_path, and the CLI
-(`python scripts/check_test_budget.py JUNIT.xml`: exit 1 on any error, 0 otherwise; TEST_BUDGET_TOTAL and
-TEST_BUDGET_TEST override the limits). The pure `check` is covered in tests/unit/scripts/."""
+(`python scripts/check_test_budget.py JUNIT.xml`: exit 1 on any error, 2 when the report is unreadable or empty, 0
+otherwise; TEST_BUDGET_TOTAL and TEST_BUDGET_TEST override the limits). The pure `check` is covered in
+tests/unit/scripts/."""
 
 import os
 import subprocess
@@ -52,11 +53,6 @@ def test_read_junit_takes_a_string_path_too(tmp_path):
     assert [secs for _, secs in read_junit(str(report))] == pytest.approx([0.5])
 
 
-def test_read_junit_of_an_empty_report_is_an_empty_list(tmp_path):
-    report = _write(tmp_path, _junit())
-    assert read_junit(report) == []
-
-
 def _cli(report: Path, **env: str) -> subprocess.CompletedProcess:
     """The script run on `report` with the given TEST_BUDGET_* variables (and no stray ones from this shell)."""
     clean = {k: v for k, v in os.environ.items() if not k.startswith("TEST_BUDGET_")}
@@ -106,7 +102,23 @@ def test_env_overrides_lower_the_total_limit(tmp_path):
     assert res.returncode == 1, res.stdout + res.stderr
 
 
-def test_cli_on_a_report_with_no_test_cases_exits_0(tmp_path):
+def test_an_empty_report_reads_as_no_cases_and_the_cli_exits_2(tmp_path):
+    """A junit report with no test cases means the unit step produced nothing: read_junit returns [] and the CLI
+    refuses it with exit 2 (not 0, which would pass a broken step as "within budget")."""
     report = _write(tmp_path, _junit())
+    assert read_junit(report) == []
     res = _cli(report)
-    assert res.returncode == 0, res.stdout + res.stderr
+    assert res.returncode == 2, res.stdout + res.stderr
+    assert "no tests" in res.stderr
+
+
+def test_cli_exits_2_on_a_report_it_cannot_read(tmp_path):
+    missing = _cli(tmp_path / "nowhere.xml")
+    assert missing.returncode == 2, missing.stdout + missing.stderr
+    broken = _cli(_write(tmp_path, "<testsuites><testsuite>"))
+    assert broken.returncode == 2, broken.stdout + broken.stderr
+
+
+def test_cli_without_a_report_prints_usage_and_exits_2():
+    res = subprocess.run([sys.executable, str(SCRIPT)], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 2 and "usage" in res.stderr, (res.returncode, res.stderr)

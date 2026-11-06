@@ -10,9 +10,11 @@ Limits (the one place they live; the CLI's env variables override the first two 
 
 Usage: python scripts/check_test_budget.py JUNIT.xml
 Locally: uv run pytest tests/unit -p no:cacheprovider --junitxml=/tmp/unit.xml && python scripts/check_test_budget.py /tmp/unit.xml
-Prints a summary, the warnings and the errors; exit 1 on any error, 2 when the report cannot be read. The time of
-a test is what pytest wrote for it (setup, call and teardown together), so the bars are a little stricter than a
-call-time-only rule. Stdlib only, nothing here is imported by the service code.
+Prints a summary, the warnings and the errors; exit 1 on any error, 2 when the report cannot be read or holds no
+test cases at all (an empty report means the unit step produced nothing, so "within budget" would be a false pass:
+the step is broken, not fast). The time of a test is what pytest wrote for it (setup, call and teardown together),
+so the bars are a little stricter than a call-time-only rule. Stdlib only, nothing here is imported by the service
+code.
 """
 from __future__ import annotations
 
@@ -54,7 +56,7 @@ def check(cases, total_limit=TOTAL_LIMIT, test_limit=TEST_LIMIT, warn_at=WARN_AT
     warnings: list[str] = []
     total = sum(seconds for _, seconds in cases)
     if total > total_limit:
-        errors.append(f"the unit tier took {total:.2f} s in all, over its {total_limit:g} s budget")
+        errors.append(f"the unit tier took {total:.2f} s in total, over its {total_limit:g} s budget")
     for test_id, seconds in sorted(cases, key=lambda c: -c[1]):
         if seconds > test_limit:
             errors.append(f"{test_id} took {seconds:.3f} s, over the {test_limit:g} s limit for one unit test")
@@ -85,14 +87,14 @@ def main(argv: list[str]) -> int:
         print(f"cannot read the junit report {path}: {e}", file=sys.stderr)
         return 2
     if not cases:
-        print(f"the junit report {path} holds no tests", file=sys.stderr)
+        print(f"the junit report {path} holds no tests: the unit step produced nothing", file=sys.stderr)
         return 2
     total_limit = _limit(ENV_TOTAL, TOTAL_LIMIT)
     test_limit = _limit(ENV_TEST, TEST_LIMIT)
     errors, warnings = check(cases, total_limit=total_limit, test_limit=test_limit)
     total = sum(seconds for _, seconds in cases)
     slowest_id, slowest = max(cases, key=lambda c: c[1])
-    print(f"{len(cases)} unit tests, {total:.2f} s in all (budget {total_limit:g} s); "
+    print(f"{len(cases)} unit tests, {total:.2f} s in total (budget {total_limit:g} s); "
           f"slowest {slowest:.3f} s (limit {test_limit:g} s): {slowest_id}")
     for line in warnings:
         print(f"warning: {line}")

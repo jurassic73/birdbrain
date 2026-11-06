@@ -109,9 +109,11 @@ def _aliases() -> dict[str, list[tuple[object, str]]]:
     time.sleep), which patching time.sleep alone would miss: "time.sleep" / "sqlite3.connect" -> [(module, attr)].
     Importing the web app loads most of birdbrain but not all of it (autocal, calibrate, recircle and others are
     imported by tests or lazily), so every call looks at the birdbrain modules in sys.modules that have not been
-    scanned yet: a module that arrives later is seen the next time a unit test starts, for the cost of one set
-    difference. A name bound to an earlier test's guard (the module was first imported while a guard was in place) is
-    put back to the real callable, so no stale guard outlives the unit tier."""
+    scanned yet: a module that arrives later is seen the next time a unit test starts, and again when each unit test
+    ends, for the cost of one set difference each. A name bound to a guard (the module was first imported inside a
+    unit test's body, while the guard was in place) is put back to the real callable by the scan at the end of that
+    same test, so no stale guard outlives the unit test that made it: a component test that runs next, in random
+    order or as the next tier, finds the real time.sleep behind the alias (test_tier_rules.py probes this)."""
     _load_app()
     new = [name for name in sys.modules if name.startswith("birdbrain") and name not in _SCANNED]
     for mod_name in new:
@@ -133,7 +135,8 @@ def pure(monkeypatch):
     a subprocess, a thread, a new folder, a file opened for writing (builtins.open, io.open, os.open with a write or
     create flag, Path.write_text/write_bytes, cv2.imwrite), or a file removed, renamed or replaced fails the test.
     Reading files stays allowed. Module-level aliases of time.sleep and sqlite3.connect inside birdbrain are
-    guarded too (see `_aliases`)."""
+    guarded too (see `_aliases`), and a module the test body imported for the first time is scanned at teardown so
+    an alias it bound to a guard is repaired before the next test."""
     aliases = _aliases()  # before time.sleep is patched below: the scan compares against the real one
     real_open = builtins.open
 
@@ -180,3 +183,5 @@ def pure(monkeypatch):
     for name, places in aliases.items():
         for mod, attr in places:
             monkeypatch.setattr(mod, attr, guards[name])
+    yield
+    _aliases()  # a module first imported during the test bound the guard, not the real callable: put it back now

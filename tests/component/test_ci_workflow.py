@@ -1,9 +1,13 @@
 """Rules for the CI workflow (.github/workflows/tests.yml) and the two scripts it runs, checked on the real files.
 
-Plain text checks rather than a YAML parser (pyyaml is not a dependency): the workflow is small and its shape is
-what matters here, that the fast job measures the unit tier's runtime budget on the junit report it just wrote, that
-pull requests add the component tier, that the nightly run repeats the suite in random order with a printed seed,
-that every action is pinned to a major version and that the file names nobody and no repo.
+A component test: it reads the repo's own files and runs the two scripts in a subprocess (one real local dependency),
+so it runs on every pull request rather than only nightly. Plain text checks rather than a YAML parser (pyyaml is not
+a dependency): the workflow is small and its shape is what matters here, that the fast job measures the unit tier's
+runtime budget on the junit report it just wrote and runs its selected component tests in parallel, that pull
+requests add the component tier, that the nightly run repeats the suite in random order with a printed seed, that a
+newer push cancels an older run except on main, that every action is pinned to a major version and that the file
+names nobody and no repo. The scripts' own behaviour is covered in tests/unit/scripts/ and tests/component/scripts/;
+here they are only shown to run under an isolated interpreter and to import nothing but the standard library.
 """
 import re
 import subprocess
@@ -61,6 +65,14 @@ def test_fast_job_runs_the_unit_tier_and_checks_its_budget_on_that_junit(text):
     assert "scripts/select_tests.py" in fast, "the changed-path selection does not run in the fast job"
     assert "github.event.before" in fast and "github.event.pull_request.base.sha" in fast, "BASE for push and PR"
     assert "fetch-depth: 0" in fast, "the changed-path diff needs history"
+    assert re.search(r"pytest \$selected\b.*-n \d", fast), "the selected component tests do not run with xdist"
+
+
+def test_a_newer_push_cancels_the_older_run_except_on_main(text):
+    concurrency = re.search(r"^concurrency:\n(.*?)^\S", text, re.S | re.M).group(1)
+    assert re.search(r"group:.*github\.ref", concurrency), "the concurrency group does not include the ref"
+    cancel = re.search(r"cancel-in-progress:\s*(.+)", concurrency).group(1).strip()
+    assert cancel == "${{ github.ref != 'refs/heads/main' }}", cancel
 
 
 def test_component_job_runs_the_whole_tier_on_pull_requests_and_main(text):
@@ -86,14 +98,25 @@ def test_workflow_uses_no_secrets_and_names_no_repo_or_person(text):
     assert 'PYTHON_VERSION: "3.11"' in text
 
 
-def test_the_scripts_are_stdlib_only_and_runnable_without_the_venv():
-    """Both scripts run under a bare interpreter (CI could call them before `uv sync`, and nothing in the service
-    code imports them): the budget check prints its usage and exits 2, the selector prints the whole tier when BASE
-    is all zeros."""
-    res = subprocess.run([sys.executable, "-I", str(BUDGET)], capture_output=True, text=True)
-    assert res.returncode == 2 and "usage" in res.stderr, (res.returncode, res.stderr)
-    res = subprocess.run([sys.executable, "-I", str(SELECT), "0" * 40], capture_output=True, text=True, cwd=REPO_ROOT)
-    assert res.returncode == 0 and res.stdout.strip() == "tests/component", (res.returncode, res.stdout, res.stderr)
+def test_the_scripts_import_only_the_standard_library():
+    """Nothing in the service code imports them and they import nothing of it, nor any third-party package: CI can
+    run them before `uv sync` and they ship nothing new to the hosts."""
     for script in (SELECT, BUDGET):
         imports = re.findall(r"^(?:from|import) (\w+)", script.read_text(), re.M)
+        assert imports, f"{script.name} has no imports?"
         assert "birdbrain" not in imports, f"{script.name} imports the service code"
+        foreign = sorted(set(imports) - set(sys.stdlib_module_names))
+        assert not foreign, f"{script.name} imports outside the standard library: {foreign}"
+
+
+def test_the_scripts_run_under_an_isolated_interpreter(tmp_path):
+    """`python -I` ignores PYTHONPATH, the user site and the current directory, the closest a test gets to a bare
+    interpreter: each script does one small job there. What each prints is covered in tests/component/scripts/."""
+    report = tmp_path / "junit.xml"
+    report.write_text('<testsuites><testsuite tests="1"><testcase classname="unit.test_a" name="test_one" '
+                      'time="0.001" /></testsuite></testsuites>')
+    res = subprocess.run([sys.executable, "-I", str(BUDGET), str(report)], capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, (res.returncode, res.stdout, res.stderr)
+    res = subprocess.run([sys.executable, "-I", str(SELECT), "HEAD", "HEAD"], capture_output=True, text=True,
+                         cwd=REPO_ROOT, timeout=60)
+    assert res.returncode == 0 and res.stderr == "", (res.returncode, res.stdout, res.stderr)
