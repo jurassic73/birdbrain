@@ -1,11 +1,13 @@
 """Rules the three-tier test layout must follow (contract #7 Tiers, T1, T4, T5).
 
 Written blind, before the tests were moved: these tests pin down what the contract promises about the tree
-(T1), the tier markers and `-m` selections (T4) and the unit guard in tests/unit/conftest.py (T5), without
-knowing how the builder did it. T4 collects the real repo in pytest subprocesses (one shared run per selection,
+(T1), the tier markers and `-m` selections (T4) and the unit guard in tests/unit/conftest.py (T5, plus the C1
+and C2 probes carried into #3: the capfd fixtures and a sleep alias in a module imported late), without knowing how
+the builder did it. T4 collects the real repo in pytest subprocesses (one shared run per selection,
 all started together); T5 copies the repo's conftests into a throwaway tree under tmp_path, drops probe tests into
 its unit and component folders and reads the junit report by test name, so a probe that died for another reason
-never counts as "the guard works". The probe tree is run twice, together: whole (both tiers' conftests loaded) and
+never counts as "the guard works". The probe tree is run twice, together: whole (both tiers' conftests loaded, the
+unit probes first and then the component probes, so the component probes see what the unit tier left behind) and
 tests/unit alone, because a unit conftest that only works once some other file has imported the web app passed the
 whole-tree run and broke `pytest tests/unit/test_config.py`; one real unit test is also run by itself. Every
 subprocess runs with a private TMPDIR and none of this run's own pytest settings (addopts, timeout, xdist) in its
@@ -380,6 +382,19 @@ def test_u_tmpdir_factory_fixture(tmpdir_factory):
     pass
 
 
+def test_u_capfd_fixture(capfd):
+    pass
+
+
+def test_u_capfdbinary_fixture(capfdbinary):
+    pass
+
+
+def test_u_pure_work_after_the_capture_fixtures_is_fine():
+    # Collected right after the capfd probes: a refused fixture fails that one test, not every later one.
+    assert sorted({3, 1, 2}) == [1, 2, 3]
+
+
 def test_u_sleep_zero_is_fine():
     time.sleep(0)
 
@@ -404,6 +419,68 @@ def test_u_data_dir_does_not_exist():
     assert not missing, f"a unit test has a data folder: {missing}"
 '''
 
+# A birdbrain module the probe tree imports only after the first unit test has run (see LATE_PROBE): like
+# species_info._sleep it binds time.sleep at import, so a guard that scanned birdbrain's modules once, at the first
+# unit test, never sees it.
+LATE_MODULE = '''"""Written into the throwaway tree by tests/integration/test_tier_rules.py and imported late."""
+import time
+
+_sleep = time.sleep
+'''
+
+# A second late module, first imported inside a unit test's body (see LATE_PROBE), when time.sleep is already the
+# guard: `_x` is bound to the guard itself. The unit conftest must put the real sleep back when that test ends, or the
+# stale guard would refuse a component test that runs next (random order, or the component tier after the unit tier).
+BODY_MODULE = '''"""Written into the throwaway tree by tests/integration/test_tier_rules.py and imported inside a unit test."""
+import time
+
+_x = time.sleep
+'''
+
+# Sorts after test_probe_unit_rules.py, so its first test runs after the guard has already done its first scan.
+LATE_PROBE = '''"""Probe dropped into the throwaway tree's unit folder by tests/integration/test_tier_rules.py, collected after
+test_probe_unit_rules.py. Its module-scoped fixture runs before this file's first test's own guard fixtures (higher
+scope first), when time.sleep is still the real one, and imports a birdbrain module that binds `_sleep = time.sleep`:
+a module first imported after the first unit test of the session."""
+import importlib
+import sys
+from pathlib import Path
+
+import pytest
+
+import birdbrain
+
+LATE_SOURCE = Path(__file__).resolve().parents[2] / "late_modules"
+
+
+@pytest.fixture(scope="module")
+def late_module():
+    assert "birdbrain.probe_late_sleep" not in sys.modules, "the late module must not be imported before this fixture"
+    birdbrain.__path__.append(str(LATE_SOURCE))
+    return importlib.import_module("birdbrain.probe_late_sleep")
+
+
+def test_u_sleep_alias_in_a_module_imported_late(late_module):
+    late_module._sleep(0.01)
+
+
+def test_u_pure_work_after_the_late_import_is_fine():
+    assert sum(range(10)) == 45
+
+
+def test_u_zz_import_inside_the_body_binds_the_guard(late_module):
+    """The last unit probe of the run (it sorts last in the last unit file): the first import of a module happens
+    here, in the body, while time.sleep is the guard, so `_x` is the guard. The test is pure (it only imports and
+    calls `_x(0)`) and leaves a stale alias behind with no unit test after it to rescan: only the conftest's repair
+    at the end of this test stands between the alias and the component probe that runs next."""
+    assert "birdbrain.probe_body_sleep" not in sys.modules, "the body module must first be imported here"
+    import time
+    mod = importlib.import_module("birdbrain.probe_body_sleep")
+    assert mod._x is time.sleep, "bound while the guard was in place, so it is the guard"
+    assert getattr(mod._x, "_unit_guard_for", None) == "time.sleep"
+    mod._x(0)
+'''
+
 COMPONENT_PROBE = '''"""Probe tests dropped into the throwaway tree's component folder by tests/integration/test_tier_rules.py."""
 import sqlite3
 import subprocess
@@ -411,6 +488,21 @@ import sys
 import time
 
 from birdbrain import config
+
+REAL_SLEEP = time.sleep  # taken at collection, before any test (and any unit guard) has run
+
+
+def test_c_an_alias_bound_in_a_unit_test_body_is_the_real_sleep_again():
+    """The unit probes ran first and one of them imported birdbrain.probe_body_sleep inside its body, binding `_x`
+    to that test's guard. Here, outside the unit tier, `_x` must be the real time.sleep again (the unit conftest
+    repaired it when that test ended), so a positive sleep through it just sleeps."""
+    assert time.sleep is REAL_SLEEP, "no guard may be active in a component test"
+    mod = sys.modules.get("birdbrain.probe_body_sleep")
+    assert mod is not None, "the unit probe that imports the body module must have run before this one"
+    assert getattr(mod._x, "_unit_guard_for", None) is None, "a stale unit guard outlived its test"
+    assert mod._x is time.sleep is REAL_SLEEP
+    mod._x(0)
+    mod._x(0.001)
 
 
 def test_c_sqlite_connect_to_a_tmp_file(tmp_path):
@@ -445,18 +537,28 @@ UNIT_MUST_FAIL = ("test_u_sqlite_connect", "test_u_sleep_positive", "test_u_slee
                   "test_u_os_remove", "test_u_os_unlink", "test_u_os_rename", "test_u_os_replace", "test_u_os_rmdir",
                   "test_u_shutil_rmtree", "test_u_os_system",
                   "test_u_tmp_path_fixture", "test_u_tmp_path_factory_fixture", "test_u_tmpdir_fixture",
-                  "test_u_tmpdir_factory_fixture")
+                  "test_u_tmpdir_factory_fixture",
+                  "test_u_capfd_fixture", "test_u_capfdbinary_fixture",  # C1
+                  "test_u_sleep_alias_in_a_module_imported_late")  # C2, from LATE_PROBE
+CAPTURE_PROBES = ("test_u_capfd_fixture", "test_u_capfdbinary_fixture")
+AFTER_CAPTURE = "test_u_pure_work_after_the_capture_fixtures_is_fine"
+LATE_ALIAS = "test_u_sleep_alias_in_a_module_imported_late"
+AFTER_LATE = "test_u_pure_work_after_the_late_import_is_fine"
+BODY_IMPORT = "test_u_zz_import_inside_the_body_binds_the_guard"  # must be the last unit probe to run
+AFTER_BODY_COMPONENT = "test_c_an_alias_bound_in_a_unit_test_body_is_the_real_sleep_again"
 UNIT_MUST_PASS = ("test_u_sleep_zero_is_fine", "test_u_pure_work_is_fine", "test_u_reading_a_file_is_fine",
-                  "test_u_os_open_read_only_is_fine", "test_u_data_dir_does_not_exist")
+                  "test_u_os_open_read_only_is_fine", "test_u_data_dir_does_not_exist", AFTER_CAPTURE, AFTER_LATE,
+                  BODY_IMPORT)
 COMPONENT_MUST_PASS = ("test_c_sqlite_connect_to_a_tmp_file", "test_c_writes_under_tmp_path",
-                       "test_c_sleep_and_subprocess", "test_c_data_dir_is_a_fresh_folder")
+                       "test_c_sleep_and_subprocess", "test_c_data_dir_is_a_fresh_folder", AFTER_BODY_COMPONENT)
 UNIT_PROBES = UNIT_MUST_FAIL + UNIT_MUST_PASS
 ALL_PROBES = UNIT_PROBES + COMPONENT_MUST_PASS
 
 
 def _build_probe_tree(tree: Path) -> None:
     """tests/ under `tree` with the repo's real conftest.py files and __init__.py files (if the suite uses packages)
-    at the same relative places, the unit probe in tests/unit/ and the component probe in tests/component/."""
+    at the same relative places, the unit probes in tests/unit/ (the late-alias probe sorts after the main one), the
+    module the late-alias probe imports in late_modules/ and the component probe in tests/component/."""
     for src in sorted(TESTS_DIR.rglob("*.py")):
         rel = src.relative_to(REPO_ROOT)
         if "__pycache__" in rel.parts or rel.parts[1:2] == ("helpers",):
@@ -470,12 +572,16 @@ def _build_probe_tree(tree: Path) -> None:
         if (TESTS_DIR / "__init__.py").exists():
             (tree / "tests" / tier / "__init__.py").touch()
     (tree / "tests" / "unit" / "test_probe_unit_rules.py").write_text(UNIT_PROBE)
+    (tree / "tests" / "unit" / "test_probe_unit_z_late_alias.py").write_text(LATE_PROBE)
+    (tree / "late_modules").mkdir()
+    (tree / "late_modules" / "probe_late_sleep.py").write_text(LATE_MODULE)
+    (tree / "late_modules" / "probe_body_sleep.py").write_text(BODY_MODULE)
     (tree / "tests" / "component" / "test_probe_in_place.py").write_text(COMPONENT_PROBE)
 
 
 def _junit_outcomes(report: Path) -> dict[str, tuple[str, str]]:
-    """Test name -> (outcome, message) from a junit report; the message is the failure or error's short message
-    plus its full text."""
+    """Test name -> (outcome, message) from a junit report, in the order the tests ran; the message is the failure
+    or error's short message plus its full text."""
     outcomes = {}
     for case in ET.parse(report).getroot().iter("testcase"):
         outcome, message = "passed", ""
@@ -497,25 +603,32 @@ def _run_probe_tree(folder: Path, tree: Path, *paths: str, expected: tuple[str, 
     report = folder / "junit.xml"
     res = _pytest(folder, "-q", "--junitxml", str(report), *(str(tree / p) for p in paths), rootdir=tree)
     out = res.stdout + res.stderr
-    assert report.exists(), f"the probe run on {paths} wrote no junit report (exit {res.returncode}):\n{out}"
+    leaked = ("" if "unit tests are pure" not in out else
+              " (the guard's refusal is in pytest's own traceback: a patch leaked past the test that was refused, "
+              "which is what C1 fixes for capfd)")
+    assert report.exists(), f"the probe run on {paths} wrote no junit report (exit {res.returncode}){leaked}:\n{out}"
     outcomes = _junit_outcomes(report)
     assert set(outcomes) == set(expected), (
         f"the probe run on {paths} did not run exactly the expected probes: "
         f"missing {sorted(set(expected) - set(outcomes))}, unexpected {sorted(set(outcomes) - set(expected))}\n{out}")
-    assert "collected" in out or "passed" in out or "failed" in out, out
+    # Sanity: pytest's own summary is in the output. An all-errors run says "error(s)" and nothing else, and must
+    # still get through to the per-probe messages below (C3).
+    assert any(word in out for word in ("collected", "passed", "failed", "error")), out
     return outcomes, out
 
 
 @pytest.fixture(scope="module")
 def unit_guard_probe(tmp_path_factory):
-    """The probe tree run twice, together: "whole" is `pytest tests` (both tiers' conftests loaded, the component
-    probes included) and "unit_alone" is `pytest tests/unit` (only the base and unit conftests, as when one unit
-    file is run by itself). Each is (name -> (outcome, message), the run's output)."""
+    """The probe tree run twice, together: "whole" is `pytest tests/unit tests/component` (both tiers' conftests
+    loaded, the unit probes first and the component probes after them, the order random order or a tier-by-tier run
+    can produce, so the component probes see what the unit tier left behind) and "unit_alone" is `pytest tests/unit`
+    (only the base and unit conftests, as when one unit file is run by itself). Each is (name -> (outcome, message),
+    the run's output)."""
     folder = tmp_path_factory.mktemp("unit_guard")
     tree = folder / "repo"
     _build_probe_tree(tree)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        whole = pool.submit(_run_probe_tree, folder / "whole", tree, "tests", expected=ALL_PROBES)
+        whole = pool.submit(_run_probe_tree, folder / "whole", tree, "tests/unit", "tests/component", expected=ALL_PROBES)
         alone = pool.submit(_run_probe_tree, folder / "alone", tree, "tests/unit", expected=UNIT_PROBES)
         results = {"whole": whole.result(), "unit_alone": alone.result()}
     assert not any((TESTS_DIR / tier / "test_probe_unit_rules.py").exists() for tier in TIERS), \
@@ -544,9 +657,10 @@ def test_t5_impure_call_fails_a_unit_test(unit_guard_probe, probe):
     """sqlite3.connect, time.sleep(0.01) (also through a birdbrain module's import-time alias of it), subprocess.run,
     Thread.start, a file opened for writing (open, os.open with a write or create flag, Path.touch, tempfile.mkstemp,
     Path.write_text/write_bytes, cv2.imwrite), a new folder (Path.mkdir, os.mkdir, os.makedirs), a file removed,
-    renamed or replaced (os.remove/unlink/rename/replace/rmdir, shutil.rmtree), os.system and the tmp_path family of
-    fixtures each fail the unit test that uses them, with a message that says the test is not a unit test and where
-    it belongs ("unit" and "component" both in it)."""
+    renamed or replaced (os.remove/unlink/rename/replace/rmdir, shutil.rmtree), os.system, the tmp_path family of
+    fixtures, the capfd and capfdbinary fixtures (C1) and a sleep through the alias of a birdbrain module imported
+    after the first unit test (C2) each fail the unit test that uses them, with a message that says the test is not a
+    unit test and where it belongs ("unit" and "component" both in it)."""
     outcomes, out = unit_guard_probe["whole"]
     problem = _not_stopped_by_the_guard(outcomes, probe)
     assert not problem, f"{probe} in tests/unit: {problem}\n{out}"
@@ -556,7 +670,8 @@ def test_t5_pure_unit_probes_pass(unit_guard_probe):
     """time.sleep(0), pure work and reading a file (open and os.open read-only) are allowed in a unit test."""
     outcomes, out = unit_guard_probe["whole"]
     failed = {p: outcomes[p] for p in ("test_u_sleep_zero_is_fine", "test_u_pure_work_is_fine",
-                                       "test_u_reading_a_file_is_fine", "test_u_os_open_read_only_is_fine")
+                                       "test_u_reading_a_file_is_fine", "test_u_os_open_read_only_is_fine",
+                                       AFTER_CAPTURE, AFTER_LATE)
               if outcomes[p][0] != "passed"}
     assert not failed, "pure probes did not pass in tests/unit:\n" + "\n".join(f"{k}: {v}" for k, v in failed.items())
 
@@ -566,6 +681,59 @@ def test_t5_unit_tests_get_no_data_folder(unit_guard_probe):
     outcomes, out = unit_guard_probe["whole"]
     outcome, message = outcomes["test_u_data_dir_does_not_exist"]
     assert outcome == "passed", f"a unit test saw a data folder:\n{message}"
+
+
+def _ran_after(outcomes: dict, later: str, earlier: str) -> bool:
+    order = list(outcomes)
+    return order.index(later) > order.index(earlier)
+
+
+@pytest.mark.parametrize("run", ["whole", "unit_alone"])
+def test_t5_capture_fixtures_are_refused_without_breaking_the_tests_after_them(unit_guard_probe, run):
+    """C1: a unit test asking for capfd or capfdbinary fails alone, with the guard's message, and the plain pure probe
+    collected right after the two (plus every other probe that runs later in the session) still passes. Before the
+    fix pytest's capfd hit the guarded open inside a capture hook, which errored every later test and left the
+    guard's patches applied."""
+    outcomes, out = unit_guard_probe[run]
+    wrong = {p: _not_stopped_by_the_guard(outcomes, p) for p in CAPTURE_PROBES}
+    wrong = {p: why for p, why in wrong.items() if why}
+    assert not wrong, f"capture fixtures in tests/unit ({run}):\n" + "\n".join(f"{k}: {v}" for k, v in wrong.items())
+    for probe in CAPTURE_PROBES:
+        assert _ran_after(outcomes, AFTER_CAPTURE, probe), f"{AFTER_CAPTURE} must be collected after {probe}"
+    later = [p for p in list(outcomes)[list(outcomes).index(AFTER_CAPTURE):] if p in UNIT_MUST_PASS]
+    assert AFTER_CAPTURE in later
+    broken = {p: outcomes[p] for p in later if outcomes[p][0] != "passed"}
+    assert not broken, (f"pure probes after the capfd probes did not pass ({run}): the refused fixture broke the "
+                        f"tests after it:\n" + "\n".join(f"{k}: {v}" for k, v in broken.items()) + f"\n{out}")
+
+
+@pytest.mark.parametrize("run", ["whole", "unit_alone"])
+def test_t5_a_sleep_alias_in_a_module_imported_after_the_first_unit_test_is_refused(unit_guard_probe, run):
+    """C2: the guard's scan for import-time aliases of time.sleep (species_info._sleep) must also cover a birdbrain
+    module first imported after the first unit test has run (LATE_PROBE imports one in a module-scoped fixture, so
+    nothing has scanned it yet); a scan made once per session let `_sleep(0.01)` through. The pure probe after it
+    still passes."""
+    outcomes, out = unit_guard_probe[run]
+    assert _ran_after(outcomes, LATE_ALIAS, "test_u_sleep_positive"), \
+        f"the late-alias probe must run after the first unit probes, order was {list(outcomes)}"
+    problem = _not_stopped_by_the_guard(outcomes, LATE_ALIAS)
+    assert not problem, f"{LATE_ALIAS} in tests/unit ({run}): {problem}\n{out}"
+    assert outcomes[AFTER_LATE][0] == "passed", f"{AFTER_LATE} ({run}): {outcomes[AFTER_LATE]}"
+
+
+def test_t5_an_alias_bound_inside_a_unit_test_body_is_repaired_when_that_test_ends(unit_guard_probe):
+    """F5 (fix-up of C2): the last unit probe of the run imports a module inside its body, binding `_x = time.sleep`
+    to the guard, and no unit test runs after it to rescan. The component probe that runs next finds the real
+    time.sleep behind the alias and sleeps through it (AFTER_BODY_COMPONENT): the stale guard did not outlive the
+    unit test that made it. Checked in the run where the unit probes come first; without the repair at the end of
+    the unit test, the component probe meets the guard and is refused."""
+    outcomes, out = unit_guard_probe["whole"]
+    unit_probes = [p for p in outcomes if p.startswith("test_u_")]
+    assert unit_probes[-1] == BODY_IMPORT, f"the body-import probe must be the last unit probe, order was {unit_probes}"
+    assert _ran_after(outcomes, AFTER_BODY_COMPONENT, BODY_IMPORT), f"order was {list(outcomes)}"
+    wrong = {p: outcomes[p] for p in (BODY_IMPORT, AFTER_BODY_COMPONENT) if outcomes[p][0] != "passed"}
+    assert not wrong, ("the alias bound in a unit test's body was not handled:\n"
+                       + "\n".join(f"{k}: {v}" for k, v in wrong.items()) + f"\n{out}")
 
 
 def test_t5_the_unit_folder_alone_behaves_the_same(unit_guard_probe):

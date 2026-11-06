@@ -1,0 +1,105 @@
+# Tests in tiers (markers in pyproject.toml): every push runs the fast job, pull requests and main add the component tier,
+# and the whole suite runs nightly and on demand. No secrets: the tests never read .env, and nothing here needs the
+# network beyond installing packages.
+name: Tests
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 10 * * *"  # nightly at 10:17 UTC (02:17 Pacific standard time)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to a branch cancels the run still going for the older one; main is never cancelled, so every commit
+  # that lands has its own complete run.
+  group: tests-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  PYTHON_VERSION: "3.11"
+  PYTEST_OPTS: -p no:cacheprovider --color=yes
+
+jobs:
+  fast:
+    # Every push and pull request: the whole unit tier within its runtime budget, the guard tests, then only the
+    # component tests the changed paths call for (scripts/select_tests.py), in parallel (a first push or a change
+    # to the shared test code selects the whole tier).
+    name: fast (unit, guard, changed-path component)
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # the changed-path diff needs the base commit
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Install
+        run: uv sync --frozen
+      - name: Unit tier
+        run: uv run pytest tests/unit $PYTEST_OPTS --junitxml=unit-junit.xml
+      - name: Unit tier runtime budget
+        run: uv run python scripts/check_test_budget.py unit-junit.xml
+      - name: Guard tests
+        run: uv run pytest -m guard $PYTEST_OPTS
+      - name: Component tests for the changed paths
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          selected="$(uv run python scripts/select_tests.py "$BASE")"
+          echo "base ${BASE:-<none>}, selected: ${selected:-nothing}"
+          if [ -n "$selected" ]; then
+            uv run pytest $selected $PYTEST_OPTS -n 4
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-junit
+          path: unit-junit.xml
+          retention-days: 7
+
+  component:
+    # Pull requests and pushes to main: the whole component tier, in parallel.
+    name: component (whole tier)
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Install
+        run: uv sync --frozen
+      - name: Component tier
+        run: uv run pytest tests/component $PYTEST_OPTS -n 4
+
+  full:
+    # Nightly and on demand: the whole suite in file order, then again in random order (the seed is the run number,
+    # printed so a failure can be replayed with --randomly-seed). Integration tests that need files the runner lacks
+    # (the ONNX model) skip as they do locally.
+    name: full (whole suite, then random order)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: Install
+        run: uv sync --frozen
+      - name: Whole suite
+        run: uv run pytest $PYTEST_OPTS
+      - name: Whole suite in random order
+        run: |
+          echo "pytest-randomly seed: ${{ github.run_number }}"
+          uv run --with pytest-randomly pytest $PYTEST_OPTS -p randomly --randomly-seed=${{ github.run_number }}

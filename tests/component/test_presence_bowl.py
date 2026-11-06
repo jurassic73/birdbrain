@@ -364,7 +364,7 @@ def test_pick_frames_on_a_ground_visit_embeds_the_padded_ground_crop(conn, add_v
 def hold_unread(monkeypatch):
     """The watcher's cached hold forgotten, so the next probe_ready reads the database."""
     def forget():
-        monkeypatch.setattr(watch, "_hold_cache", (0.0, False))
+        monkeypatch.setattr(watch, "_hold_cache", (None, False))
     forget()
     return forget
 
@@ -399,6 +399,14 @@ def test_the_hold_is_read_at_most_every_15_seconds(monkeypatch, conn, hold_unrea
     clock[0] += 10
     assert watch.presence_held() is False  # still the cached answer
     clock[0] += 10
+    assert watch.presence_held() is True
+
+
+def test_the_hold_is_read_on_a_freshly_booted_machine(monkeypatch, conn, hold_unread):
+    """time.monotonic() counts from boot on Linux: with 0.0 as the "never read" mark the watcher's first 15 s
+    answered "not held" without looking (a CI runner VM is that young when the tests start)."""
+    db.set_value(conn, presence.HOLD_KEY, str(presence._now()))
+    monkeypatch.setattr(watch.time, "monotonic", lambda: 5.0)
     assert watch.presence_held() is True
 
 
