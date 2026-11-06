@@ -204,7 +204,7 @@
     <li><strong>Claude Haiku</strong> sees the sharpest photo{{ ', cropped' if zones.crop }} and answers in a fixed format: kind of animal,
       species, how sure, how many, any other animals in the shot. "Nothing there" goes to {% call admin_link("/false-triggers") %}False triggers{% endcall %}, hidden from the gallery.</li>
     <li><strong>Claude Sonnet</strong> looks at the 3 sharpest photos together when Haiku isn't sure
-      <span data-tip="A fairly sure Haiku guess at a species already confirmed here {{ confirmed_min }}+ times skips Sonnet, as long as the BioCLIP 2 species check names the same species. If Claude can't answer at all, the visit is kept, labelled other, and waits in the review queue.">(mostly)</span>.
+      <span data-tip="A fairly sure Haiku guess at a species already confirmed here {{ confirmed_min }}+ times skips Sonnet, as long as the BioCLIP 2 species check names the same species; an unsure guess skips it too when that check is very sure about the same species on a close-up of the bird. If Claude can't answer at all, the visit is kept, labelled other, and waits in the review queue.">(mostly)</span>.
       Still unsure: the {% call admin_link("/review") %}review queue{% endcall %}, where you have the final say. An animal Claude can't name ("Other") always waits there, hidden from visitors and the public copy.</li>
     <li><strong>What Claude is told</strong> The photo, the date and time, night or day, your yard from
       {% call admin_link("/notes#camera") %}Claude's Notes{% endcall %}{% if site.location %} (in {{ site.location }}){% elif not site.scene_notes %} (not filled in yet){% endif %},

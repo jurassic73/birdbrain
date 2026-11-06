@@ -1030,7 +1030,8 @@ def decision_steps(raw_json: str | None) -> dict:
             "has_first_look": any(st.get("first_look") and not st.get("gated") for st in steps),
             "has_tight_look": any(st.get("tight") for st in steps),
             "skipped_sonnet": bool(calls.get("skipped_sonnet")), "asked_sonnet": bool(calls.get("sonnet")),
-            "local_disagreed": calls.get("local_disagreed"), "local_agreed": bool(calls.get("local_agreed"))}
+            "local_disagreed": calls.get("local_disagreed"), "local_agreed": bool(calls.get("local_agreed")),
+            "local_confirmed": bool(calls.get("local_confirmed"))}
 
 
 CHECK_BY = {"pi": "BioCLIP 2", "haiku": "Haiku", "sonnet": "Sonnet"}  # the visit page's Ask buttons

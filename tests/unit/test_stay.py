@@ -123,6 +123,15 @@ def test_an_animal_on_the_pale_rim_is_one_animal_in_colour_but_two_in_grey():
     assert stay.count_animals(colour_photo(empty), empty, everywhere) == 0
 
 
+def test_detail_lists_where_each_counted_animal_was():
+    empty, everywhere = scene(), np.full((H, W), 255, np.uint8)
+    two = with_bird(with_bird(empty, 200, 200), 450, 120)
+    boxes = []
+    assert stay.count_animals(main_photo(two), empty, everywhere, detail=boxes) == 2
+    assert len(boxes) == 2 and all(len(b) == 4 and all(0 <= v <= 1 for v in b) for b in boxes)
+    assert sorted(round(b[0], 1) for b in boxes) == [0.3, 0.7]  # the birds at x 200 and 450 of 640, near their centres
+
+
 def test_the_watcher_counts_against_the_colour_scene_when_it_has_one():
     empty, everywhere = colour_scene(), np.full((H, W), 255, np.uint8)
     photo = colour_photo(with_grey_animal(empty, 300))

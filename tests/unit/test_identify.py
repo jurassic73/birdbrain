@@ -346,3 +346,49 @@ def test_low_answers_and_new_names_still_get_sonnet(fake_ask, confidence, specie
     calls = fake_ask({HAIKU: sighting(species=species, confidence=confidence), SONNET: sighting()})
     identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"})
     assert [m for m, _, _ in calls] == [HAIKU, SONNET]
+
+
+def with_circle(s):
+    s.circle = identify.Circle(x=0.3, y=0.5, r=0.08)
+    return s
+
+
+def strong(name, score=0.99, share=0.95):
+    return {"model": "bioclip-2", "top": [{"name": name, "scientific": "", "score": score}], "local_share": share}
+
+
+def test_low_haiku_answer_backed_by_the_local_look_on_its_circle_skips_sonnet(fake_ask):
+    calls = fake_ask({HAIKU: with_circle(sighting(confidence="low")), SONNET: sighting(species="Song Sparrow")})
+    r = identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"}, local_check=lambda c: strong("Dark-eyed Junco"))
+    assert [m for m, _, _ in calls] == [HAIKU] and not r.escalated and r.model == HAIKU
+    assert (r.sighting.confidence, r.needs_review) == ("high", False)
+    assert r.raw["skipped_sonnet"] == "confirmed species" and r.raw["local_confirmed"]
+    assert r.raw["haiku"]["answer"]["confidence"] == "low"  # Haiku's own answer is kept as it was
+
+
+@pytest.mark.parametrize("guess, confirmed, circle", [
+    (strong("Dark-eyed Junco", score=0.9), {"Dark-eyed Junco"}, True),   # under the tight look's bar
+    (strong("Dark-eyed Junco", share=0.3), {"Dark-eyed Junco"}, True),   # mostly species not seen here
+    (strong("House Finch"), {"Dark-eyed Junco"}, True),                  # a different species
+    (strong("Dark-eyed Junco"), set(), True),                            # species not confirmed here yet
+    (strong("Dark-eyed Junco"), {"Dark-eyed Junco"}, False),             # no circle to look at
+    (None, {"Dark-eyed Junco"}, True),
+])
+def test_a_low_haiku_answer_still_gets_sonnet_unless_the_local_look_is_strong(fake_ask, guess, confirmed, circle):
+    s = sighting(confidence="low")
+    calls = fake_ask({HAIKU: with_circle(s) if circle else s, SONNET: sighting()})
+    identify.identify(jpeg(), WHEN, confirmed=confirmed, local_check=lambda c: guess)
+    assert [m for m, _, _ in calls] == [HAIKU, SONNET]
+
+
+def test_several_animals_in_haikus_answer_never_skip_sonnet_on_the_local_look(fake_ask):
+    other = identify.Also(visitor="squirrel", species="Eastern Gray Squirrel", count=1, confidence="high", circle=None)
+    calls = fake_ask({HAIKU: with_circle(sighting(confidence="low", also=[other])), SONNET: sighting()})
+    identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"}, local_check=lambda c: strong("Dark-eyed Junco"))
+    assert [m for m, _, _ in calls] == [HAIKU, SONNET]
+
+
+def test_medium_answer_with_a_strong_agreeing_local_look_shows_high(fake_ask):
+    fake_ask({HAIKU: with_circle(sighting(confidence="medium")), SONNET: sighting()})
+    r = identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"}, local_check=lambda c: strong("Dark-eyed Junco"))
+    assert r.sighting.confidence == "high" and r.raw["skipped_sonnet"] and "local_confirmed" not in r.raw

@@ -69,7 +69,7 @@ def gate_yard(monkeypatch, conn, add_visit):
     monkeypatch.setattr(watch.presence, "check", lambda conn, e, view=None: {"model": "bioclip-presence", "score": 0.9,
                                                                              "threshold": 0.4, "empty": False})
     monkeypatch.setattr(watch.presence, "store", lambda conn, vid, e: None)
-    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop: knobs["animals"])
+    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop, detail=None: knobs["animals"])
     monkeypatch.setattr(classifier, "load", lambda: FakeTextClassifier())
     monkeypatch.setattr(classifier, "local_species", lambda: LOCAL)
 

@@ -273,6 +273,20 @@ def local_disagrees(s: Sighting, guess: dict | None) -> str | None:
     return top[0]["name"]
 
 
+def local_confirms(s: Sighting, guess: dict | None, confirmed: set[str]) -> bool:
+    """Whether the local classifier on Haiku's circle backs Haiku's answer strongly enough to stand without
+    Sonnet: one bird of a species confirmed here, no other animals, the same species at the tight look's bar
+    (classifier.GATE_MIN_SCORE_TIGHT) and mostly on local species. Only the circle's square is judged, the wide
+    view (63-70% right in the 2026-11-04 study) never is. Visits 1024 and 1027 (2026-11-06) were juncos that
+    BioCLIP named at 0.995 and 0.996 on the circle, but the tight look never ran and Claude was asked."""
+    from . import classifier  # imported late: the model code stays out of the identify prompt's import path
+    top = (guess or {}).get("top") or []
+    if not top or s.visitor != "bird" or not s.species or s.count != 1 or s.also or s.species not in confirmed:
+        return False
+    return (local_disagrees(s, guess) is None and top[0]["score"] >= classifier.GATE_MIN_SCORE_TIGHT
+            and (guess.get("local_share") or 0) >= classifier.GATE_MIN_LOCAL)
+
+
 def identify(
     jpeg: bytes,
     captured_at: datetime,
@@ -311,6 +325,19 @@ def identify(
             raw["skipped_sonnet"] = "confirmed species"
             if guess and guess.get("top"):
                 raw["local_agreed"] = True
+            if local_confirms(sighting, guess, confirmed):
+                sighting.confidence = "high"  # two independent looks agree: the owner shouldn't see "medium"
+    elif (second and local_check and sighting is not None and sighting.confidence == "low" and sighting.circle
+          and sighting.visitor == "bird" and sighting.species in confirmed):
+        # A guess Haiku wasn't sure of, at a species confirmed here: BioCLIP on Haiku's circle can settle it.
+        guess = local_check(frame_circle(sighting, crop))
+        if guess:
+            raw["classifier"] = guess
+        if local_confirms(sighting, guess, confirmed):
+            second = False
+            raw["skipped_sonnet"] = "confirmed species"
+            raw["local_agreed"] = raw["local_confirmed"] = True
+            sighting.confidence = "high"
     unsettled = False  # Sonnet was asked and gave no answer, so whatever Haiku said stands unchecked
     if second:
         images = [image_b64, *(prepare(f, crop) for f in extra_frames)]

@@ -242,6 +242,8 @@
           <div class="step-why">Fairly sure, but the BioCLIP 2 species check said {{ decision.local_disagreed }}, so it asked Sonnet for a second look with more frames.</div>
           {% elif step.model == 'Haiku' and decision.asked_sonnet %}
           <div class="step-why">Not confident enough, so it asked Sonnet for a second look with more frames.</div>
+          {% elif step.model == 'Haiku' and decision.skipped_sonnet and decision.local_confirmed %}
+          <div class="step-why">Not sure, but the BioCLIP 2 species check named the same species with high confidence on Haiku's circle, so Sonnet wasn't asked.</div>
           {% elif step.model == 'Haiku' and decision.skipped_sonnet %}
           <div class="step-why">A species already confirmed here several times{% if decision.local_agreed %}, and the BioCLIP 2 species check agreed{% endif %}, so Sonnet wasn't asked.</div>
           {% endif %}

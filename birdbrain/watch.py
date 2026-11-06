@@ -351,14 +351,15 @@ class Scene(NamedTuple):
     empty_color: np.ndarray | None = None
 
 
-def count_animals(scene: Scene | None, jpeg: bytes, crop) -> int | None:
+def count_animals(scene: Scene | None, jpeg: bytes, crop, detail: list | None = None) -> int | None:
     """Fail-soft: separate visitor-sized changes in the photo's crop box (None when it can't tell). Counted
-    against the colour scene when there is one (see stay.count_animals), else the grey one."""
+    against the colour scene when there is one (see stay.count_animals), else the grey one. `detail` collects
+    each counted change's box."""
     if scene is None:
         return None
     try:
         empty = scene.empty if scene.empty_color is None else scene.empty_color
-        return stay.count_animals(jpeg, empty, scene.mask, crop, scene.water)
+        return stay.count_animals(jpeg, empty, scene.mask, crop, scene.water, detail)
     except Exception:
         log.exception("counting animals failed")
         return None
@@ -641,7 +642,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         return PROBE_EMPTY
     empty = bool(check and check.get("empty"))
     guess = pick = looked = tight = None
-    animals = None if empty else count_animals(scene, best, crop)
+    animal_boxes: list = []  # where each counted animal was, kept when there are several (replaying a miscount)
+    animals = None if empty else count_animals(scene, best, crop, animal_boxes)
     crowded = bool(animals and animals > 1)
     crowd = None
     named = None  # which BioCLIP 2 look named the visit: "bowl" (the first look) or "tight"
@@ -742,6 +744,10 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         result.raw["classifier_tight"] = {**classifier.first_look(tight, settled, night, view="tight"), "circle": circle}
     if animals is not None:
         result.raw["animals_seen"] = animals  # scored against Claude's count later
+        if animals > 1:
+            result.raw["animal_boxes"] = animal_boxes
+    if found and not found.get("found") and "motion_circle" not in result.raw:
+        result.raw["motion_circle"] = found  # the tight look's patch search found nothing: why, and the cutoff it used
     if crowd:
         result.raw["gate_crowd"] = {"species": crowd, "animals": animals}
     s = result.sighting

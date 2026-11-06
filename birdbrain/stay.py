@@ -92,7 +92,8 @@ def box_mask(shape: tuple[int, int], box) -> np.ndarray:
     return m
 
 
-def count_animals(jpeg: bytes, empty: np.ndarray, mask: np.ndarray, box=None, water=None) -> int | None:
+def count_animals(jpeg: bytes, empty: np.ndarray, mask: np.ndarray, box=None, water=None,
+                  detail: list | None = None) -> int | None:
     """How many separate visitor-sized changes from the empty scene the photo shows inside the crop box, for
     the local species gate (one BioCLIP guess can only name one animal). Changes closer than GROUP_GAP are one
     animal (a bird and its reflection or splash). A change that lies wholly on open water (`water`) doesn't
@@ -114,7 +115,16 @@ def count_animals(jpeg: bytes, empty: np.ndarray, mask: np.ndarray, box=None, wa
         grouped = cv2.dilate(b, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))) & area
     n, labels = cv2.connectedComponents(grouped)
     if water is None:
-        return n - 1
-    # The blur spreads a change on the water a few px onto the rim, so the water is widened by WET_EDGE.
-    wet = cv2.dilate(water, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * WET_EDGE + 1, 2 * WET_EDGE + 1)))
-    return len(np.unique(labels[(b > 0) & (wet == 0)]))
+        counted = list(range(1, n))
+    else:
+        # The blur spreads a change on the water a few px onto the rim, so the water is widened by WET_EDGE.
+        wet = cv2.dilate(water, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * WET_EDGE + 1, 2 * WET_EDGE + 1)))
+        counted = [int(i) for i in np.unique(labels[(b > 0) & (wet == 0)])]
+    if detail is not None:  # where each counted animal was, as frame fractions x, y, w, h: for replaying a miscount
+        H, W = shape
+        for i in counted:
+            ys, xs = np.where((labels == i) & (b > 0))
+            if len(xs):
+                detail.append([round(float(xs.min()) / W, 3), round(float(ys.min()) / H, 3),
+                               round(float(xs.max() - xs.min() + 1) / W, 3), round(float(ys.max() - ys.min() + 1) / H, 3)])
+    return len(counted)

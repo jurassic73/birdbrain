@@ -214,7 +214,7 @@ def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit
 
     # Sure, but two animals in view: one guess names one animal, so Claude counts them.
     emb["v"], asked[:] = one_hot(0), []
-    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop: 2)
+    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop, detail=None: 2)
     assert watch.handle_event() == "bird" and asked
     row = conn.execute("SELECT species, raw_json FROM visits ORDER BY id DESC").fetchone()
     calls = json.loads(row["raw_json"])["calls"]
@@ -222,7 +222,7 @@ def test_watcher_skips_claude_when_the_gate_is_sure(monkeypatch, conn, add_visit
     assert calls["gate_crowd"] == {"species": "Dark-eyed Junco", "animals": 2}
     assert calls["classifier_gate"]["why"] == "crowd"
 
-    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop: 1)  # one: the Pi names it
+    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop, detail=None: 1)  # one: the Pi names it
     asked[:] = []
     assert watch.handle_event() == "bird" and not asked
     calls = json.loads(conn.execute("SELECT raw_json FROM visits ORDER BY id DESC").fetchone()[0])["calls"]
@@ -281,7 +281,8 @@ def test_no_patch_of_motion_means_the_old_behaviour(gate_yard, conn):
     row, calls = latest_calls(conn)
     assert row["species"] == "Bushtit" and not gate_yard["tight_calls"]
     assert calls["classifier_gate"]["why"] == "score"
-    assert "classifier_tight" not in calls and "motion_circle" not in calls and "circle" not in calls
+    assert "classifier_tight" not in calls and "circle" not in calls
+    assert calls["motion_circle"]["why"] == "nothing"  # kept so a miss like visit 1024's can be explained
 
 
 def test_no_tight_look_at_night(gate_yard, conn, monkeypatch):
