@@ -1,7 +1,7 @@
 """The unit tier's guard: unit tests are pure (no files, database, sleeps, subprocesses, threads or network), and
 this conftest makes that a rule pytest enforces rather than a note. The per-test data folder the base conftest makes
-is not made here (config.DATA_DIR, IMAGES_DIR and DB_PATH point at a path that does not exist), the tmp_path fixtures
-refuse, and the plain I/O a test might reach for by accident fails with a message saying where the test belongs.
+is not made here (config.DATA_DIR, IMAGES_DIR and DB_PATH point at a path that does not exist), the tmp_path and
+capfd fixtures refuse, and the plain I/O a test might reach for by accident fails with a message saying where the test belongs.
 Component and integration tests are not affected: this file applies to tests/unit/** only.
 
 Every unit file, and every single unit test, must run on its own (`pytest tests/unit/test_config.py`), so nothing
@@ -84,26 +84,46 @@ def tmpdir_factory():
     pytest.fail(MESSAGE.format(what="the tmpdir_factory fixture"))
 
 
-_ALIASES: dict[str, list[tuple[object, str]]] | None = None
+# pytest's capfd and capfdbinary capture file descriptors through a temp file (tempfile.TemporaryFile, an open for
+# writing). Left alone, that open hits the guard inside pytest's own capture code, where the error breaks the capture
+# manager for the rest of the session: every later test errors and the patches stay applied. Refusing in fixture code
+# instead fails just the test that asked. capsys and capsysbinary capture in memory and stay allowed.
+@pytest.fixture
+def capfd():
+    pytest.fail(MESSAGE.format(what="the capfd fixture; capsys captures without a file"))
+
+
+@pytest.fixture
+def capfdbinary():
+    pytest.fail(MESSAGE.format(what="the capfdbinary fixture; capsysbinary captures without a file"))
+
+
+# The real callables, taken when this conftest is imported, before any test's guard is in place.
+_TARGETS = {"time.sleep": time.sleep, "sqlite3.connect": sqlite3.connect}
+_ALIASES: dict[str, list[tuple[object, str]]] = {name: [] for name in _TARGETS}
+_SCANNED: set[str] = set()  # module names already looked through
 
 
 def _aliases() -> dict[str, list[tuple[object, str]]]:
     """Module-level names in birdbrain.* bound to a guarded callable at import time (species_info._sleep is
     time.sleep), which patching time.sleep alone would miss: "time.sleep" / "sqlite3.connect" -> [(module, attr)].
-    Computed once per session, after the web app (and so every birdbrain module) is imported."""
-    global _ALIASES
-    if _ALIASES is None:
-        _load_app()
-        targets = {"time.sleep": time.sleep, "sqlite3.connect": sqlite3.connect}
-        found: dict[str, list[tuple[object, str]]] = {name: [] for name in targets}
-        for mod_name, mod in list(sys.modules.items()):
-            if not mod_name.startswith("birdbrain") or mod is None:
-                continue
-            for attr, value in list(vars(mod).items()):
-                for name, target in targets.items():
-                    if value is target:
-                        found[name].append((mod, attr))
-        _ALIASES = found
+    Importing the web app loads most of birdbrain but not all of it (autocal, calibrate, recircle and others are
+    imported by tests or lazily), so every call looks at the birdbrain modules in sys.modules that have not been
+    scanned yet: a module that arrives later is seen the next time a unit test starts, for the cost of one set
+    difference. A name bound to an earlier test's guard (the module was first imported while a guard was in place) is
+    put back to the real callable, so no stale guard outlives the unit tier."""
+    _load_app()
+    new = [name for name in sys.modules if name.startswith("birdbrain") and name not in _SCANNED]
+    for mod_name in new:
+        mod = sys.modules.get(mod_name)
+        _SCANNED.add(mod_name)
+        if mod is None:
+            continue
+        for attr, value in list(vars(mod).items()):
+            for name, target in _TARGETS.items():
+                if value is target or getattr(value, "_unit_guard_for", None) == name:
+                    setattr(mod, attr, target)
+                    _ALIASES[name].append((mod, attr))
     return _ALIASES
 
 
@@ -136,6 +156,9 @@ def pure(monkeypatch):
             raise RuntimeError(MESSAGE.format(what=f"time.sleep({seconds})"))
         real_sleep(seconds)
 
+    connect = _refuse("sqlite3.connect")
+    sleep._unit_guard_for, connect._unit_guard_for = "time.sleep", "sqlite3.connect"  # `_aliases` spots stale copies
+
     monkeypatch.setattr(builtins, "open", guarded_open)
     monkeypatch.setattr(io, "open", guarded_open)  # Path.open / write_text / write_bytes go through io.open
     monkeypatch.setattr(os, "open", guarded_os_open)  # Path.touch, tempfile.mkstemp, the admin secret file
@@ -148,12 +171,12 @@ def pure(monkeypatch):
         monkeypatch.setattr(os, name, _refuse(f"os.{name}"))
     monkeypatch.setattr(shutil, "rmtree", _refuse("shutil.rmtree"))  # it stats the tree before it reaches os.unlink
     monkeypatch.setattr(cv2, "imwrite", _refuse("cv2.imwrite"))
-    monkeypatch.setattr(sqlite3, "connect", _refuse("sqlite3.connect"))
+    monkeypatch.setattr(sqlite3, "connect", connect)
     monkeypatch.setattr(time, "sleep", sleep)
     monkeypatch.setattr(subprocess, "Popen", _refuse("subprocess.Popen"))
     monkeypatch.setattr(subprocess, "run", _refuse("subprocess.run"))
     monkeypatch.setattr(threading.Thread, "start", _refuse("threading.Thread.start"))
-    guards = {"time.sleep": sleep, "sqlite3.connect": _refuse("sqlite3.connect")}
+    guards = {"time.sleep": sleep, "sqlite3.connect": connect}
     for name, places in aliases.items():
         for mod, attr in places:
             monkeypatch.setattr(mod, attr, guards[name])
