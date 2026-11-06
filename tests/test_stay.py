@@ -166,3 +166,58 @@ def test_the_watcher_keeps_the_scene_for_counting(monkeypatch, conn):
             break
         watch.time.sleep(0.01)
     assert got["scene"].empty.shape == (H, W) and got["scene"].mask.shape == (H, W)
+    assert got["scene"].empty_color.shape == (H, W, 3)  # the colour copy, for counting
+
+
+def test_the_colour_scene_can_be_turned_off(monkeypatch):
+    monkeypatch.setattr(stay.config, "COUNT_COLOR", False)
+    d = watch.MotionDetector(None, 0.01)
+    for _ in range(3):
+        d.score(cv2.cvtColor(scene(), cv2.COLOR_GRAY2BGR))
+    assert d.scene().empty_color is None and d.empty_scene().shape == (H, W)
+
+
+RIM = (150, 190, 210)   # BGR: a pale beige rim, grey 191
+FUR = (191, 191, 191)   # neutral grey fur: the same grey as the rim, 41 apart in blue
+
+
+def colour_scene() -> np.ndarray:
+    """A dark yard with a pale rim band across it, blurred like the watcher's frames."""
+    img = np.full((H, W, 3), 70, np.uint8)
+    img[170:200, :] = RIM
+    return cv2.GaussianBlur(img, (21, 21), 0)
+
+
+def with_grey_animal(base: np.ndarray, x: int, y0: int = 130, y1: int = 240, w: int = 40) -> np.ndarray:
+    """A grey animal standing across the rim band: head above it, body on it, tail below it."""
+    frame = base.copy()
+    cv2.rectangle(frame, (x, y0), (x + w, y1), FUR, -1)
+    return frame
+
+
+def colour_photo(small: np.ndarray) -> bytes:
+    big = cv2.resize(small, (1920, 1080), interpolation=cv2.INTER_LINEAR)
+    return cv2.imencode(".jpg", big)[1].tobytes()
+
+
+def test_an_animal_on_the_pale_rim_is_one_animal_in_colour_but_two_in_grey():
+    # Visits 830 and 1017: a jay's and a squirrel's grey middle matched the pale rim, so only the head and the tail
+    # changed and the Pi saw a crowd. The same frames in colour show the whole animal.
+    empty, everywhere = colour_scene(), np.full((H, W), 255, np.uint8)
+    photo = colour_photo(with_grey_animal(empty, 300))
+    assert stay.count_animals(photo, cv2.cvtColor(empty, cv2.COLOR_BGR2GRAY), everywhere) == 2
+    assert stay.count_animals(photo, empty, everywhere) == 1
+    # two of them, apart, are still two
+    two = colour_photo(with_grey_animal(with_grey_animal(empty, 300), 500))
+    assert stay.count_animals(two, empty, everywhere) == 2
+    # and nothing is nothing
+    assert stay.count_animals(colour_photo(empty), empty, everywhere) == 0
+
+
+def test_the_watcher_counts_against_the_colour_scene_when_it_has_one():
+    empty, everywhere = colour_scene(), np.full((H, W), 255, np.uint8)
+    photo = colour_photo(with_grey_animal(empty, 300))
+    grey_only = watch.Scene(cv2.cvtColor(empty, cv2.COLOR_BGR2GRAY), everywhere, None)
+    assert watch.count_animals(grey_only, photo, None) == 2
+    both = watch.Scene(cv2.cvtColor(empty, cv2.COLOR_BGR2GRAY), everywhere, None, empty)
+    assert watch.count_animals(both, photo, None) == 1
