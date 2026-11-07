@@ -58,3 +58,65 @@ def test_circles_keep_the_burst_frame_they_were_drawn_on():
 def test_the_tight_look_crop_name_matches_the_classifier():
     from birdbrain import classifier
     assert db.TIGHT_CROP == classifier.TIGHT_CROP  # agreement_report reads the stored guess by this crop name
+
+
+class _FakeConn:
+    """A stand-in connection: journal_mode reads give `mode`; every call can be told to raise first."""
+
+    def __init__(self, mode="delete", fail_with=(), set_fails=()):
+        self.mode, self.fail_with, self.set_fails, self.calls = mode, list(fail_with), list(set_fails), []
+
+    def execute(self, sql):
+        self.calls.append(sql)
+        queue = self.set_fails if "=" in sql else self.fail_with
+        if queue:
+            raise queue.pop(0)
+        outer = self
+
+        class _Row:
+            def fetchone(self_inner):
+                return (outer.mode,)
+        return _Row()
+
+
+def _locked():
+    import sqlite3
+    return sqlite3.OperationalError("database is locked")
+
+
+def test_wal_is_not_reasserted_when_the_file_is_already_wal(monkeypatch):
+    monkeypatch.setattr(db.time, "sleep", lambda s: None)
+    conn = _FakeConn(mode="wal")
+    db.ensure_wal(conn)
+    assert conn.calls == ["PRAGMA journal_mode"]       # a read only: no write lock, nothing to collide with
+
+
+def test_wal_is_switched_on_when_the_file_is_not_wal_yet(monkeypatch):
+    monkeypatch.setattr(db.time, "sleep", lambda s: None)
+    conn = _FakeConn(mode="delete")
+    db.ensure_wal(conn)
+    assert conn.calls == ["PRAGMA journal_mode", "PRAGMA journal_mode=WAL"]
+
+
+def test_a_brief_lock_is_retried_and_does_not_fail_the_request(monkeypatch):
+    naps = []
+    monkeypatch.setattr(db.time, "sleep", naps.append)
+    conn = _FakeConn(mode="wal", fail_with=[_locked(), _locked()])
+    db.ensure_wal(conn)                                  # two "locked" answers, then the read works
+    assert len(naps) == 2 and conn.calls.count("PRAGMA journal_mode") == 3
+
+
+def test_a_lock_that_never_clears_still_lets_the_connection_through(monkeypatch):
+    naps = []
+    monkeypatch.setattr(db.time, "sleep", naps.append)
+    conn = _FakeConn(fail_with=[_locked()] * 9)
+    db.ensure_wal(conn, tries=5)                         # must not raise; the mirror's file is WAL already
+    assert len(naps) == 4                                # no pause after the last try
+
+
+def test_a_real_sqlite_error_is_not_swallowed(monkeypatch):
+    import sqlite3
+    monkeypatch.setattr(db.time, "sleep", lambda s: None)
+    conn = _FakeConn(fail_with=[sqlite3.OperationalError("disk I/O error")])
+    with pytest.raises(sqlite3.OperationalError, match="disk I/O"):
+        db.ensure_wal(conn)

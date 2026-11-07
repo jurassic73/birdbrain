@@ -660,3 +660,30 @@ def test_a_bare_nan_row_never_breaks_a_json_query():
     c.executemany("INSERT INTO t VALUES (?)", [('{"a": 1}',), ('{"a": NaN}',)])
     rows = c.execute(f"SELECT json_extract({db.valid_json('raw')}, '$.a') FROM t").fetchall()
     assert len(rows) == 2 and rows[0][0] == 1
+
+
+def test_connect_keeps_wal_and_survives_the_file_being_swapped_underneath(tmp_path):
+    """The public mirror's push replaces birdbrain.db every few minutes while the server keeps answering.
+
+    The mirror only reads: a request opens a connection and closes it, so no write-ahead data is left beside the file.
+    """
+    import os
+
+    def make(path, value):
+        conn = db.connect(path)
+        db.init_db(conn)
+        conn.execute("INSERT INTO settings(key, value) VALUES ('probe', ?)", (value,))
+        conn.commit()
+        conn.close()
+
+    path, fresh = tmp_path / "mirror.db", tmp_path / "pushed.db"
+    make(path, "1")
+    make(fresh, "2")                                     # what rsync writes before it renames into place
+    reader = db.connect(path)                            # a request still in flight
+    assert reader.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    os.replace(fresh, path)
+    later = db.connect(path)                             # the next request, after the swap
+    assert later.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    assert later.execute("SELECT value FROM settings WHERE key = 'probe'").fetchone()[0] == "2"
+    reader.close()
+    later.close()

@@ -278,12 +278,32 @@ def shown() -> str:
     return PUBLIC if hiding_other() else REAL
 
 
+def ensure_wal(conn: sqlite3.Connection, tries: int = 5, pause: float = 0.2) -> None:
+    """Make the database use WAL without ever failing a request over it.
+
+    Reading the mode needs no write lock, so ask first and only switch when it is not WAL already. Asserting WAL on
+    a file that was just swapped in under a running server (the public mirror's push replaces the copy every few
+    minutes) can answer "database is locked" for a moment, even with a busy timeout, so retry briefly and then carry
+    on: the connection works either way. Any other error is real and still raises.
+    """
+    for attempt in range(tries):
+        try:
+            if str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() != "wal":
+                conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() and "busy" not in str(e).lower():
+                raise
+            if attempt < tries - 1:
+                time.sleep(pause)
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     path = path or config.DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    ensure_wal(conn)
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
