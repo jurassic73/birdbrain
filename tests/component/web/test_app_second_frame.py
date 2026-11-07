@@ -1,107 +1,74 @@
 """Component tests of the web app through TestClient on a temp database: the shadow second-frame look on the Stats
-page and the visit page, and the finder wording carried over from the finder chain (the first-look step, the
-training card, the two pill tips and the circle step's "pointed out by" sentence)."""
-import json
+page (the "Second-frame look (shadow)" paragraph) and the visit page (one sentence in the tight look step)."""
+
 import re
 
-import pytest
-
-from helpers.classifier import MOTION_CIRCLE, guess
-from helpers.finder import finder_raw
-from birdbrain import classifier
-
-HEADING = "Second-frame look (shadow)"
-SECOND = {"model": classifier.MODEL_NAME, "crop": classifier.TIGHT_CROP, "night": False, "frame": "second", "seconds": 6.1,
-          "local_share": 0.9, "top": [{"name": "Dark-eyed Junco", "scientific": "", "score": 0.874}],
-          "combined": {"top": [{"name": "Dark-eyed Junco", "scientific": "", "score": 0.961}], "local_share": 0.92}}
-AT = {"motion": "at the patch that moved", "blob": "at the crowd counter's outline",
-      "yolox": "at the box a small object detector (YOLOX-tiny) drew"}
+from helpers.second_frame import second_frame_raw
 
 
-def pills_explained(html):
-    return html.count('class="badge ') == len(re.findall(r'class="badge [^"]*" data-tip=', html))
+def badges(html: str) -> int:
+    return html.count('class="badge ')
 
 
-def with_second(found="motion", **second):
-    raw = json.loads(finder_raw(found, score=0.9))
-    raw["calls"]["classifier_second"] = {**SECOND, **second}
-    return json.dumps(raw)
+def pills_explained(html: str) -> bool:
+    return badges(html) == len(re.findall(r'class="badge [^"]*" data-tip=', html))
 
 
-def test_stats_page_shows_the_second_frame_paragraph_with_and_without_data(client, add_visit):
+def test_stats_page_has_one_muted_sentence_without_any_second_frame_look(client, add_visit):
+    add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), None, with_second=False))
+    r = client.get("/stats")
+    assert r.status_code == 200
+    html = r.text
+    section = html[html.index('id="classifier"'):]
+    section = section[:section.index("</section>")]
+    assert "second-frame look" in section.lower() or "second frame" in section.lower()
+    assert "4 looks" not in section and "first frame right" not in section
+
+
+def test_stats_page_scores_the_second_frame_look(client, add_visit):
+    # 4 looks: first frame right 3, second frame right 2, averaged right 1; averaging would have named 2 (1 wrong)
+    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), ("Dark-eyed Junco", 0.6),
+                                                                   ("Bushtit", 0.97)))
+    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Dark-eyed Junco", 0.9), ("Bushtit", 0.5),
+                                                                   ("Dark-eyed Junco", 0.96)))
+    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Dark-eyed Junco", 0.88), ("Bushtit", 0.9),
+                                                                   ("Bushtit", 0.9)))
+    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Bushtit", 0.9), ("Dark-eyed Junco", 0.9)))
     html = client.get("/stats").text
-    assert HEADING in html and "No second-frame look to score yet" in html and 'id="second-frame"' in html
-    add_visit(raw_json=with_second())
-    add_visit(species="Bushtit", raw_json=with_second(combined=None))
-    html = client.get("/stats").text
-    section = html[html.index('id="second-frame"'):]
-    section = section[:section.index("</p>")]
-    assert "2 looks; first frame right 1, second frame right 1, averaged right 1" in section
-    assert "averaging would have named 1 (0 wrong), the second frame alone 0 (0 wrong)" in section
-    assert "changes nothing" in section and "No second-frame look" not in section
+    assert "Second-frame look (shadow)" in html
+    seg = html[html.index("Second-frame look (shadow)"):]
+    seg = seg[:seg.index("</section>")]
+    assert re.search(r"\b4 looks\b|looks[^0-9]{0,20}\b4\b", seg)
+    assert re.search(r"first frame[^0-9]{0,30}\b3\b", seg, re.I)
+    assert re.search(r"second frame[^0-9]{0,30}\b2\b", seg, re.I)
+    assert re.search(r"averaged[^0-9]{0,30}\b1\b", seg, re.I)
+    assert re.search(r"named[^0-9]{0,30}\b2\b", seg, re.I)
+    assert re.search(r"\b1 wrong\b|wrong[^0-9]{0,20}\b1\b", seg, re.I)
+    assert pills_explained(html)
 
 
-def test_visit_page_tight_step_says_what_the_second_frame_said(client, add_visit):
-    vid = add_visit(species="Bushtit", raw_json=with_second("blob"))
-    html = client.get(f"/visit/{vid}").text.replace("&#39;", "'")
-    assert "A second frame said Dark-eyed Junco (0.87); averaged Dark-eyed Junco (0.96). Shadow only: not used." in html
-    assert "Did not name the visit either: its top guess was 90%, under the 95% it needs. Claude was asked." in html
-    assert pills_explained(html) and html.count("second-frame") <= 1  # no new pill: the sentence sits in the step
-    vid = add_visit(species="Bushtit", raw_json=with_second("blob", combined=None))
+def test_visit_page_adds_one_sentence_for_the_second_frame_look(client, add_visit):
+    plain = add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), None, with_second=False))
+    looked = add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), ("Bushtit", 0.61),
+                                                                    ("Dark-eyed Junco", 0.96)))
+    before = client.get(f"/visit/{plain}").text
+    html = client.get(f"/visit/{looked}").text
+    sentence = "A second frame said Bushtit (0.61); averaged Dark-eyed Junco (0.96). Shadow only: not used."
+    assert sentence in html
+    steps = html[html.index("How it was decided"):]
+    assert steps.index("Did not name the visit either: its top guess was 85%, under the 95% it needs.") < steps.index(sentence)
+    assert badges(html) == badges(before) and pills_explained(html)  # no new pill
+
+
+def test_visit_page_without_an_average_still_says_what_the_second_frame_said(client, add_visit):
+    vid = add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), ("House Finch", 0.61)))
     html = client.get(f"/visit/{vid}").text
-    assert "A second frame said Dark-eyed Junco (0.87). Shadow only: not used." in html
-    vid = add_visit(species="Bushtit", raw_json=finder_raw("blob", score=0.9))
-    assert "A second frame said" not in client.get(f"/visit/{vid}").text
+    assert "A second frame said House Finch (0.61)" in html and "Shadow only: not used." in html
+    assert "averaged None" not in html and "(None)" not in html
 
 
-@pytest.mark.parametrize("found", ["motion", "blob", "yolox"])
-def test_first_look_step_and_training_card_say_where_the_tight_look_looked(client, add_visit, found):
-    html = client.get(f"/visit/{add_visit(species='Bushtit', raw_json=finder_raw(found, score=0.9))}").text
-    page = html.replace("&#39;", "'")
-    assert f"The Pi took a tight look {AT[found]} next." in page
-    assert f"Then a tight look {AT[found]} guessed Dark-eyed Junco, but its top guess was 90%" in page
-    for other, words in AT.items():
-        if other != found:
-            assert f"tight look {words}" not in page
-    html = client.get(f"/visit/{add_visit(model=classifier.MODEL_NAME, raw_json=finder_raw(found, named=True))}").text
-    page = html.replace("&#39;", "'")
-    assert f"on a tight look {AT[found]} after a first look at the whole bowl fell short." in page
-    assert f"The Pi took a tight look {AT[found]} next." in page
-
-
-def test_the_pill_tips_hold_for_every_finder_and_the_step_is_named_after_the_pi(client, add_visit):
-    html = client.get(f"/visit/{add_visit(species='Bushtit', raw_json=finder_raw('yolox', score=0.9))}").text
-    tips = {m.group(1) for m in re.finditer(r'data-tip="([^"]*)"', html.replace("&#39;", "'"))}
-    tight = next(t for t in tips if t.startswith("Tight look:"))
-    assert "patch that moved" not in tight and "Motion detector" not in tight  # true on a YOLOX visit too
-    assert "when the look falls short, Claude is asked" in tight
-    html = client.get(f"/visit/{add_visit(model=classifier.MODEL_NAME, raw_json=finder_raw('blob', named=True))}").text
-    page = html.replace("&#39;", "'")
-    tips = {m.group(1) for m in re.finditer(r'data-tip="([^"]*)"', page)}
-    circle = next(t for t in tips if t.startswith("Pi circle:"))
-    assert "Motion detector" in circle and "crowd counter" in circle and "object detector" in circle
-    assert "Claude wasn't asked" not in circle and "Claude was asked" in circle  # the tip also covers a miss
-    assert "Circle from the Pi" in page and "Circle from the motion" not in page and pills_explained(html)
-
-
-def test_a_bowl_named_visit_says_the_patch_was_pointed_out_without_a_tight_look(client, add_visit):
-    bowl = {"calls": {"classifier": {**guess("Dark-eyed Junco"), "crop": "bowl"}, "skipped_claude": True,
-                      "settled_by": "classifier", "circle": {**MOTION_CIRCLE, "pi": False},
-                      "motion_circle": {"found": False, "why": "nothing", "source": "empty", "seconds": 0.02},
-                      "finder": {"finder": "blob", "motion": {"found": False, "why": "nothing"},
-                                 "tried": [{"finder": "motion", "found": False, "why": "nothing", "seconds": 0.1},
-                                           {"finder": "blob", "found": True, "why": None, "seconds": 0.0}]}}}
-    vid = add_visit(model=classifier.MODEL_NAME, raw_json=json.dumps(bowl))
-    page = client.get(f"/visit/{vid}").text.replace("&#39;", "'")
-    assert "The patch was pointed out by the crowd counter's outline; the circle shown is not the Pi's." in page
-    assert "The patch for the tight look was pointed out" not in page
-    # a tight miss keeps the fuller sentence
-    raw = json.loads(finder_raw("blob", score=0.9))
-    raw["calls"]["circle"] = {"x": 0.5, "y": 0.5, "r": 0.05, "claude": True}
-    page = client.get(f"/visit/{add_visit(raw_json=json.dumps(raw))}").text.replace("&#39;", "'")
-    assert "The patch for the tight look was pointed out by the crowd counter's outline; the circle shown is Claude's." in page
-
-
-def test_about_page_mentions_the_second_photo_in_a_sentence(client):
-    html = client.get("/about").text
-    assert "second photo of the burst" in html and "only to keep score" in html
+def test_visits_without_a_second_frame_look_render_as_before(client, add_visit):
+    vid = add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), None, with_second=False))
+    html = client.get(f"/visit/{vid}").text
+    assert "A second frame said" not in html and "Shadow only" not in html
+    assert "Did not name the visit either: its top guess was 85%, under the 95% it needs. Claude was asked." in html

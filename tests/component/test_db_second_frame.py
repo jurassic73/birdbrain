@@ -1,71 +1,66 @@
-"""Component tests of db.second_frame_report (the shadow second-frame look's scorecard) on a temp database: how
-often the tight look's first frame, the second frame and their averaged embedding put the final label first, and
-how many visits the second frame or the average would have named, and wrongly."""
-import json
+"""Component tests of db.second_frame_report (the shadow second-frame look's scorecard) on a temp database."""
 
-from helpers.agreement import look
+import json
+from datetime import timedelta
+
+from helpers.classifier import MOTION_CIRCLE
+from helpers.clock import FROZEN_NOW
+from helpers.second_frame import look, second_frame_raw
 from birdbrain import classifier, db
 
 KEYS = {"looks", "first_right", "second_right", "combined_right", "combined_named", "combined_wrong", "second_named",
         "second_wrong"}
 
 
-def second(name, score, combined_name=None, combined_score=None, local_share=0.9):
-    rec = {**look(name, score, crop=classifier.TIGHT_CROP), "frame": "second", "seconds": 6.0, "combined": None}
-    if combined_name:
-        rec["combined"] = {"top": [{"name": combined_name, "scientific": "", "score": combined_score}],
-                           "local_share": local_share}
-    return rec
+def test_report_is_all_zeros_with_the_exact_key_set_on_an_empty_database(conn, add_visit):
+    r = db.second_frame_report(conn)
+    assert set(r) == KEYS and set(r.values()) == {0}
+    # a tight look alone (no second frame) is not a look
+    add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), None, with_second=False))
+    assert db.second_frame_report(conn) == dict.fromkeys(KEYS, 0)
+    assert db.second_frame_report(conn, days=14) == dict.fromkeys(KEYS, 0)
 
 
-def raw(tight_name, tight_score, second_rec, **calls):
-    return json.dumps({"calls": {
-        "classifier_tight": look(tight_name, tight_score, crop=classifier.TIGHT_CROP, why="score"),
-        "classifier_second": second_rec,
-        "haiku": {"answer": {"visitor": "bird", "species": "Bushtit", "confidence": "high"}}, **calls}})
+def test_report_scores_first_second_and_averaged_against_the_final_label(conn, add_visit):
+    bar, local = classifier.GATE_MIN_SCORE_TIGHT, classifier.GATE_MIN_LOCAL
+    assert (bar, local) == (0.95, 0.5)  # the seeds below sit on either side of these bars
+    # 1. all three right; the second and the average would both have named it
+    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), ("Dark-eyed Junco", 0.97),
+                                                                   ("Dark-eyed Junco", 0.96)))
+    # 2. all wrong; the second frame would have named it (wrongly), the average falls under the bar
+    add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.9), ("Dark-eyed Junco", 0.96),
+                                                           ("Dark-eyed Junco", 0.93)))
+    # 3. the owner's label wins (case ignored); the average is right but too little of it is on local species
+    v = add_visit(species="Bushtit", raw_json=second_frame_raw(("House Finch", 0.88), ("Bushtit", 0.5),
+                                                               ("House Finch", 0.97, 0.3)))
+    db.correct_visit(conn, v, "bird", "house finch", None)
+    # 4. named by the Pi and never checked: not scored
+    add_visit(model="bioclip-2", raw_json=second_frame_raw(("Dark-eyed Junco", 0.9), ("Dark-eyed Junco", 0.99)))
+    # 5. the same, confirmed by the owner: scored (no average stored)
+    v = add_visit(model="bioclip-2", raw_json=second_frame_raw(("Dark-eyed Junco", 0.9), ("Dark-eyed Junco", 0.99)))
+    db.confirm_visits(conn, [v])
+    # 6. "Bird" with no species, 7. no second-frame look, 8. a false trigger: none of them scored
+    add_visit(species=None, raw_json=second_frame_raw(("Dark-eyed Junco", 0.9), ("Dark-eyed Junco", 0.99)))
+    add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), None, with_second=False))
+    add_visit(visitor="none", species=None, raw_json=second_frame_raw(("Dark-eyed Junco", 0.9), ("Dark-eyed Junco", 0.99)))
+    # 9. a generic mammal label matches a species ending in it; 30 days old for the days filter
+    add_visit(visitor="raccoon", species=None, captured_at=(FROZEN_NOW - timedelta(days=30)).isoformat(),
+              raw_json=second_frame_raw(("Common Raccoon", 0.9), ("Common Raccoon", 0.96)))
+    r = db.second_frame_report(conn)
+    assert set(r) == KEYS
+    assert r == {"looks": 5, "first_right": 4, "second_right": 3, "combined_right": 2, "combined_named": 1,
+                 "combined_wrong": 0, "second_named": 4, "second_wrong": 1}
+    recent = db.second_frame_report(conn, days=7)
+    assert recent == {**r, "looks": 4, "first_right": 3, "second_right": 2, "second_named": 3}
 
 
-def seed(add_visit):
-    """Six visits with a second-frame look, all daytime birds, labelled Dark-eyed Junco unless said otherwise.
-
-    A  first right 0.9; second right 0.96 (named, right); averaged right 0.97 (named, right)
-    B  first wrong (Bushtit 0.85); second right 0.88 (not named); averaged right 0.95 (named, right)
-    C  first right 0.9; second wrong (Bushtit 0.96: named, wrong); averaged wrong (Bushtit 0.96: named, wrong)
-    D  first right 0.9; second right 0.9; no combined (no tight embedding)
-    E  first right 0.9; second right 0.97 but local_share 0.3 (never named); averaged right 0.97, local 0.3 (never named)
-    F  a Pi-named visit (model bioclip-2) with a second look, unconfirmed: excluded
-    G  a visit labelled only "bird" (no species): excluded
-    """
-    add_visit(raw_json=raw("Dark-eyed Junco", 0.9, second("Dark-eyed Junco", 0.96, "Dark-eyed Junco", 0.97)))
-    add_visit(raw_json=raw("Bushtit", 0.85, second("Dark-eyed Junco", 0.88, "Dark-eyed Junco", 0.95)))
-    add_visit(raw_json=raw("Dark-eyed Junco", 0.9, second("Bushtit", 0.96, "Bushtit", 0.96)))
-    add_visit(raw_json=raw("Dark-eyed Junco", 0.9, second("Dark-eyed Junco", 0.9)))
-    weak = second("Dark-eyed Junco", 0.97, "Dark-eyed Junco", 0.97, local_share=0.3)
-    weak["local_share"] = 0.3
-    add_visit(raw_json=raw("Dark-eyed Junco", 0.9, weak))
-    add_visit(model=classifier.MODEL_NAME, raw_json=raw("Dark-eyed Junco", 0.9, second("Dark-eyed Junco", 0.96)))
-    add_visit(species=None, raw_json=raw("Dark-eyed Junco", 0.9, second("Dark-eyed Junco", 0.96)))
-
-
-def test_counts_on_the_seeded_yard(conn, add_visit):
-    seed(add_visit)
-    report = db.second_frame_report(conn)
-    assert set(report) == KEYS
-    assert report == {"looks": 5, "first_right": 4, "second_right": 4, "combined_right": 3,
-                      "second_named": 2, "second_wrong": 1, "combined_named": 3, "combined_wrong": 1}
-
-
-def test_an_owner_correction_is_the_label_and_a_checked_pi_visit_counts(conn, add_visit):
-    vid = add_visit(species="Bushtit", raw_json=raw("Dark-eyed Junco", 0.9, second("Dark-eyed Junco", 0.96, "Dark-eyed Junco", 0.97)))
-    assert db.second_frame_report(conn)["first_right"] == 0
-    conn.execute("UPDATE visits SET corrected_species = 'Dark-eyed Junco' WHERE id = ?", (vid,))
-    assert db.second_frame_report(conn)["first_right"] == 1
-    add_visit(model=classifier.MODEL_NAME, confirmed_at="2026-11-06T12:30:00",
-              raw_json=raw("Dark-eyed Junco", 0.9, second("Dark-eyed Junco", 0.96)))
-    assert db.second_frame_report(conn)["looks"] == 2
-
-
-def test_an_empty_database_gives_zeros_with_every_key(conn):
-    report = db.second_frame_report(conn)
-    assert set(report) == KEYS and not any(report.values())
-    assert db.second_frame_report(conn, days=14) == report
+def test_report_reads_a_second_look_stored_without_the_combined_key(conn, add_visit):
+    """A record the watcher stored when the average could not be made still counts as a look."""
+    second = {**look("Dark-eyed Junco", 0.6), "frame": "second"}  # no "combined" at all
+    add_visit(species="Dark-eyed Junco", raw_json=json.dumps({"calls": {
+        "classifier_tight": {**look("Bushtit", 0.9), "why": "score", "circle": MOTION_CIRCLE},
+        "classifier_second": second,
+        "haiku": {"answer": {"visitor": "bird", "species": "Dark-eyed Junco", "confidence": "high"}}}}))
+    r = db.second_frame_report(conn)
+    assert (r["looks"], r["first_right"], r["second_right"], r["second_named"]) == (1, 0, 1, 0)
+    assert (r["combined_right"], r["combined_named"], r["combined_wrong"]) == (0, 0, 0)
