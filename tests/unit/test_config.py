@@ -98,6 +98,8 @@ def test_an_unknown_finder_name_is_refused_at_import(monkeypatch):
 def test_second_frame_min_defaults_to_0_8_and_off_or_0_disables_it(monkeypatch):
     assert config.SECOND_FRAME_MIN == 0.8
     assert _fresh_config(monkeypatch, SECOND_FRAME_MIN="0.85")["SECOND_FRAME_MIN"] == 0.85
+    assert _fresh_config(monkeypatch, SECOND_FRAME_MIN="")["SECOND_FRAME_MIN"] == 0.8  # a blank .env line keeps the default
+    assert _fresh_config(monkeypatch, SECOND_FRAME_MIN=" ")["SECOND_FRAME_MIN"] == 0.8
     assert _fresh_config(monkeypatch, SECOND_FRAME_MIN="off")["SECOND_FRAME_MIN"] == 0.0
     assert _fresh_config(monkeypatch, SECOND_FRAME_MIN="0")["SECOND_FRAME_MIN"] == 0.0
     with pytest.raises(ValueError, match="SECOND_FRAME_MIN"):

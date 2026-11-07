@@ -1,5 +1,6 @@
-"""Unit tests of the shadow second-frame look (watch.second_frame_wanted, watch.second_frame_look and
-classifier.normalize): pure, with the BioCLIP 2 species check faked at classifier.run / from_embedding."""
+"""Unit tests of the shadow second-frame look: watch.second_frame_wanted (when it runs), classifier.normalize, and
+the exact normalized-mean vector second_frame_look hands from_embedding. Pure, with the BioCLIP 2 species check faked
+at classifier.run / from_embedding; the look's record and fail-soft paths are in test_watch_second_frame.py."""
 import numpy as np
 import pytest
 
@@ -81,20 +82,9 @@ def test_second_frame_look_embeds_the_second_frame_and_averages_with_the_tight_l
     assert record["combined"] == {"top": [{"name": "Dark-eyed Junco", "scientific": "", "score": 0.91}], "local_share": 0.8}
 
 
-def test_second_frame_look_without_a_tight_embedding_stores_the_guess_and_no_combined(monkeypatch):
-    calls = _fake_run(monkeypatch, {**sure("House Finch", 0.6), "crop": "circle"}, None)
-    monkeypatch.setattr(classifier, "from_embedding", lambda *a, **k: pytest.fail("no embeddings to combine"))
-    record, vec = watch.second_frame_look([b"a", b"b"], MOTION_CIRCLE, CROP, False, None)
-    assert len(calls) == 1 and vec is None
-    assert record["combined"] is None and record["frame"] == "second" and record["top"][0]["name"] == "House Finch"
 
-
-def test_second_frame_look_is_fail_soft(monkeypatch):
-    def broken(*a, **k):
-        raise RuntimeError("model broke")
-
-    monkeypatch.setattr(classifier, "run", broken)
-    assert watch.second_frame_look([b"a", b"b"], MOTION_CIRCLE, CROP, False, None) == (None, None)
+def test_second_frame_look_gives_nothing_without_a_guess_or_a_second_frame(monkeypatch):
+    # (a model that raises is covered in test_watch_second_frame.py)
     _fake_run(monkeypatch, None, None)  # no guess at all
     assert watch.second_frame_look([b"a", b"b"], MOTION_CIRCLE, CROP, False, None) == (None, None)
     assert watch.second_frame_look([b"a"], MOTION_CIRCLE, CROP, False, None) == (None, None)  # no second frame

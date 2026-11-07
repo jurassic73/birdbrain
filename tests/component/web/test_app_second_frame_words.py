@@ -1,6 +1,6 @@
-"""Component tests of the web app through TestClient on a temp database: the shadow second-frame look on the Stats
-page and the visit page, and the finder wording carried over from the finder chain (the first-look step, the
-training card, the two pill tips and the circle step's "pointed out by" sentence)."""
+"""Component tests of the web app through TestClient on a temp database: the finder wording carried over from the
+finder chain (the first-look step, the training card, the two pill tips and the circle step's "pointed out by"
+sentence) and the About page's sentence. The second-frame look itself is tested in test_app_second_frame.py."""
 import json
 import re
 
@@ -10,48 +10,12 @@ from helpers.classifier import MOTION_CIRCLE, guess
 from helpers.finder import finder_raw
 from birdbrain import classifier
 
-HEADING = "Second-frame look (shadow)"
-SECOND = {"model": classifier.MODEL_NAME, "crop": classifier.TIGHT_CROP, "night": False, "frame": "second", "seconds": 6.1,
-          "local_share": 0.9, "top": [{"name": "Dark-eyed Junco", "scientific": "", "score": 0.874}],
-          "combined": {"top": [{"name": "Dark-eyed Junco", "scientific": "", "score": 0.961}], "local_share": 0.92}}
 AT = {"motion": "at the patch that moved", "blob": "at the crowd counter's outline",
       "yolox": "at the box a small object detector (YOLOX-tiny) drew"}
 
 
 def pills_explained(html):
     return html.count('class="badge ') == len(re.findall(r'class="badge [^"]*" data-tip=', html))
-
-
-def with_second(found="motion", **second):
-    raw = json.loads(finder_raw(found, score=0.9))
-    raw["calls"]["classifier_second"] = {**SECOND, **second}
-    return json.dumps(raw)
-
-
-def test_stats_page_shows_the_second_frame_paragraph_with_and_without_data(client, add_visit):
-    html = client.get("/stats").text
-    assert HEADING in html and "No second-frame look to score yet" in html and 'id="second-frame"' in html
-    add_visit(raw_json=with_second())
-    add_visit(species="Bushtit", raw_json=with_second(combined=None))
-    html = client.get("/stats").text
-    section = html[html.index('id="second-frame"'):]
-    section = section[:section.index("</p>")]
-    assert "2 looks; first frame right 1, second frame right 1, averaged right 1" in section
-    assert "averaging would have named 1 (0 wrong), the second frame alone 0 (0 wrong)" in section
-    assert "changes nothing" in section and "No second-frame look" not in section
-
-
-def test_visit_page_tight_step_says_what_the_second_frame_said(client, add_visit):
-    vid = add_visit(species="Bushtit", raw_json=with_second("blob"))
-    html = client.get(f"/visit/{vid}").text.replace("&#39;", "'")
-    assert "A second frame said Dark-eyed Junco (0.87); averaged Dark-eyed Junco (0.96). Shadow only: not used." in html
-    assert "Did not name the visit either: its top guess was 90%, under the 95% it needs. Claude was asked." in html
-    assert pills_explained(html) and html.count("second-frame") <= 1  # no new pill: the sentence sits in the step
-    vid = add_visit(species="Bushtit", raw_json=with_second("blob", combined=None))
-    html = client.get(f"/visit/{vid}").text
-    assert "A second frame said Dark-eyed Junco (0.87). Shadow only: not used." in html
-    vid = add_visit(species="Bushtit", raw_json=finder_raw("blob", score=0.9))
-    assert "A second frame said" not in client.get(f"/visit/{vid}").text
 
 
 @pytest.mark.parametrize("found", ["motion", "blob", "yolox"])
