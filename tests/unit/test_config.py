@@ -62,3 +62,9 @@ def test_parse_polygon_and_its_box():
         config.parse_polygon("0.1,0.5;0.9,0.5", "GROUND_ZONE")   # two points is a line
     with pytest.raises(ValueError, match="GROUND_ZONE"):
         config.parse_polygon("0.1,0.5,0.2;0.9,0.5;0.9,1", "GROUND_ZONE")
+
+
+def test_second_frame_min_defaults_to_the_bowl_bar_and_is_a_fraction():
+    # The shadow second-frame look runs when the tight look's top score is at least this (and under its own bar).
+    assert config.SECOND_FRAME_MIN == 0.8
+    assert 0 <= config.SECOND_FRAME_MIN < config.GATE_MIN_SCORE_TIGHT
