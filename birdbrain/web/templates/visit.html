@@ -208,8 +208,12 @@
             <strong>Circle from the motion</strong> {{ badge("pi circle", "pi-only") }}
             <span class="muted">on the Pi{% if step.seconds is not none %}, {{ step.seconds }} s{% endif %}</span>
           </div>
-          {% if step.found %}
+          {% if step.found and step.finder %}
+          <div>Circle drawn on the Pi by {{ step.finder }}{% if step.why %} <span class="muted" data-tip="The Motion detector found no patch: {{ step.why }}. The Pi then tried the other finders.">(the Motion detector found no patch)</span>{% endif %}.</div>
+          {% elif step.found %}
           <div>Circle drawn on the Pi from the motion: the biggest patch of change against {{ step.source }}.</div>
+          {% elif step.tried %}
+          <div>No circle: {{ step.why or "nothing sure enough" }}. <span class="muted" data-tip="{{ step.tried }}">No other finder found the animal either.</span></div>
           {% else %}
           <div>No circle: {{ step.why or "nothing sure enough" }}.</div>
           {% endif %}

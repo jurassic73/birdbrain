@@ -316,6 +316,90 @@ def test_a_sure_first_look_still_names_the_visit_without_a_tight_look(gate_yard,
     assert gate_yard["circle_calls"] == [("rim", False)] and calls["circle"] == MOTION_CIRCLE  # circled, as before
 
 
+NO_PATCH = (None, {"found": False, "why": "nothing", "source": "empty", "seconds": 0.02})
+BLOB_BOX = [0.4, 0.5, 0.1, 0.2]
+
+
+def test_the_crowd_counters_box_gives_the_tight_look_its_patch_when_motion_misses(gate_yard, conn):
+    from birdbrain import finder
+    gate_yard["circle"], gate_yard["boxes"] = NO_PATCH, [BLOB_BOX]
+    assert watch.handle_event() == "bird" and not gate_yard["asked"]
+    row, calls = latest_calls(conn)
+    assert row["model"] == "bioclip-2" and row["species"] == "Dark-eyed Junco"
+    blob = finder.box_circle(BLOB_BOX)
+    assert gate_yard["tight_calls"] == [(blob, config.CROP_ROI, False)] and not gate_yard["yolox_calls"]
+    assert calls["circle"] == blob and calls["classifier"]["crop"] == "motion" and calls["classifier"]["finder"] == "blob"
+    assert calls["motion_circle"] == NO_PATCH[1]  # the Motion detector's attempt, kept in the old shape
+    assert calls["finder"]["finder"] == "blob" and calls["finder"]["motion"] == NO_PATCH[1]
+    assert [(t["finder"], t["found"], t["why"]) for t in calls["finder"]["tried"]] == [("motion", False, "nothing"), ("blob", True, None)]
+    assert db.valid_json(json.dumps(calls))
+    # The same, when the tight look is not sure: the miss records the finder too, and Claude is asked.
+    gate_yard["tight"] = sure("Dark-eyed Junco", 0.9)
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
+    row, calls = latest_calls(conn)
+    assert calls["classifier_tight"]["finder"] == "blob" and calls["classifier_tight"]["circle"] == blob
+    assert calls["finder"]["finder"] == "blob" and "circle" not in calls and calls["motion_circle"]["why"] == "nothing"
+
+
+def test_the_object_detector_is_the_last_finder_and_runs_once(gate_yard, conn):
+    from birdbrain import finder
+    gate_yard["circle"] = NO_PATCH
+    gate_yard["yolox"] = ([0.6, 0.3, 0.05, 0.08], {"label": "bird", "score": 0.4, "seconds": 0.3})
+    assert watch.handle_event() == "bird" and not gate_yard["asked"]
+    row, calls = latest_calls(conn)
+    assert gate_yard["yolox_calls"] == [(config.CROP_ROI, config.FINDER_YOLOX_MIN_SCORE)]
+    yolo = finder.box_circle([0.6, 0.3, 0.05, 0.08])
+    assert gate_yard["tight_calls"] == [(yolo, config.CROP_ROI, False)] and calls["circle"] == yolo
+    assert calls["classifier"]["finder"] == "yolox" and calls["finder"]["finder"] == "yolox"
+    tried = calls["finder"]["tried"]
+    assert [(t["finder"], t["why"]) for t in tried] == [("motion", "nothing"), ("blob", "no box"), ("yolox", None)]
+    assert tried[2]["label"] == "bird" and tried[2]["score"] == 0.4
+    # Two boxes: the crowd counter can't say which, and the detector finds nothing: Claude, with the tries recorded.
+    gate_yard["boxes"], gate_yard["yolox"], gate_yard["yolox_calls"][:] = [BLOB_BOX, [0.1, 0.1, 0.05, 0.05]], (None, {"why": "nothing", "seconds": 0.3}), []
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
+    row, calls = latest_calls(conn)
+    assert len(gate_yard["yolox_calls"]) == 1 and len(gate_yard["tight_calls"]) == 1  # no second tight look
+    assert calls["finder"]["finder"] is None and [t["why"] for t in calls["finder"]["tried"]] == ["nothing", "several", "nothing"]
+    assert "classifier_tight" not in calls and "circle" not in calls and calls["motion_circle"]["why"] == "nothing"
+
+
+def test_a_count_the_crowd_counter_could_not_make_is_no_box_for_the_blob_finder(gate_yard, conn):
+    gate_yard["circle"], gate_yard["animals"] = NO_PATCH, None  # the light changed: count_animals gave up
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
+    calls = latest_calls(conn)[1]
+    assert [(t["finder"], t["why"]) for t in calls["finder"]["tried"]] == [("motion", "nothing"), ("blob", "no count"), ("yolox", "nothing")]
+
+
+def test_finders_motion_alone_stores_what_it_did_before_plus_the_finder_record(gate_yard, conn, monkeypatch):
+    monkeypatch.setattr(config, "FINDERS", ("motion",))
+    gate_yard["circle"], gate_yard["boxes"] = NO_PATCH, [BLOB_BOX]  # a box the blob finder would have used
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
+    row, calls = latest_calls(conn)
+    assert not gate_yard["tight_calls"] and not gate_yard["yolox_calls"] and "circle" not in calls
+    assert calls["motion_circle"] == NO_PATCH[1] and calls["classifier_gate"]["why"] == "score"
+    assert calls["finder"] == {"finder": None, "motion": NO_PATCH[1],
+                               "tried": [{"finder": "motion", "found": False, "why": "nothing", "seconds": calls["finder"]["tried"][0]["seconds"]}]}
+    # And when the Motion detector finds the patch: the same visit as before, with the finder named.
+    gate_yard["circle"], gate_yard["asked"][:] = (MOTION_CIRCLE, MOTION_FOUND), []
+    assert watch.handle_event() == "bird" and not gate_yard["asked"]
+    row, calls = latest_calls(conn)
+    assert calls["circle"] == MOTION_CIRCLE and calls["motion_circle"] == MOTION_FOUND
+    assert calls["classifier"]["finder"] == "motion" and calls["finder"]["finder"] == "motion"
+    assert set(calls) == {"classifier", "skipped_claude", "settled_by", "presence", "circle", "motion_circle",
+                          "classifier_gate", "animals_seen", "finder"}
+
+
+def test_a_bowl_named_visit_gets_its_circle_from_the_finder_chain(gate_yard, conn, monkeypatch):
+    from birdbrain import finder
+    monkeypatch.setattr(config, "CIRCLE_FROM_MOTION", True)
+    gate_yard["emb"], gate_yard["circle"], gate_yard["boxes"] = one_hot(0), NO_PATCH, [BLOB_BOX]
+    assert watch.handle_event() == "bird" and not gate_yard["asked"]
+    row, calls = latest_calls(conn)
+    assert row["model"] == "bioclip-2" and not gate_yard["tight_calls"] and calls["classifier"]["crop"] == "frame"
+    assert calls["circle"] == finder.box_circle(BLOB_BOX) and calls["motion_circle"] == NO_PATCH[1]
+    assert calls["finder"]["finder"] == "blob" and "finder" not in calls["classifier"]  # no tight look was made
+
+
 def test_tight_look_failing_asks_claude(gate_yard, conn, monkeypatch):
     def broken(*a, **k):
         raise RuntimeError("model broke")

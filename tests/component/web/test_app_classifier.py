@@ -100,6 +100,67 @@ def test_visit_page_says_the_tight_look_named_it(client, add_visit):
     assert flow.index("Black-capped Chickadee (61%)") < flow.index("tight look") < flow.index("Dark-eyed Junco (97%)")
 
 
+def finder_raw(found, named, *tried, circle=None):
+    """tight_raw plus the finder chain's record: `found` pointed at the patch (None: no finder did)."""
+    import json
+    raw = json.loads(tight_raw(named=named, score=0.97 if named else 0.9))
+    calls = raw["calls"]
+    calls["finder"] = {"finder": found, "motion": {"found": found == "motion", "why": None if found == "motion" else "nothing"},
+                       "tried": [{"finder": n, "found": n == found, "why": None if n == found else ("no box" if n == "blob" else "nothing"),
+                                  "seconds": 0.1} for n in tried]}
+    key = "classifier" if named else "classifier_tight"
+    calls[key]["finder"] = found
+    if found != "motion":
+        calls["motion_circle"] = {"found": False, "why": "nothing", "source": "empty", "seconds": 0.02}
+        if circle and named:
+            calls["circle"] = circle
+    return json.dumps(raw)
+
+
+def test_visit_page_names_the_finder_that_pointed_at_the_patch(client, add_visit):
+    blob = {"x": 0.45, "y": 0.6, "r": 0.0562, "pi": True}
+    vid = add_visit(model="bioclip-2", raw_json=finder_raw("blob", True, "motion", "blob", circle=blob))
+    html = client.get(f"/visit/{vid}").text
+    assert "on a tight square around the patch that moved (pointed out by the crowd counter&#39;s outline)" in html
+    assert "Circle drawn on the Pi by the crowd counter&#39;s outline" in html and "the Motion detector found no patch" in html
+    assert "No circle:" not in html
+    vid = add_visit(raw_json=finder_raw("yolox", False, "motion", "blob", "yolox"))
+    html = client.get(f"/visit/{vid}").text
+    assert "patch that moved (pointed out by a small object detector (YOLOX-tiny)), 5.9 s, before Claude" in html
+    assert "Did not name the visit either" in html
+    vid = add_visit(model="bioclip-2", raw_json=finder_raw("motion", True, "motion"))
+    html = client.get(f"/visit/{vid}").text
+    assert "(pointed out by the Motion detector)" in html and "Circle drawn on the Pi from the motion" in html
+
+
+def test_visit_page_lists_the_finders_tried_when_none_found_the_patch(client, add_visit):
+    import json
+    raw = json.loads(finder_raw(None, False, "motion", "blob", "yolox"))
+    del raw["calls"]["classifier_tight"]  # no patch: no tight look was made
+    vid = add_visit(raw_json=json.dumps(raw))
+    html = client.get(f"/visit/{vid}").text
+    assert "No circle: no clear patch of change near the zone that fired." in html
+    assert ("data-tip=\"the Motion detector: no clear patch of change near the zone that fired; the crowd counter&#39;s outline: "
+            "the crowd counter outlined no animal; a small object detector (YOLOX-tiny): saw no animal\"") in html
+    assert "No other finder found the animal either" in html and "pointed out by" not in html
+
+
+def test_stats_page_reports_the_finders(client, add_visit):
+    html = client.get("/stats").text
+    assert 'id="finder"' in html and "No tight looks in the last 14 days yet" in html
+    add_visit(model="bioclip-2", raw_json=finder_raw("blob", True, "motion", "blob", circle={"x": 0.5, "y": 0.5, "r": 0.05, "pi": True}))
+    add_visit(raw_json=finder_raw("yolox", False, "motion", "blob", "yolox"))
+    add_visit(raw_json=finder_raw("motion", False, "motion"))
+    import json
+    raw = json.loads(finder_raw(None, False, "motion", "blob", "yolox"))
+    del raw["calls"]["classifier_tight"]
+    add_visit(raw_json=json.dumps(raw))
+    html = client.get("/stats").text
+    assert "Tight looks in the last 14 days: 3" in html
+    assert "the Motion detector on 1 (0 named); the crowd counter&#39;s outline on 1 (1 named); a small object detector (YOLOX-tiny) on 1 (0 named)." in html
+    assert "No finder found a patch on 1 visit, so Claude was asked." in html
+
+
 def test_visits_without_a_tight_look_render_as_before(client, add_visit):
     first_only = add_visit(species="Bushtit", raw_json=first_look_raw())
     html = client.get(f"/visit/{first_only}").text

@@ -122,6 +122,14 @@
   {% else %}
   <p class="muted">No visits scored yet (birds and mammals named to a species). Older visits can be scored with <code>python -m birdbrain.classifier --backfill</code>.</p>
   {% endif %}
+  {% if finder is defined and finder %}
+  <p class="muted finder-report" id="finder" data-tip="The tight look needs a patch to look at. The Pi asks the Motion detector first, then the crowd counter's outline, then a small object detector (YOLOX-tiny) on the crop box; whichever points at the animal first is used.">
+    {% if finder.looks or finder.none %}Tight looks in the last {{ finder.days }} days: {{ finder.looks }}{% if finder.looks %}, the patch pointed out by
+      {% for name in ("motion", "blob", "yolox") if finder.by_finder[name] is defined %}{% set f = finder.by_finder[name] %}{{ finder_words[name] }} on {{ f.looks }} ({{ f.named }} named){{ "; " if not loop.last }}{% endfor %}{% endif %}.
+      No finder found a patch on {{ finder.none }} visit{{ "" if finder.none == 1 else "s" }}, so Claude was asked.
+    {% else %}No tight looks in the last {{ finder.days }} days yet: the finders (the Motion detector, the crowd counter's outline, a small object detector) report here once there are some.{% endif %}
+  </p>
+  {% endif %}
 </section>
 {% endif %}
 <script src="/static/charts.js?v={{ asset_version }}"></script>

@@ -61,7 +61,8 @@ def gate_yard(monkeypatch, conn, add_visit):
     frame = np.full((1080, 1920, 3), (40, 120, 200), np.uint8)
     burst = [cv2.imencode(".jpg", frame)[1].tobytes()] * 3
     knobs = {"emb": one_hot(0, 0.01), "tight": sure("Dark-eyed Junco", 0.97), "circle": (MOTION_CIRCLE, MOTION_FOUND),
-             "animals": 1, "asked": [], "tight_calls": [], "circle_calls": []}
+             "animals": 1, "boxes": [], "yolox": (None, {"why": "nothing", "seconds": 0.3}),
+             "asked": [], "tight_calls": [], "circle_calls": [], "yolox_calls": []}
     monkeypatch.setattr(watch, "capture_burst", lambda: burst)
     monkeypatch.setattr(watch, "presence_mode", lambda: "gate")
     monkeypatch.setattr(config, "CLASSIFIER", "gate")
@@ -69,7 +70,19 @@ def gate_yard(monkeypatch, conn, add_visit):
     monkeypatch.setattr(watch.presence, "check", lambda conn, e, view=None: {"model": "bioclip-presence", "score": 0.9,
                                                                              "threshold": 0.4, "empty": False})
     monkeypatch.setattr(watch.presence, "store", lambda conn, vid, e: None)
-    monkeypatch.setattr(watch, "count_animals", lambda scene, jpeg, crop, detail=None: knobs["animals"])
+
+    def fake_count(scene, jpeg, crop, detail=None):
+        if detail is not None:  # the crowd counter's box per counted animal, for the blob finder
+            detail.extend(knobs["boxes"])
+        return knobs["animals"]
+
+    monkeypatch.setattr(watch, "count_animals", fake_count)
+
+    def fake_animal_box(jpeg, crop, min_score):
+        knobs["yolox_calls"].append((crop, min_score))
+        return knobs["yolox"]
+
+    monkeypatch.setattr(watch.finder.detector, "animal_box", fake_animal_box)
     monkeypatch.setattr(classifier, "load", lambda: FakeTextClassifier())
     monkeypatch.setattr(classifier, "local_species", lambda: LOCAL)
 

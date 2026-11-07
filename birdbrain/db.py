@@ -1916,6 +1916,45 @@ def classifier_report(conn: sqlite3.Connection, days: int | None = None) -> dict
     }
 
 
+def finder_report(conn: sqlite3.Connection, days: int = 14) -> dict:
+    """How the finder chain for the BioCLIP 2 species check's tight look (birdbrain.finder) did over the last
+    `days`: of the visits with a finder record that went past the first look (not named by the look at the whole
+    bowl), how many got a tight look, by which finder, how many of those the tight look named, and how many had no
+    patch found at all (Claude was asked). `looks` counts tight looks made, `none` the visits where no finder found a
+    patch, `by_finder` {name: {"looks", "named"}} where named means the visit's model is bioclip-2 and
+    calls.classifier.crop is "motion" (named by the tight look)."""
+    where, args = "", ()
+    if days:
+        where, args = "AND captured_at >= ?", ((clock.today() - timedelta(days=days - 1)).isoformat(),)
+    rows = conn.execute(
+        f"""SELECT model,
+                   COALESCE(json_extract(raw_json, '$.calls.finder.finder'), json_extract(raw_json, '$.finder.finder')) AS finder,
+                   json_extract(raw_json, '$.calls.classifier_tight') IS NOT NULL AS tight_miss,
+                   json_extract(raw_json, '$.calls.classifier.crop') AS crop,
+                   json_extract(raw_json, '$.calls.settled_by') AS settled_by
+            FROM visits
+            WHERE COALESCE(json_extract(raw_json, '$.calls.finder'), json_extract(raw_json, '$.finder')) IS NOT NULL
+              {where}""",
+        args,
+    ).fetchall()
+    by_finder: dict[str, dict] = {}
+    looks = none = 0
+    for r in rows:
+        named = r["model"] == CLASSIFIER_MODEL and r["crop"] == "motion"
+        if r["settled_by"] == "classifier" and not named:
+            continue  # named by the look at the whole bowl: the finder only drew its circle
+        if not r["finder"]:
+            none += 1
+            continue
+        if not (named or r["tight_miss"]):
+            continue  # a patch was found but no tight look was stored (it failed, or the finder only circled)
+        looks += 1
+        f = by_finder.setdefault(r["finder"], {"looks": 0, "named": 0})
+        f["looks"] += 1
+        f["named"] += named
+    return {"days": days, "looks": looks, "none": none, "by_finder": by_finder}
+
+
 def presence_report(conn: sqlite3.Connection, days: int = 14) -> dict:
     """The local animal check (birdbrain.presence) over the last `days`: frames it judged live (not backfilled),
     against the final answer. skipped = Claude wasn't asked (gate mode); missed = it said empty but the owner
