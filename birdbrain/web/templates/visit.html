@@ -1066,7 +1066,10 @@
       step(e.key === "ArrowLeft" ? -1 : 1);
     });
     n.textContent = shown() + 1;
-    if (auto && !document.hidden) play();
+    // Start no earlier than the load event (a spare pop-up frame swaps in on load), never in a hidden tab.
+    const autoStart = () => { if (auto && !document.hidden && timer === null) play(); };
+    if (document.readyState === "complete") autoStart();
+    else window.addEventListener("load", autoStart, {once: true});
   })();
   (() => {
     // Full-size viewer: Esc, the close button or any click closes it.
