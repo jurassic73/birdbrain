@@ -1087,6 +1087,8 @@ button.danger.sending, button.danger.htmx-request {
 .classifier-species th, .classifier-species td { padding: 2px 14px 2px 0; text-align: left; }
 .classifier-species th { color: var(--muted); font-weight: normal; }
 .classifier-species td.num, .classifier-species th.num { text-align: right; }
+.agree-title { font-size: 1rem; margin: 14px 0 0; }
+.agree-bars th.num { max-width: 9em; vertical-align: bottom; }
 
 .decision { margin: 10px 0 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .decision h2 { font-size: 1rem; margin: 0; display: inline; }

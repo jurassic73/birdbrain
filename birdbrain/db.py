@@ -1786,6 +1786,7 @@ CONFIRMED_MIN = 3  # visits before a species counts as confirmed here
 
 
 CLASSIFIER_MODEL = "bioclip-2"  # visits named by the local classifier in gate mode (classifier.MODEL_NAME)
+TIGHT_CROP = "motion"  # the stored guess's crop for the tight look (classifier.TIGHT_CROP)
 
 
 # Who answered a visit, in the project's component names, keyed by the `visits.model` value. Anything else
@@ -1914,6 +1915,64 @@ def classifier_report(conn: sqlite3.Connection, days: int | None = None) -> dict
         "species": sorted(per.values(), key=lambda s: (-s["visits"], s["label"])),
         "misses": misses,
     }
+
+
+AGREEMENT_BARS = (0.90, 0.93, 0.95)  # tight-look bars the Stats scorecard tries; the live one is GATE_MIN_SCORE_TIGHT
+
+
+def agreement_report(conn: sqlite3.Connection, bars: tuple[float, ...] = AGREEMENT_BARS, days: int | None = None) -> dict:
+    """Shadow scorecard for a lower tight-look bar: over visits that got both BioCLIP 2 looks (the wide look on the
+    bowl, kept as calls.classifier_gate, and the tight look around the motion circle, calls.classifier_tight when it
+    missed or calls.classifier with crop "motion" when it named the visit) and a final species label (owner
+    correction wins, else Claude's; visits the Pi named count only once confirmed or corrected, as in
+    classifier_report), how many the tight look would have named at each bar (top score >= bar and local_share >=
+    classifier.GATE_MIN_LOCAL; the settled-species rule is left out) and how many of those wrongly, plus the same
+    two counts over the visits where the wide look's top guess agrees with the tight look's. Changes nothing.
+    {"looks": n, "bars": [{"bar", "named", "wrong", "agree_named", "agree_wrong"}, ...]}."""
+    from . import classifier  # classifier imports db; only its bar is wanted here
+
+    where, args = "", ()
+    if days:
+        where, args = "AND captured_at >= ?", ((clock.today() - timedelta(days=days - 1)).isoformat(),)
+    rows = conn.execute(
+        f"""SELECT id, {LABEL} AS label, raw_json
+            FROM visits
+            WHERE {VISITOR} != 'none' {where}
+              {f"AND {NOT_OTHER}" if hiding_other() else ""}
+              AND json_extract(raw_json, '$.calls.classifier_gate.top') IS NOT NULL
+              AND (json_extract(raw_json, '$.calls.classifier_tight.top') IS NOT NULL
+                   OR (json_extract(raw_json, '$.calls.classifier.crop') = '{TIGHT_CROP}'
+                       AND json_extract(raw_json, '$.calls.classifier.top') IS NOT NULL))
+              AND (model != '{CLASSIFIER_MODEL}' OR confirmed_at IS NOT NULL
+                   OR corrected_species IS NOT NULL OR corrected_visitor IS NOT NULL)""",
+        args,
+    ).fetchall()
+    counts = {b: {"bar": b, "named": 0, "wrong": 0, "agree_named": 0, "agree_wrong": 0} for b in bars}
+    looks = 0
+    for r in rows:
+        k = _name_key(r["label"])
+        if k in ("", "bird", "squirrel", "other"):  # no species to compare with
+            continue
+        calls = json.loads(r["raw_json"]).get("calls") or {}
+        tight = calls.get("classifier_tight") or calls.get("classifier")
+        bowl = calls["classifier_gate"]
+        if not tight.get("top") or not bowl.get("top"):
+            continue
+        looks += 1
+        top = tight["top"][0]
+        name = _name_key(top.get("name"))
+        same = (lambda n: n == k) if k not in ("raccoon", "possum") else (lambda n: n.endswith(k))
+        wrong = not same(name)
+        agree = _name_key(bowl["top"][0].get("name")) == name
+        local = (tight.get("local_share") or 0) >= classifier.GATE_MIN_LOCAL
+        for b, c in counts.items():
+            if local and (top.get("score") or 0) >= b:
+                c["named"] += 1
+                c["wrong"] += wrong
+                if agree:
+                    c["agree_named"] += 1
+                    c["agree_wrong"] += wrong
+    return {"looks": looks, "bars": [counts[b] for b in bars]}
 
 
 def presence_report(conn: sqlite3.Connection, days: int = 14) -> dict:

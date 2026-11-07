@@ -1405,6 +1405,7 @@ def stats(request: Request, conn=Depends(get_conn)):
         today_label=clock.today().strftime("%a, %b %-d"),
         activity=db.activity(conn),
         classifier=db.classifier_report(conn),
+        agreement=db.agreement_report(conn),
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",
         classifier_mode=config.CLASSIFIER,
