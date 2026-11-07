@@ -1706,6 +1706,8 @@ button.se-all { font-weight: 600; }
 .vburst-steps { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .vburst-step { min-width: 36px; min-height: 32px; padding: 0 8px; font-size: 1.2rem; line-height: 1; background: var(--surface); color: var(--accent); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
 .vburst-play { display: inline-flex; align-items: center; justify-content: center; }
+.vburst-speed { display: inline-flex; align-items: center; justify-content: center; min-width: 3em; font-size: .9rem; font-weight: 600; font-variant-numeric: tabular-nums; text-box: trim-both cap alphabetic; }
+@supports not (text-box: trim-both cap alphabetic) { .vburst-speed { padding-top: 1px; } }
 .vburst-play .vburst-ico-stop, .vburst-play[aria-pressed="true"] .vburst-ico-play { display: none; }
 .vburst-play[aria-pressed="true"] .vburst-ico-stop { display: inline; }
 .vburst-count { min-width: 3.2em; text-align: center; white-space: nowrap; }
