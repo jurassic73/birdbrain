@@ -907,15 +907,16 @@ CIRCLE_WHY = {"nothing": "no clear patch of change near the zone that fired",
               "light": "most of the view changed (the light)",
               "no empty view": "no empty view of the scene to compare with",
               "unreadable photo": "the photo couldn't be read",
+              "not run": "not run (FINDERS leaves the Motion detector out)",
               "no photo or zones": "the photo or its zones are gone",
               "error": "something went wrong"}
 # The finders that point at the animal for the tight look (birdbrain/finder.py), in words, and why each found nothing.
 FINDER_WORDS = {"motion": "the Motion detector", "blob": "the crowd counter's outline",
                 "yolox": "a small object detector (YOLOX-tiny)"}
 FINDER_WHY = {"motion": CIRCLE_WHY,
-              "blob": {"no count": "the crowd counter couldn't count (the light changed)", "no box": "the crowd counter outlined no animal",
+              "blob": {"no count": "the crowd counter couldn't count (the light changed, or there was no empty scene to compare with yet)", "no box": "the crowd counter outlined no animal",
                        "several": "the crowd counter outlined several animals"},
-              "yolox": {"nothing": "saw no animal", "no model": "no model file on the Pi"}}
+              "yolox": {"nothing": "saw no animal", "no model": "no model file on the Pi", "unreadable photo": "the photo couldn't be read"}}
 ANY_FINDER_WHY = {"error": "something went wrong", "night": "not run at night", "unknown": "not a known finder"}
 
 
@@ -1048,22 +1049,27 @@ def decision_steps(raw_json: str | None) -> dict:
                                        "reason": miss_text(second.get("why"), second, view="tight")})
     found = calls.get("motion_circle")
     record = calls.get("finder") if isinstance(calls.get("finder"), dict) else None
-    pi_circle = isinstance(calls.get("circle"), dict) and calls["circle"].get("pi")
-    if isinstance(found, dict) or (record and record.get("finder") and pi_circle):
+    shown = calls.get("circle") if isinstance(calls.get("circle"), dict) else {}
+    pi_circle = bool(shown.get("pi"))
+    if isinstance(found, dict) or (record and record.get("finder")):
         # The Pi's own circle: the Motion detector's attempt as before, and, when the finder chain ran, which finder
         # pointed at the animal (the Motion detector, the crowd counter's outline or a small object detector).
         found = found if isinstance(found, dict) else {}
-        by = finder_words(record) if record and pi_circle else None
-        circled = bool(pi_circle and (by or found.get("found")))
+        # Who pointed at the patch, whoever drew the circle the page shows (Claude's, when the tight look missed).
+        pointed = finder_words(record) or (FINDER_WORDS["motion"] if found.get("found") else None)
+        circled = bool(pi_circle and pointed)
         steps.append({
             "model": "Circle from the motion",
             "motion_circle": True,
             "found": circled,
             "said": "circled" if circled else "no circle",
             "source": CIRCLE_SOURCES.get(found.get("source"), ""),
-            "finder": by if by and record.get("finder") != "motion" else None,  # the motion finder reads as before
+            "finder": pointed if circled and (record or {}).get("finder") not in (None, "motion") else None,
+            "pointed": pointed if pointed and not circled else None,  # found the patch, but the circle shown is not the Pi's
+            "circle_shown": "claude" if shown.get("claude") else "other" if shown else None,
             "why": CIRCLE_WHY.get(found.get("why"), ""),
-            "tried": finders_tried(record) if record and not circled else "",
+            "not_run": found.get("why") == "not run",  # FINDERS left the Motion detector out (watch.MOTION_NOT_RUN)
+            "tried": finders_tried(record) if record and not pointed else "",  # only when no finder found the patch
             "seconds": found.get("seconds"),
         })
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),

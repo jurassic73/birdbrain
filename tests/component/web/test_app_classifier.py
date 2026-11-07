@@ -145,6 +145,44 @@ def test_visit_page_lists_the_finders_tried_when_none_found_the_patch(client, ad
     assert "No other finder found the animal either" in html and "pointed out by" not in html
 
 
+def test_visit_page_says_who_pointed_at_the_patch_when_the_circle_shown_is_claudes(client, add_visit):
+    # The crowd counter's outline found the patch, the tight look missed, Claude answered and drew the circle: the
+    # page must not say "no circle ... no other finder found the animal either" while the tight look's step says
+    # the crowd counter's outline pointed it out.
+    import json
+    raw = json.loads(finder_raw("blob", False, "motion", "blob"))
+    raw["calls"]["circle"] = {"x": 0.5, "y": 0.5, "r": 0.05, "claude": True}
+    vid = add_visit(raw_json=json.dumps(raw))
+    html = client.get(f"/visit/{vid}").text.replace("&#39;", "'")
+    assert "The patch for the tight look was pointed out by the crowd counter's outline; the circle shown is Claude's." in html
+    assert "(pointed out by the crowd counter's outline)" in html and "Did not name the visit either" in html
+    assert "No circle:" not in html and "No other finder found the animal either" not in html and "found it" not in html
+    # Claude drew no circle: the page says the Pi's circle was not kept, instead of claiming a circle it has not got.
+    del raw["calls"]["circle"]
+    html = client.get(f"/visit/{add_visit(raw_json=json.dumps(raw))}").text.replace("&#39;", "'")
+    assert "pointed out by the crowd counter's outline; the Pi's circle was not kept." in html and "No circle:" not in html
+    # The Motion detector found the patch and Claude drew the circle: the same sentence, naming the Motion detector.
+    raw = json.loads(finder_raw("motion", False, "motion"))
+    raw["calls"]["circle"] = {"x": 0.5, "y": 0.5, "r": 0.05, "claude": True}
+    html = client.get(f"/visit/{add_visit(raw_json=json.dumps(raw))}").text.replace("&#39;", "'")
+    assert "The patch for the tight look was pointed out by the Motion detector; the circle shown is Claude's." in html
+    assert "No circle:" not in html and "found it" not in html
+
+
+def test_visit_page_of_a_visit_circled_without_the_motion_detector(client, add_visit):
+    # FINDERS left the Motion detector out (watch.MOTION_NOT_RUN): the circled step says it was not run, not that
+    # it found no patch.
+    import json
+    blob = {"x": 0.45, "y": 0.6, "r": 0.0562, "pi": True}
+    raw = json.loads(finder_raw("blob", True, "blob", circle=blob))
+    raw["calls"]["motion_circle"] = {"found": False, "why": "not run", "source": None}
+    del raw["calls"]["finder"]["motion"]
+    html = client.get(f"/visit/{add_visit(model='bioclip-2', raw_json=json.dumps(raw))}").text.replace("&#39;", "'")
+    assert "Circle drawn on the Pi by the crowd counter's outline" in html and ">(the Motion detector was not run)</span>." in html
+    assert 'data-tip="The Motion detector: not run (FINDERS leaves the Motion detector out)."' in html
+    assert "found no patch" not in html and "No circle:" not in html
+
+
 def test_stats_page_reports_the_finders(client, add_visit):
     html = client.get("/stats").text
     assert 'id="finder"' in html and "No tight looks in the last 14 days yet" in html

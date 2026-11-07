@@ -173,7 +173,8 @@ def animal_box(jpeg: bytes, crop, min_score: float) -> tuple[list[float] | None,
     """One YOLOX-tiny inference on the crop box (like `run`), for birdbrain.finder: the box of the highest-scoring
     detection of an animal class (FINDER_CLASSES: never a person), as full-frame fractions [x, y, w, h], plus
     {"label", "score", "seconds"}. (None, {"why": "no model"}) without a model file, (None, {"why": "nothing",
-    "seconds"}) when it saw no animal, (None, {"why": "error"}) when anything failed. Independent of
+    "seconds"}) when it saw no animal, {"why": "unreadable photo"} for a JPEG that can't be decoded, (None,
+    {"why": "error"}) when anything failed. Independent of
     config.DETECTOR (the retired watcher shadow mode)."""
     global _detector
     if not config.DETECTOR_MODEL.exists():
@@ -186,8 +187,10 @@ def animal_box(jpeg: bytes, crop, min_score: float) -> tuple[list[float] | None,
         from . import zones
 
         frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
-        img = roi(frame, crop) if frame is not None else None
-        if img is None:
+        if frame is None:
+            return None, {"why": "unreadable photo", "seconds": round(time.perf_counter() - start, 3)}
+        img = roi(frame, crop)
+        if img is None:  # the crop box lies outside the frame: nothing to look at
             return None, {"why": "nothing", "seconds": round(time.perf_counter() - start, 3)}
         crop_px = zones.pixel_box(frame.shape, crop) if crop else None
         found = _detector.detect(img, min_score)

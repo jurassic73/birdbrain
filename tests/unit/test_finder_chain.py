@@ -117,6 +117,17 @@ def test_tried_text_without_a_record():
 def test_config_parses_the_finder_list_and_rejects_unknown_names():
     assert config.parse_finders("motion,blob,yolox") == ("motion", "blob", "yolox")
     assert config.parse_finders(" yolox, Motion ") == ("yolox", "motion")
-    assert config.parse_finders("motion") == ("motion",) and config.parse_finders("") == ()
+    assert config.parse_finders("motion") == ("motion",)
     with pytest.raises(ValueError, match="FINDERS: 'haiku' is not a finder"):
         config.parse_finders("motion,haiku")
+
+
+def test_config_rejects_an_empty_finder_list_and_a_finder_listed_twice():
+    # Empty, rule H would silently never take a tight look; twice, the Motion detector would run twice and overwrite
+    # its own record. Both are refused at import like an unknown name, naming FINDERS.
+    for raw in ("", " , "):
+        with pytest.raises(ValueError, match="FINDERS is empty"):
+            config.parse_finders(raw)
+    for raw in ("motion,motion", "motion, blob, Motion"):
+        with pytest.raises(ValueError, match="FINDERS: .* lists a finder twice"):
+            config.parse_finders(raw)

@@ -79,4 +79,6 @@ def test_animal_box_without_a_model_or_with_a_broken_one_never_raises(monkeypatc
     box, info = detector.animal_box(small_jpeg, None, min_score=0.15)
     assert box is None and info["why"] == "error"
     monkeypatch.setattr(detector, "_detector", FakeDetector([]))
-    assert detector.animal_box(b"not a jpeg", None, min_score=0.15)[1]["why"] == "nothing"
+    # a JPEG that can't be decoded is its own reason (the Motion detector's wording), not "saw no animal"
+    box, info = detector.animal_box(b"not a jpeg", None, min_score=0.15)
+    assert box is None and info["why"] == "unreadable photo" and "seconds" in info

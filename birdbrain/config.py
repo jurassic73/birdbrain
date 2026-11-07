@@ -229,11 +229,17 @@ FINDER_NAMES = ("motion", "blob", "yolox")
 
 
 def parse_finders(raw: str) -> tuple[str, ...]:
-    """A comma list of finder names, in order; an unknown name raises ValueError naming it."""
+    """A comma list of finder names, in order, each at most once and at least one; an unknown name, an empty list
+    or a repeated name raises ValueError naming FINDERS."""
     names = tuple(n.strip().lower() for n in raw.split(",") if n.strip())
+    expected = f"expected a comma list of {', '.join(FINDER_NAMES)}"
+    if not names:
+        raise ValueError(f"FINDERS is empty; {expected} (FINDERS=motion is the old behaviour)")
     for n in names:
         if n not in FINDER_NAMES:
-            raise ValueError(f"FINDERS: {n!r} is not a finder; expected a comma list of {', '.join(FINDER_NAMES)}")
+            raise ValueError(f"FINDERS: {n!r} is not a finder; {expected}")
+    if len(set(names)) != len(names):
+        raise ValueError(f"FINDERS: {raw.strip()!r} lists a finder twice; {expected}, each once")
     return names
 
 
