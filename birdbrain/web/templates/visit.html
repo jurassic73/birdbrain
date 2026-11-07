@@ -178,7 +178,7 @@
           </div>
           <div>{% if step.guesses %}{{ step.guesses | join(", ") }}{% else %}no local species{% endif %}</div>
           {% if step.gated and step.tight %}
-          <div class="step-why">The first look at the whole bowl fell short, but on a tight look around the patch that moved it was sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
+          <div class="step-why">The first look at the whole bowl fell short, but on a tight look {{ step.where }} it was sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
           {% elif step.gated %}
           <div class="step-why">Sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
           {% elif step.tight %}
@@ -215,7 +215,7 @@
           {% elif step.pointed %}
           <div>The patch for the tight look was pointed out by {{ step.pointed }}; {% if step.circle_shown == 'claude' %}the circle shown is Claude's{% elif step.circle_shown %}the circle shown is not the Pi's{% else %}the Pi's circle was not kept{% endif %}.</div>
           {% elif step.tried %}
-          <div>No circle: {{ step.why or "nothing sure enough" }}. <span class="muted" data-tip="{{ step.tried }}">No other finder found the animal either.</span></div>
+          <div>No circle: {{ step.why or "nothing sure enough" }}. <span class="muted" data-tip="{{ step.tried }}">{% if step.others_tried %}No other finder found the animal either.{% else %}No other finder was tried.{% endif %}</span></div>
           {% else %}
           <div>No circle: {{ step.why or "nothing sure enough" }}.</div>
           {% endif %}

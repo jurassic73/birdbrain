@@ -121,6 +121,16 @@ def test_an_other_animal_always_waits_for_review_however_sure(fake_ask):
     assert identify.settled_by_classifier(guess, ("Bushtit", "bird"), None).needs_review is False
 
 
+def test_the_pi_named_note_says_where_the_tight_look_was_for_every_finder():
+    guess = {"top": [{"name": "Bushtit", "score": 0.97}], "model": "bioclip-2", "crop": "motion"}
+    note = lambda g: identify.settled_by_classifier(g, ("Bushtit", "bird"), None).sighting.notes
+    assert "97% sure on a tight look around the patch that moved)" in note(guess)  # before the chain: the motion circle
+    assert "around the patch that moved)" in note({**guess, "finder": "motion"})
+    assert "around the crowd counter's outline)" in note({**guess, "finder": "blob"})
+    assert "around the box a small object detector drew)" in note({**guess, "finder": "yolox"})
+    assert "tight look" not in note({**guess, "crop": "frame"})
+
+
 def test_still_low_after_escalation_goes_to_review(fake_ask):
     fake_ask({HAIKU: sighting(confidence="low"), SONNET: sighting(confidence="low")})
     assert identify.identify(jpeg(), WHEN).needs_review is True

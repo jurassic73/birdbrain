@@ -396,12 +396,18 @@ def settled_by_presence(check: dict, det: dict | None) -> Result:
     return Result(s, check["model"], escalated=False, needs_review=False, raw=raw)
 
 
+# What the tight look's square was drawn around, by the finder that pointed at it (birdbrain/finder.py); the
+# Motion detector's wording is also the one for visits from before the chain.
+TIGHT_WHERE = {"motion": "around the patch that moved", "blob": "around the crowd counter's outline",
+               "yolox": "around the box a small object detector drew"}
+
+
 def settled_by_classifier(guess: dict, pick: tuple[str, str], check: dict | None) -> Result:
     """Gate mode of the local species classifier: a confident daytime guess of a species already settled here
     names the visit, and Claude isn't asked. It can't count or see a second kind of animal."""
     species, visitor = pick
     score = guess["top"][0]["score"]
-    look = " on a tight look around the patch that moved" if guess.get("crop") == "motion" else ""
+    look = f" on a tight look {TIGHT_WHERE.get(guess.get('finder'), TIGHT_WHERE['motion'])}" if guess.get("crop") == "motion" else ""
     notes = (f"Named on the Pi by the BioCLIP 2 species check ({score:.0%} sure{look}); Claude was not asked, "
              "so the count and any other animals weren't checked.")
     s = Sighting(visitor=visitor, species=species, count=1, confidence="high", notes=notes, circle=None, also=[])

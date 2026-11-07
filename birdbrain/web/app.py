@@ -915,7 +915,8 @@ FINDER_WORDS = {"motion": "the Motion detector", "blob": "the crowd counter's ou
                 "yolox": "a small object detector (YOLOX-tiny)"}
 FINDER_WHY = {"motion": CIRCLE_WHY,
               "blob": {"no count": "the crowd counter couldn't count (the light changed, or there was no empty scene to compare with yet)", "no box": "the crowd counter outlined no animal",
-                       "several": "the crowd counter outlined several animals"},
+                       "several": "the crowd counter outlined several animals",
+                       "too big": "the crowd counter's outline was too big for an animal (the light)"},
               "yolox": {"nothing": "saw no animal", "no model": "no model file on the Pi", "unreadable photo": "the photo couldn't be read"}}
 ANY_FINDER_WHY = {"error": "something went wrong", "night": "not run at night", "unknown": "not a known finder"}
 
@@ -944,6 +945,8 @@ def finders_tried(record: dict | None) -> str:
 CLASSIFIER_CROPS = {"circle": "around Claude's circle", "box": "on the crop box", "frame": "on the whole frame",
                     "bowl": "on a square around the whole bowl",
                     classifier.TIGHT_CROP: "on a tight square around the patch that moved"}
+# What the tight square was drawn around, by finder (identify.TIGHT_WHERE, naming the object detector's model here).
+FINDER_WHERE = {**identify.TIGHT_WHERE, "yolox": "around the box a small object detector (YOLOX-tiny) drew"}
 
 
 miss_text = steps.miss_text  # decision_steps has a local called steps
@@ -955,8 +958,9 @@ def bioclip_step(guess: dict, raw: dict) -> dict:
     crop = (("on the ground crop" if raw.get("trigger") == "ground" else "on the crop box")
             if guess.get("crop") == "padded" else CLASSIFIER_CROPS.get(guess.get("crop"), ""))
     finder = FINDER_WORDS.get(guess.get("finder")) if guess.get("crop") == classifier.TIGHT_CROP else None
+    where = FINDER_WHERE.get(guess.get("finder") if finder else "motion", FINDER_WHERE["motion"])
     if finder:  # the tight look says which finder pointed at the patch (birdbrain/finder.py)
-        crop = f"{crop} (pointed out by {finder})"
+        crop = f"on a tight square {where}" + (", pointed out by the Motion detector" if guess.get("finder") == "motion" else "")
     return {
         "model": "BioCLIP 2 species check",
         "bioclip": True,
@@ -965,6 +969,7 @@ def bioclip_step(guess: dict, raw: dict) -> dict:
         "seconds": guess.get("seconds"),
         "crop": crop,
         "finder": finder,
+        "where": where,  # "around the patch that moved" or the other finders' outline or box
         "night": bool(guess.get("night")),
     }
 
@@ -1058,11 +1063,13 @@ def decision_steps(raw_json: str | None) -> dict:
         # Who pointed at the patch, whoever drew the circle the page shows (Claude's, when the tight look missed).
         pointed = finder_words(record) or (FINDER_WORDS["motion"] if found.get("found") else None)
         circled = bool(pi_circle and pointed)
+        others = [t for t in (record or {}).get("tried") or [] if isinstance(t, dict) and t.get("finder") != "motion"]
         steps.append({
             "model": "Circle from the motion",
             "motion_circle": True,
             "found": circled,
-            "said": "circled" if circled else "no circle",
+            "said": "circled" if circled else "patch found" if pointed else "no circle",
+            "others_tried": bool(others),  # finders beyond the Motion detector were tried (FINDERS=motion: none)
             "source": CIRCLE_SOURCES.get(found.get("source"), ""),
             "finder": pointed if circled and (record or {}).get("finder") not in (None, "motion") else None,
             "pointed": pointed if pointed and not circled else None,  # found the patch, but the circle shown is not the Pi's

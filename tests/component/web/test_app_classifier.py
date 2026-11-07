@@ -121,16 +121,18 @@ def test_visit_page_names_the_finder_that_pointed_at_the_patch(client, add_visit
     blob = {"x": 0.45, "y": 0.6, "r": 0.0562, "pi": True}
     vid = add_visit(model="bioclip-2", raw_json=finder_raw("blob", True, "motion", "blob", circle=blob))
     html = client.get(f"/visit/{vid}").text
-    assert "on a tight square around the patch that moved (pointed out by the crowd counter&#39;s outline)" in html
+    assert "on a tight square around the crowd counter&#39;s outline, 5.9 s</span>" in html
+    assert "but on a tight look around the crowd counter&#39;s outline it was sure enough" in html
     assert "Circle drawn on the Pi by the crowd counter&#39;s outline" in html and "the Motion detector found no patch" in html
-    assert "No circle:" not in html
+    assert "No circle:" not in html and "patch that moved (" not in html
     vid = add_visit(raw_json=finder_raw("yolox", False, "motion", "blob", "yolox"))
     html = client.get(f"/visit/{vid}").text
-    assert "patch that moved (pointed out by a small object detector (YOLOX-tiny)), 5.9 s, before Claude" in html
-    assert "Did not name the visit either" in html
+    assert "on a tight square around the box a small object detector (YOLOX-tiny) drew, 5.9 s, before Claude" in html
+    assert "Did not name the visit either" in html and "(YOLOX-tiny))" not in html  # no parenthesis inside another
     vid = add_visit(model="bioclip-2", raw_json=finder_raw("motion", True, "motion"))
     html = client.get(f"/visit/{vid}").text
-    assert "(pointed out by the Motion detector)" in html and "Circle drawn on the Pi from the motion" in html
+    assert "on a tight square around the patch that moved, pointed out by the Motion detector, 5.9 s" in html
+    assert "Circle drawn on the Pi from the motion" in html
 
 
 def test_visit_page_lists_the_finders_tried_when_none_found_the_patch(client, add_visit):
@@ -155,8 +157,12 @@ def test_visit_page_says_who_pointed_at_the_patch_when_the_circle_shown_is_claud
     vid = add_visit(raw_json=json.dumps(raw))
     html = client.get(f"/visit/{vid}").text.replace("&#39;", "'")
     assert "The patch for the tight look was pointed out by the crowd counter's outline; the circle shown is Claude's." in html
-    assert "(pointed out by the crowd counter's outline)" in html and "Did not name the visit either" in html
+    assert "around the crowd counter's outline, 5.9 s" in html and "Did not name the visit either" in html
     assert "No circle:" not in html and "No other finder found the animal either" not in html and "found it" not in html
+    # The flow pill says the patch was found, not "no circle", while the Pi did find it.
+    flow = html[html.index('aria-label="Detection path"'):]
+    flow = flow[:flow.index("</ol>")]
+    assert "patch found" in flow and "no circle" not in flow
     # Claude drew no circle: the page says the Pi's circle was not kept, instead of claiming a circle it has not got.
     del raw["calls"]["circle"]
     html = client.get(f"/visit/{add_visit(raw_json=json.dumps(raw))}").text.replace("&#39;", "'")
@@ -167,6 +173,19 @@ def test_visit_page_says_who_pointed_at_the_patch_when_the_circle_shown_is_claud
     html = client.get(f"/visit/{add_visit(raw_json=json.dumps(raw))}").text.replace("&#39;", "'")
     assert "The patch for the tight look was pointed out by the Motion detector; the circle shown is Claude's." in html
     assert "No circle:" not in html and "found it" not in html
+
+
+def test_visit_page_with_only_the_motion_detector_tried_does_not_claim_other_finders_missed(client, add_visit):
+    # FINDERS=motion and a miss: no other finder was tried, so the page must not say the others found nothing either.
+    import json
+    raw = json.loads(finder_raw(None, False, "motion"))
+    del raw["calls"]["classifier_tight"]
+    html = client.get(f"/visit/{add_visit(raw_json=json.dumps(raw))}").text
+    assert "No circle: no clear patch of change near the zone that fired." in html
+    assert "No other finder was tried." in html and "No other finder found the animal either" not in html
+    assert 'data-tip="the Motion detector: no clear patch of change near the zone that fired"' in html
+    flow = html[html.index('aria-label="Detection path"'):]
+    assert "no circle" in flow[:flow.index("</ol>")]
 
 
 def test_visit_page_of_a_visit_circled_without_the_motion_detector(client, add_visit):

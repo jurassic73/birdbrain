@@ -277,10 +277,12 @@ def save(conn, visit_id: int, circle: dict | None, info: dict) -> None:
 
 def pending(conn, redo: bool = False) -> list:
     """Pi-settled visits with a photo and no circle that haven't been tried; with redo, also those tried before
-    (their Pi circle is replaced). Never a visit with Claude's circle."""
+    (their Pi circle is replaced). Never a visit with Claude's circle, nor one whose circle another finder of the
+    chain gave (calls.finder.finder is blob or yolox, birdbrain/finder.py): a retry here would only drop it."""
     sql = ("SELECT * FROM visits WHERE json_extract(raw_json, '$.calls.settled_by') = 'classifier' "
            f"AND {db.FULL_FRAME} AND (json_extract(raw_json, '$.calls.circle') IS NULL "
-           "OR json_extract(raw_json, '$.calls.circle.pi') = 1)")
+           "OR json_extract(raw_json, '$.calls.circle.pi') = 1) "
+           "AND COALESCE(json_extract(raw_json, '$.calls.finder.finder'), 'motion') = 'motion'")
     if not redo:
         sql += " AND json_extract(raw_json, '$.calls.motion_circle') IS NULL"
     return conn.execute(sql + " ORDER BY id").fetchall()

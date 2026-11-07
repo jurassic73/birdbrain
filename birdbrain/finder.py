@@ -55,7 +55,12 @@ def _blob(boxes) -> tuple[dict | None, str | None]:
         return None, "no box"
     if len(boxes) > 1:
         return None, "several"
-    return box_circle(boxes[0]), None
+    circle = box_circle(boxes[0])
+    if circle["r"] > config.CIRCLE_MAX_R:
+        # The counter outlined most of the crop (a cloud or a glint changed it): the light, not an animal, by the
+        # same bar the Motion detector uses for its patches. A tight look on it would be a look at the whole bowl.
+        return None, "too big"
+    return circle, None
 
 
 def _yolox(jpeg, crop, attempt: dict) -> tuple[dict | None, str | None]:
@@ -75,24 +80,28 @@ def locate(jpeg: bytes, empty, z, trigger: str, captured_at: str, night: bool, b
     Motion detector's info dict when it ran}. Never raises."""
     record: dict = {"finder": None, "tried": []}
     for name in config.FINDERS:
-        attempt: dict = {"finder": name, "found": False, "why": None}
-        started = time.perf_counter()
+        attempt: dict = {"finder": name, "found": False, "why": None, "seconds": 0.0}  # no timing for a skipped finder
         circle = None
-        try:
-            if night and name in NIGHT_SKIPPED:
-                attempt["why"] = "night"
-            elif name == "motion":
-                circle, attempt["why"] = _motion(jpeg, empty, z, trigger, captured_at, night, record)
-            elif name == "blob":
-                circle, attempt["why"] = _blob(boxes)
-            elif name == "yolox":
-                circle, attempt["why"] = _yolox(jpeg, crop, attempt)
-            else:
-                attempt["why"] = "unknown"
-        except Exception:
-            log.exception("the %s finder failed; trying the next", name)
-            circle, attempt["why"] = None, "error"
-        attempt["seconds"] = round(time.perf_counter() - started, 3)
+        if night and name in NIGHT_SKIPPED:
+            attempt["why"] = "night"
+        else:
+            started = time.perf_counter()
+            try:
+                if name == "motion":
+                    circle, attempt["why"] = _motion(jpeg, empty, z, trigger, captured_at, night, record)
+                elif name == "blob":
+                    circle, attempt["why"] = _blob(boxes)
+                elif name == "yolox":
+                    circle, attempt["why"] = _yolox(jpeg, crop, attempt)
+                else:
+                    attempt["why"] = "unknown"
+            except Exception:
+                log.exception("the %s finder failed; trying the next", name)
+                circle, attempt["why"] = None, "error"
+                if name == "motion" and "motion" not in record:
+                    # It ran and failed: say so (stored as calls.motion_circle), not that FINDERS left it out.
+                    record["motion"] = {"found": False, "why": "error", "source": None}
+            attempt["seconds"] = round(time.perf_counter() - started, 3)
         attempt["found"] = circle is not None
         record["tried"].append(attempt)
         if circle is not None:
