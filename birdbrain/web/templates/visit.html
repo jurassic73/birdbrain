@@ -94,7 +94,7 @@
   <section class="vburst" aria-label="Burst">
     <h2 class="vburst-head tip-label">Burst<span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
       <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi animal check learns from.">i</span>
-      <span class="vburst-steps"><button type="button" class="vburst-step vburst-play" id="vburst-play" aria-pressed="false" aria-label="Play the burst (3 frames a second, P)" data-tip="Play the burst (3 frames a second, P)"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path class="vburst-ico-play" d="M2.5 1 L10.5 6 L2.5 11 Z" fill="currentColor"/><rect class="vburst-ico-stop" x="2" y="2" width="8" height="8" fill="currentColor"/></svg></button><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
+      <span class="vburst-steps"><button type="button" class="vburst-step vburst-play" id="vburst-play" aria-pressed="false" aria-label="Play the burst (3 frames a second, P)" data-tip="Play the burst (3 frames a second, P)"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path class="vburst-ico-play" d="M2.5 1 L10.5 6 L2.5 11 Z" fill="currentColor"/><rect class="vburst-ico-stop" x="2" y="2" width="8" height="8" fill="currentColor"/></svg></button><button type="button" class="vburst-step vburst-speed" id="vburst-speed" data-speed="1" aria-label="Playback speed 1x (tap for 2x)" data-tip="Playback speed 1x (tap for 2x)">1x</button><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
     <div class="vburst-strip" style="--n: {{ burst | length }}">
       {% for f in burst %}
       <button type="button" class="vburst-frame{% if f.on %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
@@ -994,20 +994,37 @@
       offer(frame);
     };
     const step = d => show(list[(shown() + d + list.length) % list.length]);
-    // Play: one frame every 333 ms (3 a second), looping, from the frame shown now. Any manual move stops it.
+    // Play: 3 frames a second times the speed (1x, 2x, 4x), looping, from the frame shown now. Any manual move stops it.
     const playBtn = document.getElementById("vburst-play");
-    let timer = null, preloaded = false;
+    const speedBtn = document.getElementById("vburst-speed");
+    const SPEEDS = [1, 2, 4];
+    let timer = null, preloaded = false, speed = 1;
+    const rate = () => 3 * speed;
     const setPlaying = on => {
       playBtn.setAttribute("aria-pressed", on ? "true" : "false");
-      const t = on ? "Stop" : "Play the burst (3 frames a second, P)";
+      const t = on ? "Stop" : `Play the burst (${rate()} frames a second, P)`;
       playBtn.setAttribute("aria-label", t); playBtn.dataset.tip = t;
     };
     const stop = () => { if (timer === null) return; clearInterval(timer); timer = null; setPlaying(false); };
+    const tick = () => { timer = setInterval(() => step(1), 1000 / rate()); };
     const play = () => {
       if (!preloaded) { preloaded = true; list.forEach(o => { new Image().src = o.dataset.src; }); }
-      timer = setInterval(() => step(1), 1000 / 3);
+      tick();
       setPlaying(true);
     };
+    const setSpeed = v => {
+      speed = SPEEDS.includes(v) ? v : 1;
+      const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+      const t = `Playback speed ${speed}x (tap for ${next}x)`;
+      speedBtn.textContent = speed + "x"; speedBtn.dataset.speed = String(speed);
+      speedBtn.setAttribute("aria-label", t); speedBtn.dataset.tip = t;
+      if (timer !== null) { clearInterval(timer); tick(); } else setPlaying(false);
+    };
+    try { setSpeed(+localStorage.getItem("birdbrain.burstSpeed")); } catch (e) { setSpeed(1); }
+    speedBtn.addEventListener("click", () => {
+      setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]);
+      try { localStorage.setItem("birdbrain.burstSpeed", String(speed)); } catch (e) {}
+    });
     const toggle = () => timer === null ? play() : stop();
     playBtn.addEventListener("click", toggle);
     // P plays or stops, like the button. It takes P from the site-wide palette key (the site-wide keys skip handled presses).
