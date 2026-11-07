@@ -1,146 +1,183 @@
-"""Unit tests of birdbrain/finder.py: the chain of finders that points at the animal for the BioCLIP 2 tight look."""
+"""Unit tests of birdbrain/finder: the finder chain for the tight look, with its collaborators (motion_circle.live,
+detector.animal_box) faked at the boundary. Pure: no files, database or network.
+
+The module is imported inside each test (not at the top) so this file collects on a tree that doesn't have it yet."""
+import importlib
 
 import pytest
 
-from birdbrain import config, finder
+from helpers.finder import BLOB_CIRCLE, BOX, MISS, YOLOX_BOX, YOLOX_CIRCLE
+from helpers.classifier import MOTION_CIRCLE, MOTION_FOUND
+from helpers.images import flat_jpeg
+from helpers.motion_circle import ZONES
+from birdbrain import config, detector, motion_circle
 
-CIRCLE = {"x": 0.48, "y": 0.5, "r": 0.04, "pi": True}
-FOUND = {"found": True, "source": "empty", "where": "land", "seconds": 0.02}
-MISSED = {"found": False, "source": "empty", "why": "nothing", "seconds": 0.02}
-BOX = [0.4, 0.5, 0.1, 0.2]
-ARGS = (b"jpeg", None, None, "rim", "2026-11-06T10:00:00", False)
+JPEG = flat_jpeg()
+EMPTY = object()  # motion_circle.live's empty view: passed through untouched
+CROP = (0.25, 0.25, 0.5, 0.55)
+AT = "2026-11-06T12:00:00"
+NOTHING = (None, {"why": "nothing", "seconds": 0.21})  # detector.animal_box with no visitor-class detection
+ALL = ("motion", "blob", "yolox")
+
+
+def finder():
+    return importlib.import_module("birdbrain.finder")
+
+
+class Fail(Exception):
+    pass
 
 
 @pytest.fixture
 def chain(monkeypatch):
-    """Fakes for the three finders with a log of calls; knobs: "motion" (the live() answer), "yolox" (animal_box's)."""
-    knobs = {"motion": (CIRCLE, FOUND), "yolox": ([0.6, 0.3, 0.05, 0.08], {"label": "bird", "score": 0.4, "seconds": 0.3}),
-             "calls": []}
+    """The finders' collaborators, faked: motion_circle.live answers knobs["motion"], detector.animal_box answers
+    knobs["yolox"] (an Exception in either is raised), and every call is logged under calls[name].
+    config.FINDERS starts at the default order."""
+    knobs = {"motion": (None, MISS), "yolox": NOTHING, "calls": {"motion": [], "yolox": []}}
 
     def live(jpeg, empty, z, trigger, captured_at, night):
-        knobs["calls"].append(("motion", trigger, night))
+        knobs["calls"]["motion"].append((jpeg, empty, z, trigger, captured_at, night))
+        if isinstance(knobs["motion"], Exception):
+            raise knobs["motion"]
         return knobs["motion"]
 
-    def animal_box(jpeg, crop, min_score):
-        knobs["calls"].append(("yolox", crop, min_score))
+    def animal_box(jpeg, crop, min_score=None):
+        knobs["calls"]["yolox"].append((jpeg, crop, min_score))
+        if isinstance(knobs["yolox"], Exception):
+            raise knobs["yolox"]
         return knobs["yolox"]
 
-    monkeypatch.setattr(finder.motion_circle, "live", live)
-    monkeypatch.setattr(finder.detector, "animal_box", animal_box)
-    monkeypatch.setattr(config, "FINDERS", ("motion", "blob", "yolox"))
-    monkeypatch.setattr(config, "FINDER_YOLOX_MIN_SCORE", 0.15)
+    monkeypatch.setattr(motion_circle, "live", live)
+    monkeypatch.setattr(detector, "animal_box", animal_box, raising=False)
+    monkeypatch.setattr(config, "FINDERS", ALL, raising=False)
     return knobs
 
 
-def test_the_order_is_motion_blob_yolox():
-    assert finder.FINDERS == ("motion", "blob", "yolox") == config.FINDER_NAMES
+def locate(boxes=None, night=False, trigger="rim"):
+    return finder().locate(JPEG, EMPTY, ZONES, trigger, AT, night, boxes=boxes, crop=CROP)
 
 
-def test_box_circle_is_centred_on_the_box_and_reaches_its_longer_side():
-    assert finder.box_circle(BOX) == {"x": 0.45, "y": 0.6, "r": 0.0562, "pi": True}  # max(0.1, 0.2 * 9/16) / 2
-    assert finder.box_circle([0.5, 0.5, 0.3, 0.01])["r"] == 0.15  # the width wins
-    assert finder.box_circle([0.5, 0.5, 0.002, 0.002])["r"] == 0.01  # never smaller than the Motion detector's least
-    assert finder.box_circle([0.4, 0.5, 0.1, 0.2], aspect=1.0)["r"] == 0.1
+def names(record):
+    return [t["finder"] for t in record["tried"]]
 
 
-def test_motion_first_and_nothing_else_runs_when_it_finds_the_patch(chain):
-    circle, record = finder.locate(*ARGS, boxes=[BOX], crop=[0.1, 0.1, 0.8, 0.8])
-    assert circle == CIRCLE and record["finder"] == "motion" and record["motion"] == FOUND
-    assert [c[0] for c in chain["calls"]] == ["motion"]
-    assert [(t["finder"], t["found"], t["why"]) for t in record["tried"]] == [("motion", True, None)]
-    assert isinstance(record["tried"][0]["seconds"], float)
+def test_the_finders_run_motion_then_blob_then_yolox():
+    assert finder().FINDERS == ALL
 
 
-def test_blob_takes_over_when_motion_misses_and_there_is_exactly_one_box(chain):
-    chain["motion"] = (None, MISSED)
-    circle, record = finder.locate(*ARGS, boxes=[BOX])
-    assert circle == finder.box_circle(BOX) and record["finder"] == "blob" and record["motion"] == MISSED
-    assert [c[0] for c in chain["calls"]] == ["motion"]  # yolox was not called
-    assert [(t["finder"], t["found"], t["why"]) for t in record["tried"]] == [("motion", False, "nothing"), ("blob", True, None)]
+def test_box_circle_is_centred_on_the_box_with_r_from_its_bigger_side():
+    box_circle = finder().box_circle
+    # behaviour 4: r = max(0.1, 0.2 * 9/16) / 2 = 0.05625, rounded to 4 places
+    assert box_circle([0.4, 0.5, 0.1, 0.2]) == {"x": 0.45, "y": 0.6, "r": 0.0562, "pi": True}
+    assert box_circle(BOX) == BLOB_CIRCLE and box_circle(YOLOX_BOX) == YOLOX_CIRCLE
+    assert box_circle([0.4, 0.5, 0.2, 0.1]) == {"x": 0.5, "y": 0.55, "r": 0.1, "pi": True}  # the width wins here
+    assert box_circle([0.4, 0.5, 0.1, 0.2], aspect=1.0)["r"] == 0.1  # a square frame: the height counts in full
+    assert box_circle([0.5, 0.5, 0.002, 0.002])["r"] == 0.01  # never smaller than 0.01 of the width
+    assert box_circle([0.123456, 0.2, 0.1, 0.1])["x"] == 0.1735  # 4 places
+    assert box_circle((0.4, 0.5, 0.1, 0.2)) == BLOB_CIRCLE  # a tuple box works too
 
 
-@pytest.mark.parametrize("boxes, why", [(None, "no count"), ([], "no box"), ([BOX, [0.1, 0.1, 0.05, 0.05]], "several")])
-def test_yolox_runs_once_when_motion_and_blob_miss(chain, boxes, why):
-    chain["motion"] = (None, MISSED)
-    circle, record = finder.locate(*ARGS, boxes=boxes, crop=[0.1, 0.1, 0.8, 0.8])
-    assert circle == finder.box_circle([0.6, 0.3, 0.05, 0.08]) and record["finder"] == "yolox"
-    assert chain["calls"] == [("motion", "rim", False), ("yolox", [0.1, 0.1, 0.8, 0.8], 0.15)]
-    tried = record["tried"]
-    assert [(t["finder"], t["found"], t["why"]) for t in tried] == [("motion", False, "nothing"), ("blob", False, why), ("yolox", True, None)]
-    assert tried[2]["label"] == "bird" and tried[2]["score"] == 0.4  # what the object detector saw, for the record
+def test_every_tried_entry_has_the_same_four_keys(chain):
+    circle, record = locate(boxes=None)
+    assert circle is None and record["finder"] is None
+    for t in record["tried"]:
+        assert set(t) == {"finder", "found", "why", "seconds"}
+        assert t["found"] is False and isinstance(t["why"], str) and isinstance(t["seconds"], float)
 
 
-def test_all_miss_gives_no_circle_and_three_tries(chain):
-    chain["motion"] = (None, MISSED)
-    chain["yolox"] = (None, {"why": "nothing", "seconds": 0.3})
-    circle, record = finder.locate(*ARGS, boxes=[])
-    assert circle is None and record["finder"] is None and len(record["tried"]) == 3
-    assert [t["why"] for t in record["tried"]] == ["nothing", "no box", "nothing"]
-    assert finder.tried_text(record) == "motion: nothing, blob: no box, yolox: nothing"
-    chain["yolox"] = (None, {"why": "no model"})
-    assert finder.locate(*ARGS, boxes=[])[1]["tried"][2]["why"] == "no model"
+def test_motion_finding_the_patch_ends_the_chain(chain):
+    chain["motion"] = (MOTION_CIRCLE, MOTION_FOUND)
+    circle, record = locate(boxes=[BOX])  # a blob box is there, but motion came first
+    assert circle == MOTION_CIRCLE and record["finder"] == "motion"
+    assert record["motion"] == MOTION_FOUND and names(record) == ["motion"]
+    assert record["tried"][0]["found"] is True and not record["tried"][0]["why"]
+    assert chain["calls"]["motion"] == [(JPEG, EMPTY, ZONES, "rim", AT, False)]  # live is called as today
+    assert chain["calls"]["yolox"] == []
 
 
-def test_a_finder_that_raises_is_recorded_and_the_chain_goes_on(chain, monkeypatch):
-    def broken(*a, **k):
-        raise RuntimeError("boom")
-    monkeypatch.setattr(finder.motion_circle, "live", broken)
-    circle, record = finder.locate(*ARGS, boxes=[BOX])
-    assert circle == finder.box_circle(BOX) and record["finder"] == "blob" and "motion" not in record
-    assert record["tried"][0] == {"finder": "motion", "found": False, "why": "error", "seconds": record["tried"][0]["seconds"]}
-    monkeypatch.setattr(finder.detector, "animal_box", broken)
-    circle, record = finder.locate(*ARGS, boxes=[])
-    assert circle is None and [t["why"] for t in record["tried"]] == ["error", "no box", "error"]
-    assert chain["calls"] == []
+def test_one_blob_box_gives_its_circle_when_motion_misses(chain):
+    circle, record = locate(boxes=[BOX])
+    assert circle == BLOB_CIRCLE and record["finder"] == "blob"
+    assert record["motion"] == MISS and names(record) == ["motion", "blob"]
+    assert record["tried"][0] == {"finder": "motion", "found": False, "why": "nothing",
+                                  "seconds": record["tried"][0]["seconds"]}
+    assert record["tried"][1]["found"] is True and not record["tried"][1]["why"]
+    assert chain["calls"]["yolox"] == []  # found before yolox: no inference
+
+
+def test_yolox_runs_once_when_motion_and_blob_both_miss(chain):
+    chain["yolox"] = (YOLOX_BOX, {"label": "bird", "score": 0.42, "seconds": 0.21})
+    circle, record = locate(boxes=[])
+    assert circle == YOLOX_CIRCLE and record["finder"] == "yolox"
+    assert names(record) == ["motion", "blob", "yolox"]
+    assert [t["found"] for t in record["tried"]] == [False, False, True]
+    assert record["tried"][1]["why"] == "no box"
+    assert chain["calls"]["yolox"] == [(JPEG, CROP, config.FINDER_YOLOX_MIN_SCORE)]
+
+
+@pytest.mark.parametrize("boxes, why", [(None, "no count"), ([], "no box"), ([BOX, YOLOX_BOX], "several")])
+def test_all_three_missing_gives_no_circle_and_three_tried_entries(chain, boxes, why):
+    circle, record = locate(boxes=boxes)
+    assert circle is None and record["finder"] is None
+    assert names(record) == ["motion", "blob", "yolox"]
+    assert [t["why"] for t in record["tried"]] == ["nothing", why, "nothing"]
+    assert not any(t["found"] for t in record["tried"])
+    assert record["motion"] == MISS
+    assert len(chain["calls"]["motion"]) == 1 and len(chain["calls"]["yolox"]) == 1
+
+
+def test_a_finder_that_raises_is_an_error_entry_and_the_chain_goes_on(chain):
+    chain["motion"], chain["yolox"] = Fail("decode broke"), Fail("onnx broke")
+    circle, record = locate(boxes=None)  # never raises
+    assert circle is None and record["finder"] is None
+    assert [(t["finder"], t["found"], t["why"]) for t in record["tried"]] == [
+        ("motion", False, "error"), ("blob", False, "no count"), ("yolox", False, "error")]
+    # motion broke, but the crowd counter's box still gives the tight look its circle
+    circle, record = locate(boxes=[BOX])
+    assert circle == BLOB_CIRCLE and record["finder"] == "blob"
+    assert record["tried"][0]["why"] == "error"
 
 
 def test_config_finders_order_is_honoured(chain, monkeypatch):
-    monkeypatch.setattr(config, "FINDERS", ("yolox", "motion"))
-    circle, record = finder.locate(*ARGS, boxes=[BOX])
-    assert record["finder"] == "yolox" and [c[0] for c in chain["calls"]] == ["yolox"] and "motion" not in record
-    monkeypatch.setattr(config, "FINDERS", ("blob",))
-    circle, record = finder.locate(*ARGS, boxes=[BOX])
-    assert record["finder"] == "blob" and len(chain["calls"]) == 1  # neither motion nor yolox ran
-    monkeypatch.setattr(config, "FINDERS", ())
-    assert finder.locate(*ARGS, boxes=[BOX]) == (None, {"finder": None, "tried": []})
+    monkeypatch.setattr(config, "FINDERS", ("yolox", "motion"), raising=False)
+    chain["yolox"] = (YOLOX_BOX, {"label": "cat", "score": 0.5, "seconds": 0.2})
+    circle, record = locate(boxes=[BOX])
+    assert circle == YOLOX_CIRCLE and record["finder"] == "yolox" and names(record) == ["yolox"]
+    assert chain["calls"]["motion"] == [] and record.get("motion") is None  # motion never ran, blob isn't listed
+    chain["yolox"] = NOTHING
+    chain["motion"] = (MOTION_CIRCLE, MOTION_FOUND)
+    circle, record = locate(boxes=[BOX])
+    assert circle == MOTION_CIRCLE and record["finder"] == "motion" and names(record) == ["yolox", "motion"]
+    assert record["motion"] == MOTION_FOUND
+    monkeypatch.setattr(config, "FINDERS", ("blob",), raising=False)
+    circle, record = locate(boxes=[BOX])
+    assert circle == BLOB_CIRCLE and names(record) == ["blob"] and len(chain["calls"]["motion"]) == 1
 
 
-def test_finders_motion_alone_is_the_old_behaviour(chain, monkeypatch):
-    monkeypatch.setattr(config, "FINDERS", ("motion",))
-    circle, record = finder.locate(*ARGS, boxes=[BOX])
-    assert circle == CIRCLE and record["motion"] == FOUND and len(record["tried"]) == 1
-    chain["motion"] = (None, MISSED)
-    circle, record = finder.locate(*ARGS, boxes=[BOX])  # one box, but blob is not in the chain
-    assert circle is None and record["finder"] is None and record["motion"] == MISSED
-    assert [(t["finder"], t["why"]) for t in record["tried"]] == [("motion", "nothing")]
-    assert [c[0] for c in chain["calls"]] == ["motion", "motion"]
+def test_finders_motion_only_behaves_like_motion_circle_live(chain, monkeypatch):
+    monkeypatch.setattr(config, "FINDERS", ("motion",), raising=False)
+    chain["motion"] = (MOTION_CIRCLE, MOTION_FOUND)
+    circle, record = locate(boxes=[BOX])
+    assert (circle, record["motion"]) == motion_circle.live(JPEG, EMPTY, ZONES, "rim", AT, False)
+    assert record["finder"] == "motion" and names(record) == ["motion"]
+    chain["motion"] = (None, MISS)
+    circle, record = locate(boxes=[BOX])  # a box and a detector are there, but only motion may run
+    assert circle is None and record["finder"] is None and record["motion"] == MISS
+    assert names(record) == ["motion"] and record["tried"][0]["why"] == "nothing"
+    assert chain["calls"]["yolox"] == []
 
 
-def test_at_night_only_the_motion_detector_runs(chain):
-    chain["motion"] = (None, MISSED)
-    circle, record = finder.locate(b"jpeg", None, None, "rim", "2026-11-06T22:00:00", True, boxes=[BOX])
+def test_at_night_yolox_is_skipped_and_says_so(chain):
+    chain["yolox"] = (YOLOX_BOX, {"label": "cat", "score": 0.5, "seconds": 0.2})  # it would find one
+    circle, record = locate(boxes=None, night=True)
     assert circle is None and record["finder"] is None
-    assert [(t["finder"], t["why"], t["seconds"]) for t in record["tried"]] == [("motion", "nothing", record["tried"][0]["seconds"]),
-                                                                              ("blob", "night", 0.0), ("yolox", "night", 0.0)]
-    assert chain["calls"] == [("motion", "rim", True)]  # yolox never called at night
+    assert chain["calls"]["yolox"] == []
+    assert chain["calls"]["motion"][0][-1] is True  # motion still runs, told it is night
+    yolox = next(t for t in record["tried"] if t["finder"] == "yolox")
+    assert yolox["found"] is False and yolox["why"] == "night"
 
 
-def test_motion_miss_reason_comes_from_its_record(chain):
-    chain["motion"] = (None, {"found": False, "why": "two alike", "patches": 2})
-    chain["yolox"] = (None, {"why": "nothing"})
-    _, record = finder.locate(*ARGS, boxes=[])
-    assert record["tried"][0]["why"] == "two alike" and record["motion"]["patches"] == 2
-    chain["motion"] = (None, {})  # a bare miss with no reason
-    assert finder.locate(*ARGS, boxes=[])[1]["tried"][0]["why"] == "nothing"
-
-
-def test_tried_text_without_a_record():
-    assert finder.tried_text(None) == "none" and finder.tried_text({}) == "none"
-
-
-def test_config_parses_the_finder_list_and_rejects_unknown_names():
-    assert config.parse_finders("motion,blob,yolox") == ("motion", "blob", "yolox")
-    assert config.parse_finders(" yolox, Motion ") == ("yolox", "motion")
-    assert config.parse_finders("motion") == ("motion",) and config.parse_finders("") == ()
-    with pytest.raises(ValueError, match="FINDERS: 'haiku' is not a finder"):
-        config.parse_finders("motion,haiku")
+def test_the_trigger_is_passed_through_to_motion(chain):
+    chain["motion"] = (MOTION_CIRCLE, MOTION_FOUND)
+    locate(trigger="ground")
+    assert chain["calls"]["motion"][0][3] == "ground"
