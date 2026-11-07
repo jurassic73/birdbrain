@@ -21,7 +21,7 @@ from PIL import Image, ImageStat
 from starlette.routing import Match
 
 from . import auth, steps, viewer
-from .. import alert, camera, circle_check, classifier, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
+from .. import alert, audience, camera, circle_check, classifier, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 log = logging.getLogger("birdbrain.web")
@@ -36,6 +36,8 @@ async def lifespan(app: FastAPI):
     with db.session() as conn:
         db.init_db(conn)
     yield
+    if audience.counting_on(auth.public()):
+        audience.flush()  # the last minute's counts
 
 
 def images_dir() -> Path:
@@ -109,9 +111,12 @@ async def read_only(request: Request, call_next):
         # Another site's page can't change anything here with the browser's cookies (or, with no password,
         # with nothing at all): every change is a POST, and the browser tells us where a POST came from.
         return Response("Cross-site requests aren't accepted.", status_code=403)
+    # The Pi's pull of the Guests counts: only with the secret token, past the gate and the mirror's allowlist.
+    feed = (auth.public() and request.url.path == audience.FEED_PATH and request.method == "GET"
+            and audience.token_ok(request.headers.get(audience.TOKEN_HEADER)))
     try:
         gate_on = viewer.enabled()
-        gated = gate_on and not viewer.is_open(request.url.path) and not viewer.signed_in(request)
+        gated = gate_on and not feed and not viewer.is_open(request.url.path) and not viewer.signed_in(request)
     except viewer.Unreadable as e:
         # The gate's file is there but can't be read: shut, not open, until someone fixes the permissions.
         log.error("friends & family gate can't be read, refusing everyone: %s", e)
@@ -130,11 +135,14 @@ async def read_only(request: Request, call_next):
         with db.session() as conn:
             clock.set_zone(db.get_value(conn, clock.KEY))
     path = request.url.path
+    route = None
     if auth.public():
         # The mirror has no admin at all: anything but its public pages (auth.MIRROR_ROUTES) is the same 404 as a
         # page that doesn't exist, every change and admin page included, never a login or a "read-only" answer.
-        if not auth.on_mirror(request.method, route_of(request.scope)):
+        route = route_of(request.scope)
+        if not feed and not auth.on_mirror(request.method, route):
             return not_found()
+        request.state.track_page = audience.page_name(route)
     elif not admin and path not in ("/login", "/logout"):
         if request.method not in ("GET", "HEAD") and not _SOUND_BROKEN.match(path):
             return Response("Read-only: log in as admin to change things.", status_code=403)
@@ -146,6 +154,8 @@ async def read_only(request: Request, call_next):
     # visitor, arrows, species and stats. The admin sees them all.
     with db.visitor_view(not admin):
         response = await call_next(request)
+    if route is not None and audience.counting_on(True):
+        count_view(request, route, response)
     if gate_on and not viewer.is_open(path):
         # Behind the gate, photos and pages are for signed-in guests only: a shared cache in front must not keep
         # them (or serve a guest's photo to someone without the cookie). The browser's own cache still may.
@@ -183,9 +193,12 @@ async def base_path(request: Request, call_next):
     body = b"".join([chunk async for chunk in response.body_iterator]).decode()
     body = _URL_ATTR.sub(lambda m: m.group(1) + BASE + "/", body)
     body = body.replace('"href_matches": "/', '"href_matches": "' + BASE + "/")  # prerender hints
-    body = body.replace("<head>", "<head>" + _FETCH_SHIM.format(base=json.dumps(BASE)), 1)
-    headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
-    return Response(body, status_code=response.status_code, headers=headers)
+    body = body.replace("<head>", "<head>" + _FETCH_SHIM.format(base=json.dumps(BASE)), 1).encode()
+    out = Response(body, status_code=response.status_code)
+    # Raw headers, so a response that sets two cookies keeps both (a dict would keep only the last Set-Cookie).
+    out.raw_headers = [(k, v) for k, v in response.raw_headers if k.lower() != b"content-length"] + \
+        [(b"content-length", str(len(body)).encode())]
+    return out
 
 
 def nice_time(value: str) -> str:
@@ -341,6 +354,10 @@ templates.env.globals["also_label"] = db.also_label
 # Templates check `request.state.admin` (set by the read_only middleware); this says whether a login exists at all.
 templates.env.globals["public"] = auth.public
 templates.env.globals["login_on"] = lambda: bool(auth.password()) and not auth.public()
+# The Guests page's name and address (birdbrain/audience.py), and whether this site counts its visitors (the mirror).
+templates.env.globals["guests_name"] = audience.NAME
+templates.env.globals["guests_path"] = audience.PATH
+templates.env.globals["track_on"] = lambda: audience.counting_on(auth.public())
 # Changes whenever a static file changes, so browsers fetch fresh CSS/JS after a deploy.
 templates.env.globals["asset_version"] = int(max(p.stat().st_mtime for p in (HERE / "static").iterdir()))
 
@@ -2323,6 +2340,77 @@ def latest_visit(request: Request, conn=Depends(get_conn)):
     any_id = db.newest_id(conn) if request.state.admin else newest["id"]
     # Nav bubble counts: zeros for visitors and the public mirror (nav_waiting checks both).
     return {**newest, "any_id": any_id, "waiting": nav_waiting(request)}
+
+
+# ---- Guests: the public mirror's anonymous counts (birdbrain/audience.py) ----
+
+def _cookie(response: Response, request: Request, name: str, on: bool) -> None:
+    """Set (on) or clear one of the counter's cookies, for the whole site wherever it is served."""
+    path = (BASE or "") + "/"
+    if on:
+        response.set_cookie(name, "1", max_age=audience.COOKIE_AGE, httponly=True, samesite="lax", path=path,
+                            secure=https(request))
+    else:
+        response.delete_cookie(name, path=path)
+
+
+def _counted(request: Request, response: Response, page: str) -> None:
+    """One page view, by an anonymous person (audience.Counter), then the returning-browser cookie."""
+    been = request.cookies.get(audience.SEEN_COOKIE) == "1"
+    audience.load()
+    audience.counter.view(page, audience.client(request.headers), request.headers.get("user-agent", ""),
+                          audience.country(request.headers.get("cf-ipcountry")), been, time.time())
+    if not been:
+        _cookie(response, request, audience.SEEN_COOKIE, True)
+    audience.maybe_flush()
+
+
+def count_view(request: Request, route: str, response: Response) -> None:
+    """On the mirror, after a page is answered: the owner's ?count=no / ?count=yes switch, then the page view."""
+    switch = audience.owner_switch(request.query_params.get("count"))
+    if switch:
+        _cookie(response, request, audience.NOCOUNT_COOKIE, switch == "off")
+    page = audience.page_name(route)
+    if not page or audience.skipped(request.headers, request.cookies, request.query_params.get("count")):
+        return
+    if audience.is_page_view(request.method, response.status_code, response.headers.get("content-type", ""),
+                             request.headers):
+        _counted(request, response, page)
+
+
+@app.post(audience.TRACK_PATH, status_code=204)
+def track(request: Request, to: str = "", view: str = ""):
+    """The pages' beacon (static/track.js): a click on a control (`to`, from audience.CONTROLS), or a prerendered
+    page that was then shown (`view`, a page name). Names outside the lists count nothing. Always 204, never cached,
+    so a CDN can't swallow one; counted only on the mirror."""
+    response = Response(status_code=204, headers={"Cache-Control": "no-store"})
+    if not audience.counting_on(auth.public()) or audience.skipped(request.headers, request.cookies):
+        return response
+    if to:
+        audience.load()
+        if audience.counter.click(to, audience.client(request.headers), request.headers.get("user-agent", ""), time.time()):
+            audience.maybe_flush()
+    elif view in audience.PAGE_LABELS:
+        _counted(request, response, view)
+    return response
+
+
+@app.get(audience.FEED_PATH)
+def audience_feed(request: Request, since: int = 0):
+    """The mirror's counts for the Pi's Guests page, from slot `since` on. Only with the secret token
+    (AUDIENCE_TOKEN in the X-Audience-Token header); anything else, and everywhere but the mirror, is a 404."""
+    if not auth.public() or not audience.token_ok(request.headers.get(audience.TOKEN_HEADER)):
+        return not_found()
+    return JSONResponse({"rows": audience.rows_since(since), "now": int(time.time())},
+                        headers={"Cache-Control": "no-store"})
+
+
+@app.get(audience.PATH, response_class=HTMLResponse)
+def guests_page(request: Request, period: str = "7d", conn=Depends(get_conn)):
+    """Who looks at the public site, and what they use (admin only; auth.ADMIN_PATHS). Pulls new counts from the
+    mirror first, at most every couple of minutes."""
+    audience.pull()
+    return page(request, "guests.html", **audience.report(period, clock.now()))
 
 
 @app.get("/manifest.webmanifest", include_in_schema=False)

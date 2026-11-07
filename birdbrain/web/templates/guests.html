@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{# Guests (admin only): who looks at the public site and what they use, from the mirror's anonymous counts
+   (birdbrain/audience.py). Layout C, the compact scoreboard: numbers and chart, then pages, controls and countries,
+   with the world map folded away under the country tiles. The page's name is audience.NAME (guests_name). #}
+{% block title %}{{ guests_name }} | Birdbrain{% endblock %}
+{% block head %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endblock %}
+{% block content %}
+{% macro rank_table(rows, first, unit, tip, limit=10) %}
+<table class="g-rank">
+  <thead><tr><th>{{ first }}</th><th class="r">{{ unit }}</th><th aria-hidden="true"></th><th class="r" data-tip="{{ tip }}">People</th></tr></thead>
+  <tbody>
+    {% for r in rows[:limit] %}
+    <tr><td class="g-nm">{{ r.label }}</td><td class="r">{{ '{:,}'.format(r.n) }}</td>
+      <td class="g-bar" aria-hidden="true"><span style="--f: {{ '%.3f' | format(r.frac) }}"></span></td>
+      <td class="r">{{ '{:,}'.format(r.people) }}</td></tr>
+    {% else %}
+    <tr><td colspan="4" class="muted g-none">Nothing counted {{ words }}.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if rows | length > limit %}{% set rest = rows[limit:] %}<p class="muted g-more">{{ rest | length }} more, {{ '{:,}'.format(rest | sum(attribute='n')) }} {{ unit | lower }} between them.</p>{% endif %}
+{% endmacro %}
+<div class="page-head g-head">
+  <h1>{{ guests_name }} <span class="muted g-admin">admin only</span></h1>
+  <nav class="chips g-periods" aria-label="Period">
+    {% for key, label in periods %}
+    <a href="{{ guests_path }}?period={{ key }}"{% if key == period %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+{% if not any_counts %}
+<section class="g-panel g-empty">
+  <h2>No counts yet</h2>
+  <p>This page shows who looks at the public copy of the site and what they use there. The public site counts page views, visitors once a day, their country and clicks on its buttons, without storing any address, and this site fetches the counts from it when you open this page.</p>
+  {% if source_set %}
+  <p class="muted">Nothing has come in yet{% if pull_error %}: the last try to reach the public site failed (<span data-tip="{{ pull_error }}">details</span>){% endif %}. Counts appear once someone outside visits the public site.</p>
+  {% else %}
+  <p class="muted">To turn it on, set the same <code>AUDIENCE_TOKEN</code> on the public site and here, and <code>AUDIENCE_SOURCE_URL</code> here (README, "Guests").</p>
+  {% endif %}
+</section>
+{% else %}
+
+<div class="g-top">
+  <div class="g-stats">
+    {% for h in head %}
+    <div class="g-panel g-stat" data-tip="{{ h.tip }}">
+      <span class="g-n">{{ '{:,}'.format(h.n) }}</span><span class="g-l">{{ h.label }}</span>
+      {% if h.change is not none %}<span class="g-d {{ 'down' if h.change < 0 else ('up' if h.change > 0 else 'same') }}">{% if h.change %}{{ '&#9660;' | safe if h.change < 0 else '&#9650;' | safe }} {% endif %}{{ h.change | abs }}%</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <section class="g-panel g-chart">
+    <h2>Visitors over time <span class="muted">{{ chart.unit }}</span></h2>
+    <div class="g-chart-box"><canvas id="g-visitors" role="img" aria-label="Visitors {{ chart.unit }}, {{ words }}"></canvas></div>
+  </section>
+</div>
+
+<div class="g-three">
+  <section class="g-panel">
+    <h2>Top pages <span class="muted">views</span></h2>
+    {{ rank_table(pages, "Page", "Views", "People who opened the page, each counted once a day") }}
+  </section>
+  <section class="g-panel">
+    <h2>Top controls <span class="muted">clicks</span></h2>
+    {{ rank_table(controls, "Control", "Clicks", "People who used the control, each counted once a day") }}
+  </section>
+  <section class="g-panel g-countries">
+    <h2>Countries <span class="muted">{% if countries %}{{ known_countries }}{% if unknown %} + unknown{% endif %}{% endif %}</span></h2>
+    {% if countries %}
+    <div class="g-tiles">
+      {% for c in countries %}
+      <div class="g-tile" style="--h: {{ (8 + c.frac * 40) | round | int }}" data-tip="{{ c.name }}: {{ '{:,}'.format(c.n) }} visitor{{ 's' if c.n != 1 }}">
+        <span class="g-flag" aria-hidden="true">{{ c.flag }}</span><b>{{ '{:,}'.format(c.n) }}</b><small>{{ 'Unknown' if c.code == 'XX' else c.code }}</small>
+      </div>
+      {% endfor %}
+    </div>
+    {% if map %}
+    <details class="g-map">
+      <summary>World map</summary>
+      {# Country outlines: Natural Earth 1:110m countries, public domain (web/world-110m.json). Darker = more visitors. #}
+      <svg viewBox="0 0 {{ map.w }} {{ map.h }}" role="img" aria-label="World map of visitors' countries">
+        {% for p in map.paths %}<path d="{{ p.d }}" class="s{{ p.step }}"{% if p.tip %} data-tip="{{ p.tip }}"{% endif %}/>{% endfor %}
+      </svg>
+      <p class="g-key muted"><i class="s0"></i>none{% for n, step in map.legend %} <i class="s{{ step }}"></i>{{ '{:,}'.format(n) }}+{% endfor %}</p>
+    </details>
+    {% endif %}
+    {% else %}
+    <p class="muted g-none">Nothing counted {{ words }}.</p>
+    {% endif %}
+  </section>
+</div>
+{% endif %}
+
+<p class="muted small g-note">Counted on the public site. No IP addresses stored; people counted by a hash that changes daily.
+  {% if pulled_at %}<span class="nowrap">Last updated {{ pulled_at.isoformat() | short_time }}.</span>{% elif source_set %}Not fetched yet.{% endif %}
+  {% if pull_error and any_counts %}<span class="g-err" data-tip="{{ pull_error }}">The last try to fetch new counts failed.</span>{% endif %}
+</p>
+{% if any_counts %}
+<script src="/static/charts.js?v={{ asset_version }}"></script>
+<script>lineChart("g-visitors", {{ chart.labels | tojson }}, {{ chart.data | tojson }}, "Visitors");</script>
+{% endif %}
+{% endblock %}

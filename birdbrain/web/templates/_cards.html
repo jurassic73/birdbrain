@@ -35,5 +35,5 @@
 </a>
 {% endfor %}
 {% if next_url %}
-<button class="load-more" hx-get="{{ next_url }}" hx-trigger="click, intersect once" hx-swap="outerHTML">Load more</button>
+<button class="load-more" hx-get="{{ next_url }}" hx-trigger="click, intersect once" hx-swap="outerHTML" data-track="load_more">Load more</button>
 {% endif %}

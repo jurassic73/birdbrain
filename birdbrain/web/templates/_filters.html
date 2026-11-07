@@ -2,13 +2,13 @@
 {% macro chips_nav(chips) %}
 <nav class="chips" aria-label="Quick filters">
   {% for name, href, is_active in chips %}
-  <a href="{{ href }}" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
+  <a href="{{ href }}" data-track="filter_chip" {% if is_active %}aria-current="page"{% endif %}>{{ name }}</a>
   {% endfor %}
 </nav>
 {%- endmacro %}
 
 {% macro filters_toggle(open, tip) %}
-<button type="button" class="filters-toggle" aria-controls="more-filters" aria-expanded="{{ 'true' if open else 'false' }}"
+<button type="button" class="filters-toggle" data-track="more_filters" aria-controls="more-filters" aria-expanded="{{ 'true' if open else 'false' }}"
         data-tip="{{ tip }}">
   <svg class="filters-funnel" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z"/></svg>
   More filters

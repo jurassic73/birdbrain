@@ -11,16 +11,18 @@ from urllib.parse import urlsplit
 
 from fastapi import Request
 
-from .. import config
+from .. import audience, config
 
 COOKIE = "bb_admin"
 MAX_AGE = 30 * 24 * 3600
 # Pages a visitor never sees (prefixes); every POST is blocked for visitors too.
-ADMIN_PATHS = ("/notes", "/lessons", "/review", "/false-triggers", "/settings", "/calibration")
-# The public mirror (public()) serves only these routes, as app.py declares them, and only to GET/HEAD; the one
-# thing it takes a POST for is the friends & family sign-in. Everything else (the admin pages, every change, Claude
-# and camera calls, the admin's JSON) is a 404 there, as if it didn't exist. Deny by default: a new route stays off
-# the mirror until it is added here, and tests/test_public_no_admin.py makes every route be one or the other.
+ADMIN_PATHS = ("/notes", "/lessons", "/review", "/false-triggers", "/settings", "/calibration", audience.PATH)
+# The public mirror (public()) serves only these routes, as app.py declares them, and only to GET/HEAD; the only
+# things it takes a POST for are the friends & family sign-in and the Guests counter's click beacon (MIRROR_POSTS).
+# Everything else (the admin pages, every change, Claude and camera calls, the admin's JSON) is a 404 there, as if it
+# didn't exist; the one exception, the Guests counts feed, opens only to its secret token (app.read_only). Deny by
+# default: a new route stays off the mirror until it is added here, and tests/test_public_no_admin.py makes every
+# route be one or the other.
 MIRROR_ROUTES = frozenset({
     "/", "/live", "/scoreboard", "/visits", "/visits/archive-more", "/visits/more", "/visit/{visit_id}",
     "/species", "/species/{name}", "/species/{name}/more", "/species-info/{name}",
@@ -28,7 +30,7 @@ MIRROR_ROUTES = frozenset({
     "/api/latest-visit", "/live/latest.jpg", "/live.jpg", "/manifest.webmanifest", "/favicon.ico",
     "/guest-login", "/static", "/images",
 })
-MIRROR_POSTS = frozenset({"/guest-login"})
+MIRROR_POSTS = frozenset({"/guest-login", audience.TRACK_PATH})
 MAX_FAILS = 5
 FAIL_WINDOW = 15 * 60
 _fails: dict[str, list[float]] = {}

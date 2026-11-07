@@ -38,7 +38,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     BIRDBRAIN_NO_DOTENV=1 \
     BIRDBRAIN_DATA=/data \
     VIEWER_PASSWORD_FILE=/state/viewer.pw \
-    VIEWER_INVITE_FILE=/state/viewer.invite
+    VIEWER_INVITE_FILE=/state/viewer.invite \
+    AUDIENCE_DB=/state/audience.db
 USER birdbrain
 VOLUME ["/state"]
 EXPOSE 8000

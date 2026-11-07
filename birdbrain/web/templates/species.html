@@ -42,9 +42,9 @@
 {% endif %}
 <div class="cam-tabs sp-tabs" role="tablist" aria-label="{{ sp.label }}">
   <button type="button" role="tab" class="cam-tab" id="tab-visits" aria-controls="panel-visits" aria-selected="true" data-sp-tab="visits">Visits<span class="tab-count"> ({{ matching ~ " of " ~ sp.visits if filtered else sp.visits }})</span></button>
-  <button type="button" role="tab" class="cam-tab" id="tab-info" aria-controls="panel-info" aria-selected="false" tabindex="-1" data-sp-tab="info">Info</button>
+  <button type="button" role="tab" class="cam-tab" id="tab-info" data-track="species_info_tab" aria-controls="panel-info" aria-selected="false" tabindex="-1" data-sp-tab="info">Info</button>
   {# Phones only: the expand button sits at the end of the tab row (dimmed and disabled on Info, enabled on Visits, the default; see species-tabs.js); desktop keeps the expand button in .grid-end below. #}
-  <button type="button" class="lb-open lb-tab" aria-label="View photos full size" data-tip="View photos full size (left/right arrows to browse, Esc or up arrow to close)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M14 10l4-4M15 6h3v3M10 14l-4 4M9 18H6v-3M14 14l4 4M15 18h3v-3M10 10L6 6M9 6H6v3"/></svg></button>
+  <button type="button" data-track="species_photos" class="lb-open lb-tab" aria-label="View photos full size" data-tip="View photos full size (left/right arrows to browse, Esc or up arrow to close)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M14 10l4-4M15 6h3v3M10 14l-4 4M9 18H6v-3M14 14l4 4M15 18h3v-3M10 10L6 6M9 6H6v3"/></svg></button>
 </div>
 <div role="tabpanel" id="panel-visits" aria-labelledby="tab-visits" class="sp-panel" data-base="/species/{{ sp.label | urlencode }}"{% if filtered %} data-filtered{% endif %}>
   {# The same quick chips and More filters as the home page (minus Species, Birds and Mammals: the species is fixed here); species-filters.js swaps them in place. #}
@@ -54,7 +54,7 @@
       {{ filters_toggle(more_filters_open, "Filter these visits by photos with several animals, day or night, and a date range") }}
     </div>
     <span class="grid-end">
-      <button type="button" class="lb-open" aria-label="View photos full size" data-tip="View photos full size (left/right arrows to browse, Esc or up arrow to close)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M14 10l4-4M15 6h3v3M10 14l-4 4M9 18H6v-3M14 14l4 4M15 18h3v-3M10 10L6 6M9 6H6v3"/></svg></button>
+      <button type="button" data-track="species_photos" class="lb-open" aria-label="View photos full size" data-tip="View photos full size (left/right arrows to browse, Esc or up arrow to close)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M14 10l4-4M15 6h3v3M10 14l-4 4M9 18H6v-3M14 14l4 4M15 18h3v-3M10 10L6 6M9 6H6v3"/></svg></button>
     </span>
   </div>
   <form class="filters more-filters-form" id="more-filters" method="get" action="/species/{{ sp.label | urlencode }}"{% if not more_filters_open %} hidden{% endif %}>

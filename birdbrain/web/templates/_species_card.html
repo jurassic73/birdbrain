@@ -29,7 +29,7 @@
         {% set total = clips | selectattr("label", "equalto", pick.label) | list | length %}
         {% set _ = seen.n.update({base: seen.n.get(base, 0) + 1}) %}
         {% set kind = base ~ (" " ~ seen.n[base] if total > 1 else "") %}
-        <button type="button" class="sp-play" data-src="{{ pick.file }}" data-card="{{ info.name }}" aria-pressed="false"
+        <button type="button" class="sp-play" data-track="bird_song" data-src="{{ pick.file }}" data-card="{{ info.name }}" aria-pressed="false"
                 aria-label="Play {{ kind | lower }}: {{ info.common or info.name }}"
                 data-tip="Play a {{ base | lower }} recorded {% if pick.km is not none and pick.km is defined %}{{ '{:,}'.format(pick.km) }} km from here{% else %}near here{% endif %}, by {{ pick.recordist }}">
           <svg class="ic-play" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>

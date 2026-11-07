@@ -9,7 +9,7 @@
 <div class="live-page">
   <div class="live" id="live-box" data-refresh-ms="{{ live_refresh * 1000 }}" data-stale="{{ live_stale }}">
     <img id="live" src="/live/latest.jpg" alt="Live view of the birdbath" fetchpriority="high">
-    <button type="button" class="live-zoom" aria-label="Open the live view big"></button>
+    <button type="button" class="live-zoom" data-track="live_zoom" aria-label="Open the live view big"></button>
     {{ zoom_btn() }}
     <div class="live-badge"><span class="dot"></span><span id="live-status">Live</span> <span class="muted" id="live-age"></span></div>
     <div class="live-title" data-tip="What the camera sees right now, refreshed every few seconds">Live view</div>

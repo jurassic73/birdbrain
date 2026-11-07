@@ -134,7 +134,7 @@ def fresh_module_state(monkeypatch):
     """Module globals that would otherwise carry over from one test to the next (caches, lockout counters, the
     live frame, background flags) start every test at their import-time values. Tests that want another value
     set it themselves on top of this."""
-    from birdbrain import circle_check, clock, identify, lessons, privacy, retention, watch, weather
+    from birdbrain import audience, circle_check, clock, identify, lessons, privacy, retention, watch, weather
     from birdbrain.web import app as webapp, auth, viewer
     monkeypatch.setattr(clock, "_zone", {"tz": None, "checked": 0.0})  # set_zone() would move every later test's clock
     monkeypatch.setattr(retention, "_thread", None)
@@ -158,6 +158,9 @@ def fresh_module_state(monkeypatch):
     monkeypatch.setattr(privacy, "_det", None)
     monkeypatch.setattr(privacy, "_status", (0.0, {}))
     monkeypatch.setattr(weather, "_failed_at", 0.0)
+    monkeypatch.setattr(audience, "counter", audience.Counter())  # the Guests counter's pending counts and names
+    for name in ("AUDIENCE_DB", "AUDIENCE_TOKEN", "AUDIENCE_SOURCE_URL", "AUDIENCE_COUNT"):
+        monkeypatch.delenv(name, raising=False)
     retention.forget()  # cached usage, breakdown and forecast; the flock file itself lives under this test's DATA_DIR
     yield
     retention.forget()

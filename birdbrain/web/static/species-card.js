@@ -29,6 +29,7 @@
 
   async function open(name) {
     hideTip();
+    window.bbTrack?.("species_card");  // the public mirror's anonymous counts (static/track.js); a no-op elsewhere
     const p = document.createElement("p");
     p.className = "muted sp-loading";
     p.textContent = `Loading ${name}…`;

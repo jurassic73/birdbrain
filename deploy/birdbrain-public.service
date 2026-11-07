@@ -13,6 +13,10 @@ Environment=BIRDBRAIN_DATA=/var/lib/birdbrain
 Environment=BIRDBRAIN_PUBLIC=1
 Environment=BIRDBRAIN_BASE=/birdbrain
 Environment=BIRDBRAIN_NO_DOTENV=1
+# The Guests counts live outside the data the Pi pushes. For the Pi to fetch them, also set the shared secret:
+# Environment=AUDIENCE_TOKEN=<the same long random token as AUDIENCE_TOKEN in the Pi's .env>
+Environment=AUDIENCE_DB=/var/lib/birdbrain-state/audience.db
+StateDirectory=birdbrain-state
 # If the proxy that sets CF-Connecting-IP runs on another machine, name it: Environment=VIEWER_TRUSTED_PROXIES=10.0.0.5
 ExecStart=/opt/birdbrain/venv/bin/uvicorn birdbrain.web.app:app --host 127.0.0.1 --port 8000 --proxy-headers
 Restart=always

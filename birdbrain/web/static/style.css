@@ -2124,3 +2124,72 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
 .keys-list li.keys-head { display: block; grid-column: 1 / -1; margin-top: 6px; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .keys-list li.keys-head:first-child { margin-top: 0; }
 .keys-list kbd { display: inline-grid; place-items: center; min-width: 34px; height: 28px; padding: 0 8px; margin: 0; box-sizing: border-box; border-bottom-width: 3px; border-radius: 6px; background: var(--bg); font-weight: 600; line-height: 1; }
+
+/* Guests (admin only, templates/guests.html): the public site's anonymous counts as a compact scoreboard. Numbers and
+   the chart on top, then pages, controls and countries side by side at 900px+, one column on phones. The world map
+   folds out under the country tiles; opened, the Countries panel takes a whole row so the map has room. */
+.g-head h1 { margin: 0; }
+.g-admin { font-size: .85rem; }
+.g-periods a { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 0 14px; text-box: trim-both cap alphabetic; }
+@supports not (text-box: trim-both cap alphabetic) { .g-periods a { padding-top: 1px; } }
+.g-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; min-width: 0; }
+.g-panel h2 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 1rem; margin: 0 0 6px; }
+.g-panel h2 .muted { font-size: .82rem; }
+.g-top { display: grid; gap: 10px; margin-bottom: 10px; }
+.g-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.g-stat { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 8px 12px; }
+.g-stat .g-n { font-size: 1.45rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.g-stat .g-l { color: var(--muted); font-size: .9rem; }
+.g-stat .g-d { margin-left: auto; font-size: .82rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g-d.up { color: var(--high); }
+.g-d.down { color: var(--low); }
+.g-d.same { color: var(--muted); }
+.g-chart-box { height: 150px; }
+.g-chart-box canvas { width: 100%; }
+.g-three { display: grid; gap: 10px; align-items: start; }
+.g-rank { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.g-rank th { text-align: left; font-weight: 600; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; padding: 0 5px 3px; }
+.g-rank td { padding: 4px 5px; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g-rank .r { text-align: right; }
+.g-rank td.g-nm { white-space: normal; line-height: 1.2; }
+.g-rank td.g-bar { width: 56px; }
+.g-bar span { display: block; height: 7px; width: calc(var(--f) * 100%); min-width: 2px; border-radius: 99px; background: var(--accent); }
+.g-none { margin: 4px 0; font-size: .88rem; }
+.g-more { margin: 6px 5px 0; font-size: .8rem; }
+.g-rank td.g-none { white-space: normal; }
+.g-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; }
+.g-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 5px 4px; line-height: 1.15;
+  border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--accent) calc(var(--h) * 1%), var(--surface)); }
+.g-tile .g-flag { font-size: 1.5rem; line-height: 1.1; }
+.g-tile b { font-size: .92rem; font-variant-numeric: tabular-nums; }
+.g-tile small { color: var(--muted); font-size: .68rem; }
+.g-map { margin-top: 10px; }
+.g-map summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: .9rem; }
+.g-map svg { display: block; width: 100%; height: auto; margin-top: 8px; }
+.g-map path { stroke: var(--surface); stroke-width: .4; }
+.g-map .s0 { fill: var(--line); background: var(--line); }
+.g-map .s1 { fill: color-mix(in srgb, var(--accent) 30%, var(--surface)); background: color-mix(in srgb, var(--accent) 30%, var(--surface)); }
+.g-map .s2 { fill: color-mix(in srgb, var(--accent) 47%, var(--surface)); background: color-mix(in srgb, var(--accent) 47%, var(--surface)); }
+.g-map .s3 { fill: color-mix(in srgb, var(--accent) 64%, var(--surface)); background: color-mix(in srgb, var(--accent) 64%, var(--surface)); }
+.g-map .s4 { fill: color-mix(in srgb, var(--accent) 82%, var(--surface)); background: color-mix(in srgb, var(--accent) 82%, var(--surface)); }
+.g-map .s5 { fill: var(--accent); background: var(--accent); }
+.g-map path[data-tip]:hover { stroke: var(--text); stroke-width: 1; }
+.g-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 6px 0 0; font-size: .78rem; }
+.g-key i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-left: 6px; }
+.g-key i:first-child { margin-left: 0; }
+.g-empty { max-width: 720px; }
+.g-empty p { margin: 6px 0; }
+.g-note { margin-top: 10px; }
+.g-err { color: var(--low); }
+@media (min-width: 900px) {
+  .g-top { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.9fr); }
+  .g-stats { grid-template-columns: 1fr; }
+  .g-three { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1fr); }
+  .g-countries:has(.g-map[open]) { grid-column: 1 / -1; }
+  .g-countries:has(.g-map[open]) .g-map svg { max-width: 820px; margin-inline: auto; }
+}
+@media (max-width: 520px) {
+  .g-stat { flex-direction: column; align-items: flex-start; gap: 0; }
+  .g-stat .g-n { font-size: 1.25rem; }
+  .g-stat .g-d { margin-left: 0; }
+}
