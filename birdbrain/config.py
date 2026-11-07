@@ -261,6 +261,13 @@ GATE_MIN_SCORE_TIGHT = float(_env("GATE_MIN_SCORE_TIGHT", "0.95"))
 for _name, _bar in (("GATE_MIN_SCORE_BOWL", GATE_MIN_SCORE_BOWL), ("GATE_MIN_SCORE_TIGHT", GATE_MIN_SCORE_TIGHT)):
     if not 0 < _bar <= 1:
         raise ValueError(f"{_name} must be between 0 and 1, not {_bar!r}")
+# Shadow second-frame look (watch.second_frame_look): when the tight look falls short of its bar by score alone with
+# its top guess at least this sure, by day, the next sharpest burst frame is embedded on the same circle and the two
+# guesses are stored to keep score on Stats. It names nothing. 0 or off: never.
+_second = _env("SECOND_FRAME_MIN").strip().lower() or "0.8"  # blank means the default, like the other knobs
+SECOND_FRAME_MIN = 0.0 if _second in ("0", "off", "no", "false") else float(_second)
+if not 0 <= SECOND_FRAME_MIN <= 1:
+    raise ValueError(f"SECOND_FRAME_MIN must be between 0 and 1 (or off), not {_second!r}")
 PRESENCE = _env("PRESENCE", "shadow").strip().lower()  # local animal check: off, shadow or gate (Settings wins)
 if PRESENCE not in ("off", "shadow", "gate"):
     raise ValueError(f"PRESENCE must be off, shadow or gate, not {PRESENCE!r}")

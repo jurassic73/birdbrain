@@ -946,7 +946,7 @@ CLASSIFIER_CROPS = {"circle": "around Claude's circle", "box": "on the crop box"
                     "bowl": "on a square around the whole bowl",
                     classifier.TIGHT_CROP: "on a tight square around the patch that moved"}
 # What the tight square was drawn around, by finder (identify.TIGHT_WHERE, naming the object detector's model here).
-FINDER_WHERE = {**identify.TIGHT_WHERE, "yolox": "around the box a small object detector (YOLOX-tiny) drew"}
+FINDER_WHERE = steps.FINDER_WHERE
 
 
 miss_text = steps.miss_text  # decision_steps has a local called steps
@@ -972,6 +972,32 @@ def bioclip_step(guess: dict, raw: dict) -> dict:
         "where": where,  # "around the patch that moved" or the other finders' outline or box
         "night": bool(guess.get("night")),
     }
+
+
+def tight_where_at(calls: dict) -> str:
+    """Where the tight look looked ("at the patch that moved", "at the crowd counter's outline", ...), from the
+    finder recorded with the look (calls.classifier_tight.finder, or calls.classifier.finder when it named the visit),
+    else the finder chain's record; the Motion detector's wording by default."""
+    tight = calls.get("classifier_tight") or {}
+    named = calls.get("classifier") or {}
+    finder = (tight.get("finder") or (named.get("finder") if named.get("crop") == classifier.TIGHT_CROP else None)
+              or ((calls.get("finder") or {}).get("finder") if isinstance(calls.get("finder"), dict) else None))
+    return steps.tight_at(finder)
+
+
+def second_frame_words(record: dict | None) -> str | None:
+    """The shadow second-frame look's sentence for the tight look step: "A second frame said NAME (0.xx); averaged
+    NAME (0.xx). Shadow only: not used." (the averaged part only when the combined guess exists). None without a
+    usable record."""
+    if not isinstance(record, dict) or not record.get("top"):
+        return None
+    top = record["top"][0]
+    text = f"A second frame said {top.get('name') or 'nothing local'} ({(top.get('score') or 0):.2f})"
+    combined = record.get("combined") if isinstance(record.get("combined"), dict) else None
+    if combined and combined.get("top"):
+        avg = combined["top"][0]
+        text += f"; averaged {avg.get('name') or 'nothing local'} ({(avg.get('score') or 0):.2f})"
+    return text + ". Shadow only: not used."
 
 
 def decision_steps(raw_json: str | None) -> dict:
@@ -1051,7 +1077,12 @@ def decision_steps(raw_json: str | None) -> dict:
         # The tight look (rule H), after the first look and before Claude: it did not name the visit either.
         steps.insert(before_claude(), {**bioclip_step(second, raw), "gated": False, "first_look": False, "tight": True,
                                        "scorecard": False, "why": second.get("why"),
-                                       "reason": miss_text(second.get("why"), second, view="tight")})
+                                       "reason": miss_text(second.get("why"), second, view="tight"),
+                                       "second_frame": second_frame_words(calls.get("classifier_second"))})
+    tight_at = tight_where_at(calls)
+    for st in steps:
+        if st.get("first_look") and not st.get("gated"):
+            st["tight_at"] = tight_at  # "The Pi took a tight look at ... next", per the finder that pointed at it
     found = calls.get("motion_circle")
     record = calls.get("finder") if isinstance(calls.get("finder"), dict) else None
     shown = calls.get("circle") if isinstance(calls.get("circle"), dict) else {}
@@ -1064,9 +1095,13 @@ def decision_steps(raw_json: str | None) -> dict:
         pointed = finder_words(record) or (FINDER_WORDS["motion"] if found.get("found") else None)
         circled = bool(pi_circle and pointed)
         others = [t for t in (record or {}).get("tried") or [] if isinstance(t, dict) and t.get("finder") != "motion"]
+        # Whether a tight look was made (the "pointed" sentence says what the patch was for; a bowl-named visit
+        # had no tight look, the finder only drew its circle).
+        tight_made = bool(calls.get("classifier_tight")) or (guess or {}).get("crop") == classifier.TIGHT_CROP
         steps.append({
-            "model": "Circle from the motion",
+            "model": "Circle from the Pi",
             "motion_circle": True,
+            "for_tight": tight_made,
             "found": circled,
             "said": "circled" if circled else "patch found" if pointed else "no circle",
             "others_tried": bool(others),  # finders beyond the Motion detector were tried (FINDERS=motion: none)
@@ -1462,6 +1497,7 @@ def stats(request: Request, conn=Depends(get_conn)):
         finder=db.finder_report(conn),
         finder_words=FINDER_WORDS,
         agreement=db.agreement_report(conn),
+        second_frame=db.second_frame_report(conn),
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",
         classifier_mode=config.CLASSIFIER,

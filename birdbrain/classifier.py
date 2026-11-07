@@ -546,6 +546,13 @@ TIGHT_VIEW = 1  # version of that view: the square CIRCLE_MARGINS[0] radii aroun
 _mine = threading.local()
 
 
+def normalize(vec) -> np.ndarray:
+    """The vector scaled to unit length (float32); a zero vector is returned as it is."""
+    v = np.asarray(vec, np.float32)
+    n = float(np.linalg.norm(v))
+    return v / n if n else v
+
+
 def with_embedding(fn, *args, **kwargs):
     """(fn(*args, **kwargs), the embedding of the tight square it classified or None). The embedding is only
     ever of a classify() call made inside this one; if fn raises, so does this."""

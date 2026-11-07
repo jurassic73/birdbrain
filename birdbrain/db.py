@@ -2014,6 +2014,66 @@ def agreement_report(conn: sqlite3.Connection, bars: tuple[float, ...] = AGREEME
     return {"looks": looks, "bars": [counts[b] for b in bars]}
 
 
+def second_frame_report(conn: sqlite3.Connection, days: int | None = None) -> dict:
+    """Shadow scorecard for the second-frame look (watch.second_frame_look): over visits with
+    calls.classifier_second and a final species label (owner correction wins, else Claude's; visits the Pi named
+    count only once confirmed or corrected, as in classifier_report), how often the tight look's first frame, the
+    second frame and the average of the two embeddings (calls.classifier_second.combined) put the label first, and
+    how many visits the second frame and the average would have named (top score >= classifier.GATE_MIN_SCORE_TIGHT
+    and local_share >= GATE_MIN_LOCAL) and how many of those wrongly. Changes nothing. {"looks", "first_right",
+    "second_right", "combined_right", "combined_named", "combined_wrong", "second_named", "second_wrong"}."""
+    from . import classifier  # classifier imports db; only its bars are wanted here
+
+    where, args = "", ()
+    if days:
+        where, args = "AND captured_at >= ?", ((clock.today() - timedelta(days=days - 1)).isoformat(),)
+    rows = conn.execute(
+        f"""SELECT id, {LABEL} AS label, raw_json
+            FROM visits
+            WHERE {VISITOR} != 'none' {where}
+              {f"AND {NOT_OTHER}" if hiding_other() else ""}
+              AND json_extract(raw_json, '$.calls.classifier_second.top') IS NOT NULL
+              AND (model != '{CLASSIFIER_MODEL}' OR confirmed_at IS NOT NULL
+                   OR corrected_species IS NOT NULL OR corrected_visitor IS NOT NULL)""",
+        args,
+    ).fetchall()
+    out = {"looks": 0, "first_right": 0, "second_right": 0, "combined_right": 0, "combined_named": 0,
+           "combined_wrong": 0, "second_named": 0, "second_wrong": 0}
+
+    def named(look: dict | None) -> bool:
+        top = ((look or {}).get("top") or [{}])[0]
+        return ((top.get("score") or 0) >= classifier.GATE_MIN_SCORE_TIGHT
+                and ((look or {}).get("local_share") or 0) >= classifier.GATE_MIN_LOCAL)
+
+    for r in rows:
+        k = _name_key(r["label"])
+        if k in ("", "bird", "squirrel", "other"):  # no species to compare with
+            continue
+        calls = json.loads(r["raw_json"]).get("calls") or {}
+        second = calls.get("classifier_second") or {}
+        tight = calls.get("classifier_tight")
+        if not tight and (calls.get("classifier") or {}).get("crop") == TIGHT_CROP:
+            tight = calls["classifier"]  # the tight look named the visit (not expected, but the same look)
+        combined = second.get("combined") if isinstance(second.get("combined"), dict) else None
+        same = (lambda n: n == k) if k not in ("raccoon", "possum") else (lambda n: n.endswith(k))
+
+        def right(look: dict | None) -> bool:
+            top = (look or {}).get("top") or []
+            return bool(top) and same(_name_key(top[0].get("name")))
+
+        out["looks"] += 1
+        out["first_right"] += right(tight)
+        out["second_right"] += right(second)
+        out["combined_right"] += right(combined)
+        if named(second):
+            out["second_named"] += 1
+            out["second_wrong"] += not right(second)
+        if named(combined):
+            out["combined_named"] += 1
+            out["combined_wrong"] += not right(combined)
+    return out
+
+
 def presence_report(conn: sqlite3.Connection, days: int = 14) -> dict:
     """The local animal check (birdbrain.presence) over the last `days`: frames it judged live (not backfilled),
     against the final answer. skipped = Claude wasn't asked (gate mode); missed = it said empty but the owner

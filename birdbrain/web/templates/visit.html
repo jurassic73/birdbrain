@@ -182,9 +182,9 @@
           {% elif step.gated %}
           <div class="step-why">Sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
           {% elif step.tight %}
-          <div class="step-why">Did not name the visit either: {{ step.reason }}. Claude was asked.</div>
+          <div class="step-why">Did not name the visit either: {{ step.reason }}. Claude was asked.{% if step.second_frame %} <span class="muted" data-tip="Shadow second-frame look: the Pi also embedded the next sharpest photo of the burst on the same circle, and averaged the two embeddings (like a fingerprint), only to keep score on the Stats page of whether a second pose would name more visits. It names nothing.">{{ step.second_frame }}</span>{% endif %}</div>
           {% elif step.first_look %}
-          <div class="step-why">Did not name the visit: {{ step.reason }}. {% if decision.has_tight_look %}The Pi took a tight look at the patch that moved next.{% else %}Claude was asked.{% endif %}</div>
+          <div class="step-why">Did not name the visit: {{ step.reason }}. {% if decision.has_tight_look %}The Pi took a tight look {{ step.tight_at or "at the patch that moved" }} next.{% else %}Claude was asked.{% endif %}</div>
           {% if step.backfilled %}<div class="muted step-notes">Worked out afterwards from the stored embedding (like a fingerprint) of this photo, using today's settled species{% if step.view_note %}; {{ step.view_note }}{% endif %}.</div>{% endif %}
           {% elif step.crowd and not decision.has_first_look %}
           <div class="step-why">Sure it was {{ step.crowd.species }}, but the Pi saw {{ step.crowd.animals }} animals in view, so Claude was asked to count them and name any other kind.</div>
@@ -205,7 +205,7 @@
           {% endif %}
           {% elif step.motion_circle %}
           <div class="step-head">
-            <strong>Circle from the motion</strong> {{ badge("pi circle", "pi-only") }}
+            <strong>Circle from the Pi</strong> {{ badge("pi circle", "pi-only") }}
             <span class="muted">on the Pi{% if step.seconds is not none %}, {{ step.seconds }} s{% endif %}</span>
           </div>
           {% if step.found and step.finder %}
@@ -213,7 +213,7 @@
           {% elif step.found %}
           <div>Circle drawn on the Pi from the motion: the biggest patch of change against {{ step.source }}.</div>
           {% elif step.pointed %}
-          <div>The patch for the tight look was pointed out by {{ step.pointed }}; {% if step.circle_shown == 'claude' %}the circle shown is Claude's{% elif step.circle_shown %}the circle shown is not the Pi's{% else %}the Pi's circle was not kept{% endif %}.</div>
+          <div>The patch{% if step.for_tight %} for the tight look{% endif %} was pointed out by {{ step.pointed }}; {% if step.circle_shown == 'claude' %}the circle shown is Claude's{% elif step.circle_shown %}the circle shown is not the Pi's{% else %}the Pi's circle was not kept{% endif %}.</div>
           {% elif step.tried %}
           <div>No circle: {{ step.why or "nothing sure enough" }}. <span class="muted" data-tip="{{ step.tried }}">{% if step.others_tried %}No other finder found the animal either.{% else %}No other finder was tried.{% endif %}</span></div>
           {% else %}

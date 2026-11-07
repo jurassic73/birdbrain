@@ -118,7 +118,7 @@ def test_pages_show_the_pis_circle_or_say_there_is_none(client, add_visit):
         "settled_by": "classifier", "skipped_claude": True, "circle": pi_circle,
         "motion_circle": {"found": True, "source": "empty", "seconds": 0.02}}}))
     html = client.get(f"/visit/{found}").text
-    assert "Circle from the motion" in html and "Circle drawn on the Pi from the motion" in html
+    assert "Circle from the Pi" in html and "Circle drawn on the Pi from the motion" in html
     assert 'data-tip="Pi circle:' in html and "&#34;pi&#34;: true" in html
     assert "Named on the Pi, no circle" not in html
 

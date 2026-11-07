@@ -93,3 +93,20 @@ def test_finders_come_from_the_env_as_a_comma_list(monkeypatch):
 def test_an_unknown_finder_name_is_refused_at_import(monkeypatch):
     with pytest.raises(ValueError, match="FINDERS"):
         _fresh_config(monkeypatch, FINDERS="motion,sonar")
+
+
+def test_second_frame_min_defaults_to_0_8_and_off_or_0_disables_it(monkeypatch):
+    assert config.SECOND_FRAME_MIN == 0.8
+    assert _fresh_config(monkeypatch, SECOND_FRAME_MIN="0.85")["SECOND_FRAME_MIN"] == 0.85
+    assert _fresh_config(monkeypatch, SECOND_FRAME_MIN="")["SECOND_FRAME_MIN"] == 0.8  # a blank .env line keeps the default
+    assert _fresh_config(monkeypatch, SECOND_FRAME_MIN=" ")["SECOND_FRAME_MIN"] == 0.8
+    assert _fresh_config(monkeypatch, SECOND_FRAME_MIN="off")["SECOND_FRAME_MIN"] == 0.0
+    assert _fresh_config(monkeypatch, SECOND_FRAME_MIN="0")["SECOND_FRAME_MIN"] == 0.0
+    with pytest.raises(ValueError, match="SECOND_FRAME_MIN"):
+        _fresh_config(monkeypatch, SECOND_FRAME_MIN="1.5")
+
+
+def test_second_frame_min_defaults_to_the_bowl_bar_and_is_a_fraction():
+    # The shadow second-frame look runs when the tight look's top score is at least this (and under its own bar).
+    assert config.SECOND_FRAME_MIN == 0.8
+    assert 0 <= config.SECOND_FRAME_MIN < config.GATE_MIN_SCORE_TIGHT
