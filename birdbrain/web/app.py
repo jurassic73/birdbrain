@@ -907,8 +907,37 @@ CIRCLE_WHY = {"nothing": "no clear patch of change near the zone that fired",
               "light": "most of the view changed (the light)",
               "no empty view": "no empty view of the scene to compare with",
               "unreadable photo": "the photo couldn't be read",
+              "not run": "not run (FINDERS leaves the Motion detector out)",
               "no photo or zones": "the photo or its zones are gone",
               "error": "something went wrong"}
+# The finders that point at the animal for the tight look (birdbrain/finder.py), in words, and why each found nothing.
+FINDER_WORDS = {"motion": "the Motion detector", "blob": "the crowd counter's outline",
+                "yolox": "a small object detector (YOLOX-tiny)"}
+FINDER_WHY = {"motion": CIRCLE_WHY,
+              "blob": {"no count": "the crowd counter couldn't count (the light changed, or there was no empty scene to compare with yet)", "no box": "the crowd counter outlined no animal",
+                       "several": "the crowd counter outlined several animals",
+                       "too big": "the crowd counter's outline was too big for an animal (the light)"},
+              "yolox": {"nothing": "saw no animal", "no model": "no model file on the Pi", "unreadable photo": "the photo couldn't be read"}}
+ANY_FINDER_WHY = {"error": "something went wrong", "night": "not run at night", "unknown": "not a known finder"}
+
+
+def finder_words(record: dict | None) -> str | None:
+    """Which finder pointed at the animal, in words, from a visit's calls.finder record (None without one)."""
+    name = (record or {}).get("finder") if isinstance(record, dict) else None
+    return FINDER_WORDS.get(name, name) if name else None
+
+
+def finders_tried(record: dict | None) -> str:
+    """The finders that tried and why each found nothing, for a tip: "the Motion detector: no clear patch ..."."""
+    tried = (record or {}).get("tried") if isinstance(record, dict) else None
+    parts = []
+    for t in tried or []:
+        if not isinstance(t, dict):
+            continue
+        name = FINDER_WORDS.get(t.get("finder"), t.get("finder") or "a finder")
+        why = {**FINDER_WHY.get(t.get("finder"), {}), **ANY_FINDER_WHY}.get(t.get("why"), t.get("why") or "nothing")
+        parts.append(f"{name}: {'found it' if t.get('found') else why}")
+    return "; ".join(parts)
 
 
 # Where the species check looked: classifier.run's crops, and for a gate guess made from the Pi animal check's
@@ -916,6 +945,8 @@ CIRCLE_WHY = {"nothing": "no clear patch of change near the zone that fired",
 CLASSIFIER_CROPS = {"circle": "around Claude's circle", "box": "on the crop box", "frame": "on the whole frame",
                     "bowl": "on a square around the whole bowl",
                     classifier.TIGHT_CROP: "on a tight square around the patch that moved"}
+# What the tight square was drawn around, by finder (identify.TIGHT_WHERE, naming the object detector's model here).
+FINDER_WHERE = {**identify.TIGHT_WHERE, "yolox": "around the box a small object detector (YOLOX-tiny) drew"}
 
 
 miss_text = steps.miss_text  # decision_steps has a local called steps
@@ -924,14 +955,21 @@ miss_text = steps.miss_text  # decision_steps has a local called steps
 def bioclip_step(guess: dict, raw: dict) -> dict:
     """One BioCLIP 2 species check look for the visit page: its top guesses and where it looked."""
     top = guess["top"][0] if guess.get("top") else None
+    crop = (("on the ground crop" if raw.get("trigger") == "ground" else "on the crop box")
+            if guess.get("crop") == "padded" else CLASSIFIER_CROPS.get(guess.get("crop"), ""))
+    finder = FINDER_WORDS.get(guess.get("finder")) if guess.get("crop") == classifier.TIGHT_CROP else None
+    where = FINDER_WHERE.get(guess.get("finder") if finder else "motion", FINDER_WHERE["motion"])
+    if finder:  # the tight look says which finder pointed at the patch (birdbrain/finder.py)
+        crop = f"on a tight square {where}" + (", pointed out by the Motion detector" if guess.get("finder") == "motion" else "")
     return {
         "model": "BioCLIP 2 species check",
         "bioclip": True,
         "guesses": [f"{g['name']} ({g['score']:.0%})" for g in guess["top"]],
         "said": f"{top['name']} ({top['score']:.0%})" if top else "no local species",
         "seconds": guess.get("seconds"),
-        "crop": (("on the ground crop" if raw.get("trigger") == "ground" else "on the crop box")
-                 if guess.get("crop") == "padded" else CLASSIFIER_CROPS.get(guess.get("crop"), "")),
+        "crop": crop,
+        "finder": finder,
+        "where": where,  # "around the patch that moved" or the other finders' outline or box
         "night": bool(guess.get("night")),
     }
 
@@ -1015,14 +1053,30 @@ def decision_steps(raw_json: str | None) -> dict:
                                        "scorecard": False, "why": second.get("why"),
                                        "reason": miss_text(second.get("why"), second, view="tight")})
     found = calls.get("motion_circle")
-    if isinstance(found, dict):
+    record = calls.get("finder") if isinstance(calls.get("finder"), dict) else None
+    shown = calls.get("circle") if isinstance(calls.get("circle"), dict) else {}
+    pi_circle = bool(shown.get("pi"))
+    if isinstance(found, dict) or (record and record.get("finder")):
+        # The Pi's own circle: the Motion detector's attempt as before, and, when the finder chain ran, which finder
+        # pointed at the animal (the Motion detector, the crowd counter's outline or a small object detector).
+        found = found if isinstance(found, dict) else {}
+        # Who pointed at the patch, whoever drew the circle the page shows (Claude's, when the tight look missed).
+        pointed = finder_words(record) or (FINDER_WORDS["motion"] if found.get("found") else None)
+        circled = bool(pi_circle and pointed)
+        others = [t for t in (record or {}).get("tried") or [] if isinstance(t, dict) and t.get("finder") != "motion"]
         steps.append({
             "model": "Circle from the motion",
             "motion_circle": True,
-            "found": bool(found.get("found") and calls.get("circle")),
-            "said": "circled" if found.get("found") and calls.get("circle") else "no circle",
+            "found": circled,
+            "said": "circled" if circled else "patch found" if pointed else "no circle",
+            "others_tried": bool(others),  # finders beyond the Motion detector were tried (FINDERS=motion: none)
             "source": CIRCLE_SOURCES.get(found.get("source"), ""),
+            "finder": pointed if circled and (record or {}).get("finder") not in (None, "motion") else None,
+            "pointed": pointed if pointed and not circled else None,  # found the patch, but the circle shown is not the Pi's
+            "circle_shown": "claude" if shown.get("claude") else "other" if shown else None,
             "why": CIRCLE_WHY.get(found.get("why"), ""),
+            "not_run": found.get("why") == "not run",  # FINDERS left the Motion detector out (watch.MOTION_NOT_RUN)
+            "tried": finders_tried(record) if record and not pointed else "",  # only when no finder found the patch
             "seconds": found.get("seconds"),
         })
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),
@@ -1405,6 +1459,8 @@ def stats(request: Request, conn=Depends(get_conn)):
         today_label=clock.today().strftime("%a, %b %-d"),
         activity=db.activity(conn),
         classifier=db.classifier_report(conn),
+        finder=db.finder_report(conn),
+        finder_words=FINDER_WORDS,
         agreement=db.agreement_report(conn),
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",

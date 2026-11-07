@@ -23,7 +23,7 @@ os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 import cv2  # noqa: E402  (must come after the capture options are set)
 import numpy as np  # noqa: E402
 
-from . import (alert, autocal, classifier, config, db, identify, images, motion_circle, presence,  # noqa: E402
+from . import (alert, autocal, classifier, config, db, finder, identify, images, motion_circle, presence,  # noqa: E402
                retention, species_info, stay, weather, zones)
 
 log = logging.getLogger("birdbrain.watch")
@@ -470,6 +470,9 @@ PROBE_UNCHECKED = "probe-unchecked"  # a probe with no verdict to filter it: not
                                      # backoff doubles as if there were no check
 UNANSWERED = "unanswered"    # Claude couldn't answer (an API error): stored as "other" for review, so neither a
                              # visit (no stay, no alert) nor a false trigger (the rain backoff streak is left alone)
+# calls.motion_circle for a visit whose finder chain (birdbrain.finder) ran without the Motion detector (FINDERS leaves
+# it out): stored so that motion_circle.pending does not treat the visit as never tried and re-circle it.
+MOTION_NOT_RUN = {"found": False, "why": "not run", "source": None}
 
 _last_logged: dict[str, float] = {}
 
@@ -647,7 +650,18 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     crowded = bool(animals and animals > 1)
     crowd = None
     named = None  # which BioCLIP 2 look named the visit: "bowl" (the first look) or "tight"
-    circle = found = None  # the circle from the motion, once it was looked for
+    circle = found = None  # the circle around the animal, once it was looked for, and the Motion detector's attempt
+    finding = None  # the finder chain's record (finder.locate): which finder pointed at the animal, and what was tried
+    # The crowd counter's boxes go to the finder chain; None when it couldn't count (the light changed, or no scene).
+    boxes = animal_boxes if animals is not None else None
+
+    def find_animal():
+        """Where the animal is, for the tight look or the circle: the finder chain, fail-soft. Returns the circle,
+        the chain's record and the Motion detector's attempt (stored as calls.motion_circle; when FINDERS leaves the
+        Motion detector out, a "not run" attempt, so motion_circle.pending never re-circles the visit)."""
+        circle, finding = finder.locate(best, scene.empty if scene else None, z, trigger, captured_at.isoformat(),
+                                        night, boxes=boxes, crop=crop)
+        return circle, finding, finding.get("motion") or dict(MOTION_NOT_RUN)
     tight_vec = circle_vec = circle_model = None  # BioCLIP 2 embeddings of the tight squares, kept as training data
     haiku_look = []  # the embedding of the look on Haiku's circle, if one was made
     if not empty:  # the species gate: a sure daytime name of a species already settled here skips Claude
@@ -665,34 +679,43 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             named = "bowl"
         elif looked and not crowded and not night:
             # Rule H: the wide view is the bottleneck, so before asking Claude take one tight look at a square
-            # around the patch that moved (about 6 s on a Pi 4), with a higher bar. No patch: Claude, as before.
-            circle, found = motion_circle.live(best, scene.empty if scene else None, z, trigger,
-                                               captured_at.isoformat(), night)
+            # around the patch where the animal is (about 6 s on a Pi 4), with a higher bar. The finder chain
+            # (birdbrain.finder) points at it: the Motion detector's circle, else the crowd counter's outline, else
+            # a small object detector. No patch: Claude, as before.
+            circle, finding, found = find_animal()
             if circle:
                 (tight, pick), tight_vec = classifier.with_embedding(
                     classifier.tight_check, best, circle, crop, night, settled)
+                if tight:
+                    tight = {**tight, "finder": finding["finder"]}
                 if pick:
                     named = "tight"
-                    log.info("species gate: the tight look named %s (%.2f); the first look had %s at %.2f", pick[0],
-                             tight["top"][0]["score"], looked["top"][0]["name"] if looked.get("top") else "nothing",
+                    log.info("species gate: the tight look on the patch the %s finder found named %s (%.2f); the "
+                             "first look had %s at %.2f", finding["finder"], pick[0], tight["top"][0]["score"],
+                             looked["top"][0]["name"] if looked.get("top") else "nothing",
                              looked["top"][0]["score"] if looked.get("top") else 0.0)
                 elif tight:
-                    log.info("species gate: the tight look did not name the visit; asking Claude")
+                    log.info("species gate: the tight look on the patch the %s finder found did not name the visit; "
+                             "asking Claude", finding["finder"])
             else:
-                log.info("species gate: no patch of motion for a tight look (%s); asking Claude",
-                         (found or {}).get("why") or "unknown")
+                log.info("species gate: no finder found a patch for a tight look (%s); asking Claude",
+                         finder.tried_text(finding))
     if pick:
         result = identify.settled_by_classifier(tight if named == "tight" else guess, pick, check)
         if named == "tight":
-            # The tight look's square was around the circle from the motion: that circle is the visit's.
-            result.raw["motion_circle"], result.raw["circle"] = found, circle
+            # The tight look's square was around the circle the finder chain found: that circle is the visit's.
+            result.raw["circle"] = circle
         elif config.CIRCLE_FROM_MOTION:
-            # BioCLIP says what, not where: circle the biggest patch of change from the empty scene instead.
-            circle, found = motion_circle.live(best, scene.empty if scene else None, z, trigger,
-                                               captured_at.isoformat(), night)
-            result.raw["motion_circle"] = found
+            # BioCLIP says what, not where: circle the animal with the finder chain instead (the biggest patch of
+            # change from the empty scene, else the crowd counter's outline, else a small object detector).
+            circle, finding, found = find_animal()
             if circle:
                 result.raw["circle"] = circle
+                log.info("circle from the %s finder for the visit the Pi named", finding["finder"])
+            else:
+                log.info("no finder found a patch to circle (%s)", finder.tried_text(finding))
+        if found is not None:
+            result.raw["motion_circle"] = found  # the Motion detector's attempt, as before (motion_circle.pending reads it)
     elif pmode == "gate" and empty:
         result = identify.settled_by_presence(check, None)
     else:
@@ -748,6 +771,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             result.raw["animal_boxes"] = animal_boxes
     if found and not found.get("found") and "motion_circle" not in result.raw:
         result.raw["motion_circle"] = found  # the tight look's patch search found nothing: why, and the cutoff it used
+    if finding is not None:
+        result.raw["finder"] = finding  # which finder pointed at the animal for the tight look or the circle, and what was tried
     if crowd:
         result.raw["gate_crowd"] = {"species": crowd, "animals": animals}
     s = result.sighting

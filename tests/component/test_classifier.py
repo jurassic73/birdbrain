@@ -316,6 +316,44 @@ def test_a_sure_first_look_still_names_the_visit_without_a_tight_look(gate_yard,
     assert gate_yard["circle_calls"] == [("rim", False)] and calls["circle"] == MOTION_CIRCLE  # circled, as before
 
 
+NO_PATCH = (None, {"found": False, "why": "nothing", "source": "empty", "seconds": 0.02})
+BLOB_BOX = [0.4, 0.5, 0.1, 0.2]
+
+
+def test_a_count_the_crowd_counter_could_not_make_is_no_box_for_the_blob_finder(gate_yard, conn):
+    gate_yard["circle"], gate_yard["animals"] = NO_PATCH, None  # the light changed: count_animals gave up
+    assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
+    calls = latest_calls(conn)[1]
+    assert [(t["finder"], t["why"]) for t in calls["finder"]["tried"]] == [("motion", "nothing"), ("blob", "no count"), ("yolox", "nothing")]
+
+
+def test_a_chain_without_the_motion_detector_still_records_an_attempt_so_the_backfill_leaves_the_circle(
+        gate_yard, conn, monkeypatch):
+    # FINDERS=blob,yolox: the Motion detector never ran, yet calls.motion_circle is stored (as "not run"), so
+    # `python -m birdbrain.motion_circle` (motion_circle.pending without --redo) does not list the visit, re-run the
+    # Motion detector and, finding nothing, drop the circle the crowd counter's outline gave.
+    from birdbrain import finder, motion_circle
+    monkeypatch.setattr(config, "FINDERS", ("blob", "yolox"))
+    monkeypatch.setattr(config, "CIRCLE_FROM_MOTION", True)
+    gate_yard["emb"], gate_yard["boxes"] = one_hot(0), [BLOB_BOX]  # named on the bowl look; circled by the chain
+    assert watch.handle_event() == "bird" and not gate_yard["asked"]
+    row, calls = latest_calls(conn)
+    assert row["model"] == "bioclip-2" and not gate_yard["circle_calls"]  # the Motion detector was not run
+    assert calls["circle"] == finder.box_circle(BLOB_BOX) and calls["finder"]["finder"] == "blob"
+    assert calls["motion_circle"] == {"found": False, "why": "not run", "source": None}
+    assert "motion" not in calls["finder"] and [t["finder"] for t in calls["finder"]["tried"]] == ["blob"]
+    assert motion_circle.pending(conn) == []  # not pending: the backfill leaves the finder's circle alone
+    # Nor with --redo: a retry that found no motion would json_remove the circle the crowd counter's outline gave.
+    assert motion_circle.pending(conn, redo=True) == []
+    # The same when the tight look named the visit on the chain's circle.
+    gate_yard["emb"], gate_yard["asked"][:] = one_hot(0, 0.01), []
+    assert watch.handle_event() == "bird" and not gate_yard["asked"]
+    row, calls = latest_calls(conn)
+    assert calls["classifier"]["crop"] == "motion" and calls["classifier"]["finder"] == "blob"
+    assert calls["motion_circle"] == {"found": False, "why": "not run", "source": None}
+    assert motion_circle.pending(conn) == [] and motion_circle.pending(conn, redo=True) == []
+
+
 def test_tight_look_failing_asks_claude(gate_yard, conn, monkeypatch):
     def broken(*a, **k):
         raise RuntimeError("model broke")

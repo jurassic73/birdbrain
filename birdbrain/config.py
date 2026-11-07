@@ -222,6 +222,32 @@ if DETECTOR not in ("off", "shadow", "gate"):
 DETECTOR_MODEL = Path(_env("DETECTOR_MODEL", str(ROOT / "models" / "yolox_tiny.onnx")))
 DETECTOR_MIN_SCORE = float(_env("DETECTOR_MIN_SCORE", "0.15"))  # low on purpose: missing a bird costs more than a call
 
+# Finders for the BioCLIP 2 species check's tight look (birdbrain/finder.py), tried in this order until one points
+# at the animal: motion (the Motion detector's circle), blob (the crowd counter's outline), yolox (YOLOX-tiny on the
+# crop box, by day). FINDERS=motion is the old behaviour.
+FINDER_NAMES = ("motion", "blob", "yolox")
+
+
+def parse_finders(raw: str) -> tuple[str, ...]:
+    """A comma list of finder names, in order, each at most once and at least one; an unknown name, an empty list
+    or a repeated name raises ValueError naming FINDERS."""
+    names = tuple(n.strip().lower() for n in raw.split(",") if n.strip())
+    expected = f"expected a comma list of {', '.join(FINDER_NAMES)}"
+    if not names:
+        raise ValueError(f"FINDERS is empty; {expected} (FINDERS=motion is the old behaviour)")
+    for n in names:
+        if n not in FINDER_NAMES:
+            raise ValueError(f"FINDERS: {n!r} is not a finder; {expected}")
+    if len(set(names)) != len(names):
+        raise ValueError(f"FINDERS: {raw.strip()!r} lists a finder twice; {expected}, each once")
+    return names
+
+
+FINDERS = parse_finders(_env("FINDERS", "motion,blob,yolox"))
+FINDER_YOLOX_MIN_SCORE = float(_env("FINDER_YOLOX_MIN_SCORE", "0.15"))  # YOLOX's least class score for the finder
+if not 0 <= FINDER_YOLOX_MIN_SCORE <= 1:
+    raise ValueError(f"FINDER_YOLOX_MIN_SCORE must be between 0 and 1, not {FINDER_YOLOX_MIN_SCORE!r}")
+
 # Local species classifier (birdbrain/classifier.py): "shadow" records its guess with each visit for the Stats
 # scorecard (Claude still decides every label), "off" skips it. The model downloads into DATA_DIR on first use.
 # gate: a confident daytime guess of a species already settled in this yard names the visit without Claude.

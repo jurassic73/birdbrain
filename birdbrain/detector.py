@@ -5,6 +5,7 @@ an empty verdict is a hint, not proof; see DETECTOR in config for how much it is
 CLI: python -m birdbrain.detector photo.jpg
 """
 
+import logging
 import sys
 import time
 from dataclasses import dataclass
@@ -14,6 +15,8 @@ import cv2
 import numpy as np
 
 from . import config
+
+log = logging.getLogger("birdbrain.detector")
 
 COCO = (
     "person bicycle car motorcycle airplane bus train truck boat traffic_light fire_hydrant stop_sign "
@@ -148,6 +151,58 @@ def run(jpeg: bytes, crop=None) -> dict | None:
     start = time.perf_counter()
     found, objs = _detector.detect_all(img, config.DETECTOR_MIN_SCORE)
     return verdict(found, time.perf_counter() - start, objs)
+
+
+# --- finding the animal for the tight look (birdbrain.finder) ------------------------------------------------
+
+FINDER_CLASSES = VISITOR_CLASSES - {"person", "teddy_bear"}  # a person is never the animal the tight look wants
+
+
+def to_frame_box(det_box, crop_px, shape) -> list[float]:
+    """A detection's (x0, y0, x1, y1) pixel box inside the crop (crop_px: the crop's (x0, y0, x1, y1) on the frame,
+    None for the whole frame) as [x, y, w, h] fractions of a frame of `shape` (H, W, ...), held inside the crop."""
+    H, W = shape[:2]
+    cx0, cy0, cx1, cy1 = crop_px if crop_px else (0, 0, W, H)
+    x0, y0, x1, y1 = det_box
+    x0, x1 = (min(max(float(v), 0.0), float(cx1 - cx0)) for v in (x0, x1))
+    y0, y1 = (min(max(float(v), 0.0), float(cy1 - cy0)) for v in (y0, y1))
+    return [round((cx0 + x0) / W, 4), round((cy0 + y0) / H, 4), round((x1 - x0) / W, 4), round((y1 - y0) / H, 4)]
+
+
+def animal_box(jpeg: bytes, crop, min_score: float) -> tuple[list[float] | None, dict]:
+    """One YOLOX-tiny inference on the crop box (like `run`), for birdbrain.finder: the box of the highest-scoring
+    detection of an animal class (FINDER_CLASSES: never a person), as full-frame fractions [x, y, w, h], plus
+    {"label", "score", "seconds"}. (None, {"why": "no model"}) without a model file, (None, {"why": "nothing",
+    "seconds"}) when it saw no animal, {"why": "unreadable photo"} for a JPEG that can't be decoded, (None,
+    {"why": "error"}) when anything failed. Independent of
+    config.DETECTOR (the retired watcher shadow mode)."""
+    global _detector
+    if not config.DETECTOR_MODEL.exists():
+        return None, {"why": "no model"}
+    start = time.perf_counter()
+    try:
+        if _detector is None:
+            _detector = Detector(config.DETECTOR_MODEL)
+        from .watch import roi  # local import: watch imports this module
+        from . import zones
+
+        frame = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return None, {"why": "unreadable photo", "seconds": round(time.perf_counter() - start, 3)}
+        img = roi(frame, crop)
+        if img is None:  # the crop box lies outside the frame: nothing to look at
+            return None, {"why": "nothing", "seconds": round(time.perf_counter() - start, 3)}
+        crop_px = zones.pixel_box(frame.shape, crop) if crop else None
+        found = _detector.detect(img, min_score)
+    except Exception:
+        log.exception("the object detector failed to find the animal")
+        return None, {"why": "error", "seconds": round(time.perf_counter() - start, 3)}
+    seconds = round(time.perf_counter() - start, 3)
+    best = next((d for d in found if d.label in FINDER_CLASSES), None)
+    if best is None:
+        return None, {"why": "nothing", "seconds": seconds}
+    return to_frame_box(best.box, crop_px, frame.shape), {"label": best.label, "score": round(best.score, 3),
+                                                          "seconds": seconds}
 
 
 def main() -> None:
