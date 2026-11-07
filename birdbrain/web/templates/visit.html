@@ -94,7 +94,7 @@
   <section class="vburst" aria-label="Burst">
     <h2 class="vburst-head tip-label">Burst<span class="muted small">{{ burst | length }} frames over {{ '%g' | format(burst[-1].at) }} s</span>
       <span class="info-tip" tabindex="0" aria-label="About the burst" data-tip="Every frame the camera took after the motion, in order. False triggers keep them all so you can check before and after the one Claude saw. Tap a frame, or use the arrows (they wrap around), to show it in the big photo. Circles belong to the frame they're drawn on; a frame with circles shows their numbers. Circling the animal on the frame that shows it best makes that frame what the Pi animal check learns from.">i</span>
-      <span class="vburst-steps"><button type="button" class="vburst-step vburst-play" id="vburst-play" aria-pressed="false" aria-label="Play the burst (3 frames a second, P)" data-tip="Play the burst (3 frames a second, P)"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path class="vburst-ico-play" d="M2.5 1 L10.5 6 L2.5 11 Z" fill="currentColor"/><rect class="vburst-ico-stop" x="2" y="2" width="8" height="8" fill="currentColor"/></svg></button><button type="button" class="vburst-step vburst-speed" id="vburst-speed" data-speed="1" aria-label="Playback speed 1x (tap for 2x)" data-tip="Playback speed 1x (tap for 2x)">1x</button><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
+      <span class="vburst-steps"><button type="button" class="vburst-step vburst-auto" id="vburst-auto" aria-pressed="false" aria-label="Auto-play is off: tap to play the burst by itself when a visit opens" data-tip="Auto-play is off: tap to play the burst by itself when a visit opens">Auto</button><button type="button" class="vburst-step vburst-play" id="vburst-play" aria-pressed="false" aria-label="Play the burst (3 frames a second, P)" data-tip="Play the burst (3 frames a second, P)"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path class="vburst-ico-play" d="M2.5 1 L10.5 6 L2.5 11 Z" fill="currentColor"/><rect class="vburst-ico-stop" x="2" y="2" width="8" height="8" fill="currentColor"/></svg></button><button type="button" class="vburst-step vburst-speed" id="vburst-speed" data-speed="1" aria-label="Playback speed 1x (tap for 2x)" data-tip="Playback speed 1x (tap for 2x)">1x</button><button type="button" class="vburst-step" data-step="-1" aria-label="Previous frame" data-tip="Previous frame (wraps)">&lsaquo;</button><span class="vburst-count muted small" aria-live="polite"><span id="vburst-n">1</span> / {{ burst | length }}</span><button type="button" class="vburst-step" data-step="1" aria-label="Next frame" data-tip="Next frame (wraps)">&rsaquo;</button></span></h2>
     <div class="vburst-strip" style="--n: {{ burst | length }}">
       {% for f in burst %}
       <button type="button" class="vburst-frame{% if f.on %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
@@ -1025,6 +1025,21 @@
       setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]);
       try { localStorage.setItem("birdbrain.burstSpeed", String(speed)); } catch (e) {}
     });
+    // Auto: a visit with a burst starts playing by itself on load. Remembered per browser; off by default.
+    const autoBtn = document.getElementById("vburst-auto");
+    let auto = false;
+    const setAuto = on => {
+      auto = on;
+      const t = on ? "Auto-play is on: the burst plays by itself when a visit opens (tap to turn off)" : "Auto-play is off: tap to play the burst by itself when a visit opens";
+      autoBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      autoBtn.setAttribute("aria-label", t); autoBtn.dataset.tip = t;
+    };
+    try { setAuto(localStorage.getItem("birdbrain.burstAuto") === "1"); } catch (e) { setAuto(false); }
+    autoBtn.addEventListener("click", () => {
+      setAuto(!auto);
+      try { localStorage.setItem("birdbrain.burstAuto", auto ? "1" : "0"); } catch (e) {}
+      if (auto && timer === null) play();  // turning it off leaves current playback running
+    });
     const toggle = () => timer === null ? play() : stop();
     playBtn.addEventListener("click", toggle);
     // P plays or stops, like the button. It takes P from the site-wide palette key (the site-wide keys skip handled presses).
@@ -1051,6 +1066,7 @@
       step(e.key === "ArrowLeft" ? -1 : 1);
     });
     n.textContent = shown() + 1;
+    if (auto && !document.hidden) play();
   })();
   (() => {
     // Full-size viewer: Esc, the close button or any click closes it.
