@@ -19,20 +19,19 @@ TODAY_NO_PATCH = {"animals_seen", "classifier", "classifier_gate", "motion_circl
 def finders(gate_yard, monkeypatch):
     """gate_yard plus the other two finders' collaborators: the crowd counter appends knobs["boxes"] to its detail
     list (the watcher's animal_boxes), YOLOX (detector.animal_box) answers knobs["yolox"] and logs each call."""
-    knobs = {"boxes": [BOX], "yolox": (None, {"why": "nothing", "seconds": 0.2}), "yolox_calls": []}
+    gate_yard.update({"boxes": [BOX], "yolox": (None, {"why": "nothing", "seconds": 0.2}), "yolox_calls": []})
 
-    def count(scene, jpeg, crop, detail=None):
+    def count(scene, jpeg, crop, detail=None):  # reads gate_yard live, so tests may change the knobs after setup
         if detail is not None:
-            detail.extend(knobs["boxes"])
+            detail.extend(gate_yard["boxes"])
         return gate_yard["animals"]
 
     def animal_box(jpeg, crop, min_score=None):
-        knobs["yolox_calls"].append((jpeg, crop, min_score))
-        return knobs["yolox"]
+        gate_yard["yolox_calls"].append((jpeg, crop, min_score))
+        return gate_yard["yolox"]
 
     monkeypatch.setattr(watch, "count_animals", count)
     monkeypatch.setattr(detector, "animal_box", animal_box, raising=False)
-    gate_yard.update(knobs)
     return gate_yard
 
 

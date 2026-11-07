@@ -16,9 +16,10 @@ def pills_explained(html):
 
 
 def tight_step(html):
-    """The tight look's step on the visit page (the How it was decided list)."""
+    """The tight look's step on the visit page (its own <li> in the How it was decided list)."""
     steps = html[html.index("How it was decided"):]
-    return steps[steps.index('data-tip="Tight look:'):]
+    step = steps[steps.index('data-tip="Tight look:'):]
+    return step[:step.index("</li>")]
 
 
 @pytest.mark.parametrize("found", ["motion", "blob", "yolox"])
@@ -26,10 +27,11 @@ def test_visit_page_names_the_finder_of_a_tight_look_that_named_the_visit(client
     vid = add_visit(model=classifier.MODEL_NAME, raw_json=finder_raw(found, named=True))
     html = client.get(f"/visit/{vid}").text
     assert 'data-tip="Tight look:' in html and "Claude wasn't asked" in html
-    assert IN_WORDS[found] in tight_step(html).replace("&#39;", "'")
-    for other, words in IN_WORDS.items():
+    step = tight_step(html).replace("&#39;", "'")
+    assert IN_WORDS[found] in step
+    for other, words in IN_WORDS.items():  # checked on the step only: an unrelated pill tip names the Motion detector
         if other != found:
-            assert words not in html.replace("&#39;", "'")
+            assert words not in step
     assert pills_explained(html)
 
 
