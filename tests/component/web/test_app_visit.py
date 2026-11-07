@@ -74,12 +74,24 @@ def test_false_trigger_burst_has_a_play_button_left_of_the_arrows(client, burst_
     assert 'data-speed="1"' in attrs and tag.group(1).strip() == "1x"
     assert re.search(r'aria-label="[^"]+"', attrs) and re.search(r'data-tip="[^"]+"', attrs)
     assert html.index('id="vburst-play"') < html.index('id="vburst-speed"') < html.index('data-step="-1"')
+    # Auto-play toggle: one button before play; the server always renders it off.
+    assert html.count('id="vburst-auto"') == 1
+    tag = re.search(r'<button[^>]*id="vburst-auto"[^>]*>(.*?)</button>', html, re.S)
+    assert tag, "auto button missing"
+    attrs = tag.group(0)[:tag.group(0).index(">") + 1]
+    classes = re.search(r'class="([^"]*)"', attrs).group(1).split()
+    assert "vburst-step" in classes and "vburst-auto" in classes
+    assert 'aria-pressed="false"' in attrs and tag.group(1).strip() == "Auto"
+    assert re.search(r'aria-label="[^"]+"', attrs) and re.search(r'data-tip="[^"]+"', attrs)
+    assert (html.index('id="vburst-auto"') < html.index('id="vburst-play"')
+            < html.index('id="vburst-speed"') < html.index('data-step="-1"'))
 
 
 def test_burst_arrows_absent_without_a_burst(client, stored_visit):
     vid = stored_visit(visitor="none", species=None)
     assert 'id="vburst-play"' not in client.get(f"/visit/{vid}").text
     assert 'id="vburst-speed"' not in client.get(f"/visit/{vid}").text
+    assert 'id="vburst-auto"' not in client.get(f"/visit/{vid}").text
     assert 'class="vburst-step"' not in client.get(f"/visit/{vid}").text
 
 
