@@ -295,6 +295,11 @@ docker run -d --name birdbrain-mirror --restart unless-stopped \
 - **Port:** publish on `127.0.0.1` only and put the tunnel or reverse proxy in front (Docker bypasses ufw for a bare `-p 8000:8000`). The app serves at `/` and expects the proxy to strip the `/birdbrain` prefix, as `deploy/nginx-birdbrain.conf` does. A proxy on another address goes in `VIEWER_TRUSTED_PROXIES`, so the real client IP is read from `CF-Connecting-IP`.
 - **Friends & family password and invite links:** kept in the `/state` volume (`VIEWER_PASSWORD_FILE`, `VIEWER_INVITE_FILE`). Set them with `docker exec -it birdbrain-mirror python -m birdbrain.web.viewer` (and `... viewer link <site URL>`).
 - **Updates:** rebuild the image and recreate the container; the data and state live outside it.
+- **Guests counts:** kept in `/state/audience.db`; pass `-e AUDIENCE_TOKEN=...` so the Pi can fetch them (below).
+
+### Guests: who visits the public copy
+
+The mirror counts anonymous page views, visitors (once a day), returning browsers, countries (Cloudflare's `CF-IPCountry`) and clicks on the public buttons (`birdbrain/audience.py`; buttons carry `data-track`, sent by `static/track.js`), and the admin's **Guests** tab on the Pi shows them. No IP address is stored: people are told apart by a hash of address and browser with a salt drawn anew each UTC day. Only requests that came through Cloudflare count, never bots or link previewers, and never the Pi's own site. To leave your own browsers out, open any mirror page once with `?count=no` (`?count=yes` undoes it). Counts are written about once a minute to `AUDIENCE_DB`, which on the mirror must sit outside the pushed data. To connect the two, put the same long random `AUDIENCE_TOKEN` on both, and on the Pi set `AUDIENCE_SOURCE_URL` to the mirror's `/api/audience-counts`; the Pi fetches new counts when the Guests page opens (at most every 2 minutes). Without the token the feed is a 404.
 
 ## What stays out of git
 
@@ -325,6 +330,8 @@ The code is small: `birdbrain/config.py` (settings from `.env`), `db.py` (all da
 If you use [Claude Code](https://claude.com/claude-code) to change it: `CLAUDE.md` holds the original author's working notes and decisions, which are specific to their setup. Read it for context, and keep your own setup details in `.env` and Claude's Notes and Settings pages.
 
 ## Credits
+
+The Guests page's world map uses country outlines from [Natural Earth](https://www.naturalearthdata.com/) (1:110m, public domain).
 
 The light/dark toggle uses the sun and crescent moon from [Twemoji](https://github.com/jdecked/twemoji) (© Twitter and contributors, [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
 

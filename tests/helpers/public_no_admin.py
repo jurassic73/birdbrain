@@ -8,6 +8,8 @@ PUBLIC = {
     ("GET", "/about"), ("GET", "/api/latest-visit"), ("GET", "/live/latest.jpg"), ("GET", "/live.jpg"),
     ("GET", "/manifest.webmanifest"), ("GET", "/favicon.ico"),
     ("GET", "/guest-login"), ("POST", "/guest-login"),
+    # the Guests counter's beacon (static/track.js): counts a click or a prerendered page, answers 204
+    ("POST", "/api/track"),
     ("GET", "/static"), ("GET", "/images"),
 }
 
@@ -39,4 +41,6 @@ ADMIN = {
     ("GET", "/settings/zones"), ("GET", "/settings/zones/status"), ("POST", "/settings/zones/now"),
     ("POST", "/settings/zones"), ("POST", "/settings/zones/undo/{cal_id}"), ("POST", "/settings/zones/manual"),
     ("GET", "/calibration/{name}"),
+    # Guests: the admin's page, and the mirror's counts feed, which opens only to its secret token (a 404 without)
+    ("GET", "/guests"), ("GET", "/api/audience-counts"),
 }

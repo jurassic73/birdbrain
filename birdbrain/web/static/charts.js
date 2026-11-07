@@ -176,6 +176,39 @@ function scatterChart(id, points, titles) {
   birdbrainCharts.push(chart);
 }
 
+// One filled line, accent colored, for a count over time (the Guests page's visitors). labels and data are equal-length lists.
+function styleLine(chart) {
+  const c = chartColors();
+  const ds = chart.data.datasets[0];
+  ds.borderColor = c.bar;
+  ds.backgroundColor = /^#[0-9a-f]{6}$/i.test(c.bar) ? c.bar + "38" : `color-mix(in srgb, ${c.bar} 22%, transparent)`;
+  chart.options.scales.x.ticks.color = c.text;
+  chart.options.scales.y.ticks.color = c.text;
+  chart.options.scales.y.grid.color = c.grid;
+}
+
+function lineChart(id, labels, data, label) {
+  const el = document.getElementById(id);
+  if (!el || typeof Chart === "undefined") return;
+  const chart = new Chart(el, {
+    type: "line",
+    data: { labels, datasets: [{ label, data, fill: true, cubicInterpolationMode: "monotone", pointRadius: 0, pointHitRadius: 10, borderWidth: 2 }] },
+    options: {
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+        y: { beginAtZero: true, grid: {}, ticks: { precision: 0 } },
+      },
+    },
+  });
+  chart.$restyle = styleLine;
+  styleLine(chart);
+  chart.update();
+  birdbrainCharts.push(chart);
+}
+
 // Repaint charts in the new theme's colors when the toggle (or the device setting) changes it.
 document.addEventListener("themechange", () => {
   birdbrainCharts.forEach(chart => { (chart.$restyle || styleChart)(chart); chart.update("none"); });

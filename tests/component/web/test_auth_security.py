@@ -38,12 +38,14 @@ PUBLIC_GETS = {
     "/live/latest.jpg", "/manifest.webmanifest", "/scoreboard", "/species", "/species-info/{name}",
     "/species-photo", "/species-search", "/species/{name}", "/species/{name}/cover-compare", "/species/{name}/more", "/stats",
     "/visit/{visit_id}", "/visits", "/visits/archive-more", "/visits/more", "/weather",
+    "/api/audience-counts",  # the Guests counts feed: a 404 on the Pi, and on the mirror without its secret token
 }
 
 
 # What the public mirror serves (GET), by route template: the visitor's pages minus the admin's JSON. Everything
 # else there, every change included, is the same 404 as a page that doesn't exist (auth.MIRROR_ROUTES).
-MIRROR_GETS = PUBLIC_GETS - {"/api/photo-reminder", "/species-photo", "/species-search", "/species/{name}/cover-compare"}
+MIRROR_GETS = PUBLIC_GETS - {"/api/photo-reminder", "/species-photo", "/species-search", "/species/{name}/cover-compare",
+                             "/api/audience-counts"}
 
 
 LOGIN_ROUTES = {"/login", "/logout", "/guest-login"}
@@ -116,10 +118,12 @@ def test_every_route_is_classified(route_client, locked, method, template, path)
 @pytest.mark.parametrize("method,template,path", ROUTES, ids=IDS)
 def test_every_route_on_the_public_mirror(route_client, mirror, method, template, path):
     """BIRDBRAIN_PUBLIC=1: no admin anything. The admin pages, the login, the admin's JSON and every change are the
-    same 404 as a page that doesn't exist; only the guest sign-in takes a POST."""
+    same 404 as a page that doesn't exist; only the guest sign-in and the Guests click beacon take a POST."""
     r = route_client.request(method, path, follow_redirects=False)
     if template == "/guest-login":
         assert r.status_code != 404, path
+    elif method == "POST" and template in auth.MIRROR_POSTS:
+        assert r.status_code == 204 and not r.content, path  # the beacon: counts (or not), answers nothing
     elif method == "GET" and template in MIRROR_GETS:
         assert r.status_code != 500 and not r.headers.get("location", "").startswith("/login"), path
     else:
