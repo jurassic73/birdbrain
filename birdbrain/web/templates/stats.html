@@ -130,6 +130,13 @@
     {% else %}No tight looks in the last {{ finder.days }} days yet: the finders (the Motion detector, the crowd counter's outline, a small object detector) report here once there are some.{% endif %}
   </p>
   {% endif %}
+  {% if second_frame is defined and second_frame %}
+  <p class="muted second-frame" id="second-frame" data-tip="When the tight look falls just short of its bar, the Pi also embeds the next sharpest photo of the burst on the same circle and averages the two embeddings (like a fingerprint). Scored here against the final label; named means a top guess over the tight look's bar, mostly on local species. It names nothing.">
+    <strong>Second-frame look (shadow)</strong>
+    {% if second_frame.looks %}{{ second_frame.looks }} look{{ "" if second_frame.looks == 1 else "s" }}; first frame right {{ second_frame.first_right }}, second frame right {{ second_frame.second_right }}, averaged right {{ second_frame.combined_right }}; averaging would have named {{ second_frame.combined_named }} ({{ second_frame.combined_wrong }} wrong), the second frame alone {{ second_frame.second_named }} ({{ second_frame.second_wrong }} wrong). It changes nothing.
+    {% else %}No second-frame look to score yet: it runs when the tight look falls just short of its bar, and keeps score here. It changes nothing.{% endif %}
+  </p>
+  {% endif %}
   <h3 class="agree-title">Tight look bars (shadow)</h3>
   {% if agreement.looks %}
   <table class="classifier-species agree-bars">

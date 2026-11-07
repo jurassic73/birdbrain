@@ -8,9 +8,19 @@ import json
 
 from markupsafe import Markup, escape
 
-from .. import classifier, config, db, lessons, presence
+from .. import classifier, config, db, identify, lessons, presence
 
 MOTION, PI, SPECIES, CLAUDE = "Motion detector", "Pi animal check", "BioCLIP 2 species check", "Claude"
+# What the tight look's square was drawn around, by the finder that pointed at it (identify.TIGHT_WHERE, naming
+# the object detector's model here), and the same as "at ..." for "a tight look at the patch that moved".
+FINDER_WHERE = {**identify.TIGHT_WHERE, "yolox": "around the box a small object detector (YOLOX-tiny) drew"}
+TIGHT_AT = {name: phrase.replace("around ", "at ", 1) for name, phrase in FINDER_WHERE.items()}
+
+
+def tight_at(finder: str | None) -> str:
+    """Where the tight look looked, as "at ...", for the finder that pointed at the patch (default the Motion
+    detector's: "at the patch that moved")."""
+    return TIGHT_AT.get(finder or "motion", TIGHT_AT["motion"])
 
 
 def _pct(x: float) -> str:
@@ -154,7 +164,9 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
     guess_step = next((s for s in steps if s.get("gated") or s.get("scorecard")), None)
     first_step = next((s for s in steps if s.get("first_look") and not s.get("gated")), None)
     tight_step = next((s for s in steps if s.get("tight") and not s.get("gated")), None)
-    TIGHT = "a tight look at the patch that moved"
+    tight_finder = ((calls.get("classifier_tight") or {}).get("finder")
+                    or ((calls.get("classifier") or {}).get("finder") if (calls.get("classifier") or {}).get("crop") == classifier.TIGHT_CROP else None))
+    TIGHT = f"a tight look {tight_at(tight_finder)}"  # per finder: the patch that moved, the crowd counter's outline, ...
 
     # 1. Motion detector
     where = f" It spotted movement {decision['trigger']}." if decision.get("trigger") else ""

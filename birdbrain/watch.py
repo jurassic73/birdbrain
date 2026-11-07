@@ -609,6 +609,49 @@ def animal_check(frames: list[bytes], ranked: list[bytes], z, trigger: str = "ri
     return emb2, {**check2, "frames": scores, "frame": "last"}, ranked
 
 
+def second_frame_wanted(tight: dict | None, pick, settled: dict[str, str], night: bool, frames: int) -> bool:
+    """Whether the shadow second-frame look runs: the tight look was made and fell short by its score alone
+    (classifier.gate_miss "score"; a "local" or "unsettled" miss does not count), its top guess is at least
+    config.SECOND_FRAME_MIN (0: never), it is day, and the burst has a second frame to look at."""
+    if not tight or pick or night or frames < 2 or config.SECOND_FRAME_MIN <= 0:
+        return False
+    if classifier.gate_miss(tight, settled, night, view="tight") != "score":
+        return False
+    return (tight["top"][0].get("score") or 0) >= config.SECOND_FRAME_MIN
+
+
+def second_frame_look(frames_ranked: list[bytes], circle, crop, night, tight_vec
+                      ) -> tuple[dict | None, np.ndarray | None]:
+    """Shadow only: the BioCLIP 2 species check's look at the next sharpest burst frame (frames_ranked[1]) on the
+    same circle as the tight look, to learn whether a second pose would name more visits. Returns (the record for
+    raw_json.calls.classifier_second, that frame's embedding): the guess with crop TIGHT_CROP and frame "second",
+    plus "combined", the guess from the mean of the two normalized embeddings (None without both). Never raises:
+    any problem gives (None, None) and a log line; nothing here changes the decision."""
+    try:
+        start = time.perf_counter()
+        guess, vec = classifier.with_embedding(classifier.run, frames_ranked[1], circle, crop, night)
+        if not guess:
+            log.info("second-frame look: no guess on the second frame")
+            return None, None
+        combined = None
+        if vec is not None and tight_vec is not None:
+            mean = classifier.normalize(np.mean([classifier.normalize(tight_vec), classifier.normalize(vec)], axis=0))
+            both = classifier.from_embedding(mean, night)
+            if both:
+                combined = {"top": both.get("top") or [], "local_share": both.get("local_share")}
+        record = {**guess, "crop": classifier.TIGHT_CROP, "frame": "second", "combined": combined,
+                  "seconds": round(time.perf_counter() - start, 3)}
+        top = (guess.get("top") or [{}])[0]
+        avg = (combined or {}).get("top") or [{}]
+        log.info("second-frame look (shadow): the second frame said %s (%.2f)%s",
+                 top.get("name") or "nothing local", top.get("score") or 0.0,
+                 f"; averaged {avg[0].get('name')} ({avg[0].get('score') or 0.0:.2f})" if combined and avg[0] else "")
+        return record, vec
+    except Exception:
+        log.exception("second-frame look failed; nothing changes")
+        return None, None
+
+
 def handle_event(motion: float | None = None, probe: bool = False, trigger: str = "rim",
                  scene: Scene | None = None) -> str | None:
     """Capture, identify and store one visit. Returns the visitor type, None if nothing was captured,
@@ -663,6 +706,7 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
                                         night, boxes=boxes, crop=crop)
         return circle, finding, finding.get("motion") or dict(MOTION_NOT_RUN)
     tight_vec = circle_vec = circle_model = None  # BioCLIP 2 embeddings of the tight squares, kept as training data
+    second = None  # the shadow second-frame look's record (second_frame_look), when it ran
     haiku_look = []  # the embedding of the look on Haiku's circle, if one was made
     if not empty:  # the species gate: a sure daytime name of a species already settled here skips Claude
         with db.session() as conn:
@@ -697,6 +741,10 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
                 elif tight:
                     log.info("species gate: the tight look on the patch the %s finder found did not name the visit; "
                              "asking Claude", finding["finder"])
+                    if second_frame_wanted(tight, pick, settled, night, len(ranked)):
+                        # Shadow only (SECOND_FRAME_MIN): one more look, on the next sharpest frame, to keep score
+                        # of whether a second pose would have named it. Claude is asked exactly as without it.
+                        second, _ = second_frame_look(ranked, circle, crop, night, tight_vec)
             else:
                 log.info("species gate: no finder found a patch for a tight look (%s); asking Claude",
                          finder.tried_text(finding))
@@ -765,6 +813,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         # The tight look did not name it either: kept with its reason and the circle it looked around, so the
         # visit page can show it after the first look. Claude was asked and reuses nothing from it.
         result.raw["classifier_tight"] = {**classifier.first_look(tight, settled, night, view="tight"), "circle": circle}
+    if second:
+        result.raw["classifier_second"] = second  # the shadow second-frame look: scored on Stats, used for nothing
     if animals is not None:
         result.raw["animals_seen"] = animals  # scored against Claude's count later
         if animals > 1:
