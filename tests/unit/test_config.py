@@ -62,3 +62,34 @@ def test_parse_polygon_and_its_box():
         config.parse_polygon("0.1,0.5;0.9,0.5", "GROUND_ZONE")   # two points is a line
     with pytest.raises(ValueError, match="GROUND_ZONE"):
         config.parse_polygon("0.1,0.5,0.2;0.9,0.5;0.9,1", "GROUND_ZONE")
+
+
+# --- the finder chain's knobs (FINDERS, FINDER_YOLOX_MIN_SCORE) -------------------------------------------------
+
+def _fresh_config(monkeypatch, **env) -> dict:
+    """config.py run again in a namespace of its own with `env` set (the imported module is left alone), so what
+    it does at import can be checked: the parsing and the checks that raise."""
+    import runpy
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    return runpy.run_path(config.__file__, run_name="birdbrain.config")
+
+
+def test_finders_default_to_motion_blob_yolox_in_that_order():
+    assert tuple(config.FINDERS) == ("motion", "blob", "yolox")
+    assert config.FINDER_YOLOX_MIN_SCORE == 0.15
+
+
+def test_finders_come_from_the_env_as_a_comma_list(monkeypatch):
+    ns = _fresh_config(monkeypatch, FINDERS="yolox, motion", FINDER_YOLOX_MIN_SCORE="0.3")
+    assert tuple(ns["FINDERS"]) == ("yolox", "motion") and ns["FINDER_YOLOX_MIN_SCORE"] == 0.3
+    assert tuple(_fresh_config(monkeypatch, FINDERS="motion")["FINDERS"]) == ("motion",)
+    monkeypatch.delenv("FINDERS")
+    monkeypatch.delenv("FINDER_YOLOX_MIN_SCORE")
+    ns = _fresh_config(monkeypatch)
+    assert tuple(ns["FINDERS"]) == ("motion", "blob", "yolox") and ns["FINDER_YOLOX_MIN_SCORE"] == 0.15
+
+
+def test_an_unknown_finder_name_is_refused_at_import(monkeypatch):
+    with pytest.raises(ValueError, match="FINDERS"):
+        _fresh_config(monkeypatch, FINDERS="motion,sonar")
