@@ -16,7 +16,9 @@ def classifier_section(html: str) -> str:
 
 def table_rows(section: str) -> list[list[str]]:
     """The cell texts of each body row of the table under the heading."""
-    table = section[section.index(HEADING):]
+    table = section[section.index(HEADING):] if HEADING in section else ""
+    if "<table" not in table:
+        return []
     table = table[table.index("<table"):table.index("</table>")]
     body = table[table.index("<tbody"):] if "<tbody" in table else table
     rows = []
