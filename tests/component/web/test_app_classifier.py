@@ -295,3 +295,20 @@ def test_confidence_pill_of_a_pi_visit_has_the_pi_icon_not_claude(client, add_vi
     page = _conf_pill(client.get(f"/visit/{claude}").text)
     assert "claude-mark" in page and "by-claude" in page and "rpi-icon" not in page
     assert "Claude was sure" in page
+
+
+def test_stats_page_shows_the_tight_look_bars(client, add_visit):
+    html = client.get("/stats").text
+    assert "Tight look bars (shadow)" in html and "No tight look to score yet" in html
+    assert "<table class=\"classifier-species agree-bars\"" not in html
+    add_visit(species="Dark-eyed Junco", raw_json=tight_raw(score=0.92, name="Black-capped Chickadee"))  # agrees, wrong
+    add_visit(species="Bushtit", raw_json=tight_raw(score=0.96))  # disagrees, wrong
+    html = client.get("/stats").text
+    table = html[html.index("Tight look bars (shadow)"):]
+    table = table[:table.index("</section>")]
+    assert "<th>Bar</th>" in table and "Named when the bowl look agrees" in table and "Wrong when it agrees" in table
+    assert table.index("<td>90%</td>") < table.index("<td>93%</td>") < table.index("<td>95%</td>")
+    assert "<td>90%</td><td class=\"num\">2</td><td class=\"num\">2</td><td class=\"num\">1</td><td class=\"num\">1</td>" in table
+    assert "<td>95%</td><td class=\"num\">1</td><td class=\"num\">1</td><td class=\"num\">0</td><td class=\"num\">0</td>" in table
+    assert "changes nothing" in table and "settled-species rule is left out" in table
+    assert "No tight look to score yet" not in table

@@ -130,6 +130,20 @@
     {% else %}No tight looks in the last {{ finder.days }} days yet: the finders (the Motion detector, the crowd counter's outline, a small object detector) report here once there are some.{% endif %}
   </p>
   {% endif %}
+  <h3 class="agree-title">Tight look bars (shadow)</h3>
+  {% if agreement.looks %}
+  <table class="classifier-species agree-bars">
+    <thead><tr><th>Bar</th><th class="num">Named</th><th class="num">Wrong</th><th class="num" data-tip="Only the visits where the wide look on the bowl and the tight look picked the same species">Named when the bowl look agrees</th><th class="num">Wrong when it agrees</th></tr></thead>
+    <tbody>
+      {% for b in agreement.bars %}
+      <tr><td>{{ (100 * b.bar) | round | int }}%</td><td class="num">{{ b.named }}</td><td class="num">{{ b.wrong }}</td><td class="num">{{ b.agree_named }}</td><td class="num">{{ b.agree_wrong }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Over the {{ agreement.looks }} visit{{ 's' if agreement.looks != 1 }} that got both looks: how many the tight look would have named at each bar, and how many of those wrongly, judged against the final label. For choosing a lower bar once a few weeks of looks are in; the settled-species rule is left out, so the real counts would be a little lower. It keeps score only and changes nothing.</p>
+  {% else %}
+  <p class="muted">No tight look to score yet: this table fills in as visits get both the wide look on the bowl and the tight look around the patch that moved. It changes nothing.</p>
+  {% endif %}
 </section>
 {% endif %}
 <script src="/static/charts.js?v={{ asset_version }}"></script>

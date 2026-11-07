@@ -1454,6 +1454,7 @@ def stats(request: Request, conn=Depends(get_conn)):
         classifier=db.classifier_report(conn),
         finder=db.finder_report(conn),
         finder_words=FINDER_WORDS,
+        agreement=db.agreement_report(conn),
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",
         classifier_mode=config.CLASSIFIER,

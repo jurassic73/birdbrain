@@ -53,3 +53,8 @@ def test_circles_keep_the_burst_frame_they_were_drawn_on():
     assert db.parse_marks(marks)[2]["frame"] == 2  # without knowing Claude's frame it stays
     assert db.claude_frame(json.dumps({"burst": {"best": 1}})) == 2 and db.claude_frame("{}") is None
     assert "circle 2 at 20% across, 30% down (on burst frame 4, not the photo you saw)" in db.describe_marks(got)
+
+
+def test_the_tight_look_crop_name_matches_the_classifier():
+    from birdbrain import classifier
+    assert db.TIGHT_CROP == classifier.TIGHT_CROP  # agreement_report reads the stored guess by this crop name
