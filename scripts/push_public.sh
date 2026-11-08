@@ -2,7 +2,7 @@
 # Push a read-only copy of Birdbrain's data to the public mirror (a server running with BIRDBRAIN_PUBLIC=1).
 # The Pi only ever connects out; nothing on the internet can reach it. Run from cron every few minutes:
 #   */5 * * * * /opt/birdbrain/scripts/push_public.sh >/dev/null 2>&1
-# PUBLIC_DEST (env or .env) is an rsync target, e.g. deploy@droplet:  (the droplet's key is locked to
+# PUBLIC_DEST (env or .env) is an rsync target, e.g. user@mirror-host:  (the mirror's key is locked to
 # rrsync in its data folder, so the path is relative to that). PUBLIC_KEY is the ssh key to use.
 set -euo pipefail
 cd "$(dirname "$0")/.."

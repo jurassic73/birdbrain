@@ -14,7 +14,7 @@ Tests never read `.env` and never touch the camera, the Claude API or the networ
 tests/component". The data paths point at a folder that does not exist.
 
 Two extra markers: `smoke` (`@pytest.mark.smoke`, the short set the deploy runs on atmos and the mirror with
-`pytest -m smoke`; never the full suite there, the 2 GB droplet ran out of memory) and `guard`
+`pytest -m smoke`; never the full suite there, the old 2 GB mirror host ran out of memory) and `guard`
 (`tests/integration/test_no_personal_info.py`: no owner name, account, repo URL, email or home IP in tracked files).
 
 ## Where a new test goes

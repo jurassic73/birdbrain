@@ -1,7 +1,7 @@
 """The site's calendar day.
 
-Visit times are stored in the Pi's local time. A public mirror on a server in another zone (somegeek.com's
-droplet runs UTC) gets the Pi's zone in its settings table as `site_timezone`, written by
+Visit times are stored in the Pi's local time. A public mirror on a server in another zone (the mirror's
+container runs UTC) gets the Pi's zone in its settings table as `site_timezone`, written by
 scripts/push_public.sh, so "today" there matches the birdbath's today. Without that setting it's the
 machine's own date, as before."""
 import time
