@@ -19,7 +19,7 @@ def gated(tmp_path, monkeypatch, conn):
     monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
     viewer._fails.clear()
     viewer._cache.clear()
-    # Requests arrive from the local proxy, so the Cloudflare header names the visitor (as on the droplet).
+    # Requests arrive from the local proxy, so the Cloudflare header names the visitor (as on the public mirror).
     with TestClient(webapp.app, client=("127.0.0.1", 50000)) as c:
         yield c
     viewer._fails.clear()
