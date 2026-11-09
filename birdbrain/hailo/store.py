@@ -71,6 +71,15 @@ def session(path: Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def shadow_ro(path: Path | None = None, timeout: float = 1.0) -> sqlite3.Connection:
+    """The detector's database for readers that must never block or create it (the Stats page): read-only, a short
+    timeout, no schema statements. Raises sqlite3.Error when it is missing, locked or has no tables yet."""
+    path = path or config.HAILO_SHADOW_DB
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=timeout)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def production_db(path: Path | None = None) -> sqlite3.Connection:
     """The watcher's database, read-only (SQLite's mode=ro URI: no lock it could leave behind, no write possible)."""
     path = path or config.DB_PATH

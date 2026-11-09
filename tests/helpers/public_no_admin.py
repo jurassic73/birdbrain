@@ -18,6 +18,8 @@ PUBLIC = {
 ADMIN = {
     # admin login
     ("GET", "/login"), ("POST", "/login"), ("POST", "/logout"),
+    # the Hailo detector card on Stats and its snapshot thumbnails (auth.ADMIN_PATHS "/hailo")
+    ("GET", "/hailo/card"), ("GET", "/hailo/snapshot/{rel:path}"),
     # the visit page's admin actions: corrections, circles and their checks, Ask Claude, stars, privacy calls
     ("POST", "/visit/{visit_id}/photo-frame"), ("POST", "/visit/{visit_id}/correct"), ("GET", "/species-search"),
     ("POST", "/visit/{visit_id}/ask-species"), ("POST", "/visit/{visit_id}/check-circle/{source}"),

@@ -17,7 +17,7 @@ def test_ring_buffer_keeps_the_last_seconds_and_finds_the_nearest_frame():
 
 
 def test_redact_hides_credentials_in_an_rtsp_url():
-    assert service.redact("watching rtsp://user:p%40ss@cam.local:554/ch1") == "watching rtsp://***@cam.local:554/ch1"
+    assert service.redact("watching rtsp://user:p%40ss@cam:554/ch1") == "watching rtsp://***@cam:554/ch1"
     assert service.redact("no url here") == "no url here"
 
 

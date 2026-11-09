@@ -102,6 +102,8 @@ class Service:
         self.ring = RingBuffer(config.HAILO_RING_SECONDS, config.SUB_FPS / config.HAILO_EVERY)
         self.open: dict[int, OpenEvent] = {}  # track id -> its event row
         self.other_classes: Counter = Counter()  # non-animal detections per class, this run
+        self.errors = 0      # Hailo failures this run (each reopens the device)
+        self.reconnects = 0  # substream reconnects this run
         self.zones = zones.from_env()
         self.zones_read_at = 0.0
         self.night = False
@@ -237,7 +239,10 @@ class Service:
             "chip_temp_c": temp,
             "frames": self.frames,
             "model": self.engine.model if self.engine else None,
+            "view": config.HAILO_VIEW,
             "night": self.night,
+            "errors": self.errors,
+            "reconnects": self.reconnects,
             "open_events": len(self.open),
             "other_classes": dict(self.other_classes.most_common(5)),
             "uptime_s": int(t - self.started),
@@ -276,6 +281,7 @@ class Service:
             detections = self.detect(frame)
         except Exception:
             log.exception("Hailo inference failed; reopening the device")
+            self.errors += 1
             self.drop_engine()
             self.heartbeat(t, force=True)
             return
@@ -331,6 +337,7 @@ class Service:
                 except Exception:
                     log.exception("couldn't process a frame; carrying on")
             log.warning("lost the substream; reconnecting")
+            self.reconnects += 1
             cap.release()
             self.lost_stream()
             time.sleep(2)

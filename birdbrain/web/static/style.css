@@ -2193,3 +2193,30 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
   .g-stat .g-n { font-size: 1.25rem; }
   .g-stat .g-d { margin-left: 0; }
 }
+
+/* Stats: the Hailo detector card (admin only, shadow prototype) */
+.hailo-card .hailo-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.hailo-card .hailo-head h2 { margin: 0; }
+.hailo-card .health { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 4px; font-size: .88rem; color: var(--muted); }
+.hailo-card .health b { color: var(--text); font-weight: 600; }
+.hailo-card .health .state { display: inline-flex; align-items: center; gap: 6px; }
+.hailo-card .health .state::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.hailo-card .health .state.running::before { background: var(--accent); }
+.hailo-card .health .state.stale::before, .hailo-card .health .state.missing::before { background: var(--low); }
+.hailo-card .today-stats { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); max-width: none; }
+.hailo-card .today-stats .big small { font-size: .9rem; font-weight: normal; color: var(--muted); }
+.hailo-card .today-stats .nowrap { white-space: nowrap; }
+.hailo-card .review { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 12px; border: 0; background: none; }
+.hailo-card .review li { display: grid; gap: 6px; }
+.hailo-card .review .meta { font-size: .88rem; }
+.hailo-card .shots { display: flex; gap: 6px; overflow-x: auto; }
+.hailo-card .shots figure { margin: 0; flex: 0 0 auto; width: 160px; }
+.hailo-card .shots img { display: block; width: 160px; height: 90px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
+.hailo-card .shots figcaption { font-size: .75rem; color: var(--muted); text-align: center; margin-top: 2px; }
+.hailo-card details.more { margin-top: 10px; font-size: .9rem; }
+.hailo-card details.more > summary { cursor: pointer; color: var(--muted); }
+.hailo-card details.more table { margin-top: 6px; }
+@media (max-width: 600px) {
+  .hailo-card .shots figure, .hailo-card .shots img { width: 128px; }
+  .hailo-card .shots img { height: 72px; }
+}

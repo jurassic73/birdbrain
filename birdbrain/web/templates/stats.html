@@ -153,6 +153,7 @@
   {% endif %}
 </section>
 {% endif %}
+{% if hailo %}{% include "_hailo.html" %}{% endif %}
 <script src="/static/charts.js?v={{ asset_version }}"></script>
 <script>
   barChart("daily", {{ daily | map(attribute=0) | list | tojson }}.map(d => d.slice(5)), {{ daily | map(attribute=1) | list | tojson }});

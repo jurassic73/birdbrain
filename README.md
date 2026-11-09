@@ -257,7 +257,9 @@ Then, from `/opt/birdbrain-hailo` with `BIRDBRAIN_DATA=/var/lib/birdbrain`:
   snapshot paths to look at), visits it missed, false triggers it would have left alone.
 - `journalctl -u birdbrain-hailo -f` follows it; `sudo systemctl disable --now birdbrain-hailo` stops it.
 
-Knobs are the `HAILO_*` keys in `.env.example`. `HAILO_VIEW=crop` (the default) looks at the crop box cut from the
+With the detector's database present, the admin's Stats page gets a "Hailo detector" card (health, a scorecard for
+24 h / 3 days / 7 days / all, and the detector-only events with their arrival snapshots); visitors and the public
+mirror never see it. Knobs are the `HAILO_*` keys in `.env.example`. `HAILO_VIEW=crop` (the default) looks at the crop box cut from the
 substream frame, which found about twice as many visitors as the whole frame on the stored photos; `frame` sees
 the ground zone too. The monitors that read the chip temperature with a short-lived `Device()` keep working while
 the service holds the device (checked with HailoRT 4.23).

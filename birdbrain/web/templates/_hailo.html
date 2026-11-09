@@ -1,0 +1,87 @@
+{# The Hailo detector card on Stats (admin only, shadow prototype). Rendered whole by /stats and re-rendered by
+   /hailo/card?since=... when a window button is pressed (htmx swaps this section). #}
+{% set h = hailo.health %}
+{% set s = hailo.score %}
+<section class="detector-report hailo-card" id="hailo" data-window="{{ hailo.window }}">
+  <div class="hailo-head">
+    <h2>Hailo detector <span class="muted">shadow prototype: it watches and keeps score, and changes nothing</span></h2>
+    <nav class="score-ranges" aria-label="Hailo detector period">
+      {% for key, label in hailo.windows %}
+      <button type="button" class="score-range{{ ' on' if key == hailo.window }}" aria-pressed="{{ 'true' if key == hailo.window else 'false' }}"
+              hx-get="/hailo/card?since={{ key }}" hx-target="#hailo" hx-swap="outerHTML">{{ label }}</button>
+      {% endfor %}
+    </nav>
+  </div>
+  <div class="health" data-tip="The detector is a small object detector (COCO classes) on the Pi's AI HAT+. It reads the camera's small stream on its own, beside the Motion detector, and writes to its own database.">
+    {% if h.state == 'running' %}
+    <span class="state running"><b>Running</b> {{ h.uptime_min }} min</span>
+    {% elif h.state == 'stale' %}
+    <span class="state stale"><b>Stale</b> last heartbeat {{ (h.age_s / 60) | round | int }} min ago</span>
+    {% else %}
+    <span class="state missing"><b>Not running</b> no heartbeat</span>
+    {% endif %}
+    {% if h.state != 'missing' %}
+    <span><b>{{ h.fps if h.fps is not none else '?' }}</b> fps</span>
+    <span><b>{{ h.infer_ms if h.infer_ms is not none else '?' }}</b> ms per look</span>
+    <span><b>{{ h.cpu_pct if h.cpu_pct is not none else '?' }}%</b> of one core</span>
+    <span><b>{{ h.chip_temp_c if h.chip_temp_c is not none else '?' }}&deg;C</b> chip</span>
+    <span>{{ h.model or '?' }} on the <b>{{ 'crop box' if h.view == 'crop' else 'whole frame' }}</b></span>
+    <span><b>{{ '{:,}'.format(h.frames or 0) }}</b> frames this run{% if h.night %}, night{% endif %}</span>
+    {% if h.errors or h.reconnects %}<span class="bad"><b>{{ h.errors or 0 }}</b> errors, <b>{{ h.reconnects or 0 }}</b> reconnects</span>{% endif %}
+    {% endif %}
+  </div>
+  <div class="today-stats">
+    <div data-tip="Things the detector followed over several frames in this period, and how many of them were an animal-like class (COCO has no squirrel, raccoon or possum, so those come out as bird, cat, dog or bear)"><span class="big">{{ s.animal_events }}<small> / {{ s.events }}</small></span> animal-like events</div>
+    <div data-tip="Real visits in this period that the detector also saw within a minute or two of the Motion detector's trigger"><span class="big">{{ s.agreement ~ '%' if s.agreement is not none else '--' }}</span> of visits also seen ({{ s.matched }}/{{ s.real }})</div>
+    <div data-tip="How long before the Motion detector's trigger the detector first saw the animal (median and 90th percentile over the visits both saw; the detector keeps the frames from before the trigger)"><span class="big">{% if s.lead_median is not none %}{{ s.lead_median | round | int }} s{% else %}--{% endif %}</span> ahead of the trigger{% if s.lead_p90 is not none %}, <span class="nowrap">p90 {{ s.lead_p90 | round | int }} s</span>{% endif %}</div>
+    <div data-tip="False triggers (motion with no animal) in this period where the detector saw nothing animal-like either, so it would have left them alone"><span class="big">{{ s.suppressed_pct ~ '%' if s.suppressed_pct is not none else '--' }}</span> of false triggers left alone ({{ s.suppressed }}/{{ s.false }})</div>
+    <div data-tip="Real visits the detector never saw: small or distant birds are mostly below its reach"><span class="big{{ ' bad' if s.missed }}">{{ s.missed }}</span> visits it missed</div>
+    <div data-tip="Animal-like events in the bath or crop zone with no visit near them: possible Motion detector misses, listed below to look at"><span class="big">{{ s.detector_only }}</span> detector-only events</div>
+  </div>
+  {% if s.classes %}
+  <table class="classifier-species hailo-classes">
+    <thead><tr><th>Birdbrain's label</th><th>What the detector called it</th><th class="num">Visits</th></tr></thead>
+    <tbody>
+      {% for c in s.classes[:12] %}
+      <tr><td>{{ c.visit }}</td><td>{{ c.coco | replace('_', ' ') }}</td><td class="num">{{ c.n }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No visit in this period has a detector event beside it yet, so there is nothing to compare labels on.</p>
+  {% endif %}
+  <h3 class="agree-title">Seen only by the detector</h3>
+  {% if hailo.review %}
+  <p class="muted">Animal-like events in the bath or crop zone that made no visit, newest first (up to {{ hailo.review_limit }}). The small pictures are the camera's small stream, saved from before and at the start of each event.</p>
+  <ul class="review">
+    {% for e in hailo.review %}
+    <li>
+      <div class="meta"><b>{{ e.started_at.strftime('%a %b %-d, %H:%M:%S') }}</b> &middot; {{ e.label | replace('_', ' ') }} {{ '%.2f' | format(e.score or 0) }} &middot; {{ e.zone }} zone &middot; {{ e.frames }} frames{% if e.seconds %}, {{ e.seconds }} s{% endif %}{% if e.night %} &middot; night{% endif %}</div>
+      {% if e.shots %}
+      <div class="shots">
+        {% for shot in e.shots %}
+        <figure><img src="/hailo/snapshot/{{ shot.rel }}" alt="{{ shot.word }} of event {{ e.id }}" loading="lazy" width="160" height="90"><figcaption>{{ shot.word }}</figcaption></figure>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Nothing in this period: every animal-like event the detector saw in the bath or crop zone had a visit beside it.</p>
+  {% endif %}
+  <details class="more">
+    <summary>More: how it did on the stored photos</summary>
+    {% set o = hailo.offline %}
+    <p class="muted">Offline scorecard over {{ o.photos }} stored photos ({{ o.birds }} birds, {{ o.squirrels }} squirrels, {{ o.false }} false triggers; {{ o.model }}): the share of real visits it flagged as animal-like at its lowest score and at 0.5, and the share of false triggers it ignored. Birdbrain's label (yours or Claude's) was the answer key.</p>
+    <table class="classifier-species">
+      <thead><tr><th>What it looked at</th><th class="num">Flagged</th><th class="num">Birds</th><th class="num">Squirrels</th><th class="num">At 0.5</th><th class="num">False ignored</th></tr></thead>
+      <tbody>
+        {% for v in o.views %}
+        <tr><td>{{ v.view }}</td><td class="num">{{ v.recall }}%</td><td class="num">{{ v.birds }}%</td><td class="num">{{ v.squirrels }}%</td><td class="num">{{ v.recall50 }}%</td><td class="num">{{ v.ignored }}%</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">COCO has no squirrel: {{ o.classes }}. Precise but half-blind, so it is a helper for arrival frames and crowd hints, not a gate. The service, its database and snapshots live beside the watcher's data; nothing here changes what the Motion detector or Claude do.</p>
+  </details>
+</section>
