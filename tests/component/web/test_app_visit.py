@@ -87,6 +87,19 @@ def test_false_trigger_burst_has_a_play_button_left_of_the_arrows(client, burst_
             < html.index('id="vburst-speed"') < html.index('data-step="-1"'))
 
 
+def test_burst_frames_have_a_pick_checkbox_for_admins_ticked_on_the_photo_frame(client, burst_visit, monkeypatch):
+    vid, _, saved = burst_visit()
+    html = client.get(f"/visit/{vid}").text
+    assert html.count('class="vburst-pick"') == len(saved)
+    assert html.count('aria-checked="true"') == 1  # Claude's frame is the photo until another is picked
+    client.post(f"/visit/{vid}/photo-frame", data={"frame": "3"})
+    html = client.get(f"/visit/{vid}").text
+    boxes = re.findall(r'data-frame="(\d+)"[^>]*>.*?class="vburst-pick"[^>]*aria-checked="(\w+)"', html, re.S)
+    assert dict(boxes)["3"] == "true" and sum(v == "true" for _, v in boxes) == 1
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    assert 'class="vburst-pick"' not in client.get(f"/visit/{vid}").text  # visitors get no checkboxes
+
+
 def test_burst_arrows_absent_without_a_burst(client, stored_visit):
     vid = stored_visit(visitor="none", species=None)
     assert 'id="vburst-play"' not in client.get(f"/visit/{vid}").text
