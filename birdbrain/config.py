@@ -280,6 +280,27 @@ _release = _env("CLASSIFIER_RELEASE_URL").strip()
 CLASSIFIER_RELEASE_URL = _release if not _release or _release.endswith("/") else _release + "/"
 
 
+# Hailo-8 shadow detector (birdbrain/hailo/, its own service and database; it never changes what the watcher does).
+# HAILO_DETECT=off makes the service exit at once; "shadow" runs it. Everything else has a default.
+HAILO_DETECT = _env("HAILO_DETECT", "shadow").strip().lower()
+if HAILO_DETECT not in ("off", "shadow"):
+    raise ValueError(f"HAILO_DETECT must be off or shadow, not {HAILO_DETECT!r}")
+HAILO_HEF = Path(_env("HAILO_HEF", "/usr/share/hailo-models/yolov8s_h8.hef"))
+# What the detector looks at on each substream frame: "crop" cuts the crop box out first (the same pixels, upscaled to
+# the model's input, finds about twice the visitors on the stored photos), "frame" is the whole frame (sees the ground).
+HAILO_VIEW = _env("HAILO_VIEW", "crop").strip().lower()
+if HAILO_VIEW not in ("crop", "frame"):
+    raise ValueError(f"HAILO_VIEW must be crop or frame, not {HAILO_VIEW!r}")
+HAILO_MIN_SCORE = float(_env("HAILO_MIN_SCORE", "0.3"))        # the HEFs' own post-process already drops under 0.2
+HAILO_EVERY = max(int(_env("HAILO_EVERY", "1")), 1)             # look at every Nth substream frame (1 = all of them)
+HAILO_RING_SECONDS = float(_env("HAILO_RING_SECONDS", "3"))      # frames kept before an event, for the arrival shots
+HAILO_EVENT_GAP = float(_env("HAILO_EVENT_GAP", "2"))            # seconds unseen before an event ends
+HAILO_MIN_HITS = int(_env("HAILO_MIN_HITS", "3"))                # frames a detection must persist to become an event
+HAILO_SHADOW_DB = Path(_env("HAILO_SHADOW_DB", str(DATA_DIR / "hailo_shadow.db")))
+HAILO_SNAPSHOT_DIR = Path(_env("HAILO_SNAPSHOT_DIR", str(DATA_DIR / "hailo_snapshots")))
+HAILO_SNAPSHOT_MAX_MB = float(_env("HAILO_SNAPSHOT_MAX_MB", "500"))  # oldest event snapshots go beyond this
+HAILO_HEARTBEAT = Path(_env("HAILO_HEARTBEAT", str(DATA_DIR / "hailo_heartbeat.json")))
+
 SITE_URL = _env("SITE_URL").rstrip("/")  # e.g. http://192.168.1.20:8000; used in ntfy alert links
 # iNaturalist place for local seasonality on species cards (e.g. a county); unset hides that chart.
 INAT_PLACE_ID = _env("INAT_PLACE_ID").strip()

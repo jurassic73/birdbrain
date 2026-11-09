@@ -1,0 +1,18 @@
+[Unit]
+Description=Birdbrain Hailo-8 shadow detector (never gates anything)
+After=network-online.target hailort.service
+Wants=network-online.target
+
+[Service]
+User=__USER__
+WorkingDirectory=/opt/birdbrain-hailo
+Environment=BIRDBRAIN_DATA=/var/lib/birdbrain
+ExecStart=/opt/birdbrain-hailo/venv/bin/python -m birdbrain.hailo_detect
+Restart=on-failure
+RestartSec=10
+# A prototype beside the live watcher: low priority, and a memory ceiling so a leak can never crowd it out.
+Nice=10
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target

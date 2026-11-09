@@ -223,6 +223,45 @@ With `GROUND_ZONE` set, the ground around the bath is watched for animals walkin
 
 Tuning (all optional, fractions of the frame): `GROUND_MIN_BLOB` (day, 0.003), `GROUND_MIN_BLOB_NIGHT` (0.006), `GROUND_DIFF` (20), `GROUND_PERSIST_FRAMES` (8). The visit page says which zone saw the motion and draws it, with the Pi animal check's view (the dashed box), on the photo.
 
+## Optional: Hailo-8 shadow detector (Raspberry Pi AI HAT+)
+
+A prototype that runs beside the watcher on a Pi 5 with an AI HAT+ (Hailo-8) and keeps score, nothing more: it
+never makes visits, never calls Claude and never changes what the Motion detector does. It opens its own connection
+to the substream, runs one of the ready-made COCO YOLO models that ship with `hailo-all`
+(`/usr/share/hailo-models/yolov8s_h8.hef` by default), follows each detection over frames so one animal is one
+event, keeps the last few seconds of frames so an event's arrival shots can be saved, and writes events to its own
+database (`hailo_shadow.db` beside `birdbrain.db`) with a few snapshots per event (capped by `HAILO_SNAPSHOT_MAX_MB`)
+and a heartbeat file (frame rate, chip temperature). COCO has no squirrel, raccoon or possum class, so it only
+answers "is something animal-like there?" plus the raw class; the point is to compare that with Birdbrain's own
+labels over a few days before deciding whether it could gate anything.
+
+Setup on the Pi (the system `python3-hailort` package must import; the venv shares the system packages for it):
+
+```bash
+sudo mkdir -p /opt/birdbrain-hailo && sudo chown $USER /opt/birdbrain-hailo
+rsync -a birdbrain deploy pyproject.toml /opt/birdbrain-hailo/   # or scp from your machine
+python3 -m venv --system-site-packages /opt/birdbrain-hailo/venv
+/opt/birdbrain-hailo/venv/bin/pip install python-dotenv pillow
+cp /opt/birdbrain/.env /opt/birdbrain-hailo/.env && chmod 600 /opt/birdbrain-hailo/.env
+sed "s/__USER__/$USER/" deploy/birdbrain-hailo.service | sudo tee /etc/systemd/system/birdbrain-hailo.service
+sudo systemctl daemon-reload && sudo systemctl enable --now birdbrain-hailo
+```
+
+Then, from `/opt/birdbrain-hailo` with `BIRDBRAIN_DATA=/var/lib/birdbrain`:
+
+- `venv/bin/python -m birdbrain.hailo_detect --status`: fps, last frame age, chip temperature, event counts.
+- `venv/bin/python -m birdbrain.hailo_detect --evaluate`: scores every stored visit photo (read-only) against the
+  final labels and writes `docs/hailo-shadow-scorecard.md`; `--hef` picks other models to compare.
+- `venv/bin/python -m birdbrain.hailo_detect --report --since 24h`: joins the detector's events to the watcher's
+  visits by time: visits it saw first (and by how much), events with no visit (possible motion misses, with
+  snapshot paths to look at), visits it missed, false triggers it would have left alone.
+- `journalctl -u birdbrain-hailo -f` follows it; `sudo systemctl disable --now birdbrain-hailo` stops it.
+
+Knobs are the `HAILO_*` keys in `.env.example`. `HAILO_VIEW=crop` (the default) looks at the crop box cut from the
+substream frame, which found about twice as many visitors as the whole frame on the stored photos; `frame` sees
+the ground zone too. The monitors that read the chip temperature with a short-lived `Device()` keep working while
+the service holds the device (checked with HailoRT 4.23).
+
 ## Photo budget and thinning
 
 All photos (real visits, false triggers and their bursts, thumbnails) share one budget. Visits are never deleted: only photo files shrink, and every visit keeps its thumbnail. Each day after 3 AM the watcher thins real visits older than `PHOTO_FULL_DAYS` to `PHOTO_THIN_EDGE` px, except each species' sharpest `PHOTO_FULL_PER_DAY` photos of the day. Over the budget, or below the disk floor, it frees space in this order: oldest false triggers, more thinning, then the oldest keep only a thumbnail. Favorites (blue star), species covers (yellow star), corrected or annotated visits, first sightings and species seen fewer than `RARE_UNDER` times are never touched.
