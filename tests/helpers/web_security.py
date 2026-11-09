@@ -4,7 +4,8 @@ from starlette.routing import Route
 from birdbrain.web import app as webapp
 
 
-FILL = {"visit_id": "1", "name": "x", "source": "pi", "state": "x", "change_id": "1", "cal_id": "1"}
+FILL = {"visit_id": "1", "name": "x", "source": "pi", "state": "x", "change_id": "1", "cal_id": "1",
+        "rel:path": "2026/11/10/120000_1_start.jpg"}
 
 
 def _routes() -> list[tuple[str, str, str]]:

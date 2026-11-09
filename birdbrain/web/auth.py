@@ -16,7 +16,7 @@ from .. import audience, config
 COOKIE = "bb_admin"
 MAX_AGE = 30 * 24 * 3600
 # Pages a visitor never sees (prefixes); every POST is blocked for visitors too.
-ADMIN_PATHS = ("/notes", "/lessons", "/review", "/false-triggers", "/settings", "/calibration", audience.PATH)
+ADMIN_PATHS = ("/notes", "/lessons", "/review", "/false-triggers", "/settings", "/calibration", "/hailo", audience.PATH)
 # The public mirror (public()) serves only these routes, as app.py declares them, and only to GET/HEAD; the only
 # things it takes a POST for are the friends & family sign-in and the Guests counter's click beacon (MIRROR_POSTS).
 # Everything else (the admin pages, every change, Claude and camera calls, the admin's JSON) is a 404 there, as if it

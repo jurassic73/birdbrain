@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from PIL import Image, ImageStat
 from starlette.routing import Match
 
+from ..hailo import stats as hailo_stats  # no OpenCV or HailoRT behind it: the card reads two SQLite files
 from . import auth, steps, viewer
 from .. import alert, audience, camera, circle_check, classifier, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
@@ -1518,7 +1519,38 @@ def stats(request: Request, conn=Depends(get_conn)):
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",
         classifier_mode=config.CLASSIFIER,
+        hailo=hailo_card(request, conn),
     )
+
+
+def hailo_card(request: Request, conn, window: str = hailo_stats.DEFAULT_WINDOW) -> dict | None:
+    """The Hailo detector card's data: for the admin of the Pi's own site only (never visitors, never the mirror),
+    and only when the detector has a database. None leaves the card out."""
+    if not request.state.admin or auth.public():
+        return None
+    return hailo_stats.card(conn, window)
+
+
+@app.get("/hailo/card", response_class=HTMLResponse)
+def hailo_card_fragment(request: Request, since: str = hailo_stats.DEFAULT_WINDOW, conn=Depends(get_conn)):
+    """The card re-rendered for another window (htmx swaps it in place). Admin only (auth.ADMIN_PATHS)."""
+    card = hailo_card(request, conn, since)
+    if card is None:
+        raise HTTPException(404)
+    return page(request, "_hailo.html", hailo=card)
+
+
+@app.get("/hailo/snapshot/{rel:path}")
+def hailo_snapshot(request: Request, rel: str):
+    """A small thumbnail of one of the detector's event snapshots (admin only; the full frames stay on disk).
+    Only names of the exact shape the detector writes, inside its folder: anything else is a 404."""
+    if not request.state.admin or auth.public():
+        raise HTTPException(404)
+    path = hailo_stats.snapshot_path(rel)
+    if path is None:
+        raise HTTPException(404)
+    return Response(hailo_stats.thumbnail(path), media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/weather", response_class=HTMLResponse)
