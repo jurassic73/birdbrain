@@ -771,14 +771,14 @@ def burst_frames(visit) -> list[dict]:
 
 @app.post("/visit/{visit_id}/photo-frame")
 def set_photo_frame(visit_id: int, frame: str = Form(""), conn=Depends(get_conn)):
-    """The owner picks a burst frame as a false trigger's photo (the big photo and its card), or takes the pick
+    """The owner picks a burst frame as a visit's photo (the big photo and its card), or takes the pick
     back (frame 0, empty or Claude's own frame). Nothing is moved or deleted: image_path stays the frame Claude
-    saw, the pick is a column, and the picked frame gets a thumbnail of its own for the cards (images.pick_thumb)."""
+    saw, the pick is a column, and the picked frame gets a thumbnail of its own for the cards (images.pick_thumb).
+    Any visit that still has its burst files can be picked on, not only a false trigger: one corrected to an
+    animal keeps its burst. A visit with no burst has no frame to pick (400 below)."""
     v = db.get_visit(conn, visit_id)
     if not v:
         raise HTTPException(404)
-    if not db.is_false_trigger(conn, visit_id):
-        raise HTTPException(400, "Only a false trigger keeps its burst, so only there can the photo be picked.")
     if v["photo_deleted_at"] or v["photo_level"] == "thumb":
         raise HTTPException(400, "This visit's photos were deleted to save space.")
     try:

@@ -108,7 +108,7 @@ def test_burst_arrows_absent_without_a_burst(client, stored_visit):
     assert 'class="vburst-step"' not in client.get(f"/visit/{vid}").text
 
 
-def test_picking_a_burst_frame_as_the_photo_is_admin_only_and_false_triggers_only(client, burst_visit, stored_visit, monkeypatch):
+def test_picking_a_burst_frame_as_the_photo_is_admin_only_and_needs_a_burst(client, burst_visit, stored_visit, monkeypatch):
     vid, image_rel, saved = burst_visit()
     real = stored_visit()
     assert client.post(f"/visit/{real}/photo-frame", data={"frame": "1"}).status_code == 400  # one frame only
@@ -122,6 +122,15 @@ def test_picking_a_burst_frame_as_the_photo_is_admin_only_and_false_triggers_onl
     assert client.get(f"/visit/{vid}").status_code == 404
     with db.session() as conn:
         assert db.get_visit(conn, vid)["photo_frame"] == 1
+
+
+def test_a_false_trigger_corrected_to_an_animal_keeps_its_burst_and_can_still_pick_a_frame(client, burst_visit, conn):
+    vid, _, _ = burst_visit(corrected_visitor="squirrel")
+    assert not db.is_false_trigger(conn, vid)
+    html = client.get(f"/visit/{vid}").text
+    assert html.count('class="vburst-pick"') == 4
+    assert client.post(f"/visit/{vid}/photo-frame", data={"frame": "1"}).status_code == 200
+    assert db.get_visit(conn, vid)["photo_frame"] == 1
 
 
 def test_picked_frame_becomes_the_photo_on_the_page_and_the_card_and_reset_restores_claudes(client, burst_visit, conn):
