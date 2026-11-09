@@ -100,6 +100,7 @@
       <button type="button" data-track="burst_frames" class="vburst-frame{% if f.on %} on{% endif %}" data-src="/images/{{ f.path }}" data-best="{{ 1 if f.best else 0 }}" data-frame="{{ loop.index }}" aria-label="Frame {{ loop.index }}, +{{ '%g' | format(f.at) }} s">
         <img src="/images/{{ f.path }}" alt="" loading="lazy" width="96" height="54">
         <span class="vburst-at">+{{ '%g' | format(f.at) }} s</span>
+        {% if request.state.admin and not visit.photo_deleted_at %}<span class="vburst-pick" role="checkbox" tabindex="0" aria-checked="{{ 'true' if f.on else 'false' }}" aria-label="Use frame {{ loop.index }} as this visit's photo" data-tip="Tick to make this frame the visit's photo (the big photo and its card on False triggers). Untick to go back to the frame Claude saw."></span>{% endif %}
         <span class="vburst-marks" hidden></span>
       </button>
       {% endfor %}
@@ -985,6 +986,23 @@
       useN.value = frame === null ? 0 : frame;
       useBtn.hidden = frame === null || frame === photoFrame;
     };
+    // The corner checkbox: ticked is the visit's photo. Ticking another frame picks it; unticking the picked one
+    // (or ticking Claude's) goes back to Claude's frame. Same route as Use as photo.
+    {% if request.state.admin %}list.forEach(b => {
+      const box = b.querySelector(".vburst-pick");
+      if (!box) return;
+      const act = e => {
+        e.preventDefault(); e.stopPropagation();
+        const f = b.dataset.best === "1" ? 0 : +b.dataset.frame;
+        const picked = box.getAttribute("aria-checked") === "true";
+        if (picked && !photoFrame) return;  // Claude's frame is the default: nothing to untick
+        htmx.ajax("POST", "/visit/{{ visit.id }}/photo-frame", {values: {frame: picked ? 0 : f}, swap: "none"});
+      };
+      box.addEventListener("click", act);
+      box.addEventListener("keydown", e => { if (e.key === " " || e.key === "Enter") act(e); });
+      box.addEventListener("keyup", e => { if (e.key === " " || e.key === "Enter") e.preventDefault(); });
+    });
+    {% endif %}
     const show = b => {
       frames.forEach(o => o.classList.toggle("on", o === b));
       full.src = viewerImg.src = link.href = b.dataset.src;
