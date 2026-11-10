@@ -234,3 +234,17 @@ def test_clean_facts_drops_a_leadless_fact_unless_too_few_remain():
 def test_prompt_asks_for_whole_single_claim_sentences_with_a_lead():
     p = species_info.NOTES_PROMPT
     assert "complete sentence" in p and "exactly one claim" in p and "Every fact must have a lead" in p
+
+
+def test_prompt_wants_a_named_us_coin():
+    assert "real US coin" in species_info.NOTES_PROMPT and "quarter 5.67 g" in species_info.NOTES_PROMPT
+
+
+def test_vague_coin_flags_only_unnamed_coins():
+    F = species_info.Fact
+    vague = "Both sexes of the black-capped chickadee weigh 10-14 g, about the weight of a coin."
+    assert species_info.vague_coin([F(lead="10-14 g", text=vague)])
+    assert species_info.vague_coin([{"lead": "x", "text": vague}, "It sings."])
+    assert not species_info.vague_coin([F(lead="11 g", text="It weighs 11 g, about as much as a US half dollar.")])
+    assert not species_info.vague_coin([F(lead="6 g", text="It weighs about the same as a quarter.")])
+    assert not species_info.vague_coin(None)

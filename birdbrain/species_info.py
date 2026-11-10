@@ -293,11 +293,26 @@ place in the article: never merge two separate claims, or a claim and a detail f
 Make it punchy and memorable: a size or weight comparison, a lifespan record, a speed, an odd habit, where its name comes from, a striking number.
 Keep every number exactly as the article states it, and say exactly who it applies to (do not turn a claim about females
 or the whole species into one about males, or the reverse). Prefer the surprising over the descriptive: skip plain
-taxonomy ("a small sparrow") and ordinary size ranges unless there is a vivid comparison. They must not repeat or rephrase any
+taxonomy ("a small sparrow") and ordinary size ranges unless there is a vivid comparison. A weight comparison must name a real US coin, never just "a coin": penny 2.5 g, dime 2.27 g, nickel 5 g,
+quarter 5.67 g, dollar coin 8.1 g, half dollar 11.34 g. Pick the coin closest to the stated weight (for a range, the coin
+inside it), and say "about" or "roughly".
+They must not repeat or rephrase any
 of the notes. Write fewer, or none, rather than pad with dull or generic facts. No emoji.
 Every fact must have a lead. The lead is the fact's headline for a tile: 1 or 2 words, or a number with its unit, copied exactly
 from the fact's own text (for example "Blizzard", "75%", "40 million", "1741", "12 years"). If a fact has no good lead in its own
 sentence, choose a different fact instead. Never a word that is not in the text."""
+
+VAGUE_COIN = re.compile(r"\b(?:a|an|the|one|two|three|four|five)\s+(?:small\s+|single\s+)?coins?\b", re.I)
+
+
+def vague_coin(facts) -> bool:
+    """True if a fact compares to "a coin" without naming which one (penny, nickel, dime, quarter, dollar, half dollar)."""
+    for fact in facts or []:
+        text = _fact_parts(fact)[1]
+        if VAGUE_COIN.search(text) and not re.search(r"\b(?:penny|pennies|nickel|dime|quarter|dollar|cent)s?\b", text, re.I):
+            return True
+    return False
+
 
 MAX_NOTES = 4
 MAX_FACTS = 5
@@ -752,7 +767,7 @@ def add_facts(conn: sqlite3.Connection, name: str, http: httpx.Client) -> bool:
 
 
 def backfill_facts(conn: sqlite3.Connection, redo: bool = False, only: str | None = None, dry_run: bool = False,
-                   out=print) -> tuple[int, int]:
+                   out=print, coin: bool = False) -> tuple[int, int]:
     """Give every cached species card header facts. Returns (done, failed). Cards that already have facts are skipped
     unless redo. With dry_run it only lists the cards it would do."""
     names = [r["name"] for r in conn.execute("SELECT name FROM species_info ORDER BY name")]
@@ -761,7 +776,8 @@ def backfill_facts(conn: sqlite3.Connection, redo: bool = False, only: str | Non
         if only and name.lower() != only.lower():
             continue
         card = (db.get_species_info(conn, name) or ({}, ""))[0]
-        if card.get("wiki_url") and card.get("description") and (redo or not card.get("facts")):
+        if card.get("wiki_url") and card.get("description") and (
+                redo or not card.get("facts") or (coin and vague_coin(card.get("facts")))):
             todo.append(name)
     if dry_run:
         out(f"would do {len(todo)}: {', '.join(todo)}")
@@ -790,6 +806,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m birdbrain.species_info")
     parser.add_argument("--facts", action="store_true", help="add header facts (and refresh notes) on cached cards")
     parser.add_argument("--redo", action="store_true", help="with --facts: also cards that already have facts")
+    parser.add_argument("--coin", action="store_true", help="with --facts: only cards whose facts say \"a coin\" without naming it")
     parser.add_argument("--name", help="with --facts: only this species")
     parser.add_argument("--dry-run", action="store_true", help="with --facts: list the cards, change nothing")
     args = parser.parse_args()
@@ -797,7 +814,7 @@ def main() -> None:
         parser.error("nothing to do (give --facts)")
     with db.session() as conn:
         db.init_db(conn)
-        done, failed = backfill_facts(conn, args.redo, args.name, args.dry_run)
+        done, failed = backfill_facts(conn, args.redo, args.name, args.dry_run, coin=args.coin)
     print(f"facts added to {done} cards, {failed} failed")
     sys.exit(1 if failed else 0)
 
