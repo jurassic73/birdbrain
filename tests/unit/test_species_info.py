@@ -237,7 +237,8 @@ def test_prompt_asks_for_whole_single_claim_sentences_with_a_lead():
 
 
 def test_prompt_wants_a_named_us_coin():
-    assert "real US coin" in species_info.NOTES_PROMPT and "quarter 5.67 g" in species_info.NOTES_PROMPT
+    assert "common US coin" in species_info.NOTES_PROMPT and "quarter 5.67 g" in species_info.NOTES_PROMPT
+    assert "Never a half dollar" in species_info.NOTES_PROMPT
 
 
 def test_vague_coin_flags_only_unnamed_coins():
@@ -248,3 +249,12 @@ def test_vague_coin_flags_only_unnamed_coins():
     assert not species_info.vague_coin([F(lead="11 g", text="It weighs 11 g, about as much as a US half dollar.")])
     assert not species_info.vague_coin([F(lead="6 g", text="It weighs about the same as a quarter.")])
     assert not species_info.vague_coin(None)
+
+
+def test_http_client_offers_http2_so_wikimedia_does_not_403():
+    client = species_info.http_client()
+    try:
+        assert client.follow_redirects
+        assert client._transport._pool._http2
+    finally:
+        client.close()

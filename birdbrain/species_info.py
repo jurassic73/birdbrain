@@ -23,6 +23,12 @@ from . import config, db
 log = logging.getLogger("birdbrain.species_info")
 
 # Wikipedia answers 403 to httpx's default Accept-Encoding (brotli, zstd); plain gzip is accepted.
+def http_client() -> httpx.Client:
+    """The client for every species-card fetch. HTTP/2 on purpose: Wikimedia's edge answers 403 ("robot policy") to a
+    Python TLS handshake that offers only http/1.1 from some addresses (odin, found 2026-11-10); offering h2 gets through."""
+    return httpx.Client(follow_redirects=True, http2=True)
+
+
 HEADERS = {"User-Agent": "Birdbrain/0.1 (personal backyard bird camera)", "Accept-Encoding": "gzip"}
 REFRESH_AFTER = timedelta(days=30)
 NO_CARD = {"None", "Other"}
@@ -293,9 +299,9 @@ place in the article: never merge two separate claims, or a claim and a detail f
 Make it punchy and memorable: a size or weight comparison, a lifespan record, a speed, an odd habit, where its name comes from, a striking number.
 Keep every number exactly as the article states it, and say exactly who it applies to (do not turn a claim about females
 or the whole species into one about males, or the reverse). Prefer the surprising over the descriptive: skip plain
-taxonomy ("a small sparrow") and ordinary size ranges unless there is a vivid comparison. A weight comparison must name a real US coin, never just "a coin": penny 2.5 g, dime 2.27 g, nickel 5 g,
-quarter 5.67 g, dollar coin 8.1 g, half dollar 11.34 g. Pick the coin closest to the stated weight (for a range, the coin
-inside it), and say "about" or "roughly".
+taxonomy ("a small sparrow") and ordinary size ranges unless there is a vivid comparison. A weight comparison must name a common US coin, never just "a coin": penny 2.5 g, nickel 5 g, dime 2.27 g,
+quarter 5.67 g. Never a half dollar or dollar coin, nobody carries them. Use the coin, or a whole number of coins
+("two quarters", "a few pennies"), that comes closest to the stated weight (for a range, one inside it), and say "about" or "roughly".
 They must not repeat or rephrase any
 of the notes. Write fewer, or none, rather than pad with dull or generic facts. No emoji.
 Every fact must have a lead. The lead is the fact's headline for a tile: 1 or 2 words, or a number with its unit, copied exactly
@@ -460,7 +466,7 @@ def build(name: str) -> dict:
     """Gather everything for one species. Each source is optional."""
     query = ALIASES.get(name, name)
     data: dict = {"name": name, "query": query}
-    with httpx.Client(follow_redirects=True) as http:
+    with http_client() as http:
         taxon = None
         try:
             taxon = find_taxon(http, query)
@@ -625,7 +631,7 @@ def _add_sounds(conn: sqlite3.Connection, name: str, data: dict, fetched_at: str
     if last is not None and time.monotonic() - last < RETRY_AFTER:
         return  # it just failed; don't hammer xeno-canto
     try:
-        with httpx.Client(follow_redirects=True) as http:
+        with http_client() as http:
             data["sounds"] = fetch_sounds(http, data.get("sci_name"), data.get("map_center"))
     except Exception:
         log.exception("xeno-canto lookup failed for %s", name)
@@ -712,7 +718,7 @@ def reference_photo(conn: sqlite3.Connection, name: str, fetch: bool = True) -> 
         return None
     photo = None
     try:
-        with httpx.Client() as client:
+        with http_client() as client:
             taxon = find_taxon(client, name)
             if taxon:
                 p = open_photo(client, taxon)
@@ -783,7 +789,7 @@ def backfill_facts(conn: sqlite3.Connection, redo: bool = False, only: str | Non
         out(f"would do {len(todo)}: {', '.join(todo)}")
         return 0, 0
     done = failed = 0
-    with httpx.Client(follow_redirects=True) as http:
+    with http_client() as http:
         for i, name in enumerate(todo, 1):
             if i > 1:
                 _sleep(PACE)
