@@ -136,7 +136,10 @@
     if (e.origin !== location.origin || !dlg.open) return;
     if (e.data === "birdbrain:close") { clearTimeout(closeTimer); dlg.close(); }
     else if (e.data === "birdbrain:hold") clearTimeout(closeTimer);
-    else if (e.data?.saved && e.source === frame.contentWindow) savedNote(e.data.last);
+    else if (e.data?.saved && e.source === frame.contentWindow) {
+      if (e.data.home) location.href = "/";  // auto-play on and the last one confirmed: back to the front page
+      else savedNote(e.data.last);
+    }
     else if (e.data?.goto && e.source === frame.contentWindow) spare.src = e.data.goto;
   });
   // A short note after Save or Confirm: it went to training, and the next photo is coming. OK or 5 s hides it.

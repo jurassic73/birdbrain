@@ -1320,7 +1320,10 @@
     // Save (a correction) or Confirm: tell the page it was saved for training, then on to the next photo.
     function advance() {
       const next = document.getElementById("nav-next") || document.getElementById("nav-prev");
-      parent.postMessage({ saved: true, last: !next }, location.origin);
+      // Auto-play on and that was the last one: the False triggers page sends the owner back to the front page.
+      let home = false;
+      try { home = !next && localStorage.getItem("birdbrain.burstAuto") === "1"; } catch (e) {}
+      parent.postMessage({ saved: true, last: !next, home }, location.origin);
       if (next) goto(next.href);
       else if ({{ 'true' if todo else 'false' }}) close();
       else location.reload();

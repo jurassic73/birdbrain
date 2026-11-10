@@ -127,3 +127,13 @@ def test_false_triggers_page_with_nothing_unchecked_has_no_count_or_confirm_all(
     assert 'id="ft-unchecked"' not in html
     assert 'id="ft-confirm"' not in html and "Confirm all shown" not in html
     assert "Nothing left to check" in html
+
+
+def test_last_confirm_with_autoplay_on_sends_the_popup_page_home(client, add_visit):
+    add_visit(visitor="none")
+    page = client.get("/false-triggers").text
+    assert 'e.data.home) location.href = "/"' in page
+    # The visit page reports home only when it was the last photo and Auto-play is remembered on.
+    vid = add_visit(visitor="none")
+    visit = client.get(f"/visit/{vid}?todo=1&embed=1").text
+    assert 'localStorage.getItem("birdbrain.burstAuto") === "1"' in visit and "last: !next, home" in visit
