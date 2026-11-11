@@ -277,7 +277,7 @@
     <li><strong>Never thinned</strong> Starred photos (favorites and species covers), visits you corrected or noted, each species' first sighting, and species seen fewer than {{ so.rare_under }} times.</li>
     <li><strong>When space runs short</strong> Oldest false-trigger photos first, then more thinning, then the oldest keep only their thumbnail.{% if so.warn_pct %} A phone alert goes out at {{ '%g' | format(so.warn_pct) }}% of the budget.{% endif %}</li>
     <li><strong>False triggers</strong> Capped on their own, oldest and confirmed-empty first; corrected ones are lessons and stay.</li>
-    {% if cfg.CLIP_SECONDS %}<li><strong>Clips</strong> Each real visit also keeps {{ '%g' | format(cfg.CLIP_SECONDS) }} seconds of video without sound{% if cfg.CLIP_DAYS %}, for {{ cfg.CLIP_DAYS }} days; clips of starred visits{% if cfg.CLIP_KEEP_PER_SPECIES %} and each species' newest {{ cfg.CLIP_KEEP_PER_SPECIES }}{% endif %} stay{% endif %}. A clip that arrives choppy, because the camera's stream stalled, is left out.</li>{% endif %}
+    {% if cfg.CLIP_SECONDS %}<li><strong>Clips</strong> Each real visit also keeps {{ '%g' | format(cfg.CLIP_SECONDS) }} seconds of video without sound{% if cfg.CLIP_DAYS %}, for {{ cfg.CLIP_DAYS }} days; clips of starred visits{% if cfg.CLIP_KEEP_PER_SPECIES %} and each species' newest {{ cfg.CLIP_KEEP_PER_SPECIES }}{% endif %} stay{% endif %}. A clip that arrives choppy, because the camera's stream stalled, is left out, and that visit waits for the owner's review before it shows.</li>{% endif %}
   </ul>
 </section>
 

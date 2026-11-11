@@ -137,7 +137,7 @@
   </section>
   {% elif visit.clip_note %}
   {# A clip was recorded but not kept (the camera's stream stalled: birdbrain.clips.choppy). #}
-  <p class="vclip vclip-none muted small tip-label">{{ clip_not_captured }} <span class="info-tip" tabindex="0" aria-label="Why there is no video" data-tip="A few seconds of video are saved with each visit. This time {{ visit.clip_note }}, so the clip was left out instead of shown choppy.">i</span></p>
+  <p class="vclip vclip-none muted small tip-label">{{ clip_not_captured }} <span class="info-tip" tabindex="0" aria-label="Why there is no video" data-tip="A few seconds of video are saved with each visit. This time {{ visit.clip_note }}, so the clip was left out instead of shown choppy.">i</span>{% if visit.held and request.state.admin %} {{ badge("held for review", "private") }}{% endif %}</p>
   {% endif %}
   </div>
   {% if clip %}

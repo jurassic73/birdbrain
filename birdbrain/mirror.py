@@ -86,7 +86,8 @@ def trim(conn: sqlite3.Connection) -> None:
     like = " OR ".join("key LIKE ?" for _ in SETTINGS_PREFIXES)
     conn.execute(f"DELETE FROM settings WHERE key NOT IN ({keys}) AND NOT ({like})",
                  [*sorted(SETTINGS_KEYS), *(p + "%" for p in SETTINGS_PREFIXES)])
-    # False triggers and "other" visits (an animal nobody could name, db.OTHER) are for the admin only: they stay on
+    # False triggers, "other" visits (an animal nobody could name, db.OTHER) and visits held for review (db.HELD,
+    # a choppy video) are for the admin only: they stay on
     # the Pi, so neither their rows nor their photos, thumbnails and burst frames (files_of lists only the visits left)
     # reach the mirror. Nothing else in the copy points at a visit: embeddings and pi_checks are emptied below, and a
     # species cover pick whose visit is gone falls back to the automatic pick (db.species_summary).

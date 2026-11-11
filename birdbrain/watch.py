@@ -775,6 +775,10 @@ def keep_clip(visit_id: int, image_rel: str, recording: clips.Recording) -> None
         log.info("visit %d: no clip (%s)", visit_id, recording.problem)
         with db.session() as conn:
             db.set_clip(conn, visit_id, None, note=recording.problem)
+            if getattr(recording, "choppy", False):
+                # The stream stalled: the owner looks before the visit shows anywhere (the push comes after this).
+                db.hold_for_review(conn, visit_id)
+                log.info("visit %d: held for review (choppy video)", visit_id)
         return
     rel = clips.keep(src, image_rel)
     with db.session() as conn:

@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS visits (
     corrected_also TEXT,
     lesson_off INTEGER NOT NULL DEFAULT 0,
     is_night INTEGER NOT NULL DEFAULT 0,
-    raw_json TEXT
+    raw_json TEXT,
+    held INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS visits_captured_at ON visits(captured_at);
 CREATE TABLE IF NOT EXISTS settings (
@@ -164,7 +165,10 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  "clip_path": "TEXT",
                  # Why the visit has no clip although one was recorded (the stream stalled, ffmpeg failed): the
                  # visit page then says the video was not captured. NULL = nothing went wrong, or clips were off.
-                 "clip_note": "TEXT"}
+                 "clip_note": "TEXT",
+                 # Held for review (hold_for_review): out of every list, count and the public mirror until the owner
+                 # confirms or corrects it. Set when the visit's video came through choppy (birdbrain.clips.choppy).
+                 "held": "INTEGER NOT NULL DEFAULT 0"}
 # The visit's photo files are there (false triggers past the storage limit lose them; see retention.prune).
 HAS_PHOTO = "photo_deleted_at IS NULL"
 # The photo itself is there, full size or thinned, not just the thumbnail: for checks that look at the frame.
@@ -210,8 +214,12 @@ NOT_OTHER = f"{VISITOR} != 'other'"
 # The real visits a visitor may see. REAL stays a term of its own (no brackets around the pair), so the visits_real
 # partial index still serves every query built on it; its columns include the two NOT_OTHER reads.
 PUBLIC = f"{REAL} AND {NOT_OTHER}"
-# A visit only the admin may open: a false trigger or an "other" (its page, its burst frames).
-ADMIN_ONLY = f"({FALSE_TRIGGER} OR {OTHER})"
+# Held for review: a real visit kept out of the gallery until the owner has looked at it (hold_for_review). It
+# waits in the review queue and nowhere else: no list, latest visitor or count shows it, to the admin either.
+HELD = "held = 1"
+NOT_HELD = "held = 0"
+# A visit only the admin may open: a false trigger, an "other" or a held one (its page, its burst frames).
+ADMIN_ONLY = f"({FALSE_TRIGGER} OR {OTHER} OR {HELD})"
 # Nobody has confirmed or corrected this one yet (the False triggers page lists only these by default).
 UNCHECKED = "(confirmed_at IS NULL AND corrected_visitor IS NULL AND corrected_species IS NULL)"
 # The other kinds of animal in a visit's photo besides the main one, as JSON [{visitor, species, count, ...}]:
@@ -242,7 +250,7 @@ SPECIES_ONLY = "(seen_visitor != 'other' AND label IS NOT NULL)"
 # after the columns they name exist.
 INDEXES = (
     f"CREATE INDEX IF NOT EXISTS visits_real ON visits(captured_at, visitor, corrected_visitor, corrected_species, "
-    f"species, confidence, is_night, thumb_path, also, corrected_also) WHERE {REAL}",
+    f"species, confidence, is_night, thumb_path, also, corrected_also, held) WHERE {REAL}",
     "CREATE INDEX IF NOT EXISTS visits_review ON visits(captured_at, visitor, corrected_visitor, corrected_species) "
     "WHERE needs_review = 1",
     f"CREATE INDEX IF NOT EXISTS visits_false_photo ON visits(captured_at, visitor, corrected_visitor, "
@@ -252,7 +260,7 @@ INDEXES = (
 )
 # Every column the indexes name; a visits table without them all (a test's stub) gets no indexes.
 INDEX_COLUMNS = {"captured_at", "visitor", "corrected_visitor", "corrected_species", "species", "confidence", "is_night",
-                 "thumb_path", "also", "corrected_also", "needs_review", "confirmed_at", "photo_deleted_at"}
+                 "thumb_path", "also", "corrected_also", "needs_review", "confirmed_at", "photo_deleted_at", "held"}
 MAX_ID = "visits.max_id"  # settings: the highest visit id ever handed out (insert_visit), so no id is used twice
 # settings: set once init_db has sent the "other" visits stored before they always waited for review to the queue
 OTHER_REVIEW_DONE = "migrated.other_review"
@@ -278,9 +286,20 @@ def hiding_other() -> bool:
     return _visitor_view.get()
 
 
+def _drop_changed_index(conn: sqlite3.Connection, sql: str) -> None:
+    """Drop the index `sql` creates when the database holds an older definition of it (a column was added to the
+    index since), so init_db builds the new one. IF NOT EXISTS alone would keep the old one for ever."""
+    wanted = sql.replace("IF NOT EXISTS ", "")
+    name = wanted.split()[2]
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?", (name,)).fetchone()
+    if row and row[0] != wanted:
+        conn.execute(f"DROP INDEX IF EXISTS {name}")
+
+
 def shown() -> str:
-    """The real visits whoever is looking may see: REAL for the admin, PUBLIC (no "other") for a visitor."""
-    return PUBLIC if hiding_other() else REAL
+    """The real visits whoever is looking may see: REAL for the admin, PUBLIC (no "other") for a visitor, and for
+    both without the ones held for review (HELD)."""
+    return f"{PUBLIC if hiding_other() else REAL} AND {NOT_HELD}"
 
 
 def ensure_wal(conn: sqlite3.Connection, tries: int = 5, pause: float = 0.2) -> None:
@@ -368,6 +387,7 @@ def init_db(conn: sqlite3.Connection) -> None:
                 _add_column(conn, table, col, "REAL")
     if INDEX_COLUMNS <= _columns(conn, "visits"):
         for sql in INDEXES:
+            _drop_changed_index(conn, sql)
             try:
                 conn.execute(sql)
             except sqlite3.OperationalError as e:  # the other process built it between IF NOT EXISTS' look and now
@@ -829,7 +849,7 @@ def _where(
     # confidence means something might have been one.
     where = [FALSE_TRIGGER] if false_triggers else ([] if review else [shown()])
     if review and hiding_other():
-        where.append(NOT_OTHER)
+        where.extend([NOT_OTHER, NOT_HELD])
     args: list = []
     if has_photo:
         where.append(HAS_PHOTO)
@@ -1064,7 +1084,7 @@ def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool 
 
 def latest_visit(conn: sqlite3.Connection, real_only: bool = True) -> sqlite3.Row | None:
     """The newest real visit (real_only), or the newest motion event of any kind; never an "other" for a visitor."""
-    where = shown() if real_only else (NOT_OTHER if hiding_other() else "1")
+    where = shown() if real_only else (f"{NOT_OTHER} AND {NOT_HELD}" if hiding_other() else NOT_HELD)
     return conn.execute(
         f"SELECT *, {LABEL} AS label FROM visits WHERE {where} ORDER BY captured_at DESC, id DESC LIMIT 1"
     ).fetchone()
@@ -1138,7 +1158,7 @@ def correct_visit(
     """Store the owner's answer. `also` is their list of other animals (None: Claude's list stands)."""
     conn.execute(
         "UPDATE visits SET corrected_visitor = ?, corrected_species = ?, feedback = ?, marks = ?, corrected_also = ?, "
-        "needs_review = 0, lesson_off = 0 WHERE id = ?",
+        "needs_review = 0, held = 0, lesson_off = 0 WHERE id = ?",
         (visitor or None, species or None, (feedback or "").strip() or None, json.dumps(marks) if marks else None,
          json.dumps(also) if also is not None else None, visit_id),
     )
@@ -1357,9 +1377,17 @@ def set_lesson_off(conn: sqlite3.Connection, visit_id: int, off: bool) -> None:
     conn.commit()
 
 
+def hold_for_review(conn: sqlite3.Connection, visit_id: int) -> None:
+    """Take a visit out of the gallery and put it in the review queue (HELD): its video came through choppy, so the
+    owner looks first. Confirming or correcting it (mark_reviewed, the correction) lets it show again."""
+    conn.execute("UPDATE visits SET held = 1, needs_review = 1 WHERE id = ?", (visit_id,))
+    conn.commit()
+
+
 def mark_reviewed(conn: sqlite3.Connection, visit_id: int) -> None:
-    """Confirm (the visit page button). Off the review queue, and confirmed (the local animal check trains on it, counting extra)."""
-    conn.execute("UPDATE visits SET needs_review = 0, confirmed_at = COALESCE(confirmed_at, ?) WHERE id = ?",
+    """Confirm (the visit page button). Off the review queue, shown again if it was held, and confirmed (the local animal check trains on it, counting extra)."""
+    conn.execute("UPDATE visits SET needs_review = 0, held = 0, confirmed_at = COALESCE(confirmed_at, ?) "
+                 "WHERE id = ?",
                  (datetime.now().isoformat(timespec="seconds"), visit_id))
     conn.commit()
 

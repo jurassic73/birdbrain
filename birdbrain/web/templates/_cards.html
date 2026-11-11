@@ -29,6 +29,7 @@
       {% elif v.confidence %}{{ badge(v.confidence, "conf-" ~ v.confidence) }}{% endif %}
       {% if v.is_night %}{{ badge("night", "night") }}{% endif %}
       {% if v.clip_path %}{{ badge("clip", "clip") }}{% endif %}
+      {% if v.held %}{{ badge("held for review", "private") }}{% endif %}
       {% if not ft_cards %}{% set sb = season_badge(v.label, v.captured_at) %}{% if sb %}{{ badge(sb, "out-of-season") }}{% endif %}{% endif %}
     </div>
     {% if stayed(v) %}<div class="card-stay">{{ stayed(v) }}</div>{% endif %}

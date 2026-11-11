@@ -79,7 +79,7 @@ def test_a_failed_recording_gives_no_clip_and_says_why(tmp_path, video, proc, pr
 def test_a_choppy_recording_gives_no_clip_but_one_that_cannot_be_checked_is_kept(tmp_path, frames):
     frames[clips.CLIP_NAME] = STALLED
     rec = recording(tmp_path)
-    assert rec.finish() is None and rec.problem == STALL
+    assert rec.finish() is None and rec.problem == STALL and rec.choppy
     frames[clips.CLIP_NAME] = None  # no ffprobe on this machine: as before there was a check
     assert rec.finish() == rec.tmp / clips.CLIP_NAME and rec.problem is None
 
@@ -186,6 +186,7 @@ def test_recheck_drops_the_choppy_clips_already_kept_and_leaves_the_visit_a_note
     assert clips.recheck(conn) == [(choppy, STALL)]
     assert with_clips(conn) == {smooth} and not (config.CLIPS_DIR / rel).exists()
     assert db.get_visit(conn, choppy)["clip_note"] == STALL and db.get_visit(conn, smooth)["clip_note"] is None
+    assert [r["id"] for r in db.list_visits(conn, review=True)] == [choppy]  # held for review, as the watcher does
 
 
 def test_usage_counts_the_files_and_the_starred(conn, add_visit):

@@ -123,10 +123,11 @@ def test_alerts_get_claudes_confidence_and_the_review_flag(pipeline, monkeypatch
 class FakeRecording:
     """The clip the burst's ffmpeg is still recording (clips.Recording), finished or failed."""
 
-    def __init__(self, tmp_path, ok: bool = True) -> None:
+    def __init__(self, tmp_path, ok: bool = True, choppy: bool = False) -> None:
         self.path = tmp_path / "clip.mp4"
         self.path.write_bytes(b"five seconds of junco")
-        self.ok, self.problem, self.discarded = ok, None if ok else "ffmpeg exited with 1", 0
+        self.ok, self.choppy, self.discarded = ok, choppy, 0
+        self.problem = None if ok else ("the camera's stream stalled for 4.0 s" if choppy else "ffmpeg exited with 1")
 
     def finish(self):
         return self.path if self.ok else None
@@ -138,9 +139,9 @@ class FakeRecording:
 @pytest.fixture
 def recording(pipeline, monkeypatch, tmp_path):
     """The pipeline's burst arrives with a clip recording attached, as capture_burst_and_clip hands it over."""
-    def attach(ok: bool = True) -> FakeRecording:
+    def attach(ok: bool = True, choppy: bool = False) -> FakeRecording:
         burst = watch.Burst(watch.capture_burst())
-        burst.recording = FakeRecording(tmp_path, ok)
+        burst.recording = FakeRecording(tmp_path, ok, choppy)
         monkeypatch.setattr(watch, "capture_burst", lambda: burst)
         return burst.recording
     return attach
@@ -186,6 +187,21 @@ def test_a_failed_recording_never_costs_the_visit(pipeline, recording):
     visit = watch.db.latest_visit(conn)
     assert visit["clip_path"] is None and rec.discarded == 1
     assert visit["clip_note"] == "ffmpeg exited with 1"  # the visit page says the video was not captured
+    assert not visit["held"]  # a failed recording alone never takes the visit out of the gallery
+
+
+def test_a_choppy_recording_holds_the_visit_for_review_before_the_push(pipeline, recording, monkeypatch):
+    conn, asked, set_detector = pipeline
+    set_detector(True)
+    pushed = []
+    monkeypatch.setattr(watch, "push_public", lambda: pushed.append(
+        conn.execute("SELECT held FROM visits ORDER BY id DESC LIMIT 1").fetchone()[0]))
+    recording(ok=False, choppy=True)
+    assert watch.handle_event() == "bird"
+    assert watch.db.latest_visit(conn) is None  # out of the gallery ...
+    (visit,) = watch.db.list_visits(conn, review=True)  # ... and waiting in the review queue
+    assert visit["held"] and visit["clip_path"] is None and "stalled" in visit["clip_note"]
+    assert pushed == [1]  # held before the mirror push, so the mirror never gets it
 
 
 def test_real_visit_keeps_only_the_best_frame(pipeline):

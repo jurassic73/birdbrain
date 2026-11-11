@@ -13,7 +13,8 @@ visits.keep) and the newest CLIP_KEEP_PER_SPECIES of each species, however old. 
 those: they take none of a species' places.
 
 A clip with a hole in it is not kept (choppy, problem_with): the camera's stream sometimes stalls for a few seconds
-and those frames never arrive. The visit then says the video was not captured (visits.clip_note holds why).
+and those frames never arrive. The visit then says the video was not captured (visits.clip_note holds why) and is
+held for review (db.hold_for_review): it stays out of the gallery and off the mirror until the owner confirms it.
 
 CLI: python -m birdbrain.clips [--prune] [--recheck] [--dry-run]    how many clips there are, what pruning would
      delete, and (--recheck) dropping kept clips that turn out choppy
@@ -100,6 +101,7 @@ class Recording:
     def __init__(self, proc: subprocess.Popen, tmp: Path, deadline: float) -> None:
         self.proc, self.tmp, self.deadline = proc, Path(tmp), deadline
         self.problem: str | None = None  # why finish() gave no clip, for the log
+        self.choppy = False              # ... because frames were missing (the stream stalled), not a failed ffmpeg
 
     def finish(self) -> Path | None:
         """The finished clip's path in the temporary folder, or None (see .problem) when the recording failed,
@@ -119,6 +121,7 @@ class Recording:
             self.problem = problem_with(path)
             if self.problem is None:
                 return path
+            self.choppy = True
         return None
 
     def stop(self) -> None:
@@ -263,7 +266,8 @@ def prune(conn: sqlite3.Connection, now: datetime | None = None, *, days: int | 
 
 def recheck(conn: sqlite3.Connection, *, clips_dir: Path | None = None, dry_run: bool = False) -> list[tuple]:
     """Look through every kept clip for missing frames and drop the choppy ones, leaving the visit its "not
-    captured" note: for clips kept before the check existed. Returns (visit id, why) per choppy clip."""
+    captured" note and holding it for review, as the watcher does: for clips kept before the check existed.
+    Returns (visit id, why) per choppy clip."""
     clips_dir = clips_dir or config.CLIPS_DIR
     found = []
     rows = conn.execute("SELECT id, clip_path FROM visits WHERE clip_path IS NOT NULL ORDER BY id").fetchall()
@@ -276,6 +280,7 @@ def recheck(conn: sqlite3.Connection, *, clips_dir: Path | None = None, dry_run:
         found.append((vid, why))
         if not dry_run:
             db.set_clip(conn, vid, None, note=why)
+            db.hold_for_review(conn, vid)
             delete(rel, clips_dir)
     return found
 
