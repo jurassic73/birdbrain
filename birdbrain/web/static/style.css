@@ -1387,6 +1387,12 @@ button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 
   .photo-viewer-arrow.prev { left: max(10px, env(safe-area-inset-left)); }
   .photo-viewer-arrow.next { right: max(10px, env(safe-area-inset-right)); }
 }
+/* A phone on its side: the arrows sit mid-height on the sides (beside the 16:9 photo on most phones), as on the visit
+   page. They are placed from the top, like the close button, never from the bottom: when the turn to landscape happens
+   while the view is already full screen, Android Chrome can leave bottom-placed fixed items below the screen. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .photo-viewer-arrow { top: 50%; bottom: auto; transform: translateY(-50%); }
+}
 
 /* Small circled "i" that shows its data-tip on hover or tap */
 .info-tip {
