@@ -30,8 +30,9 @@ def clips_notice(today: date, *, public: bool, seconds: float, days: int, per_sp
         "id": CLIPS_ID,
         "until": CLIPS_UNTIL.isoformat(),
         "title": "Visits now come with a short clip",
-        "text": f"New visits keep a {seconds:g} second video clip, without sound. "
-                "Open a visit and press Play clip to watch it.",
+        "text": f"New visits keep a {seconds:g} second video clip. Open a visit and press Play clip to watch it.",
+        # People look for the sound: say there is none and why (clips.py never records it), in a light line.
+        "silent": "Video only. Sound is never recorded, to protect the neighbours' privacy.",
         "rules": clips_rules(days, per_species),
         "go": "See the clips",
         "href": "/?kind=clip",

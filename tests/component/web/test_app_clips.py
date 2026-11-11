@@ -107,7 +107,10 @@ def test_the_clips_news_pop_up_is_on_every_page_until_its_last_day(client, locke
         page = client.get(url).text
         assert 'id="news-popup" data-news="clips"' in page and f'data-until="{now.date().isoformat()}"' in page, url
         assert "/static/news.js" in page and 'href="/?kind=clip">See the clips</a>' in page
-        assert f"a {config.CLIP_SECONDS:g} second video clip, without sound" in page
+        assert f"New visits keep a {config.CLIP_SECONDS:g} second video clip. Open a visit" in page
+        # why there is no sound, in the light text and before the retention rule (the apostrophe is escaped in HTML)
+        assert page.index('<p class="news-rules">Video only. Sound is never recorded, to protect the neighbours') \
+            < page.index('<p class="news-rules">Clips are kept for')
         assert f'<p class="news-rules">Clips are kept for {config.CLIP_DAYS} days;' in page
     monkeypatch.setattr(news, "CLIPS_UNTIL", now.date() - timedelta(days=1))  # yesterday was
     page = client.get("/").text

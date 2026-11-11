@@ -24,9 +24,10 @@ def test_no_clips_notice_where_there_are_no_clips():
 
 def test_the_notice_says_the_clip_length_and_the_retention_rules_from_the_settings():
     notice = news.clips_notice(news.CLIPS_UNTIL, **ON)
-    assert "a 5 second video clip, without sound" in notice["text"] and "Play clip" in notice["text"]
+    assert notice["text"] == "New visits keep a 5 second video clip. Open a visit and press Play clip to watch it."
+    assert notice["silent"] == "Video only. Sound is never recorded, to protect the neighbours' privacy."
     assert notice["rules"] == "Clips are kept for 21 days; the newest 10 of each species are kept longer."
-    assert "star" not in notice["rules"] + notice["text"]  # visitors don't know about starred visits
+    assert "star" not in notice["rules"] + notice["text"] + notice["silent"]  # visitors don't know about starred visits
     assert "a 7.5 second video" in news.clips_notice(news.CLIPS_UNTIL, **{**ON, "seconds": 7.5})["text"]
     assert news.clips_rules(30, 0) == "Clips are kept for 30 days."
     assert news.clips_rules(0, 10) == "Clips are kept for good."
