@@ -118,6 +118,71 @@ def test_alerts_get_claudes_confidence_and_the_review_flag(pipeline, monkeypatch
     assert sent == ["Possible new species: Varied Thrush (needs your check)"]
 
 
+class FakeRecording:
+    """The clip the burst's ffmpeg is still recording (clips.Recording), finished or failed."""
+
+    def __init__(self, tmp_path, ok: bool = True) -> None:
+        self.path = tmp_path / "clip.mp4"
+        self.path.write_bytes(b"five seconds of junco")
+        self.ok, self.problem, self.discarded = ok, None if ok else "ffmpeg exited with 1", 0
+
+    def finish(self):
+        return self.path if self.ok else None
+
+    def discard(self) -> None:
+        self.discarded += 1
+
+
+@pytest.fixture
+def recording(pipeline, monkeypatch, tmp_path):
+    """The pipeline's burst arrives with a clip recording attached, as capture_burst_and_clip hands it over."""
+    def attach(ok: bool = True) -> FakeRecording:
+        burst = watch.Burst(watch.capture_burst())
+        burst.recording = FakeRecording(tmp_path, ok)
+        monkeypatch.setattr(watch, "capture_burst", lambda: burst)
+        return burst.recording
+    return attach
+
+
+def test_a_real_visit_keeps_its_clip(pipeline, recording):
+    conn, asked, set_detector = pipeline
+    set_detector(True)
+    rec = recording()
+    assert watch.handle_event() == "bird"
+    visit = watch.db.latest_visit(conn)
+    assert visit["clip_path"] == watch.clips.rel_for(visit["image_path"])
+    assert (watch.config.CLIPS_DIR / visit["clip_path"]).read_bytes() == b"five seconds of junco"
+    assert rec.discarded == 1  # the temporary folder never outlives the event
+
+
+def test_a_false_trigger_keeps_no_clip(pipeline, recording, monkeypatch):
+    conn, asked, set_detector = pipeline
+    set_detector(True)
+    from birdbrain.identify import Result, Sighting
+    monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
+        Sighting(visitor="none", species="", count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
+    rec = recording()
+    assert watch.handle_event() == "none"
+    assert watch.db.latest_visit(conn, real_only=False)["clip_path"] is None
+    assert rec.discarded == 1 and not watch.config.CLIPS_DIR.exists()
+
+
+def test_a_discarded_probe_stops_its_recording(pipeline, recording):
+    conn, asked, set_detector = pipeline
+    set_detector(False)
+    rec = recording()
+    assert watch.handle_event(probe=True, trigger="water") == watch.PROBE_EMPTY
+    assert rec.discarded == 1
+
+
+def test_a_failed_recording_never_costs_the_visit(pipeline, recording):
+    conn, asked, set_detector = pipeline
+    set_detector(True)
+    rec = recording(ok=False)
+    assert watch.handle_event() == "bird"
+    assert watch.db.latest_visit(conn)["clip_path"] is None and rec.discarded == 1
+
+
 def test_real_visit_keeps_only_the_best_frame(pipeline):
     conn, asked, set_detector = pipeline
     set_detector(True)

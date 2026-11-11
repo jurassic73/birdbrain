@@ -16,6 +16,8 @@ PUBLIC = {
 
 # Everything else the app has: the admin's, so a 404 on the mirror. A new route goes in one list or the other.
 ADMIN = {
+    # visit clips (birdbrain/clips.py): video stays on the Pi, the mirror has none
+    ("GET", "/clips"),
     # admin login
     ("GET", "/login"), ("POST", "/login"), ("POST", "/logout"),
     # the Hailo detector card on Stats and its snapshot thumbnails (auth.ADMIN_PATHS "/hailo")

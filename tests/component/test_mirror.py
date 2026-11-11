@@ -22,7 +22,8 @@ def pi_db(conn, add_visit, tmp_path):
     raw = {"answer": {"species": "Bushtit"}, "calls": {"haiku": {"input_tokens": 10}}, "trigger": "rim",
            "burst": {"best": 0}, "zones": {"ring": None}, "motion": {"score": 0.3}, "probe": False, "frames": 3}
     vid = add_visit(feedback="No bird: rocks after a refill", raw_json=json.dumps(raw))
-    conn.execute("UPDATE visits SET public_ok = ? WHERE id = ?", ('{"at": "x", "files": {}}', vid))
+    conn.execute("UPDATE visits SET public_ok = ?, clip_path = '2026/11/03/a.mp4' WHERE id = ?",
+                 ('{"at": "x", "files": {}}', vid))
     conn.execute("INSERT INTO pi_checks (at, seconds, ok) VALUES ('2026-11-03T10:00:00', 4.2, 1)")
     conn.execute("INSERT INTO embeddings (visit_id, vec) VALUES (?, X'0000')", (vid,))
     db.add_calibration(conn, ran_at="2026-11-01T06:00:00", reason="scheduled", status="moved", summary="moved 3 px",
@@ -51,6 +52,9 @@ def test_copy_strips_private_fields_and_tables_but_keeps_what_pages_show(pi_db, 
     c = sqlite3.connect(copy)
     row = c.execute("SELECT feedback, raw_json, species, notes FROM visits WHERE id = ?", (vid,)).fetchone()
     assert row[0] is None and row[2] == "Dark-eyed Junco"
+    # The visit's video clip stays on the Pi: the copy names none, so the mirror's pages offer none.
+    assert c.execute("SELECT clip_path FROM visits WHERE id = ?", (vid,)).fetchone()[0] is None
+    assert db.get_visit(conn, vid)["clip_path"] == "2026/11/03/a.mp4"
     assert set(json.loads(row[1])) == {"calls", "trigger", "burst", "zones"}
     assert c.execute("SELECT COUNT(*) FROM pi_checks").fetchone()[0] == 0
     assert c.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0] == 0

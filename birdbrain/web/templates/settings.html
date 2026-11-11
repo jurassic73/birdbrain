@@ -182,6 +182,9 @@
   <div id="storage-preview"></div>
   <div id="storage-run"></div>
 
+  <h3>Clips</h3>
+  <p class="tip-label">Visit clips: <strong>{{ clips.bytes | mb }}</strong> ({{ clips.count }} clip{{ 's' if clips.count != 1 }}{% if clips.starred %}, {{ clips.starred }} of starred visits{% endif %}) <span class="info-tip" tabindex="0" aria-label="About visit clips" data-tip="{% if clips.seconds %}Each real visit keeps {{ '%g' | format(clips.seconds) }} seconds of video, as the camera sent it, without sound.{% else %}Clips are switched off (CLIP_SECONDS=0).{% endif %}{% if clips.days %} Clips are deleted after {{ clips.days }} days, except those of starred visits (favorites and species covers){% if clips.per_species %} and the newest {{ clips.per_species }} of each species{% endif %}.{% else %} Clips are never deleted.{% endif %} They are counted here, outside the photo budget, and never go to the public mirror.">i</span></p>
+
   <h3>False triggers</h3>
   {% include "_storage.html" %}
 

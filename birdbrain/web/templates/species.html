@@ -62,6 +62,7 @@
     <select name="kind" aria-label="Visitor type">
       <option value="">One or several animals</option>
       <option value="multiple" {% if filters.kind == 'multiple' %}selected{% endif %}>Multiple animals</option>
+      {% if filters.kind == 'clip' %}<option value="clip" selected>With a clip</option>{% endif %}
     </select>
     {{ tod_select(filters) }}
     {{ date_range(filters) }}

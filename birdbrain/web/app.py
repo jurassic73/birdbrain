@@ -22,7 +22,7 @@ from starlette.routing import Match
 
 from ..hailo import stats as hailo_stats  # no OpenCV or HailoRT behind it: the card reads two SQLite files
 from . import auth, steps, viewer
-from .. import alert, audience, camera, circle_check, classifier, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
+from .. import alert, audience, camera, circle_check, classifier, clips, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 log = logging.getLogger("birdbrain.web")
@@ -66,6 +66,8 @@ class PhotoFiles(StaticFiles):
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 app.mount("/images", PhotoFiles(directory=images_dir(), check_dir=False), name="images")
+# Visit clips (birdbrain/clips.py). Not one of the mirror's routes (auth.MIRROR_ROUTES): clips never leave the Pi.
+app.mount("/clips", PhotoFiles(directory=config.CLIPS_DIR, check_dir=False), name="clips")
 templates = Jinja2Templates(directory=HERE / "templates")
 
 
@@ -529,7 +531,26 @@ def quick_filters() -> list[tuple[str, dict]]:
         ("Night", {"tod": "night"}),
         ("Today", {"date_from": today.isoformat(), "date_to": today.isoformat()}),
         ("This week", {"date_from": (today - timedelta(days=6)).isoformat()}),
+        # Visits whose video clip is still kept. Not on the public mirror, which has no clips.
+        *([] if auth.public() else [("Clips", {"kind": "clip"})]),
     ]
+
+
+def clip_info(visit) -> dict | None:
+    """What the visit page says about the visit's video clip (None: no clip, or the public mirror, which has
+    none): where it plays from and how long it is kept."""
+    rel = visit["clip_path"] if "clip_path" in visit.keys() else None
+    if not rel or auth.public() or not clips.inside(rel):
+        return None
+    if visit["keep"] == 1:
+        kept = "Kept for good: this visit is starred."
+    elif config.CLIP_DAYS <= 0:
+        kept = "Kept for good."
+    else:
+        until = datetime.fromisoformat(visit["captured_at"]) + timedelta(days=config.CLIP_DAYS)
+        kept = f"Kept until {until.strftime('%b')} {until.day}. Star the photo to keep it for good."
+    return {"src": f"/clips/{quote(rel)}", "kept": kept, "days": config.CLIP_DAYS,
+            "per_species": config.CLIP_KEEP_PER_SPECIES}
 
 
 def species_filters(request: Request) -> dict:
@@ -537,7 +558,7 @@ def species_filters(request: Request) -> dict:
     Birds / Mammals kinds, which mean nothing for one species. Multiple animals stays."""
     filters = filters_from(request)
     del filters["species"]
-    if filters["kind"] != "multiple":
+    if filters["kind"] not in ("multiple", "clip"):
         filters["kind"] = None
     return filters
 
@@ -734,6 +755,7 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         scope=scope,
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
+        clip=clip_info(visit),
         claude_frame=db.claude_frame(visit["raw_json"]),
         photo_frame=db.photo_frame(visit),
         teaches=teaches,
@@ -1354,6 +1376,7 @@ def delete(visit_id: int, conn=Depends(get_conn)):
     row = db.delete_visit(conn, visit_id)
     if row:
         images.delete_frame(row["image_path"], row["thumb_path"])
+        clips.delete(row["clip_path"])
     return Response(headers={"HX-Redirect": "/"})
 
 
@@ -2033,6 +2056,7 @@ def settings_page(request: Request, pruned: int | None = None, limits_error: str
         alerts_test=alerts_test,
         alerts=alert.get_settings(conn),
         storage=storage,
+        clips=clips.usage(conn),
         **storage_context(conn),
         limits_error=limits_error,
         limits_saved=limits_saved,

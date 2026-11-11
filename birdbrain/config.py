@@ -102,6 +102,7 @@ def _env(name: str, default: str = "") -> str:
 DATA_DIR = Path(_env("BIRDBRAIN_DATA", str(ROOT / "data")))
 DB_PATH = DATA_DIR / "birdbrain.db"
 IMAGES_DIR = DATA_DIR / "images"
+CLIPS_DIR = DATA_DIR / "clips"  # visit clips (birdbrain/clips.py), outside the photo budget
 
 CAM_HOST = _env("CAM_HOST", "birdbrain-cam.home")
 RTSP_PORT = int(_env("RTSP_PORT", "554"))
@@ -176,6 +177,19 @@ SUB_FPS = int(_env("SUB_FPS", "15"))  # the substream's frame rate; the watcher 
 TRIGGER_FRAMES = 3  # consecutive substream frames of rim motion needed to count as a visit
 BURST_FRAMES = 6    # main-stream frames captured per visit, at BURST_FPS; the sharpest goes to Claude
 BURST_FPS = 4
+# A short video clip of each real visit, recorded as the camera sends it by the same connection as the burst
+# (birdbrain/clips.py). CLIP_SECONDS 0 turns clips off (the burst is then captured exactly as before). Clips older
+# than CLIP_DAYS are deleted, except a starred visit's (a favorite or a species cover) and the newest
+# CLIP_KEEP_PER_SPECIES of each species, however old; CLIP_DAYS 0 keeps every clip.
+CLIP_SECONDS = float(_env("CLIP_SECONDS", "5"))
+if not 0 <= CLIP_SECONDS <= 60:
+    raise ValueError(f"CLIP_SECONDS must be between 0 and 60, not {CLIP_SECONDS!r}")
+CLIP_DAYS = int(_env("CLIP_DAYS", "21"))
+if CLIP_DAYS < 0:
+    raise ValueError(f"CLIP_DAYS must be 0 or more, not {CLIP_DAYS!r}")
+CLIP_KEEP_PER_SPECIES = int(_env("CLIP_KEEP_PER_SPECIES", "10"))
+if CLIP_KEEP_PER_SPECIES < 0:
+    raise ValueError(f"CLIP_KEEP_PER_SPECIES must be 0 or more, not {CLIP_KEEP_PER_SPECIES!r}")
 # Stored photos get the capture time drawn in their lower-left corner (a dark glass pill). The camera's own
 # burn-in is turned off, so this is the only timestamp. 0 turns it off.
 PHOTO_STAMP = _env("PHOTO_STAMP", "1") != "0"

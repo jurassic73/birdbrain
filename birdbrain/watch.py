@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -23,7 +24,7 @@ os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 import cv2  # noqa: E402  (must come after the capture options are set)
 import numpy as np  # noqa: E402
 
-from . import (alert, autocal, classifier, config, db, finder, identify, images, motion_circle, presence,  # noqa: E402
+from . import (alert, autocal, classifier, clips, config, db, finder, identify, images, motion_circle, presence,  # noqa: E402
                retention, species_info, stay, weather, zones)
 
 log = logging.getLogger("birdbrain.watch")
@@ -397,21 +398,74 @@ def open_capture(url: str) -> cv2.VideoCapture:
     return cv2.VideoCapture(url, cv2.CAP_FFMPEG)
 
 
+BURST_TIMEOUT = 20  # seconds the burst's frames may take to arrive
+
+
+class Burst(list):
+    """A burst's frames. `recording` is the visit's clip, which the same ffmpeg is still recording when the frames
+    are handed over (clips.Recording); None when clips are off."""
+    recording: clips.Recording | None = None
+
+
+def burst_command(url: str, tmp: str, clip_seconds: float = 0) -> list[str]:
+    """The ffmpeg call for one burst: BURST_FRAMES stills at BURST_FPS from the main stream. With clip_seconds, the
+    same connection also saves that many seconds of the stream as it arrives (a copy, nothing re-encoded) as the
+    visit's clip, and each still is renamed into place only when complete, so a frame can be read while ffmpeg is
+    still recording."""
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", url,
+           "-vf", f"fps={config.BURST_FPS}", "-frames:v", str(config.BURST_FRAMES), "-q:v", "2"]
+    if clip_seconds <= 0:
+        return [*cmd, f"{tmp}/f%02d.jpg"]
+    # -an: the clip never has sound. The camera's microphone would pick up the neighbours; keep it that way.
+    return [*cmd, "-atomic_writing", "1", f"{tmp}/f%02d.jpg",
+            "-map", "0:v:0", "-c:v", "copy", "-an", "-t", f"{clip_seconds:g}", "-movflags", "+faststart",
+            f"{tmp}/{clips.CLIP_NAME}"]
+
+
 def capture_burst() -> list[bytes]:
+    if config.CLIP_SECONDS > 0:
+        return capture_burst_and_clip()
     with tempfile.TemporaryDirectory() as tmp:
-        cmd = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp",
-            "-i", config.rtsp_url(config.RTSP_MAIN), "-vf", f"fps={config.BURST_FPS}", "-frames:v", str(config.BURST_FRAMES),
-            "-q:v", "2", f"{tmp}/f%02d.jpg",
-        ]
+        cmd = burst_command(config.rtsp_url(config.RTSP_MAIN), tmp)
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=BURST_TIMEOUT)
         except subprocess.TimeoutExpired:
             log.warning("burst capture timed out")
             return []
         if proc.returncode != 0:
             log.warning("burst capture failed: %s", redact(proc.stderr.strip())[:300])
         return [p.read_bytes() for p in sorted(Path(tmp).glob("f*.jpg"))]
+
+
+def capture_burst_and_clip() -> Burst:
+    """The burst, from an ffmpeg that goes on recording the visit's clip: this returns as soon as the frames are
+    in, with the recording attached (Burst.recording) for handle_event to keep or throw away. No frames: no
+    recording either, and an empty burst as before."""
+    tmp = Path(tempfile.mkdtemp(prefix="birdbrain-burst-"))
+    errors = tmp / "ffmpeg.log"  # a file, not a pipe: nobody reads a pipe while the clip records
+    try:
+        with open(errors, "w") as err:
+            proc = subprocess.Popen(burst_command(config.rtsp_url(config.RTSP_MAIN), str(tmp), config.CLIP_SECONDS),
+                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err)
+    except OSError:
+        log.exception("burst capture could not start")
+        shutil.rmtree(tmp, ignore_errors=True)
+        return Burst()
+    started = time.monotonic()
+    recording = clips.Recording(proc, tmp, deadline=started + BURST_TIMEOUT + config.CLIP_SECONDS)
+    last = tmp / f"f{config.BURST_FRAMES:02d}.jpg"
+    while not last.exists() and proc.poll() is None and time.monotonic() - started < BURST_TIMEOUT:
+        time.sleep(0.05)
+    frames = Burst(p.read_bytes() for p in sorted(tmp.glob("f*.jpg")))
+    if proc.poll() not in (None, 0):
+        log.warning("burst capture failed: %s", redact(errors.read_text(errors="replace").strip())[:300])
+    elif not frames:
+        log.warning("burst capture timed out")
+    if not frames:
+        recording.discard()
+        return frames
+    frames.recording = recording
+    return frames
 
 
 def calls_today(ground: bool = False) -> int:
@@ -674,6 +728,31 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     frames = capture_burst()
     if not frames:
         return None
+    # The visit's clip, which the burst's ffmpeg may still be recording: kept below for a real visit, and whatever
+    # happens the recording is stopped and its temporary folder removed on the way out.
+    recording = getattr(frames, "recording", None)
+    try:
+        return _handle_burst(frames, captured_at, recording, motion, probe, trigger, scene)
+    finally:
+        if recording is not None:
+            fail_soft("tidying the clip recording", recording.discard)
+
+
+def keep_clip(visit_id: int, image_rel: str, recording: clips.Recording) -> None:
+    """Wait for the visit's clip to finish recording (a few seconds at most) and file it with the visit."""
+    src = recording.finish()
+    if src is None:
+        log.info("visit %d: no clip (%s)", visit_id, recording.problem)
+        return
+    rel = clips.keep(src, image_rel)
+    with db.session() as conn:
+        db.set_clip(conn, visit_id, rel)
+    log.info("visit %d: clip kept (%.1f MB)", visit_id, (config.CLIPS_DIR / rel).stat().st_size / 1e6)
+
+
+def _handle_burst(frames: list[bytes], captured_at: datetime, recording: clips.Recording | None,
+                  motion: float | None, probe: bool, trigger: str, scene: Scene | None) -> str | None:
+    """handle_event once the burst is in: everything from the animal check to the stored visit."""
     z = zones.current()
     crop = z.ground_crop if trigger == "ground" else z.crop
     ranked = best_frames(frames, crop)
@@ -916,6 +995,9 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
         fail_soft("pushing to the public mirror", push_public)
     for _, label, _ in seen:
         fail_soft("prefetching the species card", species_info.prefetch, label)  # no-op once the card is cached
+    if recording is not None and not false_trigger:
+        # Last, so the alert and the mirror never wait for the recording to end.
+        fail_soft("keeping the clip", keep_clip, visit_id, image_rel, recording)
     det_note = "" if not check or check.get("score") is None else f", animal check {check['score']:.2f}"
     log.info("visit %d: %s %s (%s, %s%s%s)", visit_id, s.visitor, s.species or "", s.confidence,
              result.model, ", escalated" if result.escalated else "", det_note)

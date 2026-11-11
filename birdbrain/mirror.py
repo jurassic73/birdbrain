@@ -38,7 +38,9 @@ SETTINGS_PREFIXES = ("retention.",      # photo budget options and flags (About)
                      "refphoto:")       # species reference photos (species cards)
 # Visit columns blanked: the owner's note for Claude (a lesson, shown on the Pi's visit page only). public_ok is
 # blanked by the privacy filter once it has read it.
-PRIVATE_COLUMNS = ("feedback",)
+# clip_path: the visit's video clip stays on the Pi (a few seconds of video can show a person the photo's person
+# check never saw), so the mirror's copy names none and its pages show none.
+PRIVATE_COLUMNS = ("feedback", "clip_path")
 # Visit columns put back to their default: the admin's own marks that only admin pages read (a lesson switched off
 # on Claude's Notes).
 ADMIN_COLUMNS = {"lesson_off": 0}

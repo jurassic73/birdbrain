@@ -1700,6 +1700,18 @@ button.se-all { font-weight: 600; }
   .live-page .live { width: 100%; max-height: none; }
 }
 
+/* A real visit's video clip: one row under the photo; it plays in a .viewer pop-up (the Pop-ups section) at about
+   95% of the window. */
+.vclip { margin: 6px 0 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.vclip-play { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 16px; margin: 0; }
+.vclip-play span { text-box: trim-both cap alphabetic; }
+@supports not (text-box: trim-both cap alphabetic) { .vclip-play span { padding-top: 1px; } }
+.vclip-kept { margin: 0; }
+.clip-viewer { display: none; place-items: center; }
+.clip-viewer[open] { display: grid; }
+.clip-viewer video { width: auto; height: auto; max-width: 95vw; max-height: 95vh; border-radius: 8px; background: #000; }
+.badge.clip { color: var(--accent); white-space: nowrap; }
+
 /* A false trigger's whole burst, beside its photo: tap a frame to show it big. */
 .vburst { margin: 6px 0 0; }  /* sits under the photo; .visit-media supplies the gap */
 .vburst-head { font-size: 1rem; margin: 0 0 6px; display: flex; align-items: baseline; gap: 8px; }

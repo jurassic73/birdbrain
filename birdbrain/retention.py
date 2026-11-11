@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import alert, config, db, images
+from . import alert, clips, config, db, images
 
 try:
     import fcntl
@@ -1006,11 +1006,24 @@ def daily_due(conn: sqlite3.Connection, now: datetime | None = None) -> bool:
     return now.hour >= DAILY_HOUR and db.get_value(conn, DAILY_KEY) != now.date().isoformat()
 
 
+def prune_clips(conn: sqlite3.Connection, now: datetime | None = None) -> None:
+    """The day's clip pruning (birdbrain.clips: clips are outside the photo budget and go by age). It rides on the
+    daily run, and a failure never stops the photo budget's own work."""
+    try:
+        r = clips.prune(conn, now)
+        if r["deleted"] or r["orphans"]:
+            log.info("clips: deleted %d past %d days and %d with no visit, %.0f MB", r["deleted"], config.CLIP_DAYS,
+                     r["orphans"], r["freed_bytes"] / 1e6)
+    except Exception:
+        log.exception("clip pruning failed")
+
+
 def tick(conn: sqlite3.Connection, now: datetime | None = None, busy: threading.Event | None = None) -> str | None:
     """One check: the daily run when it's due, else free space only if the cached usage or the disk says so.
     Returns "daily", "enforce" or None."""
     try:
         if daily_due(conn, now):
+            prune_clips(conn, now)
             r = daily(conn, now, busy, log.info)
             log.info("photo budget: daily run freed %.0f MB (%s); photos %.0f MB of %.0f MB",
                      r["freed_bytes"] / 1e6, ", ".join(f"{s['key']} {s['count']}" for s in r["steps"] if s["count"])

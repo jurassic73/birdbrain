@@ -118,7 +118,21 @@
     </div>
   </section>
   {% endif %}
+  {% if clip %}
+  {# The visit's video clip: a row under the photo, never over it. It plays big in its own pop-up (static/clip.js). #}
+  <section class="vclip" aria-label="Clip">
+    <button type="button" class="vclip-play" id="clip-play" data-tip="Play this visit's clip big (Esc closes it). Video only, never sound."><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 1 L10.5 6 L2.5 11 Z" fill="currentColor"/></svg><span>Play clip</span></button>
+    <span class="muted small tip-label vclip-kept">{{ clip.kept }} <span class="info-tip" tabindex="0" aria-label="About clips" data-tip="A few seconds of video from the moment of the photo, as the camera sent it, without sound.{% if clip.days %} Clips are deleted after {{ clip.days }} days, except those of starred visits (favorites and species covers){% if clip.per_species %} and the newest {{ clip.per_species }} of each species{% endif %}.{% endif %}">i</span></span>
+  </section>
+  {% endif %}
   </div>
+  {% if clip %}
+  <dialog class="viewer clip-viewer" id="clip-viewer" aria-label="Visit clip">
+    {{ zoom_out_btn("clip-viewer-close") }}
+    <video id="clip-video" data-src="{{ clip.src }}"{% if not visit.photo_deleted_at %} poster="/images/{{ photo_src(visit) }}"{% endif %} controls loop muted playsinline preload="none"></video>
+  </dialog>
+  <script src="/static/clip.js?v={{ asset_version }}" defer></script>
+  {% endif %}
   <dialog class="viewer photo-viewer" id="photo-viewer" aria-label="Full-size photo">
     {{ zoom_out_btn("photo-viewer-close") }}
     {% set zoom_param = (ft_param ~ '&zoom=1') if ft_param else '?zoom=1' %}

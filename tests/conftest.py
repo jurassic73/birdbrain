@@ -112,21 +112,23 @@ def data_dirs(tmp_path_factory, monkeypatch):
     to tmp_path (not inside it: some tests list tmp_path), and so does BIRDBRAIN_DATA for anything a test starts in
     a subprocess. Every path birdbrain derives from them (the web app's live.jpg, the retention lock, the
     calibration/reference pictures, the admin secret, the privacy cache, the name lists, the models folder) is
-    computed from config at call time, so this covers them all but one: the /images mount, whose folder StaticFiles
-    fixed when the app was imported, is pointed at the new IMAGES_DIR too. A file one test writes is never seen by
+    computed from config at call time, so this covers them all but the /images and /clips mounts, whose folders
+    StaticFiles fixed when the app was imported: they are pointed at the new IMAGES_DIR and CLIPS_DIR too. A file one test writes is never seen by
     the next; `conn` still puts the test database at tmp_path/test.db."""
     data = tmp_path_factory.mktemp("data")
     images = data / "images"
     monkeypatch.setattr(config, "DATA_DIR", data)
     monkeypatch.setattr(config, "IMAGES_DIR", images)
+    monkeypatch.setattr(config, "CLIPS_DIR", data / "clips")
     monkeypatch.setattr(config, "DB_PATH", data / "birdbrain.db")
     monkeypatch.setenv("BIRDBRAIN_DATA", str(data))
     from starlette.routing import Mount
     from birdbrain.web import app as webapp
     for route in webapp.app.routes:
-        if isinstance(route, Mount) and route.name == "images":
-            monkeypatch.setattr(route.app, "directory", images)
-            monkeypatch.setattr(route.app, "all_directories", [images])
+        if isinstance(route, Mount) and route.name in ("images", "clips"):
+            folder = images if route.name == "images" else data / "clips"
+            monkeypatch.setattr(route.app, "directory", folder)
+            monkeypatch.setattr(route.app, "all_directories", [folder])
 
 
 @pytest.fixture(autouse=True)

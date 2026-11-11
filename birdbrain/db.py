@@ -159,7 +159,9 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  # A false trigger's photo as the owner picked it: the burst frame (1-based) the big photo and the
                  # card show instead of the one Claude saw (NULL). image_path stays Claude's frame: its answer,
                  # circles and the animal check's training all go by that one (photo_rel, thumb_rel).
-                 "photo_frame": "INTEGER"}
+                 "photo_frame": "INTEGER",
+                 # The visit's video clip, relative to config.CLIPS_DIR (birdbrain.clips); NULL = none, or pruned.
+                 "clip_path": "TEXT"}
 # The visit's photo files are there (false triggers past the storage limit lose them; see retention.prune).
 HAS_PHOTO = "photo_deleted_at IS NULL"
 # The photo itself is there, full size or thinned, not just the thumbnail: for checks that look at the frame.
@@ -843,6 +845,8 @@ def _where(
     elif kind == "multiple":
         # Two or more animals: several of one species, or another kind in the photo too.
         where.append(f"(count > 1 OR json_array_length(COALESCE({ALSO}, '[]')) > 0)")
+    elif kind == "clip":
+        where.append("clip_path IS NOT NULL")  # visits whose video clip is still kept (birdbrain.clips)
     if tod == "day":
         where.append("is_night = 0")
     elif tod == "night":
@@ -1166,6 +1170,12 @@ def confirm_visits(conn: sqlite3.Connection, ids: list[int], on: bool = True) ->
     local animal check retrains."""
     conn.executemany("UPDATE visits SET confirmed_at = ? WHERE id = ?",
                      [(datetime.now().isoformat(timespec="seconds") if on else None, i) for i in ids])
+    conn.commit()
+
+
+def set_clip(conn: sqlite3.Connection, visit_id: int, clip_rel: str | None) -> None:
+    """The visit's video clip (a path under config.CLIPS_DIR), or None once it is gone."""
+    conn.execute("UPDATE visits SET clip_path = ? WHERE id = ?", (clip_rel, visit_id))
     conn.commit()
 
 

@@ -8,7 +8,7 @@ import pytest
 
 from helpers.watch import (GROUND, GROUND_Y, H, RING, SPOTS, W, WATER_SPOT, frame, ground_detector, ground_hits,
                            locked, night_frame, run_frames, walker, water_detector, with_blob)
-from birdbrain import config, stay, watch
+from birdbrain import clips, config, stay, watch
 
 
 @pytest.mark.parametrize(
@@ -335,3 +335,30 @@ def test_rain_on_water_needs_a_low_score_and_nothing_new_on_land(trigger, night,
 def test_rain_on_water_can_be_switched_off(monkeypatch):
     monkeypatch.setattr(watch.config, "RAIN_SCORE_MAX", 0.0)
     assert watch.rain_on_water("rim", False, UNSURE, CLEAR) is False
+
+
+URL = "rtsp://camera.example:554/ch0"
+
+
+def test_without_a_clip_the_burst_is_captured_as_it_always_was():
+    assert watch.burst_command(URL, "/tmp/b") == [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp", "-i", URL,
+        "-vf", f"fps={config.BURST_FPS}", "-frames:v", str(config.BURST_FRAMES), "-q:v", "2", "/tmp/b/f%02d.jpg"]
+
+
+def test_the_clip_rides_on_the_bursts_one_camera_connection():
+    cmd = watch.burst_command(URL, "/tmp/b", 5)
+    assert cmd.count("-i") == 1  # the camera serves only a few streams at once
+    assert cmd[-1] == f"/tmp/b/{clips.CLIP_NAME}" and "/tmp/b/f%02d.jpg" in cmd
+    clip = cmd[cmd.index("/tmp/b/f%02d.jpg") + 1:]
+    assert clip[clip.index("-c:v") + 1] == "copy"  # as the camera sends it: nothing for the Pi to encode
+    assert clip[clip.index("-t") + 1] == "5"
+    # The stills are renamed into place when complete, so they can be read while the clip still records.
+    assert cmd[cmd.index("-atomic_writing") + 1] == "1"
+
+
+def test_a_clip_never_has_sound():
+    """The owner's rule: the microphone would pick up the neighbours."""
+    cmd = watch.burst_command(URL, "/tmp/b", 5)
+    assert "-an" in cmd[cmd.index("/tmp/b/f%02d.jpg") + 1:]
+    assert not any(arg in ("-c:a", "-acodec") or arg.startswith("0:a") for arg in cmd)
