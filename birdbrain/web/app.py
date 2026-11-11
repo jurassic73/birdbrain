@@ -547,12 +547,27 @@ def quick_filters() -> list[tuple[str, dict]]:
 
 
 def clip_info(visit, admin: bool = False) -> dict | None:
-    """Where the visit's video clip plays from (None: no clip). The page no longer says how long it is kept
-    (the owner found it extra)."""
+    """What the visit page says about the visit's video clip (None: no clip): where it plays from and how long it
+    is kept. Stars are the owner's, so only the admin reads about them; visitors, on the home site and the public
+    mirror, get the age limit and the newest few of each species (news.clips_rules)."""
     rel = visit["clip_path"] if "clip_path" in visit.keys() else None
     if not rel or not clips.inside(rel):
         return None
-    return {"src": f"/clips/{quote(rel)}"}
+    days, per_species = config.CLIP_DAYS, config.CLIP_KEEP_PER_SPECIES
+    rules = news.clips_rules(days, per_species)
+    if admin and visit["keep"] == 1:
+        kept = "Kept for good: this visit is starred."
+    elif days <= 0:
+        kept = "Kept for good."
+    else:
+        until = datetime.fromisoformat(visit["captured_at"]) + timedelta(days=days)
+        kept = f"Kept at least until {until.strftime('%b')} {until.day}."
+        if admin:
+            kept += " Star the photo to keep it for good."
+    if admin and days > 0:
+        rules = (f"Clips are deleted after {days} days, except those of starred visits (favorites and species covers)"
+                 + (f" and the newest {per_species} of each species." if per_species > 0 else "."))
+    return {"src": f"/clips/{quote(rel)}", "kept": kept, "rules": rules}
 
 
 def species_filters(request: Request) -> dict:
