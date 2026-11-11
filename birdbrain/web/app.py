@@ -21,7 +21,7 @@ from PIL import Image, ImageStat
 from starlette.routing import Match
 
 from ..hailo import stats as hailo_stats  # no OpenCV or HailoRT behind it: the card reads two SQLite files
-from . import auth, steps, viewer
+from . import auth, news, steps, viewer
 from .. import alert, audience, camera, circle_check, classifier, clips, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
@@ -409,6 +409,16 @@ def lessons_popup(request: Request) -> dict | None:
 
 
 templates.env.globals["lessons_popup"] = lessons_popup
+
+
+def news_popup() -> dict | None:
+    """The one-time "what's new" pop-up in base.html (web/news.py): for everyone on the home site, until its last
+    day; never on the public mirror, which has no clips."""
+    return news.clips_notice(clock.today(), public=auth.public(), seconds=config.CLIP_SECONDS,
+                             days=config.CLIP_DAYS, per_species=config.CLIP_KEEP_PER_SPECIES)
+
+
+templates.env.globals["news_popup"] = news_popup
 
 
 def filters_from(request: Request) -> dict:

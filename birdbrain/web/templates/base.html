@@ -197,6 +197,22 @@
   </dialog>
   <script src="/static/lessons-popup.js?v={{ asset_version }}" defer></script>
   {% endif %}{% endif %}
+  {% if not embed %}{% set news = news_popup() %}{% if news %}
+  {# One-time "what's new" notice (birdbrain/web/news.py; static/news.js shows it once per browser, until its last day). #}
+  <dialog class="popup popup-ask popup-news" id="news-popup" data-news="{{ news.id }}" data-until="{{ news.until }}" aria-labelledby="news-popup-title">
+    <p class="news-kicker">New</p>
+    <h2 class="popup-title" id="news-popup-title">{{ news.title }}</h2>
+    <div class="popup-msg">
+      <p>{{ news.text }}</p>
+      <p class="news-rules">{{ news.rules }}</p>
+    </div>
+    <div class="popup-actions">
+      <button type="button" class="popup-cancel">Got it</button>
+      <a class="popup-go" href="{{ news.href }}">{{ news.go }}</a>
+    </div>
+  </dialog>
+  <script src="/static/news.js?v={{ asset_version }}" defer></script>
+  {% endif %}{% endif %}
   <script>
     // Phones start with secondary sections folded (<details data-m-closed>); wider screens keep them open.
     if (matchMedia("(max-width: 640px)").matches) document.querySelectorAll("details[data-m-closed]").forEach(d => d.open = false);

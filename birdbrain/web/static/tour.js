@@ -15,7 +15,9 @@
   });
 
   // sel: selectors tried in order (first one that shows wins), or with all:true every visible match is highlighted
-  // together. Only features that exist on both the home site and the public mirror.
+  // together. Only features that exist on both the home site and the public mirror, except the Clips step: its chip
+  // isn't on the mirror (clips never leave the Pi), so the step is skipped there like any step with no target.
+  // news: the step tells the same thing as a "what's new" pop-up (static/news.js), which is marked seen with it.
   const steps = [
     {sel: [".hero-latest", ".hero"], title: "The latest visitor",
      text: "Click the photo, or press the Right arrow key, to open that visit. The magnifier opens it big, where you can zoom, drag and press Reset view."},
@@ -25,6 +27,8 @@
      text: "Today's visitors and how many of each, so you can see who has been around."},
     {sel: [".topbar nav"], title: "Find your way around",
      text: "Visits is this page. Species shows each kind of animal seen, Live shows what the camera sees right now, and Stats has the charts."},
+    {sel: [".chips a[href*='kind=clip']"], news: "clips", title: "Short video clips",
+     text: "New visits keep a few seconds of video, without sound. Clips shows the visits that have one: open a visit and press Play clip."},
     {sel: [".grid .sp-name", ".sp-name"], title: "Tap a species name",
      text: "Any species name opens an info card with a photo, sounds, a range map and when it is usually seen here."},
     {sel: ["#palette-toggle", "#theme-toggle"], all: true, title: "Colors and dark mode",
@@ -92,6 +96,7 @@
 
   function show() {
     const step = steps[idx];
+    if (step.news) set("bb_news_" + step.news);  // told here, so the pop-up with the same news stays away
     els.count.textContent = (idx + 1) + " of " + steps.length;
     els.title.textContent = step.title;
     els.text.textContent = step.text;

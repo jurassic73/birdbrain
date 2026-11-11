@@ -296,7 +296,9 @@ uv run python -m birdbrain.weather --days 7      # refetch the last 7 days
 
 ## Guided tour
 
-The first time a browser opens the home page, a short tour points at the latest photo, the eye button that hides circles and zones, today's numbers, the menus (the Live tab among them) and the species cards. It is the same for everyone, admins included. Whether it has run is remembered in that browser's local storage (`bb_tour_seen`); if storage is blocked it never starts by itself. **Run the tour again** is a button in Settings and on the About page (or open `/?tour=1`). Code: `birdbrain/web/static/tour.js`.
+The first time a browser opens the home page, a short tour points at the latest photo, the eye button that hides circles and zones, today's numbers, the menus (the Live tab among them), the Clips filter (where there are clips) and the species cards. It is the same for everyone, admins included. Whether it has run is remembered in that browser's local storage (`bb_tour_seen`); if storage is blocked it never starts by itself. **Run the tour again** is a button in Settings and on the About page (or open `/?tour=1`). Code: `birdbrain/web/static/tour.js`.
+
+A one-time "what's new" pop-up can announce a new feature to everyone who opens the site (`birdbrain/web/news.py`, `static/news.js`). Each notice has a last day, after which it is no longer sent; before that a browser shows it once and remembers the dismissal in its local storage (`bb_news_<id>`). The tour's step about the same feature counts as having seen it. The current notice (visit clips) is never shown on a public mirror, which has no clips.
 
 ## Optional: read-only mode for guests
 

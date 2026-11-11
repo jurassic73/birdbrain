@@ -592,6 +592,9 @@ dialog.popup[open] { animation: popup-in .14s ease-out; }
 .popup-actions a.popup-go:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .popup-actions button.danger { background: var(--low); color: var(--surface); border-color: var(--low); }
 .popup-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* "What's new" (static/news.js): a small kicker over the title, and the fine print lighter than the news itself. */
+.popup-news .news-kicker { margin: 0 0 4px; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.popup-news .popup-msg p.news-rules { color: var(--muted); font-size: .88rem; }
 /* The star's "Replace the cover?" (static/star.js): the current cover and the new pick side by side, each cropped
    around the animal; the new one framed in the cover yellow. One column on phones. */
 .popup-cover { width: min(94vw, 760px); padding: 20px 22px 18px; }

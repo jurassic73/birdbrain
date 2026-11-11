@@ -1,6 +1,7 @@
 """Component tests of the web app through TestClient on a temp database: visit clips."""
 
 import re
+from datetime import timedelta
 
 import pytest
 
@@ -95,3 +96,39 @@ def test_settings_says_what_the_clips_take(client, clip_visit):
 def test_about_mentions_clips_and_that_they_stay_home(client, conn):
     about = client.get("/about").text
     assert "<strong>Clips</strong>" in about and "without sound, on the Pi only" in about
+
+
+def test_the_clips_news_pop_up_is_on_every_page_until_its_last_day(client, locked, now, monkeypatch):
+    """Read-only visitors get it (the browser shows it once: static/news.js), and after the last day it is gone
+    from the HTML altogether."""
+    from birdbrain.web import news
+    monkeypatch.setattr(news, "CLIPS_UNTIL", now.date())  # today is the last day
+    for url in ("/", "/species", "/stats", "/about"):
+        page = client.get(url).text
+        assert 'id="news-popup" data-news="clips"' in page and f'data-until="{now.date().isoformat()}"' in page, url
+        assert "/static/news.js" in page and 'href="/?kind=clip">See the clips</a>' in page
+        assert f"a {config.CLIP_SECONDS:g} second video clip, without sound" in page
+        assert f'<p class="news-rules">Clips are kept for {config.CLIP_DAYS} days;' in page
+    monkeypatch.setattr(news, "CLIPS_UNTIL", now.date() - timedelta(days=1))  # yesterday was
+    page = client.get("/").text
+    assert "news-popup" not in page and "news.js" not in page
+
+
+def test_no_clips_news_on_the_public_mirror_with_clips_off_or_in_an_embedded_page(client, now, monkeypatch):
+    from birdbrain.web import news
+    monkeypatch.setattr(news, "CLIPS_UNTIL", now.date() + timedelta(days=14))
+    assert "news-popup" in client.get("/").text  # no password: the admin gets it too
+    assert "news-popup" not in client.get("/?embed=1").text  # but not inside the False triggers pop-up's page
+    monkeypatch.setattr(config, "CLIP_SECONDS", 0.0)
+    assert "news-popup" not in client.get("/").text
+    monkeypatch.setattr(config, "CLIP_SECONDS", 5.0)
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")
+    assert "news-popup" not in client.get("/").text
+
+
+def test_the_tour_tells_the_clips_news_and_the_pop_up_remembers_being_closed(client):
+    tour = client.get("/static/tour.js").text
+    assert "kind=clip" in tour and 'news: "clips"' in tour and '"bb_news_" + step.news' in tour  # the step marks it seen
+    script = client.get("/static/news.js").text
+    assert '"bb_news_" + dlg.dataset.news' in script and 'addEventListener("close", remember)' in script
+    assert "dataset.until" in script  # a page left open past the last day stays quiet too
