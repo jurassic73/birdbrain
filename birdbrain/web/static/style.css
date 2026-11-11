@@ -280,6 +280,7 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
 .hero-auto { position: absolute; right: 8px; bottom: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 6px;
   margin: 0; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: .8rem; cursor: pointer; }
 .hero-auto input { margin: 0; }
+.hero-novideo { cursor: help; }
 .hero-latest .hero-caption, .hero-latest .fav-star { z-index: 2; }
 .hero-photo img { object-fit: cover; }
 .thumb.hero-photo .marks .ring { stroke-width: 2.5; }
