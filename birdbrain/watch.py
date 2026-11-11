@@ -399,6 +399,31 @@ def open_capture(url: str) -> cv2.VideoCapture:
 
 
 BURST_TIMEOUT = 20  # seconds the burst's frames may take to arrive
+BURST_PREFIX = "birdbrain-burst-"  # the burst's temporary folder (frames, and the clip while it records)
+RAM_TMP = Path("/dev/shm")         # Linux's memory-backed folder: a burst there never touches the SD card
+STALE_BURST_SECONDS = 600          # a burst folder this old was left by a watcher that was killed mid-capture
+
+
+def burst_tmp_root() -> str | None:
+    """Where a burst's temporary folder goes: in memory when the machine has RAM_TMP (most triggers are false
+    ones, whose frames and clip are thrown away, so nothing of them is ever written to disk), else the system's
+    temporary folder (None, tempfile's default)."""
+    return str(RAM_TMP) if RAM_TMP.is_dir() and os.access(RAM_TMP, os.W_OK | os.X_OK) else None
+
+
+def clear_stale_bursts(now: float | None = None) -> int:
+    """Remove burst folders a killed watcher left behind (in memory they would hold RAM until the next reboot).
+    Called once when the watcher starts. Returns how many went."""
+    now = time.time() if now is None else now
+    gone = 0
+    for path in Path(burst_tmp_root() or tempfile.gettempdir()).glob(BURST_PREFIX + "*"):
+        try:
+            if path.is_dir() and now - path.stat().st_mtime > STALE_BURST_SECONDS:
+                shutil.rmtree(path, ignore_errors=True)
+                gone += 1
+        except OSError:
+            pass
+    return gone
 
 
 class Burst(list):
@@ -416,8 +441,10 @@ def burst_command(url: str, tmp: str, clip_seconds: float = 0) -> list[str]:
            "-vf", f"fps={config.BURST_FPS}", "-frames:v", str(config.BURST_FRAMES), "-q:v", "2"]
     if clip_seconds <= 0:
         return [*cmd, f"{tmp}/f%02d.jpg"]
+    # -thread_type slice: with its usual frame threads the JPEG encoder holds the last few stills back until ffmpeg
+    # ends, which is now when the clip does (measured on the Pi: stills 3 to 6 came 3.4 s late, every trigger).
     # -an: the clip never has sound. The camera's microphone would pick up the neighbours; keep it that way.
-    return [*cmd, "-atomic_writing", "1", f"{tmp}/f%02d.jpg",
+    return [*cmd, "-thread_type", "slice", "-atomic_writing", "1", f"{tmp}/f%02d.jpg",
             "-map", "0:v:0", "-c:v", "copy", "-an", "-t", f"{clip_seconds:g}", "-movflags", "+faststart",
             f"{tmp}/{clips.CLIP_NAME}"]
 
@@ -425,7 +452,7 @@ def burst_command(url: str, tmp: str, clip_seconds: float = 0) -> list[str]:
 def capture_burst() -> list[bytes]:
     if config.CLIP_SECONDS > 0:
         return capture_burst_and_clip()
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(prefix=BURST_PREFIX, dir=burst_tmp_root()) as tmp:
         cmd = burst_command(config.rtsp_url(config.RTSP_MAIN), tmp)
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=BURST_TIMEOUT)
@@ -441,7 +468,7 @@ def capture_burst_and_clip() -> Burst:
     """The burst, from an ffmpeg that goes on recording the visit's clip: this returns as soon as the frames are
     in, with the recording attached (Burst.recording) for handle_event to keep or throw away. No frames: no
     recording either, and an empty burst as before."""
-    tmp = Path(tempfile.mkdtemp(prefix="birdbrain-burst-"))
+    tmp = Path(tempfile.mkdtemp(prefix=BURST_PREFIX, dir=burst_tmp_root()))
     errors = tmp / "ffmpeg.log"  # a file, not a pipe: nobody reads a pipe while the clip records
     try:
         with open(errors, "w") as err:
@@ -1230,6 +1257,7 @@ def main() -> None:
     if args.once:
         handle_event()
         return
+    fail_soft("clearing old burst folders", clear_stale_bursts)
     weather.start_background()  # hourly weather in its own thread and DB connection, never on the frame loop
     watcher = Watcher()
     # The animal check retrains in its own thread, never on a trigger's path; it also looks through the bursts of

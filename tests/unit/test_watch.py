@@ -357,6 +357,12 @@ def test_the_clip_rides_on_the_bursts_one_camera_connection():
     assert cmd[cmd.index("-atomic_writing") + 1] == "1"
 
 
+def test_the_stills_never_wait_for_the_clip_to_end():
+    """With frame threads the JPEG encoder keeps the last stills until ffmpeg ends, 3.4 s later with a clip."""
+    stills = (cmd := watch.burst_command(URL, "/tmp/b", 5))[:cmd.index("/tmp/b/f%02d.jpg")]
+    assert stills[stills.index("-thread_type") + 1] == "slice"
+
+
 def test_a_clip_never_has_sound():
     """The owner's rule: the microphone would pick up the neighbours."""
     cmd = watch.burst_command(URL, "/tmp/b", 5)

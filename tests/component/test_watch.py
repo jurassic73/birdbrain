@@ -1,5 +1,7 @@
 """Component tests of birdbrain/watch.py: one real local dependency, a temp database or files on disk."""
 
+import os
+
 import anthropic
 import cv2
 import httpx
@@ -583,3 +585,23 @@ def test_reconnects_after_30_s_without_a_frame(conn, stalled_camera):
     if hasattr(cv2, "CAP_PROP_READ_TIMEOUT_MSEC"):  # the timeouts are set at open time, where the build has them
         assert params == [[cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, watch.STREAM_TIMEOUT_MS,
                            cv2.CAP_PROP_READ_TIMEOUT_MSEC, watch.STREAM_TIMEOUT_MS]]
+
+
+def test_a_burst_is_captured_in_memory_where_the_machine_has_it(tmp_path, monkeypatch):
+    """Most triggers are false ones: their frames and clip are thrown away, so they never touch the SD card."""
+    monkeypatch.setattr(watch, "RAM_TMP", tmp_path)
+    assert watch.burst_tmp_root() == str(tmp_path)
+    monkeypatch.setattr(watch, "RAM_TMP", tmp_path / "not-on-this-machine")
+    assert watch.burst_tmp_root() is None  # tempfile's own default
+
+
+def test_a_killed_watchers_burst_folders_are_cleared_at_the_next_start(tmp_path, monkeypatch):
+    monkeypatch.setattr(watch, "RAM_TMP", tmp_path)
+    old, running, other = (tmp_path / name for name in ("birdbrain-burst-old", "birdbrain-burst-now", "someone-elses"))
+    now = 1_800_000_000.0
+    for folder, age in ((old, 2 * watch.STALE_BURST_SECONDS), (running, 5), (other, 2 * watch.STALE_BURST_SECONDS)):
+        folder.mkdir()
+        (folder / "f01.jpg").write_bytes(b"frame")
+        os.utime(folder, (now - age,) * 2)
+    assert watch.clear_stale_bursts(now) == 1
+    assert not old.exists() and running.exists() and other.exists()

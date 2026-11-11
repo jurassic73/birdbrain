@@ -33,6 +33,7 @@ log = logging.getLogger("birdbrain.clips")
 
 CLIP_NAME = "clip.mp4"   # the recording's name in the burst's temporary folder
 SUFFIX = ".mp4"
+PARTIAL = SUFFIX + ".tmp"  # a clip while keep() copies it in; one left behind (a power cut) is swept by prune()
 MIN_BYTES = 20_000       # anything smaller is a header with no picture worth keeping
 STOP_SECONDS = 3         # how long ffmpeg gets to close the stream when asked to stop, before it is killed
 ORPHAN_SECONDS = 3600    # a clip file no visit names is deleted once it is this old (its visit was deleted)
@@ -92,7 +93,7 @@ def keep(src: Path, image_rel: str, clips_dir: Path | None = None) -> str:
     rel = rel_for(image_rel)
     dst = clips_dir / rel
     dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dst.with_name(dst.name + ".tmp")
+    tmp = dst.with_name(dst.stem + PARTIAL)
     shutil.copyfile(src, tmp)
     os.replace(tmp, dst)
     return rel
@@ -149,12 +150,12 @@ def _rows(conn: sqlite3.Connection) -> list[tuple]:
             + [(r["id"], r["label"], r["captured_at"], r["id"] in starred) for r in seen])
 
 
-def _files(clips_dir: Path) -> list[tuple[str, int, float]]:
+def _files(clips_dir: Path, suffixes: tuple[str, ...] = (SUFFIX,)) -> list[tuple[str, int, float]]:
     """(relative path, bytes, modified time) of every clip file on disk."""
     out = []
     for root, _, names in os.walk(clips_dir):
         for name in names:
-            if not name.endswith(SUFFIX):
+            if not name.endswith(suffixes):
                 continue
             path = Path(root) / name
             try:
@@ -195,7 +196,7 @@ def prune(conn: sqlite3.Connection, now: datetime | None = None, *, days: int | 
                     pass
             deleted += 1
     named = {r[0] for r in conn.execute("SELECT clip_path FROM visits WHERE clip_path IS NOT NULL")}
-    for rel, size, mtime in _files(clips_dir):
+    for rel, size, mtime in _files(clips_dir, (SUFFIX, PARTIAL)):
         if rel not in named and now.timestamp() - mtime > ORPHAN_SECONDS:
             if not dry_run:
                 delete(rel, clips_dir)

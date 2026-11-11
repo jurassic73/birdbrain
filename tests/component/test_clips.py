@@ -147,13 +147,15 @@ def test_zero_days_keeps_every_clip(conn, add_visit):
 def test_a_clip_file_no_visit_names_is_removed_once_it_is_an_hour_old(conn, add_visit):
     kept = clip_visit(add_visit, conn, 1, 1)
     stray, fresh = config.CLIPS_DIR / "2026/01/01/gone.mp4", config.CLIPS_DIR / "2026/01/01/just_now.mp4"
+    half = config.CLIPS_DIR / "2026/01/01/cut_short.mp4.tmp"  # the power went while a clip was being copied in
     stray.parent.mkdir(parents=True)
-    for path, age in ((stray, 2 * clips.ORPHAN_SECONDS), (fresh, 10)):
+    for path, age in ((stray, 2 * clips.ORPHAN_SECONDS), (half, 2 * clips.ORPHAN_SECONDS), (fresh, 10)):
         path.write_bytes(VIDEO)
         os.utime(path, (FROZEN_NOW.timestamp() - age,) * 2)  # fresh: a clip being filed, its visit not yet updated
     r = clips.prune(conn, FROZEN_NOW, days=21, per_species=0)
-    assert (r["deleted"], r["orphans"]) == (0, 1)
-    assert not stray.exists() and fresh.exists() and with_clips(conn) == {kept}
+    assert (r["deleted"], r["orphans"]) == (0, 2)
+    assert not stray.exists() and not half.exists() and fresh.exists() and with_clips(conn) == {kept}
+    assert clips.usage(conn)["count"] == 2  # only whole clips are counted
 
 
 def test_usage_counts_the_files_and_the_starred(conn, add_visit):
