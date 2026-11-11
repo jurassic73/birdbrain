@@ -28,6 +28,8 @@
      text: "Visits is this page. Species shows each kind of animal seen, Live shows what the camera sees right now, and Stats has the charts."},
     {sel: [".chips a[href*='kind=clip']"], news: "clips", title: "Short video clips",
      text: "New visits keep a few seconds of video, without sound. Clips shows the visits that have one: open a visit and press Play clip."},
+    {sel: [".hero-auto"], news: "clips", title: "Auto-play, in two places",
+     text: "Auto-play latest visit, on this photo, plays the newest clip here. Each visit page has its own Auto-play visit clips box. Tick or untick either one; this browser remembers it."},
     {sel: [".grid .sp-name", ".sp-name"], title: "Tap a species name",
      text: "Any species name opens an info card with a photo, sounds, a range map and when it is usually seen here."},
     {sel: ["#palette-toggle", "#theme-toggle"], all: true, title: "Colors and dark mode",

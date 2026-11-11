@@ -38,7 +38,9 @@ def clips_notice(today: date, *, seconds: float, days: int, per_species: int) ->
         "id": CLIPS_ID,
         "until": CLIPS_UNTIL.isoformat(),
         "title": "Video clips are now captured for new visits!",
-        "text": f"New visits have a {seconds:g} second video clip. Open a visit and press Play clip to watch it.",
+        "text": f"New visits have a {seconds:g} second video clip. Open a visit and press Play clip to watch it. "
+                "Auto-play has two boxes: Auto-play latest visit on the home page's photo, and Auto-play visit clips "
+                "on each visit page.",
         # People look for the sound: say there is none and why (clips.py never records it), in a light line.
         "silent": "Video only. Sound is never recorded (for privacy).",
         "rules": clips_news_rules(days, per_species),
