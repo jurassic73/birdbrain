@@ -25,6 +25,12 @@ def test_a_starred_visit_keeps_its_clip_however_old():
     assert clips.prunable(rows, CUTOFF, per_species=0) == {2}
 
 
+def test_a_starred_clip_takes_none_of_its_species_newest_places():
+    # The favorite is the newest Bushtit clip, but it is kept anyway: the one place goes to the next clip.
+    rows = [(1, "Bushtit", OLD, True), (2, "Bushtit", OLDER, False), (3, "Bushtit", "2026-10-01T09:00:00", False)]
+    assert clips.prunable(rows, CUTOFF, per_species=1) == {3}
+
+
 def test_each_species_keeps_its_newest_clips_even_past_the_cutoff():
     # Twelve old Bushtit clips and one old Varied Thrush: ten Bushtits stay (the newest), and the lone thrush.
     rows = [(i, "Bushtit", f"2026-10-{i:02d}T09:00:00", False) for i in range(1, 13)]

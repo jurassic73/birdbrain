@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from birdbrain.web import news
 
-ON = {"seconds": 5.0, "days": 21, "per_species": 10}
+ON = {"seconds": 5.0, "days": 21, "per_species": 20}
 
 
 def test_the_clips_notice_shows_through_its_last_day_and_never_after():
@@ -23,10 +23,15 @@ def test_no_clips_notice_where_there_are_no_clips():
 
 def test_the_notice_says_the_clip_length_and_the_retention_rules_from_the_settings():
     notice = news.clips_notice(news.CLIPS_UNTIL, **ON)
-    assert notice["text"] == "New visits keep a 5 second video clip. Open a visit and press Play clip to watch it."
-    assert notice["silent"] == "Video only. Sound is never recorded, to protect the neighbours' privacy."
-    assert notice["rules"] == "Clips are kept for 21 days; the newest 10 of each species are kept longer."
+    assert notice["title"] == "Video clips are now captured for new visits!"
+    assert notice["text"] == "New visits have a 5 second video clip. Open a visit and press Play clip to watch it."
+    assert notice["silent"] == "Video only. Sound is never recorded (for privacy)."
+    assert notice["rules"] == "The latest 20 clips of each species are kept."
     assert "star" not in notice["rules"] + notice["text"] + notice["silent"]  # visitors don't know about starred visits
     assert "a 7.5 second video" in news.clips_notice(news.CLIPS_UNTIL, **{**ON, "seconds": 7.5})["text"]
     assert news.clips_rules(30, 0) == "Clips are kept for 30 days."
     assert news.clips_rules(0, 10) == "Clips are kept for good."
+    # The visit page keeps the fuller line; the pop-up falls back to it when there is no count or no age limit.
+    assert news.clips_rules(21, 20) == "Clips are kept for 21 days; the newest 20 of each species are kept longer."
+    assert news.clips_news_rules(30, 0) == "Clips are kept for 30 days."
+    assert news.clips_news_rules(0, 20) == "Clips are kept for good."

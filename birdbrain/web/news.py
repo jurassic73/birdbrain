@@ -22,6 +22,14 @@ def clips_rules(days: int, per_species: int) -> str:
     return f"Clips are kept for {days} days; the newest {per_species} of each species are kept longer."
 
 
+def clips_news_rules(days: int, per_species: int) -> str:
+    """The pop-up's own, shorter line about what is kept: just the newest few of each species (the owner's wording).
+    With no age limit, or no per-species count, it is clips_rules' line."""
+    if days <= 0 or per_species <= 0:
+        return clips_rules(days, per_species)
+    return f"The latest {per_species} clips of each species are kept."
+
+
 def clips_notice(today: date, *, seconds: float, days: int, per_species: int) -> dict | None:
     """The clips notice for today's page, or None: past its last day, or clips are off."""
     if seconds <= 0 or today > CLIPS_UNTIL:
@@ -29,11 +37,11 @@ def clips_notice(today: date, *, seconds: float, days: int, per_species: int) ->
     return {
         "id": CLIPS_ID,
         "until": CLIPS_UNTIL.isoformat(),
-        "title": "Visits now come with a short clip",
-        "text": f"New visits keep a {seconds:g} second video clip. Open a visit and press Play clip to watch it.",
+        "title": "Video clips are now captured for new visits!",
+        "text": f"New visits have a {seconds:g} second video clip. Open a visit and press Play clip to watch it.",
         # People look for the sound: say there is none and why (clips.py never records it), in a light line.
-        "silent": "Video only. Sound is never recorded, to protect the neighbours' privacy.",
-        "rules": clips_rules(days, per_species),
+        "silent": "Video only. Sound is never recorded (for privacy).",
+        "rules": clips_news_rules(days, per_species),
         "go": "See the clips",
         "href": "/?kind=clip",
     }

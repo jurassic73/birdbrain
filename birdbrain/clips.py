@@ -9,7 +9,8 @@ Clips live under config.CLIPS_DIR in the same day folders as the photos (<photo 
 visits.clip_path names a visit's clip. The public mirror gets a clip only once the person check has looked through
 it and seen nobody (birdbrain/privacy.py, birdbrain/mirror.py); the others play on the Pi's own site only. Pruning (once a day, from the photo
 budget's thread) deletes clips older than CLIP_DAYS, except: a starred visit's (a favorite or a species cover,
-visits.keep) and the newest CLIP_KEEP_PER_SPECIES of each species, however old.
+visits.keep) and the newest CLIP_KEEP_PER_SPECIES of each species, however old. Starred clips are kept on top of
+those: they take none of a species' places.
 
 CLI: python -m birdbrain.clips [--prune] [--dry-run]    how many clips there are, and what pruning would delete
 """
@@ -120,14 +121,15 @@ def prunable(rows: Iterable[tuple], cutoff: str, per_species: int) -> set[int]:
     """Which visits lose their clip. `rows` are (visit id, species label, captured_at, starred), one per animal
     in each visit that has a clip (a visit with two kinds of animal has two rows). A clip stays when its visit is
     starred, when it is newer than `cutoff` (an ISO time), or when it is one of the newest `per_species` clips of
-    any species in it, however old: every species keeps a few clips to look back on."""
+    any species in it, however old: every species keeps a few clips to look back on. A starred visit's clip is
+    kept anyway, so it takes none of those places: the newest `per_species` are counted among the others."""
     rows = list(rows)
     safe: set[int] = set()
     by_label: dict[str, set[tuple[str, int]]] = defaultdict(set)
     for vid, label, at, starred in rows:
         if starred or at >= cutoff:
             safe.add(vid)
-        if label:
+        if label and not starred:
             by_label[label].add((at, vid))
     if per_species > 0:
         for clips in by_label.values():
