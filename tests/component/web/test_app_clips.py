@@ -31,9 +31,9 @@ def clip_visit(stored_visit, conn):
 def test_the_visit_page_offers_the_clip_and_the_file_plays(client, clip_visit):
     vid, rel = clip_visit()
     page = client.get(f"/visit/{vid}").text
-    assert 'id="clip-play"' in page and f'data-src="/clips/{rel}"' in page and "/static/clip.js" in page
+    assert 'id="clip-play"' in page and f'data-src="/clips/{rel}"' in page and "/static/clip.js" in page and 'id="clip-autoplay"' in page
     # Fetched only on the first press, shown without sound, and it says how long it is kept.
-    assert 'preload="none"' in page and " muted " in page and "Kept at least until" in page
+    assert 'preload="none"' in page and " muted " in page and "Kept at least until" not in page
     got = client.get(f"/clips/{rel}")
     assert got.status_code == 200 and got.content == VIDEO and got.headers["content-type"] == "video/mp4"
     # Seeking (and Safari at all) needs byte ranges.
@@ -44,13 +44,6 @@ def test_the_visit_page_offers_the_clip_and_the_file_plays(client, clip_visit):
 def test_a_visit_without_a_clip_shows_no_player(client, stored_visit):
     page = client.get(f"/visit/{stored_visit()}").text
     assert "clip-play" not in page and "clip.js" not in page
-
-
-def test_a_starred_visits_clip_says_it_is_kept_for_good(client, conn, clip_visit):
-    vid, _ = clip_visit()
-    db.set_keep(conn, vid, True)
-    page = client.get(f"/visit/{vid}").text
-    assert "Kept for good: this visit is starred." in page and "Kept until" not in page
 
 
 def test_visitors_on_the_home_network_can_play_clips_too(client, clip_visit, locked):

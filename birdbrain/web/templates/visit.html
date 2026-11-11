@@ -74,6 +74,13 @@
     {% else %}
     <a href="/images/{{ photo_src(visit) }}" draggable="false"><img class="full" draggable="false" src="/images/{{ photo_src(visit) }}" width="1920" height="1080" alt="{{ visit.label }}"></a>
     {% endif %}
+    {% if clip %}
+    {# Auto-play clips: the clip plays here at the photo's size; the magnifier opens it big (static/clip.js). #}
+    <div class="vclip-inline" id="clip-inline" hidden>
+      <video muted loop playsinline controls preload="none"></video>
+      <button type="button" class="zoom-btn" id="clip-inline-zoom" aria-label="Open the clip big" data-tip="Open big"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M10.5 8v5M8 10.5h5"/></svg></button>
+    </div>
+    {% endif %}
     {% if vzones and not visit.photo_deleted_at %}
     {# The dashed box the Pi animal check looked at, and the zone whose motion fired this capture (app.visit_zones). #}
     <svg class="zones-overlay" viewBox="0 0 {{ vzones.w }} {{ vzones.h }}" preserveAspectRatio="none" aria-hidden="true">
@@ -122,7 +129,7 @@
   {# The visit's video clip: a row under the photo, never over it. It plays big in its own pop-up (static/clip.js). #}
   <section class="vclip" aria-label="Clip">
     <button type="button" class="vclip-play" id="clip-play" data-track="clip_play" data-tip="Play this visit's clip big (Esc closes it). Video only, never sound."><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M2.5 1 L10.5 6 L2.5 11 Z" fill="currentColor"/></svg><span>Play clip</span></button>
-    <span class="muted small tip-label vclip-kept">{{ clip.kept }} <span class="info-tip" tabindex="0" aria-label="About clips" data-tip="A few seconds of video from the moment of the photo, as the camera sent it, without sound. {{ clip.rules }}">i</span></span>
+    <label class="vclip-auto small" data-tip="Play the clip by itself, in place of the photo, whenever you open a visit that has one (the magnifier opens it big). Remembered in this browser only."><input type="checkbox" id="clip-autoplay"> Auto-play clips</label>
     {# Admins: whether the clip may go to the public mirror (the person check looks through it, birdbrain/privacy.py). #}
     {% if request.state.admin %}{% set cs = clip_mirror_status(visit.clip_path, visit.public_ok) %}{% if cs == "person" %}<span class="confirm-pair">{{ badge("clip private", "private") }}<button class="link-btn" id="make-clip-public" hx-post="/visit/{{ visit.id }}/clip-public" hx-confirm="Only press this if you watched the whole clip and nobody appears in it. The next push to the public mirror then includes the clip." data-confirm-title="No person in this clip?" data-confirm-ok="Make clip public" data-tip="The Pi's person check flagged a frame of this clip, so the public mirror shows the visit without it. If you've watched it and there's no person, this lets the clip go public. Undo puts it back.">Make clip public</button></span>{% elif cs == "unchecked" %}{{ badge("clip not public yet", "private") }}{% elif cs == "cleared" %}<span class="confirmed-pair">{{ badge("clip public (checked)", "public-ok") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/clip-private">Undo</button></span>{% endif %}{% endif %}
   </section>
