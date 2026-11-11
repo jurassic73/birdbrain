@@ -340,6 +340,7 @@ templates.env.filters["tile_facts"] = species_info.tile_facts
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
 templates.env.globals["mirror_status"] = privacy.visit_status
 templates.env.globals["clip_mirror_status"] = privacy.clip_status
+templates.env.globals["clip_not_captured"] = clips.NOT_CAPTURED
 templates.env.globals["has_card"] = species_info.has_card
 templates.env.globals["steps_bottom"] = steps.bottom_line
 templates.env.globals["season_badge"] = species_info.visit_badge

@@ -11,6 +11,18 @@ from helpers.clock import FROZEN_NOW
 from birdbrain import clips, config, db, retention
 
 VIDEO = b"\x00" * (clips.MIN_BYTES + 1)
+SMOOTH = [i / 25 for i in range(126)]
+STALLED = [0.0] + [4 + i / 25 for i in range(26)]
+STALL = "the camera's stream stalled for 4.0 s while it recorded"
+
+
+@pytest.fixture(autouse=True)
+def frames(monkeypatch):
+    """What ffprobe would say of each clip file (the test files are not videos): smooth unless a test sets
+    frames[name] to other frame times, or to None for a file ffprobe cannot read."""
+    times: dict = {}
+    monkeypatch.setattr(clips, "frame_times", lambda path: times.get(path.name, SMOOTH))
+    return times
 
 
 class FakeFfmpeg:
@@ -62,6 +74,14 @@ def test_a_finished_recording_is_filed_with_its_visit_and_the_temporary_folder_g
 def test_a_failed_recording_gives_no_clip_and_says_why(tmp_path, video, proc, problem):
     rec = recording(tmp_path, video, **proc)
     assert rec.finish() is None and rec.problem == problem
+
+
+def test_a_choppy_recording_gives_no_clip_but_one_that_cannot_be_checked_is_kept(tmp_path, frames):
+    frames[clips.CLIP_NAME] = STALLED
+    rec = recording(tmp_path)
+    assert rec.finish() is None and rec.problem == STALL
+    frames[clips.CLIP_NAME] = None  # no ffprobe on this machine: as before there was a check
+    assert rec.finish() == rec.tmp / clips.CLIP_NAME and rec.problem is None
 
 
 def test_a_recording_past_its_deadline_is_stopped(tmp_path):
@@ -156,6 +176,16 @@ def test_a_clip_file_no_visit_names_is_removed_once_it_is_an_hour_old(conn, add_
     assert (r["deleted"], r["orphans"]) == (0, 2)
     assert not stray.exists() and not half.exists() and fresh.exists() and with_clips(conn) == {kept}
     assert clips.usage(conn)["count"] == 2  # only whole clips are counted
+
+
+def test_recheck_drops_the_choppy_clips_already_kept_and_leaves_the_visit_a_note(conn, add_visit, frames):
+    smooth, choppy = clip_visit(add_visit, conn, 1, 1), clip_visit(add_visit, conn, 2, 1)
+    rel = conn.execute("SELECT clip_path FROM visits WHERE id = ?", (choppy,)).fetchone()[0]
+    frames[os.path.basename(rel)] = STALLED
+    assert clips.recheck(conn, dry_run=True) == [(choppy, STALL)] and with_clips(conn) == {smooth, choppy}
+    assert clips.recheck(conn) == [(choppy, STALL)]
+    assert with_clips(conn) == {smooth} and not (config.CLIPS_DIR / rel).exists()
+    assert db.get_visit(conn, choppy)["clip_note"] == STALL and db.get_visit(conn, smooth)["clip_note"] is None
 
 
 def test_usage_counts_the_files_and_the_starred(conn, add_visit):

@@ -12,7 +12,11 @@ budget's thread) deletes clips older than CLIP_DAYS, except: a starred visit's (
 visits.keep) and the newest CLIP_KEEP_PER_SPECIES of each species, however old. Starred clips are kept on top of
 those: they take none of a species' places.
 
-CLI: python -m birdbrain.clips [--prune] [--dry-run]    how many clips there are, and what pruning would delete
+A clip with a hole in it is not kept (choppy, problem_with): the camera's stream sometimes stalls for a few seconds
+and those frames never arrive. The visit then says the video was not captured (visits.clip_note holds why).
+
+CLI: python -m birdbrain.clips [--prune] [--recheck] [--dry-run]    how many clips there are, what pruning would
+     delete, and (--recheck) dropping kept clips that turn out choppy
 """
 
 import argparse
@@ -37,6 +41,56 @@ PARTIAL = SUFFIX + ".tmp"  # a clip while keep() copies it in; one left behind (
 MIN_BYTES = 20_000       # anything smaller is a header with no picture worth keeping
 STOP_SECONDS = 3         # how long ffmpeg gets to close the stream when asked to stop, before it is killed
 ORPHAN_SECONDS = 3600    # a clip file no visit names is deleted once it is this old (its visit was deleted)
+MAX_GAP_SECONDS = 0.5    # a hole this long between two frames is a stalled stream: the clip would play choppy
+MIN_SPAN_SHARE = 0.8     # ... and so is a recording that covers less than this share of the seconds asked for
+PROBE_TIMEOUT = 10       # seconds ffprobe gets to list a clip's frames
+NOT_CAPTURED = "Video not captured for this visit"  # what the visit page says when the clip was dropped
+
+
+def choppy(times: Iterable[float], seconds: float) -> str | None:
+    """Why a clip with frames at these times (seconds from its start) would not play smoothly, or None when it
+    would. The clip is the camera's stream as it arrived, so frames the camera or the Wi-Fi dropped are simply
+    missing: the picture freezes there and then jumps. Such a clip is not kept."""
+    times = sorted(times)
+    if len(times) < 2:
+        return "the recording has no moving picture"
+    gap = max(b - a for a, b in zip(times, times[1:]))
+    if gap > MAX_GAP_SECONDS:
+        return f"the camera's stream stalled for {gap:.1f} s while it recorded"
+    span = times[-1] - times[0]
+    if seconds > 0 and span < seconds * MIN_SPAN_SHARE:
+        return f"the camera's stream gave only {span:.1f} s of the {seconds:g} s"
+    return None
+
+
+def frame_times(path: Path) -> list[float] | None:
+    """When each frame of a video file is shown, in seconds, as ffprobe reads them from the file's index (nothing
+    is decoded). None when the file could not be read: ffprobe is missing, failed or took too long."""
+    cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time",
+           "-of", "csv=p=0", str(path)]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=PROBE_TIMEOUT, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    times = []
+    for line in proc.stdout.split():
+        try:
+            times.append(float(line.strip(",")))
+        except ValueError:  # "N/A": a packet without a time
+            continue
+    return times
+
+
+def problem_with(path: Path, seconds: float | None = None) -> str | None:
+    """Why this clip file should not be kept (see choppy), or None: it is smooth, or it could not be looked at
+    (then it is kept, as before there was a check)."""
+    times = frame_times(path)
+    if times is None:
+        log.warning("could not check %s for missing frames; keeping it", Path(path).name)
+        return None
+    return choppy(times, config.CLIP_SECONDS if seconds is None else seconds)
 
 
 class Recording:
@@ -49,7 +103,7 @@ class Recording:
 
     def finish(self) -> Path | None:
         """The finished clip's path in the temporary folder, or None (see .problem) when the recording failed,
-        ran past its deadline or is too small to be a video."""
+        ran past its deadline, is too small to be a video or has a hole in it (choppy)."""
         try:
             code = self.proc.wait(timeout=max(0.0, self.deadline - time.monotonic()))
         except subprocess.TimeoutExpired:
@@ -62,7 +116,9 @@ class Recording:
         elif not path.is_file() or path.stat().st_size < MIN_BYTES:
             self.problem = "the recording is empty"
         else:
-            return path
+            self.problem = problem_with(path)
+            if self.problem is None:
+                return path
         return None
 
     def stop(self) -> None:
@@ -205,6 +261,25 @@ def prune(conn: sqlite3.Connection, now: datetime | None = None, *, days: int | 
     return {"deleted": deleted, "orphans": orphans, "freed_bytes": freed}
 
 
+def recheck(conn: sqlite3.Connection, *, clips_dir: Path | None = None, dry_run: bool = False) -> list[tuple]:
+    """Look through every kept clip for missing frames and drop the choppy ones, leaving the visit its "not
+    captured" note: for clips kept before the check existed. Returns (visit id, why) per choppy clip."""
+    clips_dir = clips_dir or config.CLIPS_DIR
+    found = []
+    rows = conn.execute("SELECT id, clip_path FROM visits WHERE clip_path IS NOT NULL ORDER BY id").fetchall()
+    for vid, rel in rows:
+        if not inside(rel) or not (clips_dir / rel).is_file():
+            continue
+        why = problem_with(clips_dir / rel)
+        if why is None:
+            continue
+        found.append((vid, why))
+        if not dry_run:
+            db.set_clip(conn, vid, None, note=why)
+            delete(rel, clips_dir)
+    return found
+
+
 def usage(conn: sqlite3.Connection, clips_dir: Path | None = None) -> dict:
     """What the clips take, for Settings > Storage: {"count", "bytes", "starred", "days", "per_species", "seconds"}."""
     files = _files(clips_dir or config.CLIPS_DIR)
@@ -216,9 +291,13 @@ def usage(conn: sqlite3.Connection, clips_dir: Path | None = None) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Visit clips: how many there are, and pruning the old ones.")
     parser.add_argument("--prune", action="store_true", help="delete clips past their time now")
-    parser.add_argument("--dry-run", action="store_true", help="with --prune: only say what would be deleted")
+    parser.add_argument("--recheck", action="store_true", help="drop kept clips that have missing frames (choppy)")
+    parser.add_argument("--dry-run", action="store_true", help="with --prune or --recheck: only say what would go")
     args = parser.parse_args()
     with db.session() as conn:
+        if args.recheck:
+            for vid, why in recheck(conn, dry_run=args.dry_run):
+                print(f"visit {vid}: {'would drop' if args.dry_run else 'dropped'} its clip ({why})")
         if args.prune:
             r = prune(conn, dry_run=args.dry_run)
             print(f"{'would delete' if args.dry_run else 'deleted'} {r['deleted']} clips past {config.CLIP_DAYS} days "

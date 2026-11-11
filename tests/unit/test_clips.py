@@ -55,3 +55,23 @@ def test_a_visit_with_two_species_stays_while_either_needs_it():
 def test_a_clip_with_no_species_goes_by_age_alone():
     rows = [(1, None, OLD, False), (2, None, NEW, False)]
     assert clips.prunable(rows, CUTOFF, per_species=10) == {1}
+
+
+SMOOTH = [i / 25 for i in range(126)]  # 5 s at 25 frames a second, as the camera sends it
+
+
+def test_a_clip_with_every_frame_is_smooth():
+    assert clips.choppy(SMOOTH, 5) is None
+    assert clips.choppy(reversed(SMOOTH), 5) is None  # the order ffprobe lists them in does not matter
+
+
+def test_a_stalled_stream_makes_a_choppy_clip():
+    # The clip that prompted the check: one frame, nothing for 4 seconds, then a smooth last second.
+    stalled = [0.0, 0.000011] + [3.96 + i / 25 for i in range(27)]
+    assert clips.choppy(stalled, 5) == "the camera's stream stalled for 4.0 s while it recorded"
+    assert clips.choppy([t for t in SMOOTH if not 2 < t < 2.4], 5) is None  # a few lost frames still play fine
+
+
+def test_a_recording_cut_short_or_with_no_picture_is_not_kept():
+    assert clips.choppy([t for t in SMOOTH if t < 3], 5) == "the camera's stream gave only 3.0 s of the 5 s"
+    assert clips.choppy([0.0], 5) == clips.choppy([], 5) == "the recording has no moving picture"

@@ -154,6 +154,7 @@ def test_a_real_visit_keeps_its_clip(pipeline, recording):
     visit = watch.db.latest_visit(conn)
     assert visit["clip_path"] == watch.clips.rel_for(visit["image_path"])
     assert (watch.config.CLIPS_DIR / visit["clip_path"]).read_bytes() == b"five seconds of junco"
+    assert visit["clip_note"] is None
     assert rec.discarded == 1  # the temporary folder never outlives the event
 
 
@@ -182,7 +183,9 @@ def test_a_failed_recording_never_costs_the_visit(pipeline, recording):
     set_detector(True)
     rec = recording(ok=False)
     assert watch.handle_event() == "bird"
-    assert watch.db.latest_visit(conn)["clip_path"] is None and rec.discarded == 1
+    visit = watch.db.latest_visit(conn)
+    assert visit["clip_path"] is None and rec.discarded == 1
+    assert visit["clip_note"] == "ffmpeg exited with 1"  # the visit page says the video was not captured
 
 
 def test_real_visit_keeps_only_the_best_frame(pipeline):

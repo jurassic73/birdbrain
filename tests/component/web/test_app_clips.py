@@ -43,7 +43,16 @@ def test_the_visit_page_offers_the_clip_and_the_file_plays(client, clip_visit):
 
 def test_a_visit_without_a_clip_shows_no_player(client, stored_visit):
     page = client.get(f"/visit/{stored_visit()}").text
-    assert "clip-play" not in page and "clip.js" not in page
+    assert "clip-play" not in page and "clip.js" not in page and clips.NOT_CAPTURED not in page
+
+
+def test_a_visit_whose_clip_was_dropped_says_the_video_was_not_captured(client, conn, stored_visit, monkeypatch):
+    vid = stored_visit()
+    db.set_clip(conn, vid, None, note="the camera's stream stalled for 4.0 s while it recorded")
+    page = client.get(f"/visit/{vid}").text
+    assert clips.NOT_CAPTURED in page and "stalled for 4.0 s" in page and "clip-play" not in page
+    monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")  # the mirror says so too
+    assert clips.NOT_CAPTURED in client.get(f"/visit/{vid}").text
 
 
 def test_a_starred_visits_clip_says_it_is_kept_for_good(client, conn, clip_visit):

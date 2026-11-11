@@ -161,7 +161,10 @@ ADDED_COLUMNS = {"corrected_visitor": "TEXT", "feedback": "TEXT", "marks": "TEXT
                  # circles and the animal check's training all go by that one (photo_rel, thumb_rel).
                  "photo_frame": "INTEGER",
                  # The visit's video clip, relative to config.CLIPS_DIR (birdbrain.clips); NULL = none, or pruned.
-                 "clip_path": "TEXT"}
+                 "clip_path": "TEXT",
+                 # Why the visit has no clip although one was recorded (the stream stalled, ffmpeg failed): the
+                 # visit page then says the video was not captured. NULL = nothing went wrong, or clips were off.
+                 "clip_note": "TEXT"}
 # The visit's photo files are there (false triggers past the storage limit lose them; see retention.prune).
 HAS_PHOTO = "photo_deleted_at IS NULL"
 # The photo itself is there, full size or thinned, not just the thumbnail: for checks that look at the frame.
@@ -1173,9 +1176,11 @@ def confirm_visits(conn: sqlite3.Connection, ids: list[int], on: bool = True) ->
     conn.commit()
 
 
-def set_clip(conn: sqlite3.Connection, visit_id: int, clip_rel: str | None) -> None:
-    """The visit's video clip (a path under config.CLIPS_DIR), or None once it is gone."""
-    conn.execute("UPDATE visits SET clip_path = ? WHERE id = ?", (clip_rel, visit_id))
+def set_clip(conn: sqlite3.Connection, visit_id: int, clip_rel: str | None, note: str | None = None) -> None:
+    """The visit's video clip (a path under config.CLIPS_DIR), or None once it is gone. `note` says why a
+    recording was not kept (clip_note); without one the column is left as it is."""
+    conn.execute("UPDATE visits SET clip_path = ?, clip_note = COALESCE(?, clip_note) WHERE id = ?",
+                 (clip_rel, note, visit_id))
     conn.commit()
 
 

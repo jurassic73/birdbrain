@@ -768,10 +768,13 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
 
 
 def keep_clip(visit_id: int, image_rel: str, recording: clips.Recording) -> None:
-    """Wait for the visit's clip to finish recording (a few seconds at most) and file it with the visit."""
+    """Wait for the visit's clip to finish recording (a few seconds at most) and file it with the visit. A
+    recording that failed or came through with a hole in it (choppy) is not kept: the visit gets a note instead."""
     src = recording.finish()
     if src is None:
         log.info("visit %d: no clip (%s)", visit_id, recording.problem)
+        with db.session() as conn:
+            db.set_clip(conn, visit_id, None, note=recording.problem)
         return
     rel = clips.keep(src, image_rel)
     with db.session() as conn:
