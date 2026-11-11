@@ -299,9 +299,12 @@ place in the article: never merge two separate claims, or a claim and a detail f
 Make it punchy and memorable: a size or weight comparison, a lifespan record, a speed, an odd habit, where its name comes from, a striking number.
 Keep every number exactly as the article states it, and say exactly who it applies to (do not turn a claim about females
 or the whole species into one about males, or the reverse). Prefer the surprising over the descriptive: skip plain
-taxonomy ("a small sparrow") and ordinary size ranges unless there is a vivid comparison. A weight comparison must name a common US coin, never just "a coin": penny 2.5 g, nickel 5 g, dime 2.27 g,
-quarter 5.67 g. Never a half dollar or dollar coin, nobody carries them. Use the coin, or a whole number of coins
-("two quarters", "a few pennies"), that comes closest to the stated weight (for a range, one inside it), and say "about" or "roughly".
+taxonomy ("a small sparrow") and ordinary size ranges unless there is a vivid comparison. A weight fact for a small bird (under about 30 g) may compare it to a common US coin, never just "a coin": penny 2.5 g,
+nickel 5 g, dime 2.27 g, quarter 5.67 g. Never a half dollar or dollar coin, nobody carries them. Use the coin, or a whole
+number of coins ("two quarters"), that comes closest to the stated weight, and say "about" or "roughly". For anything
+heavier, just state the weight with its unit and no comparison.
+Facts, not folklore: each fact is a verifiable statement about the animal itself. Skip myths, legends, stories about people
+and anything a visitor would find baffling.
 They must not repeat or rephrase any
 of the notes. Write fewer, or none, rather than pad with dull or generic facts. No emoji.
 Every fact must have a lead. The lead is the fact's headline for a tile: 1 or 2 words, or a number with its unit, copied exactly

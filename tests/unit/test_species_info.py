@@ -239,6 +239,7 @@ def test_prompt_asks_for_whole_single_claim_sentences_with_a_lead():
 def test_prompt_wants_a_named_us_coin():
     assert "common US coin" in species_info.NOTES_PROMPT and "quarter 5.67 g" in species_info.NOTES_PROMPT
     assert "Never a half dollar" in species_info.NOTES_PROMPT
+    assert "just state the weight" in species_info.NOTES_PROMPT and "Facts, not folklore" in species_info.NOTES_PROMPT
 
 
 def test_vague_coin_flags_only_unnamed_coins():
