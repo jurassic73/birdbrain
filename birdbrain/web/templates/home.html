@@ -132,6 +132,8 @@
 <dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
   <button type="button" class="viewer-reset" id="home-viewer-reset" hidden>Reset view</button>
   {{ zoom_out_btn("photo-viewer-close") }}
+  {# The big photo is always the latest visit's, so the only way on is older: the next visit, opened already big (?zoom=1). #}
+  <a class="photo-viewer-arrow next" id="home-viewer-next" data-track="visit_arrows" href="#" aria-label="Older visit" title="Older (→)" hidden>&#8250;</a>
   <div class="photo-viewer-frame"><img alt="" draggable="false"><svg class="marks" aria-hidden="true"></svg></div>
 </dialog>
 
@@ -204,6 +206,8 @@
       if (now - lastTap < DOUBLE_MS && !moved) { e.preventDefault(); toggle2x(t.clientX, t.clientY); lastTap = 0; }
       else lastTap = now;
     });
+    const olderA = document.getElementById("home-viewer-next");
+    viewer.addEventListener("keydown", e => { if (e.key === "ArrowRight" && !olderA.hidden) olderA.click(); });
     document.addEventListener("click", e => {
       const btn = e.target.closest("[data-zoom-photo]");
       if (!btn) return;
@@ -216,6 +220,11 @@
       const none = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       none.setAttribute("class", "marks");
       frame.querySelector(".marks").replaceWith(marks ? marks.cloneNode(true) : none);
+      // The first visit below the latest one (the grid repeats the latest as a hidden twin; skip it).
+      const latest = btn.closest(".hero-latest")?.querySelector('a[href^="/visit/"]')?.getAttribute("href");
+      const older = [...document.querySelectorAll('a.card[href^="/visit/"]')].map(x => x.getAttribute("href")).find(h => h !== latest);
+      olderA.hidden = !older;
+      if (older) olderA.href = older.split(/[?#]/)[0] + "?zoom=1";
       viewer.showModal();
       if (matchMedia("(max-width: 640px), (max-height: 500px)").matches && viewer.requestFullscreen) {
         viewer.requestFullscreen().then(() => screen.orientation?.lock?.("landscape")).catch(() => {});
@@ -224,7 +233,7 @@
     // The x, Esc, or a click anywhere (on the photo too, zoomed or not) closes. The end of a drag or pinch doesn't.
     viewer.addEventListener("click", e => {
       if (e.target.closest(".photo-viewer-close")) return viewer.close();
-      if (e.target.closest("button")) return;
+      if (e.target.closest("button, .photo-viewer-arrow")) return;
       if (moved) { moved = false; return; }
       clearTimeout(closeTimer);
       closeTimer = setTimeout(() => viewer.close(), DOUBLE_MS);

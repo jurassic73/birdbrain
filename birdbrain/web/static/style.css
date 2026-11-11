@@ -1374,6 +1374,7 @@ button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 
 }
 .photo-viewer-arrow { position: fixed; top: 50%; transform: translateY(-50%); z-index: 1; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.3); border-radius: 50%; color: #fff; font-size: 2.2rem; line-height: 1; text-decoration: none; }
 .photo-viewer-arrow::before { content: ""; position: absolute; inset: -7px; }
+.photo-viewer-arrow[hidden] { display: none; }
 .photo-viewer-arrow:hover { background: rgba(255,255,255,.2); color: #fff; }
 .photo-viewer-arrow.prev { left: 12px; }
 .photo-viewer-arrow.next { right: 12px; }
