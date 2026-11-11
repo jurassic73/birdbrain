@@ -1365,6 +1365,13 @@ button.about-tour-close { flex: none; width: 28px; height: 28px; margin: 0 -4px 
 /* Bigger tap area (about 66 px) than the visible 44 px circle, so a tap just outside the circle
    navigates instead of opening the photo. Invisible; it belongs to the link. */
 .photo-arrow::before { content: ""; position: absolute; top: -17px; bottom: -7px; left: -13px; right: -13px; }
+/* A phone turned sideways (wider than 640 px but under 500 px tall): the photo is shrunk to fit the screen height, so its
+   magnifier and corners are never scrolled out of sight, and the newer/older arrows sit mid-height on its sides. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .visit-media > .visit-photo { width: min(100%, calc((100vh - 24px) * 1.7778)); width: min(100%, calc((100dvh - 24px) * 1.7778)); align-self: center; }
+  .photo-arrow { display: flex; top: 50%; bottom: auto; transform: translateY(-50%); }
+  .photo-arrow::before { top: -11px; bottom: -11px; }
+}
 .photo-viewer-arrow { position: fixed; top: 50%; transform: translateY(-50%); z-index: 1; width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.3); border-radius: 50%; color: #fff; font-size: 2.2rem; line-height: 1; text-decoration: none; }
 .photo-viewer-arrow::before { content: ""; position: absolute; inset: -7px; }
 .photo-viewer-arrow:hover { background: rgba(255,255,255,.2); color: #fff; }
