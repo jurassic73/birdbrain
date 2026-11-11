@@ -91,5 +91,8 @@ def test_stats_page_renders_the_finder_line_with_and_without_data(client, add_vi
 def test_about_page_mentions_the_other_finders_in_a_sentence(client):
     html = client.get("/about").text.replace("&#39;", "'")
     assert "crowd counter" in html and "object detector" in html
+    # The rain rule looks at the photos, not the weather: said in a sentence, with the Pi animal check
+    assert "Rain on the water:</b> judged from the photos themselves, never from a weather forecast." in html
+    assert "still being tuned" in html
     # YOLOX's other job (keeping people off the public mirror) stays off the About page, the owner's choice
     assert not re.search(r"YOLOX[^.<]*privacy|privacy[^.<]*YOLOX", html, re.I)
