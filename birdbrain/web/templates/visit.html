@@ -143,6 +143,10 @@
   {% if clip %}
   <dialog class="viewer clip-viewer" id="clip-viewer" aria-label="Visit clip">
     {{ zoom_out_btn("clip-viewer-close") }}
+    {# The same newer/older arrows as the photo view; the next visit opens straight into its clip (?zoom=clip, static/clip.js). #}
+    {% set clip_zoom = (ft_param ~ '&zoom=clip') if ft_param else '?zoom=clip' %}
+    {% if prev_id %}<a data-track="visit_arrows" class="photo-viewer-arrow prev" id="clip-prev" href="/visit/{{ prev_id }}{{ clip_zoom }}" aria-label="Newer visit" title="Newer visit">&#8249;</a>{% endif %}
+    {% if next_id %}<a data-track="visit_arrows" class="photo-viewer-arrow next" id="clip-next" href="/visit/{{ next_id }}{{ clip_zoom }}" aria-label="Older visit" title="Older visit">&#8250;</a>{% endif %}
     <video id="clip-video" data-src="{{ clip.src }}"{% if not visit.photo_deleted_at %} poster="/images/{{ photo_src(visit) }}"{% endif %} controls loop muted playsinline preload="none"></video>
   </dialog>
   <script src="/static/clip.js?v={{ asset_version }}" defer></script>
@@ -1162,8 +1166,10 @@
     });
     const url = new URL(location.href);
     if (url.searchParams.has("zoom")) {
+      const clipView = url.searchParams.get("zoom") === "clip";  // arrived from the big clip: the clip script reopens it
       url.searchParams.delete("zoom");
       history.replaceState(null, "", url);
+      if (clipView) { window.bbClipZoom = true; return; }
       const img = photo.querySelector("img");
       img.complete ? open() : img.addEventListener("load", open, { once: true });
     }

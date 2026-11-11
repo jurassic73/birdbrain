@@ -54,9 +54,12 @@
     });
   }
   if (on) inline(true);
+  // Came here from the big clip's newer/older arrows (?zoom=clip; visit.html cleans it from the address and sets
+  // window.bbClipZoom): open this visit's clip big again.
+  if (window.bbClipZoom) play();
   dlg.addEventListener("close", () => video.pause());
   // A click beside the video or on the round button closes it; the video's own controls keep working.
-  dlg.addEventListener("click", e => { if (e.target !== video) dlg.close(); });
+  dlg.addEventListener("click", e => { if (e.target !== video && !e.target.closest(".photo-viewer-arrow")) dlg.close(); });
   // The page's arrow keys step to other visits: not while the clip is open (left and right seek in the video).
   dlg.addEventListener("keydown", e => e.stopPropagation());
 })();

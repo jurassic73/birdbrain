@@ -276,3 +276,14 @@ def test_embed_pages_have_no_keyboard_shortcuts(client, add_visit):
         html = client.get(path).text
         assert 'id="keys-btn"' not in html and 'id="keys-dialog"' not in html and "shortcuts.js" not in html, path
     assert "species-nav.js" not in client.get("/species/Song%20Sparrow?embed=1").text
+
+
+def test_the_big_clip_has_newer_and_older_arrows_that_reopen_the_clip(client, add_visit):
+    old = add_visit(captured_at="2026-10-24T09:00:00", species="Bushtit", clip_path="a.mp4")
+    mid = add_visit(captured_at="2026-10-24T10:00:00", species="Bushtit", clip_path="b.mp4")
+    new = add_visit(captured_at="2026-10-24T11:00:00", species="Bushtit", clip_path="c.mp4")
+    html = client.get(f"/visit/{mid}?species=Bushtit").text
+    dlg = html.split('id="clip-viewer"')[1].split("</dialog>")[0]
+    assert f'id="clip-prev" href="/visit/{new}?species=Bushtit&amp;zoom=clip"' in dlg.replace("&zoom", "&amp;zoom") or \
+        f'id="clip-prev" href="/visit/{new}?species=Bushtit&zoom=clip"' in dlg
+    assert 'id="clip-next"' in dlg and f"/visit/{old}" in dlg
