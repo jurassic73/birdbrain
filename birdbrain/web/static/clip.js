@@ -33,6 +33,17 @@
   });
   // The in-place player starts without the browser's play bar (it flashed up on every visit stepped to); the first tap brings it.
   if (small) small.addEventListener("click", () => { small.controls = true; }, {once: true});
+  // Touch screens: Android Chrome turns a playing video that shows the browser's play bar full screen by itself when
+  // the phone is turned sideways. That leaves only the video: the newer/older arrows and the zoom-out button are gone
+  // until Back. Without a full-screen button the browser leaves the video alone, and the big view fills the screen
+  // there anyway (style.css). If a browser does it regardless, come straight back out.
+  if (matchMedia("(pointer: coarse)").matches) {
+    const ours = [video, small].filter(Boolean);
+    ours.forEach(v => v.setAttribute("controlslist", "nofullscreen"));
+    document.addEventListener("fullscreenchange", () => {
+      if (ours.includes(document.fullscreenElement)) document.exitFullscreen().catch(() => {});
+    });
+  }
   if (box) {
     document.getElementById("clip-inline-zoom").addEventListener("click", () => { small.pause(); play(); });
     dlg.addEventListener("close", () => { if (!box.hidden) small.play().catch(() => {}); });

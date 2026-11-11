@@ -202,3 +202,11 @@ def test_the_tour_tells_the_clips_news_and_the_pop_up_remembers_being_closed(cli
     script = client.get("/static/news.js").text
     assert '"bb_news_" + dlg.dataset.news' in script and 'addEventListener("close", remember)' in script
     assert "dataset.until" in script  # a page left open past the last day stays quiet too
+
+
+def test_a_turned_phone_keeps_the_clip_in_our_view(client):
+    # Android Chrome full-screens a playing video with a play bar on rotation, which hides the arrows and the
+    # zoom-out button; touch screens get no full-screen button, and a full-screened clip comes straight back out.
+    script = client.get("/static/clip.js").text
+    assert '"(pointer: coarse)"' in script and 'setAttribute("controlslist", "nofullscreen")' in script
+    assert "ours.includes(document.fullscreenElement)" in script and "exitFullscreen()" in script
