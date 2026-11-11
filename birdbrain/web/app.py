@@ -649,6 +649,7 @@ def home(request: Request, conn=Depends(get_conn)):
         next_url=more_url("/visits/more", visits, PAGE_SIZE, filters),
         split_day=None if active else clock.today().isoformat(),
         hero_id=today["latest"]["id"] if today["latest"] else None,
+        hero_clip=clip_info(today["latest"]) if today["latest"] else None,
         # The Today and This week chips show the same period on the scoreboard.
         **scoreboard_ctx(conn, next(({"Today": "today", "This week": "week"}.get(n) for n, _, on in chips if on), None)),
     )

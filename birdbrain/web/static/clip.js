@@ -37,9 +37,18 @@
   }
   if (auto) {
     auto.checked = on;
-    auto.addEventListener("change", () => {
+    auto.addEventListener("change", async () => {
       try { auto.checked ? localStorage.setItem(KEY, "1") : localStorage.removeItem(KEY); } catch (e) {}
       inline(auto.checked);
+      // The home page's latest visit has its own box (hero-clip.js, on unless unticked): offer it too.
+      let homeOn = true;
+      try { homeOn = localStorage.getItem("birdbrain.heroAutoplay") !== "0"; } catch (e) {}
+      if (auto.checked && !homeOn && window.birdbrain && birdbrain.ask && await birdbrain.ask({
+        title: "Auto-play the latest visit too?",
+        message: "You're turning on auto-play for visit clips. Would you like the latest visit's clip on the home page to play by itself as well?",
+        ok: "Yes, home too", cancel: "Just visits" })) {
+        try { localStorage.setItem("birdbrain.heroAutoplay", "1"); } catch (e) {}
+      }
     });
   }
   if (on) inline(true);

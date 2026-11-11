@@ -53,6 +53,14 @@ def test_a_starred_visits_clip_says_it_is_kept_for_good(client, conn, clip_visit
     assert "Kept for good: this visit is starred." in page and "Kept until" not in page
 
 
+def test_home_offers_auto_play_of_the_latest_visits_clip(client, clip_visit, stored_visit):
+    vid, rel = clip_visit()
+    page = client.get("/").text
+    assert 'id="hero-autoplay"' in page and f'data-src="/clips/{rel}"' in page and "/static/hero-clip.js" in page
+    stored_visit(species="Bushtit")  # a newer visit without a clip: no box
+    assert 'id="hero-autoplay"' not in client.get("/").text
+
+
 def test_visitors_on_the_home_network_can_play_clips_too(client, clip_visit, locked):
     vid, rel = clip_visit()
     assert 'id="clip-play"' in client.get(f"/visit/{vid}").text

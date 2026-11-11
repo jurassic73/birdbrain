@@ -33,6 +33,12 @@
       </div>
       {% set nc = no_circle_note(lv) %}{% if nc %}<span class="hero-note">{{ nc }}</span>{% endif %}
     </div>
+  {% if hero_clip %}
+  {# Auto-play latest visit (static/hero-clip.js): its clip loops over the photo, on unless this browser said no.
+     Clicks go through the video to the photo link. #}
+  <video class="hero-clip" data-src="{{ hero_clip.src }}" muted loop playsinline preload="none" hidden></video>
+  <label class="hero-auto" data-tip="Play the latest visit's clip over its photo whenever you open this page. Remembered in this browser only."><input type="checkbox" id="hero-autoplay"> Auto-play latest visit</label>
+  {% endif %}
   {% if not lv.photo_deleted_at %}{{ zoom_btn(lv) }}{% endif %}
   {# The same star as on the cards (admins), just left of the magnifier. #}
   {% if request.state.admin and lv.label and lv.label not in ('None', 'Other') %}{{ fav_star(lv, lv.label, star_covers(request)) }}{% endif %}
@@ -118,6 +124,7 @@
 </section>
 
 <script src="/static/home-facts.js?v={{ asset_version }}"></script>
+<script src="/static/hero-clip.js?v={{ asset_version }}" defer></script>
 
 <dialog class="viewer photo-viewer" id="home-viewer" aria-label="Photo, big">
   <button type="button" class="viewer-reset" id="home-viewer-reset" hidden>Reset view</button>
