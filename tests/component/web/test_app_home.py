@@ -92,13 +92,34 @@ def test_today_list_shows_the_seasonal_status_as_a_pill_after_the_info_icon(clie
 def test_home_facts_box_shows_the_latest_species_facts_with_a_link(client, conn, add_visit):
     add_visit(species="Dark-eyed Junco")
     add_visit(species="Bushtit", captured_at=(FROZEN_NOW - timedelta(minutes=5)).isoformat())
-    _card(conn, "Dark-eyed Junco", facts=["Juncos flash white tail feathers.", "Flocks keep a pecking order.", "A third.", "A fourth."])
+    pool = ["Juncos flash white tail feathers.", "Flocks keep a pecking order.", "A third.", "A fourth."]
+    _card(conn, "Dark-eyed Junco", facts=pool)
     _card(conn, "Bushtit", facts=["Bushtits travel in noisy flocks."])
     box = client.get("/").text.split('class="today-facts"')[1].split("</section>")[0]
     assert '<a href="/species/Dark-eyed%20Junco">Dark-eyed Junco</a>' in box
-    assert "Juncos flash white tail feathers." in box and "Flocks keep a pecking order." in box
-    assert box.count("<li>") == 3 and "Bushtits travel" not in box  # at most 3, only the latest visitor's species
+    shown = re.findall(r"<li>(.*?)</li>", box)
+    assert len(shown) == 3 and set(shown) < set(pool)  # 3 of the pool, only the latest visitor's species
+    assert "Bushtits travel" not in box
     assert client.get("/").text.count('class="today-facts"') == 1
+
+
+def test_home_facts_box_rotates_through_the_pool(client, conn, add_visit):
+    """A card holds a pool of facts; the three on show move on with every new visit (and every few minutes)."""
+    from birdbrain import species_info
+
+    def shown():
+        box = client.get("/").text.split('class="today-facts"')[1].split("</section>")[0]
+        return re.findall(r"<li>(.*?)</li>", box)
+
+    pool = [f"Junco fact number {i}." for i in range(9)]
+    _card(conn, "Dark-eyed Junco", facts=pool)
+    first_id = add_visit(species="Dark-eyed Junco", captured_at=(FROZEN_NOW - timedelta(minutes=9)).isoformat())
+    first = shown()
+    assert first == species_info.rotate(pool, species_info.fact_turn(extra=first_id), 3)
+    assert shown() == first  # a reload inside the window shows the same three
+    add_visit(species="Dark-eyed Junco", captured_at=(FROZEN_NOW - timedelta(minutes=2)).isoformat())
+    second = shown()
+    assert len(second) == 3 and not set(second) & set(first)  # the next visit brings three new ones
 
 
 def test_home_facts_box_kicker_says_latest_or_last_before_today(client, conn, add_visit):
@@ -133,11 +154,10 @@ def test_home_facts_box_handles_dict_and_plain_string_facts(client, conn, add_vi
         {"lead": "Pecking order", "text": ""},
         "An old plain-string fact.",                      # cards saved before the {lead, text} change
         {"lead": "Ground feeders", "text": "They hop along the ground."},
-        {"lead": "Fourth", "text": "Cut by the limit of three."},
     ])
     box = client.get("/").text.split('class="today-facts"')[1].split("</section>")[0]
     assert "Juncos flash white tail feathers." in box and "An old plain-string fact." in box
-    assert "They hop along the ground." in box and "Cut by the limit" not in box
+    assert "They hop along the ground." in box and box.count("<li>") == 3  # the limit of three: the rotation test
     assert "Tail flash" not in box and "Ground feeders" not in box  # the lead isn't shown, only the sentence
     assert box.count("<li>") == 3
 

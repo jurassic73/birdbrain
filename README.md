@@ -143,14 +143,16 @@ Rain and wind can trigger motion every few seconds. Three things keep that cheap
 
 ## Species card facts
 
-Each species card gets 2 to 5 short "hook" facts for the top of its page (each with a one or two word lead shown on its tile, which the code checks against the fact), written in the same Haiku call as the behavior notes from the Wikipedia article (a fraction of a cent per species; the code drops blanks, runaway sentences, repeats of a note (or of an earlier note) and anything past 5). New cards get them automatically. For cards you already have:
+Each species card keeps a pool of 10 to 15 short "hook" facts (each with a one or two word lead shown on its tile, which the code checks against the fact), written by Claude Sonnet in the same call as the behavior notes, from the whole Wikipedia article (about 3 cents per species, once when the card is built and again at its monthly refresh). The facts are spread over topics: migration, size and weight, song, calls, behavior, colors, how the sexes differ, rivals and flock mates, lookalikes, food, nesting, lifespan, the name, numbers. The code drops blanks, runaway sentences, repeats of a note or of an earlier fact, a fourth fact on one topic and anything past 15, and a monthly refresh that comes back with fewer facts keeps the bigger pool.
+
+The pages show a few of the pool at a time and rotate them, so the same bird does not always come with the same facts: the species page shows 4 tiles and the home page 3 facts about the latest visitor at the bottom of the Today panel (from the cached card only, it never fetches; the box hides itself when the visitors list needs the room, and on phones). The ones on show move on every 10 minutes, and on the home page with every new visit too; facts on the same topic are not shown together when there are enough others.
+
+A newly discovered species gets its full pool automatically, when its card is built. For cards you already have:
 
 ```bash
-uv run python -m birdbrain.species_info --facts --dry-run   # list the cards that have none yet
-uv run python -m birdbrain.species_info --facts             # add them (--redo for all, --name "House Finch" for one)
+uv run python -m birdbrain.species_info --facts --dry-run   # list the cards with fewer than 10 facts
+uv run python -m birdbrain.species_info --facts             # fill them (--redo for all, --name "House Finch" for one)
 ```
-
-The home page shows up to 3 of the latest visitor's facts at the bottom of the Today panel, from the cached card only (it never fetches). The box hides itself when the visitors list needs the room, and on phones.
 
 ## BioCLIP 2 species check
 

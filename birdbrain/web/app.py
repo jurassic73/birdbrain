@@ -334,7 +334,7 @@ templates.env.globals["wind_unit"] = WIND_UNIT
 templates.env.filters.update(temp=temp, temp_alt=temp_alt, wind=wind, wind_alt=wind_alt)
 templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, since_ago=since_ago, short_time=short_time, ago=ago, age_seconds=age_seconds, usd=usd, mb=mb,
                              month_name=lambda v: datetime.fromisoformat(v).strftime("%B"))
-templates.env.filters["tile_fact"] = species_info.fact_item
+templates.env.filters["tile_facts"] = species_info.tile_facts
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
 templates.env.globals["mirror_status"] = privacy.visit_status
 templates.env.globals["has_card"] = species_info.has_card
@@ -593,8 +593,10 @@ def home(request: Request, conn=Depends(get_conn)):
     return page(
         request,
         "home.html",
-        # Facts about the latest visitor's species for the bottom of the Today panel; the cached card only.
-        latest_facts=species_info.cached_facts(conn, today["latest"]["label"]) if today["latest"] else [],
+        # Facts about the latest visitor's species for the bottom of the Today panel; the cached card only. Which three
+        # of the card's pool: they move on with every new visit and every few minutes (species_info.fact_turn).
+        latest_facts=species_info.cached_facts(
+            conn, today["latest"]["label"], turn=species_info.fact_turn(extra=today["latest"]["id"])) if today["latest"] else [],
         visits=visits,
         filters=filters,
         filtered=bool(active),

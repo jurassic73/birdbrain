@@ -181,9 +181,19 @@ def test_species_header_shows_a_tile_per_fact_with_its_lead(client, conn, add_vi
     assert html.index("sp-hero-text") < html.index("sp-plays") < html.index("fact-tiles")
 
 
-def test_species_header_five_facts_and_a_leadless_tile(client, conn, add_visit):
-    html = _hero(client, conn, add_visit, HOOKS)
-    assert len(re.findall(r'class="fact-tile[ "]', html)) == 5 and html.count("<b>") == 4 and "no-lead" in html
+def test_species_header_shows_four_tiles_of_a_bigger_pool(client, conn, add_visit):
+    """The card keeps a pool of up to 15 facts; the header shows 4 at a time (which ones moves on every few minutes)."""
+    pool = [F(f"Lead{i}", f"Lead{i} is fact number {i} of the pool.") for i in range(12)]
+    html = _hero(client, conn, add_visit, pool)
+    assert len(re.findall(r'class="fact-tile[ "]', html)) == species_info.TILE_FACTS == 4 and 'data-n="4"' in html
+    on_show = species_info.tile_facts(pool)
+    assert [f"<b>{f['lead']}</b>" in html for f in on_show] == [True] * 4
+    assert sum(f"<b>{f['lead']}</b>" in html for f in pool) == 4  # and no others
+
+
+def test_species_header_leadless_tile(client, conn, add_visit):
+    html = _hero(client, conn, add_visit, [HOOKS[0], HOOKS[4]])
+    assert len(re.findall(r'class="fact-tile[ "]', html)) == 2 and html.count("<b>") == 1 and "no-lead" in html
 
 
 def test_species_header_old_string_facts_still_render(client, conn, add_visit):

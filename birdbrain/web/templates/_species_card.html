@@ -150,7 +150,8 @@
       <figcaption>Photo {{ info.photo.credit }}{% if info.photo.license and info.photo.license not in info.photo.credit %} ({{ info.photo.license }}){% endif %}, via iNaturalist</figcaption>
     </figure>
     {% endif %}
-    {% set tiles = (info.facts or []) | map("tile_fact") | selectattr("text") | list %}
+    {# A few of the card's fact pool at a time; which ones moves on every few minutes (species_info.tile_facts). #}
+    {% set tiles = info.facts | tile_facts %}
     {% set has_facts = tiles | length >= 2 %}
     <div class="sp-hero-id{{ ' has-facts' if has_facts }}">
       <div class="sp-hero-text">

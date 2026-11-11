@@ -178,7 +178,8 @@ def cached_card(conn, name, **extra):
 def test_backfill_facts_updates_only_notes_and_facts(conn, monkeypatch):
     from birdbrain import identify
     cached_card(conn, "Bushtit")
-    cached_card(conn, "Has Facts", facts=["Already here."])
+    full = [f"Fact number {i} is already here." for i in range(species_info.FACTS_WANTED)]
+    cached_card(conn, "Has Facts", facts=full)
     cached_card(conn, "No Wiki", wiki_url=None)
     fake = FakeHaiku(["New note."], [species_info.Fact(lead="Deck of cards", text="Weighs less than a deck of cards.")])
     monkeypatch.setattr(identify, "client", lambda: fake)
@@ -190,12 +191,25 @@ def test_backfill_facts_updates_only_notes_and_facts(conn, monkeypatch):
     assert card["facts"] == [F("Deck of cards", "Weighs less than a deck of cards.")] and card["notes"] == ["New note."]
     assert card["photo"] == CARD["photo"] and card["description"] == CARD["description"]  # nothing else touched
     assert stamp == "2026-10-01T00:00:00"
-    assert db.get_species_info(conn, "Has Facts")[0]["facts"] == ["Already here."]
+    assert db.get_species_info(conn, "Has Facts")[0]["facts"] == full  # a full pool is left alone
     assert "facts" not in db.get_species_info(conn, "No Wiki")[0]
     assert lines == ["1/1 done, 0 failed"] and len(fake.requests) == 1
     assert all(h["Accept-Encoding"] == "gzip" and "Birdbrain" in h["User-Agent"] for h in wiki.headers_seen)
     # --redo takes the card that already has facts too
     assert species_info.backfill_facts(conn, redo=True, only="has facts", out=lines.append) == (1, 0)
+
+
+def test_backfill_facts_fills_a_thin_pool_without_redo(conn, monkeypatch):
+    """Cards from before the pool have 2 to 5 facts: a plain --facts run brings them up, no --redo needed."""
+    from birdbrain import identify
+    cached_card(conn, "Thin", facts=[f"Old fact {i} stays put." for i in range(species_info.FACTS_WANTED - 1)])
+    fake = FakeHaiku(["n"], [species_info.Fact(lead="Trill", text="Its song is a trill.", topic="song")])
+    monkeypatch.setattr(identify, "client", lambda: fake)
+    monkeypatch.setattr(species_info.httpx, "Client", lambda **kw: FakeWiki())
+    lines = []
+    assert species_info.backfill_facts(conn, dry_run=True, out=lines.append) == (0, 0) and "Thin" in lines[0]
+    assert species_info.backfill_facts(conn, out=lines.append) == (1, 0)
+    assert db.get_species_info(conn, "Thin")[0]["facts"] == [{"lead": "Trill", "text": "Its song is a trill.", "topic": "song"}]
 
 
 def test_backfill_facts_dry_run_and_failure_keep_old_cards(conn, monkeypatch):
@@ -217,6 +231,21 @@ def test_rebuild_keeps_old_facts_when_new_build_has_none(conn, monkeypatch):
     monkeypatch.setattr(species_info, "build", lambda name: {"name": name, "inat_id": 1, "links": []})
     out = species_info._rebuild(conn, "Bushtit", cached)
     assert out["facts"] == ["Old fact that stays."]
+
+
+def test_rebuild_never_shrinks_the_fact_pool(conn, monkeypatch):
+    """The monthly rebuild asks Claude again; an answer with fewer facts must not replace a bigger pool."""
+    pool = [f"Pool fact number {i}." for i in range(12)]
+    cached = ({**CARD, "facts": pool, "notes": ["Old note."]}, "2026-01-01T00:00:00")
+    fresh = {"name": "Bushtit", "inat_id": 1, "links": [], "description": "New text."}
+    monkeypatch.setattr(species_info, "build", lambda name: {**fresh, "facts": ["Only one."], "notes": ["New note."]})
+    out = species_info._rebuild(conn, "Bushtit", cached)
+    assert out["facts"] == pool and out["notes"] == ["Old note."]  # the notes the pool was checked against stay too
+    assert out["description"] == "New text."  # the rest of the card is still refreshed
+    bigger = pool + ["A thirteenth."]
+    monkeypatch.setattr(species_info, "build", lambda name: {**fresh, "facts": bigger, "notes": ["New note."]})
+    out = species_info._rebuild(conn, "Bushtit", cached)
+    assert out["facts"] == bigger and out["notes"] == ["New note."]
 
 
 @pytest.fixture
@@ -277,3 +306,12 @@ def test_cached_facts_returns_texts_for_both_formats(conn):
     assert species_info.cached_facts(conn, "Bushtit") == ["Bushtits travel in noisy flocks.", "Old string."]
     assert species_info.cached_facts(conn, "Bushtit", limit=1) == ["Bushtits travel in noisy flocks."]
     assert species_info.cached_facts(conn, "Other") == [] and species_info.cached_facts(conn, None) == []
+
+
+def test_cached_facts_rotate_through_the_pool(conn):
+    from birdbrain import species_info
+    pool = [f"Pool fact number {i}." for i in range(7)]
+    _card(conn, "Bushtit", facts=pool)
+    assert species_info.cached_facts(conn, "Bushtit") == pool[:3]
+    assert species_info.cached_facts(conn, "Bushtit", turn=1) == pool[3:6]
+    assert species_info.cached_facts(conn, "Bushtit", turn=2) == [pool[6], pool[0], pool[1]]

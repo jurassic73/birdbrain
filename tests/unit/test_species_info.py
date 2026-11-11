@@ -132,6 +132,15 @@ def test_short_status_for_tight_lists(monkeypatch):
     assert species_info.short_status("None") is None
 
 
+WORDS = ["Beetles", "Granite", "Violins", "Marathons", "Volcanoes", "Teapots", "Glaciers", "Lanterns", "Pebbles",
+         "Thunder", "Orchards", "Compass", "Harbors", "Meadows", "Lichens", "Embers"]
+
+
+def T(topic, word):
+    """A fact on a topic whose words no other fact shares (so the repeat check leaves it alone)."""
+    return {"lead": word, "text": f"{word} {word}zo {word}zu.", "topic": topic}
+
+
 def test_clean_facts_guard():
     notes = ["Eats seeds on the ground.", "Travels in flocks in winter."]
     facts = [
@@ -146,13 +155,12 @@ def test_clean_facts_guard():
         F("10 years", "Some live over 10 years in the wild."),
         F("Snow bird", "Its name means snow bird."),
         F("Pairs", "Pairs stay together all season."),
-        F("Sixth", "Sixth good fact is cut off by the cap."),
-    ]
+    ] + [T("other", w) for w in WORDS]  # more than the pool holds
     got = species_info.clean_facts(facts, notes)
     assert got[0] == F("Quarters", "Weighs about as much as three quarters.")
     texts = [f["text"] for f in got]
     assert "Eats seeds on the ground." not in texts and "Flocks travel together in winter." not in texts
-    assert len(got) == species_info.MAX_FACTS
+    assert len(got) == species_info.MAX_FACTS == 15
     assert not any(len(t.split()) > species_info.MAX_FACT_WORDS or not t.strip() for t in texts)
     assert species_info.clean_facts(None, notes) == []
 
@@ -165,6 +173,7 @@ def test_clean_facts_accepts_models_dicts_and_old_strings():
 
 @pytest.mark.parametrize("lead, text, want", [
     ("Blizzard", "A flock is called a blizzard.", "Blizzard"),                      # valid, case-insensitive
+    ("blizzard", "A flock is called a blizzard.", "Blizzard"),                      # it heads a tile: capital first letter
     ("75%", "Seeds make up 75% of the diet.", "75%"),                               # number as written
     ("75%", "Seeds make up 75 percent of the diet.", "75%"),                        # % vs the word
     ("12 years", "Lives up to 12-year stretches.", "12 years"),                     # unit dropped in the text
@@ -205,6 +214,18 @@ def test_card_text_parses_both_lists_and_guards_them(monkeypatch):
     sent = fake.requests[0]
     assert sent["output_format"] is species_info.CardText and "facts" in sent["system"] and "lead" in sent["system"]
     assert "Animal: Bushtit" in sent["messages"][0]["content"]
+    # Sonnet picks the facts (Haiku chose genetics and study details), with the refusal fallback every Sonnet call sends
+    assert sent["model"] == identify.SONNET and sent["fallbacks"] == "default" and sent["output_config"] == {"effort": "medium"}
+
+
+def test_card_text_sends_the_whole_article_up_to_the_cap(monkeypatch):
+    """The song, call and migration sections sit far down a Wikipedia article: the old 12,000 character cut lost them."""
+    from birdbrain import identify
+    fake = FakeHaiku([], [])
+    monkeypatch.setattr(identify, "client", lambda: fake)
+    species_info.card_text("Bushtit", "a" * 30000 + " MIGRATION " + "b" * 100000)
+    sent = fake.requests[0]["messages"][0]["content"]
+    assert "MIGRATION" in sent and len(sent) < species_info.ARTICLE_CHARS + 100
 
 
 def test_card_text_without_a_parsed_answer(monkeypatch):
@@ -224,16 +245,74 @@ def test_clean_facts_drops_a_leadless_fact_unless_too_few_remain():
     assert len(species_info.clean_facts(one_led, notes)) == 2  # dropping would leave 1: keep both
     none_led = [F("", "Juncos forage on the ground in winter flocks."), F("", "Males sing from the tops of tall trees.")]
     assert len(species_info.clean_facts(none_led, notes)) == 2
-    many = [F("Beetles", "It outruns beetles on open ground."), F("Granite", "Nests are lined with crushed granite."),
-            F("Violins", "Its song resembles violins tuning up."), F("Marathons", "Some migrate marathons every autumn."),
-            F("Volcanoes", "Young birds roost near volcanoes."), F("Teapots", "Collectors prize teapots with its portrait."),
-            F("Glaciers", "Glaciers shaped its breeding range.")]
+    many = [T("other", w) for w in WORDS]
     assert len(species_info.clean_facts(many, notes)) == species_info.MAX_FACTS
 
 
 def test_prompt_asks_for_whole_single_claim_sentences_with_a_lead():
     p = species_info.NOTES_PROMPT
     assert "complete sentence" in p and "exactly one claim" in p and "Every fact must have a lead" in p
+
+
+def test_prompt_asks_for_a_pool_spread_over_every_topic():
+    p = species_info.NOTES_PROMPT
+    assert "10 to 15" in p and f"at most {species_info.MAX_PER_TOPIC} facts on any one topic" in p
+    assert all(topic in p for topic in species_info.TOPICS)  # every topic the schema allows is explained
+    assert species_info.FACTS_WANTED == 10 and species_info.MAX_FACTS == 15
+
+
+def test_clean_facts_caps_a_topic_and_deals_the_pool_out_by_topic():
+    raw = [T("song", w) for w in WORDS[:5]] + [T("size", WORDS[5]), T("other", WORDS[6]), T("made-up", WORDS[7]),
+                                               T("size", WORDS[8])]
+    got = species_info.clean_facts(raw, [])
+    assert [f.get("topic") for f in got].count("song") == species_info.MAX_PER_TOPIC  # the 4th and 5th song facts go
+    # dealt out one topic at a time, so neighbours differ; "other" and an unknown topic are stored without one
+    assert [(f["lead"], f.get("topic")) for f in got] == [
+        (WORDS[0], "song"), (WORDS[5], "size"), (WORDS[6], None), (WORDS[7], None), (WORDS[1], "song"), (WORDS[8], "size"),
+        (WORDS[2], "song")]
+    # the model's own Fact objects carry the topic the same way
+    assert species_info.clean_facts([species_info.Fact(lead="Trill", text="Its song is a trill.", topic="song")], []) == [
+        {"lead": "Trill", "text": "Its song is a trill.", "topic": "song"}]
+
+
+def test_rotate_shows_a_new_window_each_turn_and_wraps():
+    pool = list("abcdefgh")
+    assert species_info.rotate(pool, 0, 3) == ["a", "b", "c"]
+    assert species_info.rotate(pool, 1, 3) == ["d", "e", "f"]
+    assert species_info.rotate(pool, 2, 3) == ["g", "h", "a"]  # wraps around
+    assert species_info.rotate(pool, 8, 3) == ["a", "b", "c"]  # and comes back
+    shown = {x for turn in range(3) for x in species_info.rotate(pool, turn, 3)}
+    assert shown == set(pool)  # every fact gets its turn
+    assert species_info.rotate(pool[:3], 7, 3) == ["a", "b", "c"]  # a pool that fits is shown whole, in order
+    assert species_info.rotate([], 7, 3) == []
+
+
+def test_rotate_passes_over_a_topic_already_on_show():
+    pool = [T("song", "A"), T("song", "B"), T("size", "C"), T("song", "D"), T("food", "E"), {"lead": "", "text": "F."}]
+    assert [f["lead"] for f in species_info.rotate(pool, 0, 3)] == ["A", "C", "E"]
+    # not enough other topics: the passed-over ones fill in, so it is always n facts
+    songs = [T("song", w) for w in "ABCD"]
+    assert [f["lead"] for f in species_info.rotate(songs, 0, 3)] == ["A", "B", "C"]
+    # facts without a topic never crowd each other out
+    plain = [{"lead": "", "text": t} for t in "ABCD"]
+    assert [f["text"] for f in species_info.rotate(plain, 1, 3)] == ["D", "A", "B"]
+
+
+def test_fact_turn_moves_on_with_time_and_with_the_extra():
+    from datetime import datetime, timedelta
+    at = datetime(2026, 11, 10, 9, 0, 0)
+    turn = species_info.fact_turn(at)
+    assert species_info.fact_turn(at + timedelta(seconds=species_info.ROTATE_SECONDS)) == turn + 1
+    assert species_info.fact_turn(at + timedelta(seconds=5)) in (turn, turn + 1)  # steady inside a window
+    assert species_info.fact_turn(at, extra=7) == turn + 7  # a new visit (a higher id) moves it on too
+
+
+def test_tile_facts_shows_four_of_the_pool_and_reads_old_formats():
+    pool = [T("song", "A"), T("size", "B"), T("food", "C"), T("name", "D"), T("calls", "E"), T("colors", "F")]
+    assert [f["lead"] for f in species_info.tile_facts(pool, turn=0)] == ["A", "B", "C", "D"]
+    assert [f["lead"] for f in species_info.tile_facts(pool, turn=1)] == ["E", "F", "A", "B"]
+    assert species_info.tile_facts(["Old plain fact.", {"text": "  "}, 5, None], turn=3) == [{"lead": "", "text": "Old plain fact."}]
+    assert species_info.tile_facts(None, turn=0) == []
 
 
 def test_prompt_wants_a_named_us_coin():

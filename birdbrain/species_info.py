@@ -1,7 +1,10 @@
 """Species info cards: reference photo, description, local status and seasonality, range map, behavior notes, links.
 
-Built once per species from free sources (iNaturalist, Wikipedia, the eBird taxonomy) plus one small Claude Haiku
+Built once per species from free sources (iNaturalist, Wikipedia, the eBird taxonomy) plus one small Claude Sonnet
 call, cached in the species_info table and refreshed monthly. Any source can fail; the card shows what it got.
+
+Facts are a pool: each card keeps up to MAX_FACTS short facts spread over TOPICS, and the pages show a few at a time
+(rotate, fact_turn), so the same species does not always come with the same three.
 """
 
 import json
@@ -13,6 +16,7 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timedelta
+from typing import Literal
 from urllib.parse import quote, unquote
 
 import httpx
@@ -275,9 +279,17 @@ def fetch_sounds(client: httpx.Client, sci_name: str | None, center: list[float]
     return pick_sounds(recordings, center)
 
 
+# What a fact is about. The pool is spread over these, so the few facts on show at once are about different things.
+Topic = Literal["migration", "size", "song", "calls", "behavior", "colors", "sexes", "rivals", "lookalikes", "food",
+                "nesting", "lifespan", "name", "numbers", "other"]
+TOPICS = frozenset(Topic.__args__)
+NO_TOPIC = "other"  # stored without a topic: such a fact is never counted against, or grouped with, another
+
+
 class Fact(BaseModel):
     lead: str
     text: str
+    topic: Topic = NO_TOPIC
 
 
 class CardText(BaseModel):
@@ -292,8 +304,21 @@ notes: 2 to 4 notes, each one sentence of at most 25 words, in plain language:
 diet; how it behaves at a feeder or birdbath (or in a backyard); how it gets along with other animals (aggressive, territorial, social).
 Skip any topic the article does not cover.
 
-facts: 2 to 5 hook facts for the top of the species page, to catch a curious visitor's interest. Put the article's most
-surprising and memorable facts here (the notes are the practical behavior). Each has a text and a lead. The text is one complete sentence of 6 to 14 words with its own subject (the animal's name, "it",
+facts: a pool of 10 to 15 hook facts, to catch a curious visitor's interest. The site shows three or four at a time and
+swaps them, so every fact must make sense on its own and the pool should be about many different things. Put the article's
+most surprising and memorable facts here (the notes are the practical behavior). Each has a text, a lead and a topic.
+Look first for what a backyard visitor would retell: how far it migrates, what it weighs, what its song and calls are like
+and what makes them its own, odd behavior, its colors and how males and females differ, which other birds it chases,
+flocks with or is mistaken for. Skip genetics, the history of its classification, counts of subspecies and findings about
+one study population.
+Spread the facts over as many of these topics as the article covers, with at most 3 facts on any one topic:
+migration (how far or where it travels, or that it stays all year); size (weight, length, wingspan); song (what the song
+is like, how many songs it knows, what sets it apart); calls (its other calls and what they mean); behavior (odd habits,
+intelligence, flocking, bathing, roosting); colors (plumage, markings, what makes the color); sexes (how males and females,
+or young and adults, differ); rivals (other birds and animals it competes with, chases, flocks with or is hunted by);
+lookalikes (close relatives and animals it is mistaken for, and what tells them apart); food; nesting (nests, eggs, young);
+lifespan; name (where its name comes from); numbers (population, range, records); other (anything else).
+The text is one complete sentence of 6 to 14 words with its own subject (the animal's name, "it",
 or "they"), never a fragment such as "Longest recorded lifespan for females". It makes exactly one claim, taken from one
 place in the article: never merge two separate claims, or a claim and a detail from a different sentence, into one fact.
 Make it punchy and memorable: a size or weight comparison, a lifespan record, a speed, an odd habit, where its name comes from, a striking number.
@@ -306,9 +331,10 @@ heavier, just state the weight with its unit and no comparison.
 Facts, not folklore: each fact is a verifiable statement about the animal itself. Skip myths, legends, stories about people
 and anything a visitor would find baffling.
 They must not repeat or rephrase any
-of the notes. Write fewer, or none, rather than pad with dull or generic facts. No emoji.
+of the notes, or each other. Write fewer than 10, or none, rather than pad with dull or generic facts. No emoji.
 Every fact must have a lead. The lead is the fact's headline for a tile: 1 or 2 words, or a number with its unit, copied exactly
-from the fact's own text (for example "Blizzard", "75%", "40 million", "1741", "12 years"). If a fact has no good lead in its own
+from the fact's own text (for example "Blizzard", "75%", "40 million", "1741", "12 years"). Never 3 words or more, and never
+a range: for "18 to 30 g" the lead is "30 g". If a fact has no good lead in its own
 sentence, choose a different fact instead. Never a word that is not in the text."""
 
 VAGUE_COIN = re.compile(r"\b(?:a|an|the|one|two|three|four|five)\s+(?:small\s+|single\s+)?coins?\b", re.I)
@@ -324,7 +350,13 @@ def vague_coin(facts) -> bool:
 
 
 MAX_NOTES = 4
-MAX_FACTS = 5
+MAX_FACTS = 15  # the pool a card keeps; pages show a few at a time (HOME_FACTS, TILE_FACTS)
+FACTS_WANTED = 10  # a card with fewer has a thin pool: the facts backfill fills it without --redo
+MAX_PER_TOPIC = 3
+HOME_FACTS = 3  # facts in the home page box
+TILE_FACTS = 4  # fact tiles on the species page
+ROTATE_SECONDS = 600  # the facts on show move on this often (and with every new visit on the home page)
+ARTICLE_CHARS = 60000  # of the Wikipedia article sent to Claude; the behavior, voice and migration sections sit far down
 MAX_FACT_WORDS = 20  # the prompt asks for 6 to 14; this only catches a runaway sentence
 FACT_DUP_SHARE = 0.6  # a fact sharing this much of its words with a note is a repeat
 _STOP = {"a", "an", "the", "and", "or", "of", "to", "in", "on", "for", "with", "is", "are", "it", "its", "as", "at", "by",
@@ -376,7 +408,7 @@ def clean_lead(lead: str | None, text: str) -> str:
         else:
             ok = lead.lower() in " ".join(text.lower().split())
         if ok:
-            return lead
+            return lead[0].upper() + lead[1:]  # it heads a tile
     return number_lead(text)
 
 
@@ -389,18 +421,79 @@ def _fact_parts(fact) -> tuple[str, str]:
     return getattr(fact, "lead", "") or "", getattr(fact, "text", "") or ""
 
 
-def fact_item(fact) -> dict:
-    """A cached fact as {lead, text}; cards saved with plain-string facts get no lead."""
-    lead, text = _fact_parts(fact)
-    return {"lead": lead, "text": text}
+def _topic(fact) -> str:
+    """The fact's topic, or "" for none ("other", an unknown word, or an old fact saved before topics)."""
+    topic = fact.get("topic") if isinstance(fact, dict) else getattr(fact, "topic", "")
+    return topic if isinstance(topic, str) and topic != NO_TOPIC and topic in TOPICS else ""
+
+
+def spread_topics(facts: list[dict]) -> list[dict]:
+    """The facts dealt out one topic at a time (each topic's first fact, then each topic's second, and so on), so facts
+    next to each other in the pool are about different things. Facts without a topic each count as their own."""
+    piles: dict[str, list[dict]] = {}
+    for i, fact in enumerate(facts):
+        piles.setdefault(fact.get("topic") or f"#{i}", []).append(fact)
+    out = []
+    while piles:
+        for key in list(piles):
+            out.append(piles[key].pop(0))
+            if not piles[key]:
+                del piles[key]
+    return out
+
+
+def rotate(facts: list, turn: int, n: int) -> list:
+    """The n facts on show for this turn: a window over the pool that moves on by n each turn and wraps around, so the
+    next turn shows new ones until the pool is used up. A fact on a topic already picked is passed over for the next
+    one along, as long as there are enough other topics. With n or fewer in the pool it is all of them, in order."""
+    if len(facts) <= n:
+        return list(facts)
+    start = (turn * n) % len(facts)
+    order = [facts[(start + i) % len(facts)] for i in range(len(facts))]
+    picked, passed, topics = [], [], set()
+    for fact in order:
+        topic = _topic(fact)
+        if topic in topics:
+            passed.append(fact)
+            continue
+        picked.append(fact)
+        if topic:
+            topics.add(topic)
+        if len(picked) == n:
+            return picked
+    return picked + passed[: n - len(picked)]
+
+
+def fact_turn(now: datetime | None = None, extra: int = 0) -> int:
+    """Which window of the fact pool is on show: it moves on every ROTATE_SECONDS, and `extra` (the home page gives the
+    latest visit's id) moves it on as well."""
+    return int((now or datetime.now()).timestamp() // ROTATE_SECONDS) + extra
+
+
+def fact_pool(facts) -> list[dict]:
+    """A card's facts as {lead, text} (plus topic when it has one), blanks left out; old plain strings get no lead."""
+    pool = []
+    for fact in facts or []:
+        lead, text = _fact_parts(fact)
+        text = " ".join(text.split()) if isinstance(text, str) else ""
+        if text:
+            pool.append({"lead": lead, "text": text, **({"topic": _topic(fact)} if _topic(fact) else {})})
+    return pool
+
+
+def tile_facts(facts, turn: int | None = None) -> list[dict]:
+    """The species page's fact tiles for now: TILE_FACTS of the card's pool."""
+    return rotate(fact_pool(facts), fact_turn() if turn is None else turn, TILE_FACTS)
 
 
 def clean_facts(facts: list, notes: list[str]) -> list[dict]:
-    """The model's hook facts as {lead, text}, checked in code: no blanks, none over MAX_FACT_WORDS words, none repeating a
-    note or an earlier fact (by share of shared words); each lead must come from its text, and a fact still without one is
-    dropped unless fewer than 2 would be left; at most MAX_FACTS."""
+    """The model's fact pool as {lead, text} (plus topic when it has one), checked in code: no blanks, none over
+    MAX_FACT_WORDS words, none repeating a note or an earlier fact (by share of shared words), at most MAX_PER_TOPIC on
+    one topic; each lead must come from its text, and a fact still without one is dropped unless fewer than 2 would be
+    left; at most MAX_FACTS, dealt out by topic so neighbours differ (the pages show a few neighbours at a time)."""
     kept: list[dict] = []
     seen = [_words(n) for n in notes]
+    per_topic: dict[str, int] = {}
     for fact in facts or []:
         lead, text = _fact_parts(fact)
         text = " ".join(text.split())
@@ -409,12 +502,19 @@ def clean_facts(facts: list, notes: list[str]) -> list[dict]:
         mine = _words(text)
         if not mine or any(len(mine & other) / len(mine) >= FACT_DUP_SHARE for other in seen):
             continue
-        kept.append({"lead": clean_lead(lead, text), "text": text})
+        topic = _topic(fact)
+        if topic and per_topic.get(topic, 0) >= MAX_PER_TOPIC:
+            continue
+        item = {"lead": clean_lead(lead, text), "text": text}
+        if topic:
+            item["topic"] = topic
+            per_topic[topic] = per_topic.get(topic, 0) + 1
+        kept.append(item)
         seen.append(mine)
     led = [f for f in kept if f["lead"]]
     if len(led) >= 2:  # a fact with no lead is dropped, unless that would leave too few to show
         kept = led
-    return kept[:MAX_FACTS]
+    return spread_topics(kept[:MAX_FACTS])
 
 
 def clean_notes(notes: list[str]) -> list[str]:
@@ -436,15 +536,19 @@ def clean_notes(notes: list[str]) -> list[str]:
 
 
 def card_text(name: str, article: str) -> dict:
-    """One Haiku call on the Wikipedia article: the behavior notes and the header facts, both guarded in code."""
-    from .identify import HAIKU, client  # lazy: keeps the web app from loading the SDK at startup
+    """One Sonnet call on the Wikipedia article: the behavior notes and the pool of facts, both guarded in code.
+    Sonnet, not Haiku: choosing the dozen facts worth retelling out of a long article is where Haiku fell short (it
+    picked genetics and study details), and at one call per species a month the cost is a few cents."""
+    from .identify import SONNET, client  # lazy: keeps the web app from loading the SDK at startup
 
     response = client().beta.messages.parse(
-        model=HAIKU,
-        max_tokens=1500,
-        output_config={"effort": "low"},
+        model=SONNET,
+        max_tokens=8000,
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",  # as in identify.ask: a refusal is answered by another model
+        output_config={"effort": "medium"},
         system=NOTES_PROMPT,
-        messages=[{"role": "user", "content": f"Animal: {name}\n\nArticle:\n{article[:12000]}"}],
+        messages=[{"role": "user", "content": f"Animal: {name}\n\nArticle:\n{article[:ARTICLE_CHARS]}"}],
         output_format=CardText,
     )
     parsed = response.parsed_output
@@ -587,15 +691,15 @@ SHORT_STATUS = {"Year-round resident": "Year-round", "Summer visitor": "Summer",
                 "Passes through in spring and fall": "Migrant", "Rarely reported here": "Rare here"}
 
 
-def cached_facts(conn: sqlite3.Connection, label: str | None, limit: int = 3) -> list[str]:
-    """The header facts of a species' cached card, for a small box on another page. Cache only: it never builds a card,
-    fetches, or calls Haiku, so a visitor's page view can't cost anything. Empty for None/Other, no card, or no facts.
-    Facts are plain sentences: the {lead, text} dicts of newer cards give their text, old plain strings pass through."""
+def cached_facts(conn: sqlite3.Connection, label: str | None, limit: int = HOME_FACTS, turn: int = 0) -> list[str]:
+    """`limit` facts from a species' cached card, for a small box on another page; `turn` picks which of the pool
+    (rotate). Cache only: it never builds a card, fetches, or calls Claude, so a visitor's page view can't cost anything.
+    Empty for None/Other, no card, or no facts. Facts are plain sentences: the {lead, text} dicts of newer cards give
+    their text, old plain strings pass through."""
     if not has_card(label):
         return []
     card = get(conn, label, fetch=False) or {}
-    texts = (" ".join(str(fact_item(f)["text"]).split()) for f in card.get("facts") or [])
-    return [t for t in texts if t][:limit]
+    return [f["text"] for f in rotate(fact_pool(card.get("facts")), turn, limit)]
 
 
 def short_status(label: str | None) -> tuple[str, str] | None:
@@ -684,6 +788,12 @@ def _rebuild(conn: sqlite3.Connection, name: str, cached: tuple[dict, str] | Non
     if old:
         # A rebuild while a source is down must not wipe what the old card had: new data wins, gaps keep the old.
         gaps = [k for k in MERGED_FIELDS if old.get(k) and not data.get(k)]
+        if len(data.get("facts") or []) < len(old.get("facts") or []):
+            # A rebuild that came back with fewer facts keeps the bigger pool, and the notes it was checked against
+            # (--facts --redo is the way to replace a pool).
+            data.pop("facts", None)
+            if old.get("notes"):
+                data.pop("notes", None)
         data = {**old, **{k: v for k, v in data.items() if v not in (None, "", [], {})}}
         if gaps:
             stamp = cached[1]  # keep the old date so it is rebuilt again (after the backoff) to fill the gaps
@@ -703,7 +813,7 @@ def _photo_of(card_photo: dict | None) -> dict | None:
 def reference_photo(conn: sqlite3.Connection, name: str, fetch: bool = True) -> dict | None:
     """A small reference photo ({url, credit, license}) for a species, for comparing with the owner's own.
     The cached species card's photo if there is one, else a photo-only iNaturalist lookup cached 30 days under
-    settings `refphoto:<name>` (a miss is cached too). Never builds a card or calls Haiku; with fetch=False
+    settings `refphoto:<name>` (a miss is cached too). Never builds a card or calls Claude; with fetch=False
     it only reads caches."""
     if not has_card(name):
         return None
@@ -777,8 +887,8 @@ def add_facts(conn: sqlite3.Connection, name: str, http: httpx.Client) -> bool:
 
 def backfill_facts(conn: sqlite3.Connection, redo: bool = False, only: str | None = None, dry_run: bool = False,
                    out=print, coin: bool = False) -> tuple[int, int]:
-    """Give every cached species card header facts. Returns (done, failed). Cards that already have facts are skipped
-    unless redo. With dry_run it only lists the cards it would do."""
+    """Give every cached species card its pool of facts. Returns (done, failed). Cards that already have FACTS_WANTED
+    or more are skipped unless redo. With dry_run it only lists the cards it would do."""
     names = [r["name"] for r in conn.execute("SELECT name FROM species_info ORDER BY name")]
     todo = []
     for name in names:
@@ -786,7 +896,7 @@ def backfill_facts(conn: sqlite3.Connection, redo: bool = False, only: str | Non
             continue
         card = (db.get_species_info(conn, name) or ({}, ""))[0]
         if card.get("wiki_url") and card.get("description") and (
-                redo or not card.get("facts") or (coin and vague_coin(card.get("facts")))):
+                redo or len(card.get("facts") or []) < FACTS_WANTED or (coin and vague_coin(card.get("facts")))):
             todo.append(name)
     if dry_run:
         out(f"would do {len(todo)}: {', '.join(todo)}")
@@ -813,9 +923,9 @@ def main() -> None:
     import sys
 
     parser = argparse.ArgumentParser(prog="python -m birdbrain.species_info")
-    parser.add_argument("--facts", action="store_true", help="add header facts (and refresh notes) on cached cards")
-    parser.add_argument("--redo", action="store_true", help="with --facts: also cards that already have facts")
-    parser.add_argument("--coin", action="store_true", help="with --facts: only cards whose facts say \"a coin\" without naming it")
+    parser.add_argument("--facts", action="store_true", help=f"fill the fact pool (and refresh notes) on cached cards with fewer than {FACTS_WANTED} facts")
+    parser.add_argument("--redo", action="store_true", help="with --facts: also cards whose pool is already full")
+    parser.add_argument("--coin", action="store_true", help="with --facts: also cards whose facts say \"a coin\" without naming it")
     parser.add_argument("--name", help="with --facts: only this species")
     parser.add_argument("--dry-run", action="store_true", help="with --facts: list the cards, change nothing")
     args = parser.parse_args()
