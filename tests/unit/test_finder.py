@@ -181,3 +181,31 @@ def test_the_trigger_is_passed_through_to_motion(chain):
     chain["motion"] = (MOTION_CIRCLE, MOTION_FOUND)
     locate(trigger="ground")
     assert chain["calls"]["motion"][0][3] == "ground"
+
+
+def clear_record(**changes):
+    """The chain's record when every finder looked and saw nothing (the rain frames of 2026-11-10), with one
+    finder's entry changed: clear_record(motion="light")."""
+    whys = {"motion": "nothing", "blob": "no box", "yolox": "nothing", **changes}
+    return {"finder": None, "motion": {"found": False, "why": whys["motion"], "source": "empty"},
+            "tried": [{"finder": n, "found": False, "why": whys[n], "seconds": 0.1} for n in ALL]}
+
+
+def test_nothing_on_land_needs_every_finder_to_have_looked_and_seen_nothing():
+    f = finder()
+    assert f.nothing_on_land(clear_record())
+    # Something did change, a finder couldn't look, or it failed: nobody can say the land was empty.
+    for name, why in (("motion", "light"), ("motion", "too big"), ("motion", "two alike"), ("motion", "no empty view"),
+                      ("motion", "error"), ("blob", "no count"), ("blob", "several"), ("blob", "too big"),
+                      ("yolox", "no model"), ("yolox", "error"), ("yolox", "night")):
+        assert not f.nothing_on_land(clear_record(**{name: why})), (name, why)
+    found = clear_record()
+    found["finder"], found["tried"][1]["found"] = "blob", True
+    assert not f.nothing_on_land(found)
+    short = clear_record()
+    short["tried"] = short["tried"][:1]  # FINDERS=motion: the other two never looked
+    assert not f.nothing_on_land(short)
+    stale = clear_record()
+    stale["motion"]["source"] = "calibration"  # not the trigger's own empty scene
+    assert not f.nothing_on_land(stale)
+    assert not f.nothing_on_land(None) and not f.nothing_on_land({})

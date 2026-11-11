@@ -165,3 +165,28 @@ def test_the_box_for_a_pi_named_visit_the_owner_changed_or_confirmed(client, con
     db.correct_visit(conn, vid, None, None, None)
     db.confirm_visits(conn, [vid])
     assert "counts toward Dark-eyed Junco being settled" in trains_box(client, vid)
+
+
+def test_the_visit_page_says_why_a_frame_was_taken_for_rain(client, add_visit):
+    rain = add_visit(visitor="none", species=None, count=0, model=presence.MODEL_NAME, raw_json=json.dumps(
+        {"trigger": "rim", "calls": {"skipped_claude": True, "settled_by": "rain", "rain": {"score_max": 0.3},
+                                     "presence": {"score": 0.041, "threshold": 0.02, "empty": False, "trained_on": 627},
+                                     "classifier_gate": {"model": "bioclip-2", "crop": "bowl", "night": False,
+                                                         "seconds": 0.0, "why": "score", "local_share": 0.9,
+                                                         "top": [{"name": "Varied Thrush", "scientific": "", "score": 0.41}]}}}))
+    page = client.get(f"/visit/{rain}").text
+    assert "taken for rain on the water (step 1), so Claude wasn't asked" in page and "Claude was asked." not in page
+    assert "Probably rain on the water" in page and "(score 0.041, empty below 0.020)" in page
+    assert "Not judged empty, but the score is low (under 0.30) and nothing new showed on land" in page
+    assert "Judged empty, so Claude wasn't asked" not in page
+    assert "Claude wasn't asked about this visit" in page  # the note box, as for any frame the Pi kept
+
+
+def test_settings_counts_the_frames_taken_for_rain(client, add_visit):
+    assert "taken for rain" not in client.get("/settings").text  # nothing to show yet
+    add_visit(visitor="none", species=None, count=0, model=presence.MODEL_NAME, raw_json=json.dumps(
+        {"calls": {"skipped_claude": True, "settled_by": "rain",
+                   "presence": {"score": 0.041, "threshold": 0.02, "empty": False}}}))
+    page = client.get("/settings").text
+    assert '<span class="big">1</span> taken for rain' in page
+    assert "daytime rim triggers it takes for rain on the water" in page

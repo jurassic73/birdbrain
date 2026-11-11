@@ -185,7 +185,7 @@
           {% elif step.tight %}
           <div class="step-why">Did not name the visit either: {{ step.reason }}. Claude was asked.{% if step.second_frame %} <span class="muted" data-tip="Shadow second-frame look: the Pi also embedded the next sharpest photo of the burst on the same circle, and averaged the two embeddings (like a fingerprint), only to keep score on the Stats page of whether a second pose would name more visits. It names nothing.">{{ step.second_frame }}</span>{% endif %}</div>
           {% elif step.first_look %}
-          <div class="step-why">Did not name the visit: {{ step.reason }}. {% if decision.has_tight_look %}The Pi took a tight look {{ step.tight_at or "at the patch that moved" }} next.{% else %}Claude was asked.{% endif %}</div>
+          <div class="step-why">Did not name the visit: {{ step.reason }}. {% if decision.has_tight_look %}The Pi took a tight look {{ step.tight_at or "at the patch that moved" }} next.{% elif decision.rain %}No finder found a patch for a tight look, and the frame was taken for rain on the water (step 1), so Claude wasn't asked.{% else %}Claude was asked.{% endif %}</div>
           {% if step.backfilled %}<div class="muted step-notes">Worked out afterwards from the stored embedding (like a fingerprint) of this photo, using today's settled species{% if step.view_note %}; {{ step.view_note }}{% endif %}.</div>{% endif %}
           {% elif step.crowd and not decision.has_first_look %}
           <div class="step-why">Sure it was {{ step.crowd.species }}, but the Pi saw {{ step.crowd.animals }} animals in view, so Claude was asked to count them and name any other kind.</div>
@@ -201,7 +201,9 @@
           {% if step.frames %}
           <div class="muted step-notes">Sharpest frame {{ '%.3f' | format(step.frames.sharpest) }}, the burst's last frame {{ '%.3f' | format(step.frames.last) }}: the higher one counts{% if step.frame == 'last' and step.said != 'nothing there' %}, so the last frame became the photo{% endif %}.</div>
           {% endif %}
-          {% if step.skipped_claude %}
+          {% if step.skipped_claude and step.rain %}
+          <div class="step-why">Not judged empty, but the score is low{% if step.rain_max %} (under {{ '%.2f' | format(step.rain_max) }}){% endif %} and nothing new showed on land (rim, rocks or ground): taken for rain or ripples on the water, so Claude wasn't asked. If there is an animal, correct it below: the check learns from it.</div>
+          {% elif step.skipped_claude %}
           <div class="step-why">Judged empty, so Claude wasn't asked. If there is an animal, correct it below: the check learns from it.</div>
           {% endif %}
           {% elif step.motion_circle %}

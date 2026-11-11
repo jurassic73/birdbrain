@@ -60,7 +60,10 @@ def components() -> list[dict]:
          "short": f"The {PI} answers yes or no. On no, the photo goes to False triggers and {CLAUDE} is not asked. "
                   f"The {PI} learns from every label.",
          "does": f"<p>The {PI} asks: &ldquo;Is an animal in the dashed box?&rdquo; <b>No:</b> the photo goes to False triggers; "
-                 f"nothing else runs and {CLAUDE} is not asked. <b>Yes:</b> the photo goes on to the {SPECIES}.</p>",
+                 f"nothing else runs and {CLAUDE} is not asked. <b>Yes:</b> the photo goes on to the {SPECIES}.</p>"
+                 f"<p><b>Rain on the water:</b> by day, when the rim fired, the score is low and nothing new shows on land "
+                 f"(rim, rocks or ground), the Pi takes the movement for rain or ripples: the photo goes to False triggers "
+                 f"and {CLAUDE} is not asked.</p>",
          "train": f"<p>The {PI} <b>is</b> trainable:</p><ul>"
                   f"<li>BioCLIP 2 turns the dashed box into an embedding (like a fingerprint): a list of numbers that sums up what the box shows.</li>"
                   f"<li>The yes/no scorer of the {PI} learns from every labelled photo: pressing Confirm labels the photo "

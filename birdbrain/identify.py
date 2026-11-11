@@ -386,13 +386,20 @@ def settled_locally(det: dict) -> Result:
     return Result(s, LOCAL_MODEL, escalated=False, needs_review=False, raw={"detector": det, "skipped_claude": True})
 
 
-def settled_by_presence(check: dict, det: dict | None) -> Result:
+def settled_by_presence(check: dict, det: dict | None, rain: float | None = None) -> Result:
     """Gate mode of the local animal check (birdbrain.presence): it judged the frame empty, so Claude isn't
-    asked. Stored as a false trigger for the owner's daily review."""
-    notes = (f"Pi animal check found nothing (score {check['score']:.3f}, threshold {check['threshold']:.3f}); "
-             "Claude was not asked.")
+    asked. Stored as a false trigger for the owner's daily review. `rain` (watch.rain_on_water's score limit): the
+    check didn't call the frame empty, but it scored low and nothing new showed on land, so it is taken for rain or
+    ripples on the water (calls.settled_by "rain")."""
+    if rain is None:
+        notes = (f"Pi animal check found nothing (score {check['score']:.3f}, threshold {check['threshold']:.3f}); "
+                 "Claude was not asked.")
+    else:
+        notes = (f"Taken for rain or ripples on the water: nothing new showed on land and the Pi animal check scored "
+                 f"it {check['score']:.3f} (under {rain:.2f}); Claude was not asked.")
     s = Sighting(visitor="none", species=None, count=0, confidence="medium", notes=notes, circle=None, also=[])
-    raw = {"presence": check, "skipped_claude": True, **({"detector": det} if det is not None else {})}
+    raw = {"presence": check, "skipped_claude": True, **({"detector": det} if det is not None else {}),
+           **({"settled_by": "rain", "rain": {"score_max": rain}} if rain is not None else {})}
     return Result(s, check["model"], escalated=False, needs_review=False, raw=raw)
 
 

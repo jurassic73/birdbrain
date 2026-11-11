@@ -465,6 +465,18 @@ def probe_passes(check: dict | None) -> bool:
     return judged(check) and not check.get("empty")
 
 
+def rain_on_water(trigger: str, night: bool, check: dict | None, finding: dict | None) -> bool:
+    """Rain or ripples in the bowl rather than a visitor: by day, on a rim trigger, every finder looked and saw
+    nothing new on land (finder.nothing_on_land) and the Pi animal check, though it didn't call the frame empty,
+    scored it under RAIN_SCORE_MAX. Replayed on the rim triggers of 2026-11-07..10 that got past the check (22
+    animals, 84 empty, 74 of them one rain day): it takes 63 of the 84 and none of the animals; without the score
+    limit it would have taken a bird the check was sure of. The ground zone is left to Claude (half its animals
+    showed nothing to the finders), and so is the night (only the Motion detector runs then)."""
+    return bool(config.RAIN_SCORE_MAX > 0 and trigger == "rim" and not night and judged(check)
+                and not check.get("empty") and check["score"] < config.RAIN_SCORE_MAX
+                and finder.nothing_on_land(finding))
+
+
 PROBE_EMPTY = "probe-empty"  # a backoff probe the local animal check found empty in: not stored, no Claude call
 PROBE_UNCHECKED = "probe-unchecked"  # a probe with no verdict to filter it: not stored, no Claude call; the
                                      # backoff doubles as if there were no check
@@ -695,6 +707,7 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
     named = None  # which BioCLIP 2 look named the visit: "bowl" (the first look) or "tight"
     circle = found = None  # the circle around the animal, once it was looked for, and the Motion detector's attempt
     finding = None  # the finder chain's record (finder.locate): which finder pointed at the animal, and what was tried
+    rain = False  # taken for rain on the water (rain_on_water): kept as a false trigger, Claude isn't asked
     # The crowd counter's boxes go to the finder chain; None when it couldn't count (the light changed, or no scene).
     boxes = animal_boxes if animals is not None else None
 
@@ -745,6 +758,11 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
                         # Shadow only (SECOND_FRAME_MIN): one more look, on the next sharpest frame, to keep score
                         # of whether a second pose would have named it. Claude is asked exactly as without it.
                         second, _ = second_frame_look(ranked, circle, crop, night, tight_vec)
+            elif pmode == "gate" and rain_on_water(trigger, night, check, finding):
+                rain = True
+                log.info("rain on the water: nothing new on land (%s) and the animal check scored %.3f, under %.2f; "
+                         "kept as a false trigger, Claude not asked", finder.tried_text(finding), check["score"],
+                         config.RAIN_SCORE_MAX)
             else:
                 log.info("species gate: no finder found a patch for a tight look (%s); asking Claude",
                          finder.tried_text(finding))
@@ -764,8 +782,8 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
                 log.info("no finder found a patch to circle (%s)", finder.tried_text(finding))
         if found is not None:
             result.raw["motion_circle"] = found  # the Motion detector's attempt, as before (motion_circle.pending reads it)
-    elif pmode == "gate" and empty:
-        result = identify.settled_by_presence(check, None)
+    elif pmode == "gate" and (empty or rain):
+        result = identify.settled_by_presence(check, None, rain=config.RAIN_SCORE_MAX if rain else None)
     else:
         with db.session() as conn:
             lessons = db.recent_lessons(conn)

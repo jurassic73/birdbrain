@@ -247,6 +247,12 @@ FINDERS = parse_finders(_env("FINDERS", "motion,blob,yolox"))
 FINDER_YOLOX_MIN_SCORE = float(_env("FINDER_YOLOX_MIN_SCORE", "0.15"))  # YOLOX's least class score for the finder
 if not 0 <= FINDER_YOLOX_MIN_SCORE <= 1:
     raise ValueError(f"FINDER_YOLOX_MIN_SCORE must be between 0 and 1, not {FINDER_YOLOX_MIN_SCORE!r}")
+# Rain on the water (watch.rain_on_water, gate mode of the Pi animal check only): by day a rim trigger is taken for rain
+# or ripples, and Claude isn't asked, when no finder saw anything new on land and the Pi animal check scored the frame
+# under this. 0 turns the rule off.
+RAIN_SCORE_MAX = float(_env("RAIN_SCORE_MAX", "0.3"))
+if not 0 <= RAIN_SCORE_MAX <= 1:
+    raise ValueError(f"RAIN_SCORE_MAX must be between 0 and 1, not {RAIN_SCORE_MAX!r}")
 
 # Local species classifier (birdbrain/classifier.py): "shadow" records its guess with each visit for the Stats
 # scorecard (Claude still decides every label), "off" skips it. The model downloads into DATA_DIR on first use.

@@ -110,6 +110,24 @@ def locate(jpeg: bytes, empty, z, trigger: str, captured_at: str, night: bool, b
     return None, record
 
 
+# What each finder says when it looked properly and saw nothing: not skipped, failed, left out of FINDERS or blinded
+# (the Motion detector's "light", "too big" and "two alike" all mean something did change).
+CLEAR = {"motion": "nothing", "blob": "no box", "yolox": "nothing"}
+
+
+def nothing_on_land(record: dict | None) -> bool:
+    """Whether the whole chain looked and every finder saw nothing new on land: no patch of change against the
+    trigger's own empty scene (nor one compact patch on the water, a bathing bird), no animal outlined by the crowd
+    counter, none seen by the object detector. False whenever a finder was skipped, failed or left out: then nobody
+    really looked."""
+    if not isinstance(record, dict) or record.get("finder"):
+        return False
+    tried = {t.get("finder"): t for t in record.get("tried") or [] if isinstance(t, dict)}
+    if set(tried) != set(CLEAR) or (record.get("motion") or {}).get("source") != "empty":
+        return False
+    return all(not t.get("found") and t.get("why") == CLEAR[name] for name, t in tried.items())
+
+
 def tried_text(record: dict | None) -> str:
     """One line for a log or a tip: each finder tried and why it found nothing ("motion: nothing, blob: no box")."""
     tried = (record or {}).get("tried") or []

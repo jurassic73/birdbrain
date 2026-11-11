@@ -1257,12 +1257,14 @@ def _spoken_also(rows: list[dict]) -> str:
 
 # What settled a visit on the Pi without asking Claude (identify.settled_*), as a lesson line tells Claude.
 SKIPPED_BY = {"presence": "the Pi animal check judged this frame empty",
+              "rain": "the Pi saw nothing new on land and took the movement for rain on the water",
               "detector": "the Pi's local detector found no animal"}
 
 
 def skipped_by(raw_json: str | None) -> str | None:
     """How the Pi settled a visit without asking Claude: "presence" (the local animal check judged it empty),
-    "detector" (the local detector found nothing) or "classifier" (the local classifier named it). None when
+    "rain" (a low score and nothing new on land: rain on the water), "detector" (the local detector found nothing)
+    or "classifier" (the local classifier named it). None when
     Claude was asked, or the saved trail is missing or unreadable."""
     try:
         calls = (json.loads(raw_json or "{}") or {}).get("calls")
@@ -1270,8 +1272,8 @@ def skipped_by(raw_json: str | None) -> str | None:
         return None
     if not isinstance(calls, dict) or not calls.get("skipped_claude"):
         return None
-    if calls.get("settled_by") == "classifier":
-        return "classifier"
+    if calls.get("settled_by") in ("classifier", "rain"):
+        return calls["settled_by"]
     presence = calls.get("presence")
     return "presence" if isinstance(presence, dict) and presence.get("empty") else "detector"
 
@@ -2097,27 +2099,31 @@ def second_frame_report(conn: sqlite3.Connection, days: int | None = None) -> di
 def presence_report(conn: sqlite3.Connection, days: int = 14) -> dict:
     """The local animal check (birdbrain.presence) over the last `days`: frames it judged live (not backfilled),
     against the final answer. skipped = Claude wasn't asked (gate mode); missed = it said empty but the owner
-    (or, in shadow mode, Claude) found an animal; would_skip = empty frames it would have kept from Claude."""
+    (or, in shadow mode, Claude) found an animal; would_skip = empty frames it would have kept from Claude;
+    rain = frames taken for rain on the water (watch.rain_on_water), which count as missed too when the owner found
+    an animal in one."""
     since = (clock.today() - timedelta(days=days - 1)).isoformat()
     rows = conn.execute(
         f"""SELECT id, {LABEL} AS label, {REAL} AS real, is_night, confirmed_at IS NOT NULL AS confirmed,
                    (corrected_visitor IS NOT NULL OR corrected_species IS NOT NULL) AS corrected,
                    json_extract(raw_json, '$.calls.presence.empty') AS empty,
-                   json_extract(raw_json, '$.calls.skipped_claude') AS skipped, model
+                   json_extract(raw_json, '$.calls.skipped_claude') AS skipped, model,
+                   json_extract(raw_json, '$.calls.settled_by') = 'rain' AS rain
             FROM visits WHERE json_extract(raw_json, '$.calls.presence.score') IS NOT NULL AND captured_at >= ?
             ORDER BY id DESC""",
         (since,),
     ).fetchall()
     out = {"days": days, "frames": len(rows), "visitors": 0, "empty": 0, "skipped": 0, "would_skip": 0,
-           "unchecked": 0, "missed": []}
+           "unchecked": 0, "missed": [], "rain": 0}
     for r in rows:
+        out["rain"] += bool(r["rain"])
         if r["real"]:
             out["visitors"] += 1
-            if r["empty"]:
+            if r["empty"] or r["rain"]:
                 out["missed"].append({"id": r["id"], "label": r["label"], "night": bool(r["is_night"])})
         else:
             out["empty"] += 1
-            out["would_skip"] += bool(r["empty"])
+            out["would_skip"] += bool(r["empty"] or r["rain"])
         if r["model"] == "bioclip-presence":
             out["skipped"] += 1
             out["unchecked"] += not (r["confirmed"] or r["corrected"])

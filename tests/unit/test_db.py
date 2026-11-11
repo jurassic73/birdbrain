@@ -120,3 +120,9 @@ def test_a_real_sqlite_error_is_not_swallowed(monkeypatch):
     conn = _FakeConn(fail_with=[sqlite3.OperationalError("disk I/O error")])
     with pytest.raises(sqlite3.OperationalError, match="disk I/O"):
         db.ensure_wal(conn)
+
+
+def test_skipped_by_says_when_the_pi_took_a_frame_for_rain():
+    calls = {"skipped_claude": True, "settled_by": "rain", "presence": {"score": 0.05, "empty": False}}
+    assert db.skipped_by(json.dumps({"calls": calls})) == "rain" and "rain on the water" in db.SKIPPED_BY["rain"]
+    assert db.skipped_by(json.dumps({"calls": {**calls, "skipped_claude": False}})) is None

@@ -1028,16 +1028,20 @@ def decision_steps(raw_json: str | None) -> dict:
     steps = []
     pres = calls.get("presence")
     if pres and pres.get("score") is not None:
+        # Taken for rain on the water (watch.rain_on_water): not judged empty, but a low score and nothing new on land.
+        rain = calls.get("settled_by") == "rain"
         steps.append({
             "model": "Pi animal check",
             "presence": True,
-            "said": "nothing there" if pres.get("empty") else "an animal",
+            "said": "nothing there" if pres.get("empty") else "probably rain on the water" if rain else "an animal",
+            "rain": rain,
+            "rain_max": (calls.get("rain") or {}).get("score_max") if rain else None,
             "score": pres["score"],
             "threshold": pres.get("threshold"),
             "trained_on": pres.get("trained_on"),
             "frames": pres.get("frames"),  # the sharpest and the last frame's scores, when it looked at both
             "frame": pres.get("frame"),
-            "skipped_claude": bool(calls.get("skipped_claude") and pres.get("empty")),
+            "skipped_claude": bool(calls.get("skipped_claude") and (pres.get("empty") or rain)),
         })
     det = calls.get("detector")
     if det:
@@ -1136,6 +1140,7 @@ def decision_steps(raw_json: str | None) -> dict:
             "owner_checks": owner_checks(calls), "failed": any(s.get("error") for s in steps),
             "has_first_look": any(st.get("first_look") and not st.get("gated") for st in steps),
             "has_tight_look": any(st.get("tight") for st in steps),
+            "rain": calls.get("settled_by") == "rain",  # taken for rain on the water: Claude wasn't asked
             "skipped_sonnet": bool(calls.get("skipped_sonnet")), "asked_sonnet": bool(calls.get("sonnet")),
             "local_disagreed": calls.get("local_disagreed"), "local_agreed": bool(calls.get("local_agreed")),
             "local_confirmed": bool(calls.get("local_confirmed"))}

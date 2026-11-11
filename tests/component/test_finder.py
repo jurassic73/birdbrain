@@ -163,3 +163,47 @@ def test_a_bowl_named_visit_at_night_never_calls_yolox(finders, conn, monkeypatc
     yolox = next(t for t in record["tried"] if t["finder"] == "yolox")
     assert yolox["found"] is False and yolox["why"] == "night"
     assert calls["motion_circle"] == MISS
+
+
+def unsure(monkeypatch, score=0.05):
+    """The Pi animal check only just lets the frame past (the rain frames of 2026-11-10 scored 0.02 to 0.06)."""
+    monkeypatch.setattr(watch.presence, "check", lambda conn, e, view=None: {
+        "model": "bioclip-presence", "score": score, "threshold": 0.02, "empty": False})
+
+
+def test_a_low_score_with_nothing_new_on_land_is_rain_and_claude_is_not_asked(finders, conn, monkeypatch):
+    finders["circle"], finders["boxes"], finders["animals"] = (None, MISS), [], 0
+    unsure(monkeypatch)
+    assert watch.handle_event() == "none"  # a false trigger: the backoff counts it like any other
+    assert not finders["asked"] and not finders["tight_calls"]
+    row = conn.execute("SELECT visitor, model, notes, raw_json FROM visits ORDER BY id DESC").fetchone()
+    raw = json.loads(row["raw_json"])
+    calls = raw["calls"]
+    assert (row["visitor"], row["model"]) == ("none", "bioclip-presence") and row["notes"].startswith("Taken for rain")
+    assert calls["settled_by"] == "rain" and calls["skipped_claude"] and calls["rain"] == {"score_max": config.RAIN_SCORE_MAX}
+    assert calls["presence"]["score"] == 0.05 and not calls["presence"]["empty"]
+    assert calls["finder"]["finder"] is None and names(calls["finder"]) == ["motion", "blob", "yolox"]
+    assert calls["motion_circle"] == MISS and "burst" in raw  # the whole burst is kept for the owner's check
+    assert db.skipped_by(row["raw_json"]) == "rain"
+    report = db.presence_report(conn)
+    assert (report["rain"], report["skipped"], report["would_skip"], report["missed"]) == (1, 1, 1, [])
+    # The owner finds a bird in it after all: it counts as one the Pi missed.
+    vid = conn.execute("SELECT max(id) FROM visits").fetchone()[0]
+    conn.execute("UPDATE visits SET corrected_visitor = 'bird' WHERE id = ?", (vid,))
+    conn.commit()
+    assert [m["id"] for m in db.presence_report(conn)["missed"]] == [vid]
+
+
+@pytest.mark.parametrize("change", ["sure", "ground", "light", "shadow", "off"])
+def test_anything_short_of_that_still_goes_to_claude(finders, conn, monkeypatch, change):
+    finders["circle"], finders["boxes"], finders["animals"] = (None, MISS), [], 0
+    unsure(monkeypatch, 0.9 if change == "sure" else 0.05)
+    if change == "light":  # the Motion detector couldn't tell: the light changed
+        finders["circle"] = (None, {**MISS, "why": "light"})
+    if change == "shadow":
+        monkeypatch.setattr(watch, "presence_mode", lambda: "shadow")
+    if change == "off":
+        monkeypatch.setattr(config, "RAIN_SCORE_MAX", 0.0)
+    assert watch.handle_event(trigger="ground" if change == "ground" else "rim") == "bird"
+    assert finders["asked"] == [False]
+    assert "settled_by" not in latest(conn)[1]

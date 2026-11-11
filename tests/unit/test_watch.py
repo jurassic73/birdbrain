@@ -308,3 +308,30 @@ def test_push_public_skips_a_running_push_but_stops_a_hung_one(monkeypatch):
     monkeypatch.delenv("PUBLIC_DEST")
     watch.push_public()
     assert len(started) == 2  # no mirror configured: nothing to do
+
+
+CLEAR = {"finder": None, "motion": {"found": False, "why": "nothing", "source": "empty"},
+         "tried": [{"finder": n, "found": False, "why": w} for n, w in
+                   (("motion", "nothing"), ("blob", "no box"), ("yolox", "nothing"))]}
+UNSURE = {"score": 0.05, "threshold": 0.02, "empty": False}  # past the Pi animal check, but only just
+
+
+@pytest.mark.parametrize("trigger, night, check, finding, expected", [
+    ("rim", False, UNSURE, CLEAR, True),               # the rain frames of 2026-11-10
+    ("rim", False, {**UNSURE, "score": 0.9996}, CLEAR, False),  # visit 1104: a bird the check was sure of
+    ("rim", False, {**UNSURE, "score": 0.3}, CLEAR, False),     # at the limit: Claude
+    ("ground", False, UNSURE, CLEAR, False),           # the ground zone is Claude's (a squirrel in the shrub)
+    ("water", False, UNSURE, CLEAR, False),
+    ("rim", True, UNSURE, CLEAR, False),               # never at night
+    ("rim", False, None, CLEAR, False),                # no verdict from the check
+    ("rim", False, {"score": None, "empty": False}, CLEAR, False),
+    ("rim", False, UNSURE, None, False),               # the finders never ran
+    ("rim", False, UNSURE, {**CLEAR, "motion": {"found": False, "why": "nothing", "source": None}}, False),
+])
+def test_rain_on_water_needs_a_low_score_and_nothing_new_on_land(trigger, night, check, finding, expected):
+    assert watch.rain_on_water(trigger, night, check, finding) is expected
+
+
+def test_rain_on_water_can_be_switched_off(monkeypatch):
+    monkeypatch.setattr(watch.config, "RAIN_SCORE_MAX", 0.0)
+    assert watch.rain_on_water("rim", False, UNSURE, CLEAR) is False

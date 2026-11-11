@@ -84,6 +84,7 @@
       <div><span class="big">{{ p.visitors }}</span> visitors</div>
       <div><span class="big {{ 'bad' if p.missed }}">{{ p.missed | length }}</span> it called empty</div>
       <div><span class="big">{{ p.would_skip }}/{{ p.empty }}</span> empty frames caught</div>
+      {% if p.rain %}<div data-tip="By day, on the rim: a low score and nothing new on land (rim, rocks or ground). Kept as false triggers; Claude isn't asked."><span class="big">{{ p.rain }}</span> taken for rain</div>{% endif %}
     </div>
     <p class="muted small">Last {{ p.days }} days.</p>
     {% endif %}
@@ -91,7 +92,7 @@
       <div class="choices">
         {% for key, label, hint in [('off', 'Off', 'Claude checks everything'),
                                     ('shadow', 'Shadow', 'Pi scores, Claude still checks everything (rainy-day probes it calls empty are dropped)'),
-                                    ('gate', 'Gate', 'Pi skips frames it judges empty, day and night')] %}
+                                    ('gate', 'Gate', 'Pi skips frames it judges empty, day and night, and daytime rim triggers it takes for rain on the water')] %}
         <label class="choice">
           <input type="radio" name="mode" value="{{ key }}" {% if key == presence_mode %}checked{% endif %}>
           <span>{{ label }} <small>{{ hint }}</small></span>

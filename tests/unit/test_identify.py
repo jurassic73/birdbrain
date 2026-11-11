@@ -402,3 +402,15 @@ def test_medium_answer_with_a_strong_agreeing_local_look_shows_high(fake_ask):
     fake_ask({HAIKU: with_circle(sighting(confidence="medium")), SONNET: sighting()})
     r = identify.identify(jpeg(), WHEN, confirmed={"Dark-eyed Junco"}, local_check=lambda c: strong("Dark-eyed Junco"))
     assert r.sighting.confidence == "high" and r.raw["skipped_sonnet"] and "local_confirmed" not in r.raw
+
+
+def test_a_frame_taken_for_rain_says_so_and_how_it_was_settled():
+    check = {"model": "bioclip-presence", "score": 0.0412, "threshold": 0.02, "empty": False}
+    rain = identify.settled_by_presence(check, None, rain=0.3)
+    assert rain.sighting.visitor == "none" and rain.model == "bioclip-presence" and not rain.needs_review
+    assert rain.sighting.notes == ("Taken for rain or ripples on the water: nothing new showed on land and the Pi animal "
+                                   "check scored it 0.041 (under 0.30); Claude was not asked.")
+    assert rain.raw == {"presence": check, "skipped_claude": True, "settled_by": "rain", "rain": {"score_max": 0.3}}
+    empty = identify.settled_by_presence({**check, "empty": True}, None)  # judged empty: as before
+    assert "settled_by" not in empty.raw and "rain" not in empty.raw
+    assert empty.sighting.notes.startswith("Pi animal check found nothing (score 0.041, threshold 0.020)")
