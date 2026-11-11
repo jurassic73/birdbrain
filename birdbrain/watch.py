@@ -407,7 +407,8 @@ STALE_BURST_SECONDS = 600          # a burst folder this old was left by a watch
 def burst_tmp_root() -> str | None:
     """Where a burst's temporary folder goes: in memory when the machine has RAM_TMP (most triggers are false
     ones, whose frames and clip are thrown away, so nothing of them is ever written to disk), else the system's
-    temporary folder (None, tempfile's default)."""
+    temporary folder (None, tempfile's default). Debian 13 keeps /tmp in memory anyway; Debian 12 has it on the
+    SD card."""
     return str(RAM_TMP) if RAM_TMP.is_dir() and os.access(RAM_TMP, os.W_OK | os.X_OK) else None
 
 
@@ -441,8 +442,9 @@ def burst_command(url: str, tmp: str, clip_seconds: float = 0) -> list[str]:
            "-vf", f"fps={config.BURST_FPS}", "-frames:v", str(config.BURST_FRAMES), "-q:v", "2"]
     if clip_seconds <= 0:
         return [*cmd, f"{tmp}/f%02d.jpg"]
-    # -thread_type slice: with its usual frame threads the JPEG encoder holds the last few stills back until ffmpeg
-    # ends, which is now when the clip does (measured on the Pi: stills 3 to 6 came 3.4 s late, every trigger).
+    # -thread_type slice: with frame threads, ffmpeg 5.1 (Debian 12) holds the last stills back until it ends, which
+    # is now when the clip does: stills 3 to 6 came 3.4 s late on a Pi 4. ffmpeg 7.1 (Debian 13) does not, and the
+    # option costs nothing there (measured both ways on each).
     # -an: the clip never has sound. The camera's microphone would pick up the neighbours; keep it that way.
     return [*cmd, "-thread_type", "slice", "-atomic_writing", "1", f"{tmp}/f%02d.jpg",
             "-map", "0:v:0", "-c:v", "copy", "-an", "-t", f"{clip_seconds:g}", "-movflags", "+faststart",

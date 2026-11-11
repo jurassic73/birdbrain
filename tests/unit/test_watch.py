@@ -358,7 +358,7 @@ def test_the_clip_rides_on_the_bursts_one_camera_connection():
 
 
 def test_the_stills_never_wait_for_the_clip_to_end():
-    """With frame threads the JPEG encoder keeps the last stills until ffmpeg ends, 3.4 s later with a clip."""
+    """With frame threads an older ffmpeg (5.1) keeps the last stills until it ends, 3.4 s later with a clip."""
     stills = (cmd := watch.burst_command(URL, "/tmp/b", 5))[:cmd.index("/tmp/b/f%02d.jpg")]
     assert stills[stills.index("-thread_type") + 1] == "slice"
 
