@@ -991,13 +991,14 @@ def _handle_burst(frames: list[bytes], captured_at: datetime, recording: clips.R
     fail_soft("noting the stored photo", retention.note_stored, image_rel, thumb_rel)
     if alert_reason:
         fail_soft("sending the alert", send_alert, visit_id, alert_reason, best)
+    if recording is not None and not false_trigger:
+        # After the alert, which never waits for the recording to end, and before the push, so the visit reaches
+        # the public mirror with its clip (a few seconds later) instead of without it until the next push.
+        fail_soft("keeping the clip", keep_clip, visit_id, image_rel, recording)
     if not false_trigger:
         fail_soft("pushing to the public mirror", push_public)
     for _, label, _ in seen:
         fail_soft("prefetching the species card", species_info.prefetch, label)  # no-op once the card is cached
-    if recording is not None and not false_trigger:
-        # Last, so the alert and the mirror never wait for the recording to end.
-        fail_soft("keeping the clip", keep_clip, visit_id, image_rel, recording)
     det_note = "" if not check or check.get("score") is None else f", animal check {check['score']:.2f}"
     log.info("visit %d: %s %s (%s, %s%s%s)", visit_id, s.visitor, s.species or "", s.confidence,
              result.model, ", escalated" if result.escalated else "", det_note)

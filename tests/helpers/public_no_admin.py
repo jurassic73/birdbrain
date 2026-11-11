@@ -11,13 +11,15 @@ PUBLIC = {
     # the Guests counter's beacon (static/track.js): counts a click or a prerendered page, answers 204
     ("POST", "/api/track"),
     ("GET", "/static"), ("GET", "/images"),
+    # visit clips the person check passed (birdbrain/privacy.py); the push sends only those
+    ("GET", "/clips"),
 }
 
 
 # Everything else the app has: the admin's, so a 404 on the mirror. A new route goes in one list or the other.
 ADMIN = {
-    # visit clips (birdbrain/clips.py): video stays on the Pi, the mirror has none
-    ("GET", "/clips"),
+    # Make clip public and its Undo on the visit page (birdbrain/privacy.py)
+    ("POST", "/visit/{visit_id}/clip-public"), ("POST", "/visit/{visit_id}/clip-private"),
     # admin login
     ("GET", "/login"), ("POST", "/login"), ("POST", "/logout"),
     # the Hailo detector card on Stats and its snapshot thumbnails (auth.ADMIN_PATHS "/hailo")

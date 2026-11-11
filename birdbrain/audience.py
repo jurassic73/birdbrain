@@ -90,6 +90,7 @@ CONTROLS = {
     "load_more": "Load more",
     "species_info_tab": "Species Info tab",
     "burst_play": "Burst play",
+    "clip_play": "Play clip",
     "burst_auto": "Burst auto-play toggle",
     "burst_frames": "Burst frame steps",
     "photo_circles": "Circles on the visit photo",

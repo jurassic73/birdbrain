@@ -107,6 +107,11 @@ def fill(template: str, seeded: dict) -> str:
         return "/static/style.css"
     if template == "/images":
         return f"/images/{DAY}/a_b1.jpg"
+    if template == "/clips":
+        clip = config.CLIPS_DIR / DAY / "a.mp4"
+        clip.parent.mkdir(parents=True, exist_ok=True)
+        clip.write_bytes(b"\x00\x00\x00\x18ftypisom")
+        return f"/clips/{DAY}/a.mp4"
     values = {"visit_id": str(seeded["visit_id"]), "name": "Bushtit", "source": "haiku", "state": "off",
               "change_id": "1", "cal_id": "1"}
     url = re.sub(r"\{(\w+)\}", lambda m: values[m.group(1)], template)  # a KeyError: give the new parameter a value

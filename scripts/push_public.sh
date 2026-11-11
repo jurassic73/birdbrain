@@ -68,6 +68,9 @@ if [ "$(rsync --version 2>/dev/null | sed -nE '1s/^rsync +version +([0-9]+)\..*/
   OPTS+=(--chmod=D2770,F660)
 fi
 rsync "${OPTS[@]}" -L --delete "$STAGE/images/" "$PUBLIC_DEST/images/"
+# Visit clips, the same way and for the same reason before the database: only the clips the copy still names
+# (the person check passed them, birdbrain/privacy.py), and --delete takes a pruned or held-back clip off the mirror.
+[ ! -d "$STAGE/clips" ] || rsync "${OPTS[@]}" -L --delete "$STAGE/clips/" "$PUBLIC_DEST/clips/"
 rsync "${OPTS[@]}" "$STAGE/birdbrain.db" "$PUBLIC_DEST/birdbrain.db"
 [ ! -f "$STAGE/live.jpg" ] || rsync "${OPTS[@]}" "$STAGE/live.jpg" "$PUBLIC_DEST/live.jpg"
 

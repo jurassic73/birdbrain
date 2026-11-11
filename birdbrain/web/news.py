@@ -4,8 +4,8 @@ A notice has an id and a last day. The server leaves the pop-up out after that d
 once and remembers the dismissal in its own storage (`bb_news_<id>`), so it never comes back in that browser. The
 tour's step about the same news sets the same flag (static/tour.js), so a first-time visitor gets the tour, not both.
 
-Only one notice so far: visit clips. Clips never leave the Pi, so the public mirror never gets this notice, and a
-site with clips turned off doesn't either. After CLIPS_UNTIL the notice is dead code and can be removed."""
+Only one notice so far: visit clips. The public mirror shows it too (it gets the clips the person check passed);
+a site with clips turned off doesn't. After CLIPS_UNTIL the notice is dead code and can be removed."""
 from datetime import date
 
 CLIPS_ID = "clips"
@@ -22,9 +22,9 @@ def clips_rules(days: int, per_species: int) -> str:
     return f"Clips are kept for {days} days; the newest {per_species} of each species are kept longer."
 
 
-def clips_notice(today: date, *, public: bool, seconds: float, days: int, per_species: int) -> dict | None:
-    """The clips notice for today's page, or None: past its last day, on the public mirror, or clips are off."""
-    if public or seconds <= 0 or today > CLIPS_UNTIL:
+def clips_notice(today: date, *, seconds: float, days: int, per_species: int) -> dict | None:
+    """The clips notice for today's page, or None: past its last day, or clips are off."""
+    if seconds <= 0 or today > CLIPS_UNTIL:
         return None
     return {
         "id": CLIPS_ID,

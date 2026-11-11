@@ -6,6 +6,12 @@ only keeps one photo off the mirror. Everything fails closed: a photo that can't
 
 Scores are cached per photo in DATA_DIR/privacy.json, so each file is checked once.
 
+Visit clips (birdbrain/clips.py) get the same check: CLIP_CHECK_FPS frames of every second of video, plus the last
+frame, each looked at like a photo; the clip's score is the highest of them, cached under "clips/<path>". A clip
+with a person, or not checked yet, or that can't be read, stays on the Pi while its visit (whose photo is clean)
+still goes out: the copy of the database just names no clip for it. Make clip public pins a flagged clip's score in
+the same visits.public_ok, under the same key.
+
 "Make public": when the owner looks at a held-back visit and sees no person, the visit page pins the
 scores its photos had then in visits.public_ok ({"at": time, "files": {photo: score}}). Only those files at
 no more than those scores are let through; a new file, or one that scores higher when checked again, holds
@@ -26,6 +32,8 @@ from pathlib import Path
 from . import config, images
 
 MIN_SCORE = float(os.environ.get("PRIVACY_MIN_SCORE", "0.25"))
+CLIP_PREFIX = "clips/"  # a clip's key in the cache and in an override: "clips/" + its path under config.CLIPS_DIR
+CLIP_CHECK_FPS = 2      # frames looked at per second of clip: someone walking through is in view for longer
 FILTER_BUDGET = float(os.environ.get("PRIVACY_BUDGET", "90"))  # seconds of checking per push; the rest waits
 _det = None
 
@@ -67,6 +75,46 @@ def score_file(path: Path) -> float:
     if img is None:
         raise ValueError(f"can't read {path}")
     return person_score(img)
+
+
+def clip_key(clip_rel: str) -> str:
+    return CLIP_PREFIX + clip_rel
+
+
+def clip_frames(path: Path):
+    """The frames of a clip the check looks at: CLIP_CHECK_FPS a second from the first on, and the last one."""
+    import cv2
+
+    cap = cv2.VideoCapture(str(path))
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        step = max(1, round((fps if 1 <= fps <= 240 else 25) / CLIP_CHECK_FPS))
+        n, last = 0, None
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            if n % step == 0:
+                last = None
+                yield frame
+            else:
+                last = frame
+            n += 1
+        if last is not None:
+            yield last
+    finally:
+        cap.release()
+
+
+def score_clip(path: Path) -> float:
+    """Highest "person" score in any checked frame of the clip. ValueError when no frame can be read."""
+    best, seen = 0.0, 0
+    for frame in clip_frames(path):
+        seen += 1
+        best = max(best, person_score(frame))
+    if not seen:
+        raise ValueError(f"can't read {path}")
+    return best
 
 
 def cache_path() -> Path:
@@ -115,20 +163,62 @@ def make_override(image_rel: str, cache: dict[str, float], thumb_rel: str | None
     return {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "files": files} if files else None
 
 
+def clip_override(public_ok: str | None, clip_rel: str, score: float | None) -> dict | None:
+    """visits.public_ok with this clip's score pinned (Make clip public) or, with score None, taken out again.
+    The photos' cleared scores in it are left as they are. None when nothing is left to store."""
+    files = parse_override(public_ok)
+    files.pop(clip_key(clip_rel), None)
+    if score is not None:
+        files[clip_key(clip_rel)] = score
+    return {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "files": files} if files else None
+
+
+def keep_clip_overrides(public_ok: str | None, override: dict | None) -> dict | None:
+    """A new photo override (or None, for Undo) carrying over any clip the owner already cleared: Make public
+    and its Undo are about the photos, and never take back a Make clip public."""
+    kept = {rel: score for rel, score in parse_override(public_ok).items() if rel.startswith(CLIP_PREFIX)}
+    if not kept:
+        return override
+    return {"at": (override or {}).get("at") or time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "files": {**kept, **(override or {}).get("files", {})}}
+
+
 _status: tuple[float, dict] = (0.0, {})
+
+
+def _cached() -> dict[str, float] | None:
+    """The score cache as the web app reads it (reloaded when the file changes); None when no filter ever ran."""
+    global _status
+    try:
+        mtime = cache_path().stat().st_mtime
+    except FileNotFoundError:
+        return None
+    if mtime != _status[0]:
+        _status = (mtime, load_cache())
+    return _status[1]
+
+
+def clip_status(clip_rel: str | None, public_ok: str | None = None) -> str | None:
+    """'person', 'unchecked', 'cleared' (the owner said Make clip public) or None (clean, or no clip) for a
+    visit's clip, for the pill beside Play clip on the Pi's visit page."""
+    cache = _cached()
+    if not clip_rel or cache is None:
+        return None
+    score = cache.get(clip_key(clip_rel))
+    if score is None:
+        return "unchecked"
+    if held_back(clip_key(clip_rel), score, parse_override(public_ok)):
+        return "person"
+    return "cleared" if score >= MIN_SCORE else None
 
 
 def visit_status(image_rel: str, public_ok: str | None = None, thumb_rel: str | None = None) -> str | None:
     """'person', 'unchecked', 'cleared' (the owner said Make public) or None (clean) for a visit's
     photos, for the pill on the Pi's visit page."""
-    global _status
-    try:
-        mtime = cache_path().stat().st_mtime
-    except FileNotFoundError:
+    cache = _cached()
+    if cache is None:
         return None  # the mirror filter has never run: nothing to report
-    if mtime != _status[0]:
-        _status = (mtime, load_cache())
-    cache, override = _status[1], parse_override(public_ok)
+    override = parse_override(public_ok)
     scores = {rel: cache.get(rel) for rel in files_to_check(image_rel, thumb_rel)}
     if any(s is not None and held_back(rel, s, override) for rel, s in scores.items()):
         return "person"
@@ -183,9 +273,54 @@ def blocked_visits(rows, cache: dict[str, float], budget: float = FILTER_BUDGET)
     return blocked, checked
 
 
+def blocked_clips(rows, cache: dict[str, float], budget: float = FILTER_BUDGET) -> tuple[list, int]:
+    """Check unchecked clips (newest visits first, within the time budget) and return the visits whose clip stays
+    on the Pi: a person in any checked frame (unless the owner cleared it), not checked yet, not on disk, or not
+    readable. Rows are (id, clip path, public_ok). Also returns how many clips were checked."""
+    from . import clips
+
+    start, checked = time.monotonic(), 0
+    blocked = []
+    for vid, rel, *rest in rows:
+        key = clip_key(rel)
+        if not clips.inside(rel) or not (config.CLIPS_DIR / rel).is_file():
+            blocked.append(vid)
+            continue
+        if key not in cache:
+            if time.monotonic() - start > budget:
+                blocked.append(vid)
+                continue
+            try:
+                cache[key] = score_clip(config.CLIPS_DIR / rel)
+            except ValueError:
+                blocked.append(vid)
+                continue
+            checked += 1
+        if held_back(key, cache[key], parse_override(rest[0] if rest else None)):
+            blocked.append(vid)
+    return blocked, checked
+
+
+def filter_clips(db: sqlite3.Connection, cache: dict[str, float], budget: float) -> tuple[int, int]:
+    """Blank clip_path in the copy for every visit whose clip stays on the Pi (blocked_clips). Returns (clips
+    held back, clips checked). A copy from before clips existed has none."""
+    try:
+        rows = db.execute("SELECT id, clip_path, public_ok FROM visits WHERE clip_path IS NOT NULL "
+                          "ORDER BY id DESC").fetchall()
+    except sqlite3.OperationalError:
+        return 0, 0
+    try:
+        held, checked = blocked_clips(rows, cache, budget)
+    finally:
+        save_cache(cache)
+    db.executemany("UPDATE visits SET clip_path = NULL WHERE id = ?", [(v,) for v in held])
+    return len(held), checked
+
+
 def filter_db(db_path: Path, exclude_path: Path) -> int:
     """Remove blocked visits from a copy of the database; list their files for rsync. Returns how many."""
     cache = load_cache()
+    started = time.monotonic()
     db = sqlite3.connect(db_path)
     try:
         rows = db.execute("SELECT id, image_path, thumb_path, public_ok FROM visits ORDER BY id DESC").fetchall()
@@ -202,6 +337,8 @@ def filter_db(db_path: Path, exclude_path: Path) -> int:
         lines += ["/" + rel for rel in visit_files(image_rel, thumb_rel)]
     cleared = sum(1 for r in rows if len(r) > 3 and r[0] not in blocked and parse_override(r[3]))
     db.executemany("DELETE FROM visits WHERE id = ?", [(v,) for v in blocked])
+    # The clips of the visits that do go out, with whatever is left of this push's checking time.
+    clips_held, clips_checked = filter_clips(db, cache, max(0.0, FILTER_BUDGET - (time.monotonic() - started)))
     try:
         db.execute("UPDATE visits SET public_ok = NULL")  # the owner's privacy calls stay on the Pi
     except sqlite3.OperationalError:
@@ -216,7 +353,7 @@ def filter_db(db_path: Path, exclude_path: Path) -> int:
     db.close()
     exclude_path.write_text("".join(f"{line}\n" for line in lines))
     print(f"privacy: {checked} photos checked, {len(blocked)} visits kept off the mirror, "
-          f"{cleared} let through by Make public")
+          f"{cleared} let through by Make public; {clips_checked} clips checked, {clips_held} clips kept on the Pi")
     return len(blocked)
 
 

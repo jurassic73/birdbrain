@@ -28,7 +28,7 @@ MIRROR_ROUTES = frozenset({
     "/species", "/species/{name}", "/species/{name}/more", "/species-info/{name}",
     "/stats", "/weather", "/about",
     "/api/latest-visit", "/live/latest.jpg", "/live.jpg", "/manifest.webmanifest", "/favicon.ico",
-    "/guest-login", "/static", "/images",
+    "/guest-login", "/static", "/images", "/clips",
 })
 MIRROR_POSTS = frozenset({"/guest-login", audience.TRACK_PATH})
 MAX_FAILS = 5

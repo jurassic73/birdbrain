@@ -5,8 +5,9 @@ copy: no re-encoding, so it costs the Pi nothing and the camera one connection, 
 sound: the microphone would pick up the neighbours. The watcher keeps the clip only when the visit turns out to be
 real; a false trigger's recording is thrown away.
 
-Clips live under config.CLIPS_DIR in the same day folders as the photos (<photo stem>.mp4), outside the photo budget,
-and never go to the public mirror. visits.clip_path names a visit's clip. Pruning (once a day, from the photo
+Clips live under config.CLIPS_DIR in the same day folders as the photos (<photo stem>.mp4), outside the photo budget.
+visits.clip_path names a visit's clip. The public mirror gets a clip only once the person check has looked through
+it and seen nobody (birdbrain/privacy.py, birdbrain/mirror.py); the others play on the Pi's own site only. Pruning (once a day, from the photo
 budget's thread) deletes clips older than CLIP_DAYS, except: a starred visit's (a favorite or a species cover,
 visits.keep) and the newest CLIP_KEEP_PER_SPECIES of each species, however old.
 

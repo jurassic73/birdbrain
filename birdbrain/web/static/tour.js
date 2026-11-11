@@ -15,8 +15,7 @@
   });
 
   // sel: selectors tried in order (first one that shows wins), or with all:true every visible match is highlighted
-  // together. Only features that exist on both the home site and the public mirror, except the Clips step: its chip
-  // isn't on the mirror (clips never leave the Pi), so the step is skipped there like any step with no target.
+  // together. Only features that exist on both the home site and the public mirror.
   // news: the step tells the same thing as a "what's new" pop-up (static/news.js), which is marked seen with it.
   const steps = [
     {sel: [".hero-latest", ".hero"], title: "The latest visitor",

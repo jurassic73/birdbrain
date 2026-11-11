@@ -3,7 +3,7 @@ from datetime import date, timedelta
 
 from birdbrain.web import news
 
-ON = {"public": False, "seconds": 5.0, "days": 21, "per_species": 10}
+ON = {"seconds": 5.0, "days": 21, "per_species": 10}
 
 
 def test_the_clips_notice_shows_through_its_last_day_and_never_after():
@@ -18,7 +18,6 @@ def test_the_clips_notice_shows_through_its_last_day_and_never_after():
 
 def test_no_clips_notice_where_there_are_no_clips():
     today = news.CLIPS_UNTIL
-    assert news.clips_notice(today, **{**ON, "public": True}) is None  # the mirror: clips never leave the Pi
     assert news.clips_notice(today, **{**ON, "seconds": 0}) is None  # clips turned off
 
 

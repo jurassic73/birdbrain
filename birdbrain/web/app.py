@@ -66,7 +66,7 @@ class PhotoFiles(StaticFiles):
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 app.mount("/images", PhotoFiles(directory=images_dir(), check_dir=False), name="images")
-# Visit clips (birdbrain/clips.py). Not one of the mirror's routes (auth.MIRROR_ROUTES): clips never leave the Pi.
+# Visit clips (birdbrain/clips.py). The mirror serves them too: the pushes bring the clips the person check passed.
 app.mount("/clips", PhotoFiles(directory=config.CLIPS_DIR, check_dir=False), name="clips")
 templates = Jinja2Templates(directory=HERE / "templates")
 
@@ -339,6 +339,7 @@ templates.env.filters.update(nice_time=nice_time, nice_date=nice_date, since_ago
 templates.env.filters["tile_facts"] = species_info.tile_facts
 templates.env.globals["stayed"] = lambda v: stayed(v["captured_at"], v["ended_at"]) if "ended_at" in v.keys() else ""
 templates.env.globals["mirror_status"] = privacy.visit_status
+templates.env.globals["clip_mirror_status"] = privacy.clip_status
 templates.env.globals["has_card"] = species_info.has_card
 templates.env.globals["steps_bottom"] = steps.bottom_line
 templates.env.globals["season_badge"] = species_info.visit_badge
@@ -412,9 +413,9 @@ templates.env.globals["lessons_popup"] = lessons_popup
 
 
 def news_popup() -> dict | None:
-    """The one-time "what's new" pop-up in base.html (web/news.py): for everyone on the home site, until its last
-    day; never on the public mirror, which has no clips."""
-    return news.clips_notice(clock.today(), public=auth.public(), seconds=config.CLIP_SECONDS,
+    """The one-time "what's new" pop-up in base.html (web/news.py): for everyone, on the home site and the public
+    mirror, until its last day."""
+    return news.clips_notice(clock.today(), seconds=config.CLIP_SECONDS,
                              days=config.CLIP_DAYS, per_species=config.CLIP_KEEP_PER_SPECIES)
 
 
@@ -541,26 +542,32 @@ def quick_filters() -> list[tuple[str, dict]]:
         ("Night", {"tod": "night"}),
         ("Today", {"date_from": today.isoformat(), "date_to": today.isoformat()}),
         ("This week", {"date_from": (today - timedelta(days=6)).isoformat()}),
-        # Visits whose video clip is still kept. Not on the public mirror, which has no clips.
-        *([] if auth.public() else [("Clips", {"kind": "clip"})]),
+        ("Clips", {"kind": "clip"}),  # visits whose video clip is still kept (on the mirror: the ones it was sent)
     ]
 
 
-def clip_info(visit) -> dict | None:
-    """What the visit page says about the visit's video clip (None: no clip, or the public mirror, which has
-    none): where it plays from and how long it is kept."""
+def clip_info(visit, admin: bool = False) -> dict | None:
+    """What the visit page says about the visit's video clip (None: no clip): where it plays from and how long it
+    is kept. Stars are the owner's, so only the admin reads about them; visitors, on the home site and the public
+    mirror, get the age limit and the newest few of each species (news.clips_rules)."""
     rel = visit["clip_path"] if "clip_path" in visit.keys() else None
-    if not rel or auth.public() or not clips.inside(rel):
+    if not rel or not clips.inside(rel):
         return None
-    if visit["keep"] == 1:
+    days, per_species = config.CLIP_DAYS, config.CLIP_KEEP_PER_SPECIES
+    rules = news.clips_rules(days, per_species)
+    if admin and visit["keep"] == 1:
         kept = "Kept for good: this visit is starred."
-    elif config.CLIP_DAYS <= 0:
+    elif days <= 0:
         kept = "Kept for good."
     else:
-        until = datetime.fromisoformat(visit["captured_at"]) + timedelta(days=config.CLIP_DAYS)
-        kept = f"Kept until {until.strftime('%b')} {until.day}. Star the photo to keep it for good."
-    return {"src": f"/clips/{quote(rel)}", "kept": kept, "days": config.CLIP_DAYS,
-            "per_species": config.CLIP_KEEP_PER_SPECIES}
+        until = datetime.fromisoformat(visit["captured_at"]) + timedelta(days=days)
+        kept = f"Kept at least until {until.strftime('%b')} {until.day}."
+        if admin:
+            kept += " Star the photo to keep it for good."
+    if admin and days > 0:
+        rules = (f"Clips are deleted after {days} days, except those of starred visits (favorites and species covers)"
+                 + (f" and the newest {per_species} of each species." if per_species > 0 else "."))
+    return {"src": f"/clips/{quote(rel)}", "kept": kept, "rules": rules}
 
 
 def species_filters(request: Request) -> dict:
@@ -765,7 +772,7 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         scope=scope,
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
-        clip=clip_info(visit),
+        clip=clip_info(visit, request.state.admin),
         claude_frame=db.claude_frame(visit["raw_json"]),
         photo_frame=db.photo_frame(visit),
         teaches=teaches,
@@ -1360,14 +1367,39 @@ def public_anyway(visit_id: int, conn=Depends(get_conn)):
     override = privacy.make_override(visit["image_path"], privacy.load_cache(), visit["thumb_path"])
     if override is None:
         raise HTTPException(409, "Nothing to clear: this visit isn't held back for a person, or isn't fully checked yet.")
-    db.set_public_ok(conn, visit_id, override)
+    db.set_public_ok(conn, visit_id, privacy.keep_clip_overrides(visit["public_ok"], override))
     return Response(headers=REFRESH)
 
 
 @app.post("/visit/{visit_id}/private")
 def public_undo(visit_id: int, conn=Depends(get_conn)):
     """Undo Make public: the visit is held back again from the next push (and taken off the mirror)."""
-    db.set_public_ok(conn, visit_id, None)
+    visit = db.get_visit(conn, visit_id)
+    db.set_public_ok(conn, visit_id, privacy.keep_clip_overrides(visit["public_ok"], None) if visit else None)
+    return Response(headers=REFRESH)
+
+
+@app.post("/visit/{visit_id}/clip-public")
+def clip_public(visit_id: int, conn=Depends(get_conn)):
+    """The owner watched a clip the person check flagged and saw nobody: pin its score, so the next push to the
+    public mirror sends the clip (birdbrain.privacy)."""
+    visit = db.get_visit(conn, visit_id)
+    if visit is None:
+        raise HTTPException(404)
+    score = privacy.load_cache().get(privacy.clip_key(visit["clip_path"])) if visit["clip_path"] else None
+    if score is None or score < privacy.MIN_SCORE:
+        raise HTTPException(409, "Nothing to clear: this clip isn't held back for a person, or isn't checked yet.")
+    db.set_public_ok(conn, visit_id, privacy.clip_override(visit["public_ok"], visit["clip_path"], score))
+    return Response(headers=REFRESH)
+
+
+@app.post("/visit/{visit_id}/clip-private")
+def clip_public_undo(visit_id: int, conn=Depends(get_conn)):
+    """Undo Make clip public: the clip stays on the Pi again from the next push."""
+    visit = db.get_visit(conn, visit_id)
+    if visit is None or not visit["clip_path"]:
+        raise HTTPException(404)
+    db.set_public_ok(conn, visit_id, privacy.clip_override(visit["public_ok"], visit["clip_path"], None))
     return Response(headers=REFRESH)
 
 

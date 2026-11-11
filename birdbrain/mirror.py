@@ -10,11 +10,13 @@ privacy-filtered copy refers to (each visit's photo, thumbnail and burst frames)
 after the copy was made, an orphan or a temporary file never goes out. They're staged as symlinks in a folder
 rsync sends with --copy-links --delete, so whatever else is on the mirror is removed. False triggers and "other"
 visits (the admin's pages only) are dropped from the copy, so their photos and bursts are never listed and the next
-push removes them.
+push removes them. Visit clips (birdbrain/clips.py) go the same way, staged under STAGE/clips: only the clips the
+copy still names, which are the ones the person check passed (privacy.filter_clips blanks the rest).
 
 CLI (exit 0 = ok, 2 = error; the push script stops on a nonzero exit, so nothing goes out half done):
   python -m birdbrain.mirror prepare SRC.db STAGE [TZ]    copy, trim and filter SRC.db into STAGE/birdbrain.db,
-                                                           write STAGE/files.txt and stage STAGE/images/
+                                                           write STAGE/files.txt and stage STAGE/images/ and
+                                                           STAGE/clips/
 """
 import json
 import os
@@ -38,9 +40,7 @@ SETTINGS_PREFIXES = ("retention.",      # photo budget options and flags (About)
                      "refphoto:")       # species reference photos (species cards)
 # Visit columns blanked: the owner's note for Claude (a lesson, shown on the Pi's visit page only). public_ok is
 # blanked by the privacy filter once it has read it.
-# clip_path: the visit's video clip stays on the Pi (a few seconds of video can show a person the photo's person
-# check never saw), so the mirror's copy names none and its pages show none.
-PRIVATE_COLUMNS = ("feedback", "clip_path")
+PRIVATE_COLUMNS = ("feedback",)
 # Visit columns put back to their default: the admin's own marks that only admin pages read (a lesson switched off
 # on Claude's Notes).
 ADMIN_COLUMNS = {"lesson_off": 0}
@@ -193,18 +193,47 @@ def files_of(db_path: Path, images_dir: Path | None = None) -> list[str]:
     return out
 
 
-def stage_files(files: list[str], stage: Path, images_dir: Path | None = None) -> Path:
-    """Symlinks to the listed files under stage/images, in the same folders, for rsync --copy-links --delete:
-    the mirror ends up with exactly these files and nothing else."""
-    images_dir = Path(images_dir or config.IMAGES_DIR).absolute()  # the links must work from anywhere
-    root = stage / "images"
+def clips_of(db_path: Path, clips_dir: Path | None = None) -> list[str]:
+    """Every clip the (filtered) copy still names that is on disk, as paths relative to the clips folder. The
+    privacy filter has already blanked the clips with a person, the unchecked ones and the missing ones; this
+    is the second lock, like files_of for photos."""
+    clips_dir = clips_dir or config.CLIPS_DIR
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(f"SELECT clip_path FROM visits WHERE {db.PUBLIC} AND clip_path IS NOT NULL "
+                            "ORDER BY id").fetchall()
+    except sqlite3.OperationalError:  # a database from before clips existed
+        rows = []
+    finally:
+        conn.close()
+    out = []
+    for (rel,) in rows:
+        rel = str(Path(rel))
+        if inside(rel) and not is_temp(Path(rel).name) and (clips_dir / rel).is_file() and rel not in out:
+            out.append(rel)
+    return out
+
+
+def _stage(files: list[str], root: Path, source: Path) -> Path:
+    source = Path(source).absolute()  # the links must work from anywhere
     shutil.rmtree(root, ignore_errors=True)  # never a link left over from an earlier list
     root.mkdir(parents=True)
     for rel in files:
         link = root / rel
         link.parent.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(images_dir / rel)
+        link.symlink_to(source / rel)
     return root
+
+
+def stage_files(files: list[str], stage: Path, images_dir: Path | None = None) -> Path:
+    """Symlinks to the listed files under stage/images, in the same folders, for rsync --copy-links --delete:
+    the mirror ends up with exactly these files and nothing else."""
+    return _stage(files, stage / "images", images_dir or config.IMAGES_DIR)
+
+
+def stage_clips(files: list[str], stage: Path, clips_dir: Path | None = None) -> Path:
+    """The same for clips, under stage/clips (always made, so an empty list empties the mirror's clips)."""
+    return _stage(files, stage / "clips", clips_dir or config.CLIPS_DIR)
 
 
 def prepare(src: Path, stage: Path, timezone: str = "") -> tuple[int, int]:
@@ -217,7 +246,10 @@ def prepare(src: Path, stage: Path, timezone: str = "") -> tuple[int, int]:
     files = files_of(dst)
     (stage / "files.txt").write_text("".join(f"{rel}\n" for rel in files))
     stage_files(files, stage)
-    print(f"mirror: {len(files)} photo files to push")
+    clip_files = clips_of(dst)
+    (stage / "clips.txt").write_text("".join(f"{rel}\n" for rel in clip_files))
+    stage_clips(clip_files, stage)
+    print(f"mirror: {len(files)} photo files and {len(clip_files)} clips to push")
     return len(files), blocked
 
 

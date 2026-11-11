@@ -52,9 +52,8 @@ def test_copy_strips_private_fields_and_tables_but_keeps_what_pages_show(pi_db, 
     c = sqlite3.connect(copy)
     row = c.execute("SELECT feedback, raw_json, species, notes FROM visits WHERE id = ?", (vid,)).fetchone()
     assert row[0] is None and row[2] == "Dark-eyed Junco"
-    # The visit's video clip stays on the Pi: the copy names none, so the mirror's pages offer none.
-    assert c.execute("SELECT clip_path FROM visits WHERE id = ?", (vid,)).fetchone()[0] is None
-    assert db.get_visit(conn, vid)["clip_path"] == "2026/11/03/a.mp4"
+    # The copy keeps the clip's path; the privacy filter (run next by prepare) blanks it unless the clip is clean.
+    assert c.execute("SELECT clip_path FROM visits WHERE id = ?", (vid,)).fetchone()[0] == "2026/11/03/a.mp4"
     assert set(json.loads(row[1])) == {"calls", "trigger", "burst", "zones"}
     assert c.execute("SELECT COUNT(*) FROM pi_checks").fetchone()[0] == 0
     assert c.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0] == 0
