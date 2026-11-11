@@ -31,6 +31,8 @@
     inline(true);
     small.currentTime = 0;
   });
+  // The in-place player starts without the browser's play bar (it flashed up on every visit stepped to); the first tap brings it.
+  if (small) small.addEventListener("click", () => { small.controls = true; }, {once: true});
   if (box) {
     document.getElementById("clip-inline-zoom").addEventListener("click", () => { small.pause(); play(); });
     dlg.addEventListener("close", () => { if (!box.hidden) small.play().catch(() => {}); });
