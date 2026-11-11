@@ -36,7 +36,8 @@ only teaches "animal" with a frame that shows it (animal_example):
     animal was in the crop box).
 And as a backstop (threshold_from): when the lowest visitor sits more than OUTLIER_GAP below the next one (in
 log-odds) and at least OUTLIER_PEERS visitors of its kind (visitor type, day or night) are in training, the
-threshold comes from the next one. A first-of-its-kind visitor (the first possum at night) is never set aside.
+threshold comes from the next one; a visitor scoring under OUTLIER_FLOOR goes the same way with no gap needed (it is
+still a visitor in your records and still trains the model). A first-of-its-kind visitor (the first possum at night) is never set aside.
 On atmos's 116 visitors (2026-11-02) the gaps between the lowest scores were at most 1.1; visit 693 labelled a
 dove sat 2.95 below the next.
 
@@ -82,6 +83,8 @@ PICK_MIN = 0.5  # a burst frame shows the animal when it scores at least this (m
 MIN_COVERAGE = 0.5  # share of a circle inside the crop box for the photo's crop to count as showing the animal
 ASPECT = 16 / 9  # the camera's frame (circles' r is a fraction of the width)
 OUTLIER_GAP = 2.0  # log-odds below the next visitor (7x less likely) for the lowest to be set aside...
+OUTLIER_FLOOR = 0.01  # a visitor scoring below this is set aside too (same peers rule), gap or no gap: one animal the
+                      # check can't see (2026-11-10, a squirrel in the shrub scored 0.005) must not set the threshold
 OUTLIER_PEERS = 10  # ...and only with this many others of its kind (visitor type, day or night) in training
 RETRAIN_CHECK = 60  # seconds between the watcher's label checks (birdbrain.watch runs start_background())
 BACKGROUND = True  # retrain in a thread; tests set False to train synchronously (no stray threads)
@@ -326,12 +329,17 @@ def threshold_from(scores: np.ndarray, groups: np.ndarray | None = None) -> tupl
     is well known here (OUTLIER_PEERS), so a crop that doesn't really show its animal can't drag the threshold to
     ~0 while a first-of-its-kind visitor still lowers it."""
     order = np.argsort(scores, kind="stable")
-    low, ignored = int(order[0]), None
-    if groups is not None and len(order) > 1:
-        nxt = int(order[1])
+    i, ignored = 0, None
+    while groups is not None and i + 1 < len(order):
+        low, nxt = int(order[i]), int(order[i + 1])
         peers = int((groups == groups[low]).sum()) - 1
-        if logit(scores[nxt]) - logit(scores[low]) >= OUTLIER_GAP and peers >= OUTLIER_PEERS:
-            low, ignored = nxt, low
+        unseen = scores[low] < OUTLIER_FLOOR  # the check can't see it at all (an animal hidden in the shrub)
+        if peers >= OUTLIER_PEERS and (unseen or logit(scores[nxt]) - logit(scores[low]) >= OUTLIER_GAP):
+            ignored = low if ignored is None else ignored
+            i += 1
+        else:
+            break
+    low = int(order[i])
     return float(min(MARGIN * scores[low], MAX_THRESHOLD)), low, ignored
 
 

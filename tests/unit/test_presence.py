@@ -33,6 +33,22 @@ def test_one_outlier_visitor_cant_drag_the_threshold_to_zero():
     assert presence.threshold_from(scores)[2] is None  # no groups: the plain minimum
 
 
+def test_a_visitor_the_check_cannot_see_is_set_aside_even_with_a_small_gap():
+    # 2026-11-10: a squirrel in the shrub scored 0.005 against 0.02 next (gap 1.4 < OUTLIER_GAP) and dragged the
+    # threshold to 0.004, so the check dropped 61% of empty frames instead of 85%.
+    scores = np.array([0.005, 0.02, 0.025, 0.07, 0.1] + [0.9] * 12)
+    birds = np.array(["squirrel/day"] * 17, object)
+    threshold, low, ignored = presence.threshold_from(scores, birds)
+    assert (ignored, low) == (0, 1) and threshold == pytest.approx(0.8 * 0.02)
+    first = birds.copy()
+    first[0] = "possum/night"  # the first of its kind still lowers the threshold
+    assert presence.threshold_from(scores, first)[2] is None
+    # two unseen ones are both skipped
+    two = np.array([0.0004, 0.005, 0.02, 0.07] + [0.9] * 13)
+    t2, low2, ign2 = presence.threshold_from(two, np.array(["bird/day"] * 17, object))
+    assert (ign2, low2) == (0, 2) and t2 == pytest.approx(0.8 * 0.02)
+
+
 def test_the_cli_refuses_redo_without_backfill(monkeypatch, capsys):
     monkeypatch.setattr(presence, "backfill", lambda *a, **k: pytest.fail("backfill ran"))
     monkeypatch.setattr("sys.argv", ["presence", "--redo"])
