@@ -129,7 +129,8 @@ def client():
     global _client
     if _client is None:
         import anthropic
-        _client = anthropic.Anthropic(timeout=60.0)
+        from .calllog import Logged  # every messages.parse is recorded in the claude_calls table
+        _client = Logged(anthropic.Anthropic(timeout=60.0))
     return _client
 
 

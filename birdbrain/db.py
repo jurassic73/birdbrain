@@ -10,6 +10,26 @@ from pathlib import Path
 
 from . import clock, config, images
 
+# One row per call to the Claude API, from any caller (birdbrain.calllog writes it); no foreign keys, so it outlives visits.
+CLAUDE_CALLS_SQL = """
+CREATE TABLE IF NOT EXISTS claude_calls (
+    id INTEGER PRIMARY KEY,
+    at TEXT NOT NULL,       -- local time, as everywhere else in this database
+    host TEXT,              -- the machine that made the call (the Mac when developing, odin in service)
+    caller TEXT,            -- module.function that asked, e.g. watch.identify_frames or species_info.card_text
+    requested_model TEXT,
+    model TEXT,             -- the model that answered (a fallback can differ from the one asked)
+    ok INTEGER NOT NULL,    -- 1 when the API answered, 0 for an error (the exception is in error)
+    stop_reason TEXT,
+    error TEXT,
+    seconds REAL,
+    input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER,
+    usd REAL,               -- estimated from USD_PER_MTOK; NULL for a model without a listed price
+    key_tail TEXT           -- last 4 characters of the API key, to tell keys apart when the console shows two
+);
+CREATE INDEX IF NOT EXISTS idx_claude_calls_at ON claude_calls (at);
+"""
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS visits (
     id INTEGER PRIMARY KEY,
@@ -112,7 +132,7 @@ CREATE TABLE IF NOT EXISTS weather_days (
     final INTEGER NOT NULL DEFAULT 0,  -- 1 once the day is long over; final days are never fetched again
     fetched_at TEXT
 );
-"""
+""" + CLAUDE_CALLS_SQL
 # Approximate Claude prices (USD per million tokens) for the cost and savings figures on the home page. The system
 # prompt is cached between calls (identify.ask): the API bills those tokens apart from input_tokens, reads at a
 # tenth of the input price and writes (a 5-minute cache) at 1.25 times it, as listed for both models on 2026-11-03.
