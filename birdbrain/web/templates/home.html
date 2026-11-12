@@ -37,7 +37,7 @@
   {# Auto-play latest visit (static/hero-clip.js): its clip loops over the photo, on unless this browser said no.
      Clicks go through the video to the photo link. #}
   <video class="hero-clip" data-src="{{ hero_clip.src }}" muted loop playsinline preload="none" hidden></video>
-  <label class="hero-auto" data-tip="Play the latest visit's clip over its photo whenever you open this page. Remembered in this browser only."><input type="checkbox" id="hero-autoplay"> Auto-play latest visit</label>
+  <label class="hero-auto" data-tip-hover data-tip="Play the latest visit's clip over its photo whenever you open this page. Remembered in this browser only."><input type="checkbox" id="hero-autoplay"> <span class="hero-auto-full">Auto-play latest visit</span><span class="hero-auto-short">Autoplay</span></label>
   {% elif lv.clip_note %}
   {# The latest visit's clip was recorded but not kept (birdbrain.clips.choppy): say so where the box would be. #}
   <span class="hero-auto hero-novideo" tabindex="0" data-tip="A few seconds of video are saved with each visit. This time {{ lv.clip_note }}, so the clip was left out instead of shown choppy.">{{ clip_not_captured }}</span>

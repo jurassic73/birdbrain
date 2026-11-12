@@ -59,7 +59,7 @@
   } else {
     document.addEventListener("click", (e) => {
       const el = e.target.closest("[data-tip]");
-      if (el && !el.closest("a") && el !== current) show(el);
+      if (el && !el.closest("a") && !el.hasAttribute("data-tip-hover") && el !== current) show(el);  // data-tip-hover: tip on mouse hover only, none on touch
       else hide();
     });
   }

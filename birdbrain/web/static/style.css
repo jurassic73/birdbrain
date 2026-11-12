@@ -280,6 +280,12 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
 .hero-auto { position: absolute; right: 8px; bottom: 8px; z-index: 2; display: inline-flex; align-items: center; gap: 6px;
   margin: 0; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .55); color: #fff; font-size: .8rem; cursor: pointer; }
 .hero-auto input { margin: 0; }
+.hero-auto-short { display: none; }
+@media (max-width: 640px) {
+  .hero-auto { font-size: .64rem; }
+  .hero-auto-full { display: none; }
+  .hero-auto-short { display: inline; }
+}
 .hero-novideo { cursor: help; }
 .hero-latest .hero-caption, .hero-latest .fav-star { z-index: 2; }
 .hero-photo img { object-fit: cover; }
