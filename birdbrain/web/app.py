@@ -423,11 +423,27 @@ def news_popup() -> dict | None:
 templates.env.globals["news_popup"] = news_popup
 
 
+# The owner's to-do lists among the quick filters (db._where's kind): the chip, and what the visit page's bar and
+# the More filters box call the list. Admin only: checking answers is the owner's job, so visitors never see them.
+WORKLISTS = {
+    "unconfirmed": ("Unconfirmed", "Unconfirmed"),
+    "rpi": ("RPi", "RPi, unconfirmed"),
+}
+
+
+def worklist(kind: str | None, request: Request) -> str:
+    """`kind` when it is one of the owner's to-do lists and the admin is asking, else ""."""
+    return kind if kind in WORKLISTS and request.state.admin else ""
+
+
 def filters_from(request: Request) -> dict:
     q = request.query_params
+    kind = q.get("kind") or None
+    if kind in WORKLISTS and not request.state.admin:
+        kind = None  # not a visitor's filter
     return {
         "species": q.get("species") or None,
-        "kind": q.get("kind") or None,
+        "kind": kind,
         "tod": q.get("tod") or None,
         "date_from": q.get("date_from") or None,
         "date_to": q.get("date_to") or None,
@@ -533,7 +549,9 @@ def logout():
     return resp
 
 
-def quick_filters() -> list[tuple[str, dict]]:
+def quick_filters(admin: bool = False) -> list[tuple[str, dict]]:
+    """The quick filter chips, in order. admin adds the owner's to-do lists (WORKLISTS): Unconfirmed, the visits
+    nobody has confirmed or corrected yet, and RPi, those of them the BioCLIP 2 species check named on the Pi."""
     today = clock.today()
     return [
         ("All", {}),
@@ -544,6 +562,7 @@ def quick_filters() -> list[tuple[str, dict]]:
         ("Today", {"date_from": today.isoformat(), "date_to": today.isoformat()}),
         ("This week", {"date_from": (today - timedelta(days=6)).isoformat()}),
         ("Clips", {"kind": "clip"}),  # visits whose video clip is still kept (on the mirror: the ones it was sent)
+        *([(chip, {"kind": kind}) for kind, (chip, _) in WORKLISTS.items()] if admin else []),
     ]
 
 
@@ -627,7 +646,8 @@ def home(request: Request, conn=Depends(get_conn)):
     filters = filters_from(request)
     active = {k: v for k, v in filters.items() if v}
     visits = db.list_visits(conn, **filters, limit=PAGE_SIZE)
-    chips = [(name, f"/?{query_string(f)}" if f else "/", f == active) for name, f in quick_filters()]
+    chips = [(name, f"/?{query_string(f)}" if f else "/", f == active)
+             for name, f in quick_filters(request.state.admin)]
     today = db.today_summary(conn)
     return page(
         request,
@@ -648,6 +668,7 @@ def home(request: Request, conn=Depends(get_conn)):
         activity=db.activity(conn),
         species_names=db.species_names(conn),
         next_url=more_url("/visits/more", visits, PAGE_SIZE, filters),
+        scope_kind=worklist(filters["kind"], request),
         split_day=None if active else clock.today().isoformat(),
         hero_id=today["latest"]["id"] if today["latest"] else None,
         hero_clip=clip_info(today["latest"]) if today["latest"] else None,
@@ -730,12 +751,12 @@ def more_visits(request: Request, before: str = "", conn=Depends(get_conn)):
         split_day = clock.today().isoformat()
         prev_day = before[:10]
     return page(request, "_cards.html", visits=visits, split_day=split_day, prev_day=prev_day,
-                next_url=more_url("/visits/more", visits, PAGE_SIZE, filters))
+                scope_kind=worklist(filters["kind"], request), next_url=more_url("/visits/more", visits, PAGE_SIZE, filters))
 
 
 @app.get("/visit/{visit_id}", response_class=HTMLResponse)
 def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool = False,
-                 species: str = "", conn=Depends(get_conn)):
+                 species: str = "", kind: str = "", conn=Depends(get_conn)):
     visit = db.get_visit(conn, visit_id)
     if not visit:
         raise HTTPException(404)
@@ -750,9 +771,13 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
     is_ft = ft or is_ft
     # todo: opened from the False triggers list of unconfirmed photos, so the arrows (and C) skip confirmed ones.
     todo = todo and is_ft
+    # kind: opened from one of the home page's to-do chips (WORKLISTS: visits nobody checked yet), so the arrows,
+    # Confirm and C stay inside that list.
+    listed = "" if is_ft else worklist(kind, request)
     # species: opened from that species' page, so the arrows step through only its visits.
-    scope = "" if is_ft else species
-    prev_id, next_id = db.get_neighbors(conn, visit_id, false_triggers=is_ft, unchecked=todo, species=scope or None)
+    scope = "" if is_ft or listed else species
+    prev_id, next_id = db.get_neighbors(conn, visit_id, false_triggers=is_ft, unchecked=todo, species=scope or None,
+                                        kind=listed or None)
     # The arrow targets' photos, prefetched so stepping through visits paints without a blank frame.
     neighbor_images = [db.photo_rel(v) for v in (db.get_visit(conn, i) for i in (prev_id, next_id) if i) if v]
     decision = decision_steps(visit["raw_json"])
@@ -772,6 +797,8 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         is_ft=is_ft,
         todo=todo,
         scope=scope,
+        listed=listed,
+        listed_name=WORKLISTS[listed][1] if listed else "",
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
         clip=clip_info(visit, request.state.admin),

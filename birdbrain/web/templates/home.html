@@ -100,6 +100,7 @@
         <option value="mammal" {% if filters.kind == 'mammal' %}selected{% endif %}>Mammals</option>
         <option value="multiple" {% if filters.kind == 'multiple' %}selected{% endif %}>Multiple animals</option>
         {% if filters.kind == 'clip' %}<option value="clip" selected>With a clip</option>{% endif %}
+        {% if scope_kind %}<option value="{{ scope_kind }}" selected>{{ 'Named on the Pi, unconfirmed' if scope_kind == 'rpi' else 'Unconfirmed' }}</option>{% endif %}
       </select>
       {{ tod_select(filters) }}
       {{ date_range(filters) }}

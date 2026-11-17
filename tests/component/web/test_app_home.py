@@ -618,3 +618,46 @@ def test_species_and_home_show_how_long_ago(client, add_visit):
     page = client.get("/species/Bushtit").text
     assert re.search(r'class="ago" data-age="300">\(5 min ago\)<', page)  # the fallback ticks too
     assert 'src="/static/ago.js' in page
+
+
+def test_the_unconfirmed_and_rpi_chips_are_the_owners_lists_of_visits_to_check(client, conn, add_visit, monkeypatch):
+    old = add_visit(captured_at="2026-10-24T09:00:00", model=db.CLASSIFIER_MODEL)
+    claude = add_visit(captured_at="2026-10-24T10:00:00", species="Bushtit")
+    new = add_visit(captured_at="2026-10-24T11:00:00", model=db.CLASSIFIER_MODEL)
+    home = client.get("/").text
+    chip = re.search(r'<a href="/\?kind=rpi"[^>]*>RPi</a>', home).group(0)
+    assert "data-tip=" in chip and "aria-current" not in chip
+    assert f'href="/visit/{new}"' in home  # no scope on the plain list
+    listed = client.get("/?kind=rpi").text
+    assert card_ids(listed) == [new, old] and "2 matching" in listed
+    assert f'href="/visit/{new}?kind=rpi"' in listed and 'aria-current="page" data-tip' in listed
+    assert '<option value="rpi" selected>' in listed  # More filters keeps it on Apply
+    # the visit page stays inside the list: arrows, the bar, and Confirm or Save moving on
+    page = client.get(f"/visit/{new}?kind=rpi").text
+    assert f'href="/visit/{old}?kind=rpi" id="nav-next"' in page and "Browsing: RPi, unconfirmed" in page
+    assert 'location.href = next ? next.href : "/?kind=rpi"' in page
+    plain = client.get(f"/visit/{new}").text
+    assert f'href="/visit/{claude}" id="nav-next"' in plain and "Browsing:" not in plain
+    assert "location.href = next ?" not in plain
+    # Unconfirmed: the same, over every visit nobody checked, whoever named it
+    assert re.search(r'<a href="/\?kind=unconfirmed"[^>]*data-tip="[^"]+"[^>]*>Unconfirmed</a>', home)
+    every = client.get("/?kind=unconfirmed").text
+    assert card_ids(every) == [new, claude, old] and f'href="/visit/{claude}?kind=unconfirmed"' in every
+    page = client.get(f"/visit/{new}?kind=unconfirmed").text
+    assert f'href="/visit/{claude}?kind=unconfirmed" id="nav-next"' in page and "Browsing: Unconfirmed" in page
+    assert 'location.href = next ? next.href : "/?kind=unconfirmed"' in page
+    assert "Browsing:" not in client.get(f"/visit/{new}?kind=nonsense").text
+    # confirmed: off both lists
+    client.post(f"/visit/{new}/reviewed")
+    assert card_ids(client.get("/?kind=unconfirmed").text) == [claude, old]
+    assert card_ids(client.get("/?kind=rpi").text) == [old]
+    assert card_ids(client.get("/visits/more?kind=rpi").text) == [old]
+    assert f'href="/visit/{old}?kind=rpi"' in client.get("/visits/more?kind=rpi").text
+    # a visitor has no chip, and the address does nothing for them
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    visitor = client.get("/?kind=rpi").text
+    assert "kind=rpi" not in visitor and ">RPi</a>" not in visitor and "Unconfirmed" not in visitor
+    assert card_ids(client.get("/?kind=unconfirmed").text) == [new, claude, old]
+    assert card_ids(visitor) == [new, claude, old]
+    page = client.get(f"/visit/{old}?kind=rpi").text
+    assert "Browsing:" not in page and "kind=rpi" not in page

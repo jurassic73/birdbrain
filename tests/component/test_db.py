@@ -687,3 +687,22 @@ def test_connect_keeps_wal_and_survives_the_file_being_swapped_underneath(tmp_pa
     assert later.execute("SELECT value FROM settings WHERE key = 'probe'").fetchone()[0] == "2"
     reader.close()
     later.close()
+
+
+def test_the_unconfirmed_and_rpi_filters_list_visits_nobody_checked_and_the_arrows_stay_in_them(conn, add_visit):
+    old = add_visit(captured_at=at(3), model=db.CLASSIFIER_MODEL)
+    claude = add_visit(captured_at=at(2, hour=11))  # Claude named it
+    add_visit(captured_at=at(2, hour=10), model=db.CLASSIFIER_MODEL, corrected_species="Bushtit")
+    mid = add_visit(captured_at=at(1), model=db.CLASSIFIER_MODEL)
+    add_visit(captured_at=at(0, hour=8), visitor="none", species=None, model="bioclip-presence")  # a false trigger
+    new = add_visit(captured_at=at(0), model=db.CLASSIFIER_MODEL)
+    assert [v["id"] for v in db.list_visits(conn, kind="rpi")] == [new, mid, old]
+    assert [v["id"] for v in db.list_visits(conn, kind="unconfirmed")] == [new, mid, claude, old]
+    assert db.get_neighbors(conn, mid, kind="unconfirmed") == (new, claude)
+    assert db.get_neighbors(conn, mid, kind="rpi") == (new, old)
+    assert db.get_neighbors(conn, mid) != db.get_neighbors(conn, mid, kind="rpi")
+    db.mark_reviewed(conn, mid)  # confirmed: off the list, and it still steps by its time
+    assert [v["id"] for v in db.list_visits(conn, kind="rpi")] == [new, old]
+    assert db.count_visits(conn, kind="rpi") == 2 and db.count_visits(conn, kind="unconfirmed") == 3
+    assert db.get_neighbors(conn, mid, kind="rpi") == (new, old)
+    assert db.get_neighbors(conn, new, kind="rpi") == (None, old)

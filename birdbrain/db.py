@@ -890,6 +890,12 @@ def _where(
         where.append(f"(count > 1 OR json_array_length(COALESCE({ALSO}, '[]')) > 0)")
     elif kind == "clip":
         where.append("clip_path IS NOT NULL")  # visits whose video clip is still kept (birdbrain.clips)
+    elif kind == "unconfirmed":
+        where.append(UNCHECKED)  # the owner's to-do list: nobody has confirmed or corrected the answer yet
+    elif kind == "rpi":
+        # The same list, only the visits named on the Pi by the BioCLIP 2 species check (the RPi pill). Until one
+        # is confirmed or corrected it is left out of the classifier scorecards.
+        where.append(f"model = '{CLASSIFIER_MODEL}' AND {UNCHECKED}")
     if tod == "day":
         where.append("is_night = 0")
     elif tod == "night":
@@ -1073,16 +1079,19 @@ def is_admin_only_photo(conn: sqlite3.Connection, image_rel: str) -> bool:
 
 
 def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool = False,
-                  unchecked: bool = False, species: str | None = None) -> tuple[int | None, int | None]:
+                  unchecked: bool = False, species: str | None = None,
+                  kind: str | None = None) -> tuple[int | None, int | None]:
     """Return (prev_id, next_id) for a visit within the same set (real or false triggers), ordered newest-first.
 
     unchecked: only false triggers nobody has confirmed or corrected yet (the False triggers list as shown).
     species: only that species' visits, the set its page lists (other animals in the photo count too). The
     visit itself needn't be in it (relabelled): its position by time is used.
+    kind: only the real visits of that quick filter (_where's kind; "unconfirmed" and "rpi" are the owner's
+    lists of visits nobody checked). The visit itself needn't be in it either (just confirmed).
     """
     where, args = (f"{FALSE_TRIGGER} AND {HAS_PHOTO}", []) if false_triggers else (shown(), [])
-    if species and not false_triggers:
-        where, args = _where(species=species)
+    if (species or kind) and not false_triggers:
+        where, args = _where(species=species, kind=kind)
     if false_triggers and unchecked:
         where += f" AND {UNCHECKED}"
     row = conn.execute("SELECT captured_at FROM visits WHERE id = ?", (visit_id,)).fetchone()
