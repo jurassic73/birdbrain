@@ -2294,3 +2294,19 @@ button.lb-open svg { width: 22px; height: 22px; fill: none; stroke: currentColor
   .hailo-card .shots figure, .hailo-card .shots img { width: 128px; }
   .hailo-card .shots img { height: 72px; }
 }
+
+/* Settings: one section at a time, as tabs (settings.html, settings-tabs.js). The row is the species page's tab row;
+   each panel keeps its title with its status line beside it. */
+.settings-tabs { margin: 0 0 18px; }
+.panel-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.settings-panel .settings-body { margin-top: 26px; }
+@media (max-width: 640px) {
+  /* Six tabs don't fit a phone's width, and a row that scrolls sideways hides half of them: two rows of three. */
+  .settings-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 4px; overflow: visible; border-bottom: 0; margin-bottom: 12px; }
+  .settings-tabs .cam-tab { padding: 0 4px; min-height: 40px; font-size: .92rem; margin-bottom: 0; border-bottom-color: var(--line); }
+  .settings-tabs .cam-tab[aria-selected=true] { border-bottom-color: var(--accent); }
+  .settings-panel .summary-hint { margin-left: 0; text-align: left; flex-basis: 100%; }
+}
+/* A link to /settings#storage must not scroll the page down past the tab row: with a margin taller than everything
+   above the panel, the browser's jump to the anchor lands at the top of the page. */
+.settings-panel.settings-card { scroll-margin-top: 480px; }

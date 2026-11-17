@@ -88,19 +88,55 @@ def test_settings_page_changes_the_false_trigger_limit_and_photo_size(client, co
     assert client.post("/settings/storage", data={"limit_mb": "250", "photo": "huge"}).status_code == 400
 
 
-def test_settings_sections_collapse_and_show_a_status_when_closed(client, conn):
+SETTINGS_TABS = [("zones", "Zones"), ("camera", "Camera"), ("local", "Pi checks"), ("storage", "Storage"),
+                 ("alerts", "Notifications"), ("mirror", "Public mirror")]
+
+
+def test_settings_is_one_tab_per_section_and_each_panel_keeps_its_status(client, conn):
     html = client.get("/settings").text
-    for section in ("local", "storage", "alerts"):
-        assert f'<details class="settings-card" id="{section}" open>' in html
+    row = html[html.index('class="cam-tabs sp-tabs settings-tabs" role="tablist"'):]
+    row = row[:row.index("</div>")]
+    assert re.findall(r'data-settings-tab="(\w+)">([^<]+)</button>', row) == SETTINGS_TABS  # the tabs, in page order
+    assert row.count('role="tab"') == 6 and row.count('aria-selected="false"') == 6  # settings-tabs.js picks one
+    for section, name in SETTINGS_TABS:
+        assert f'id="tab-{section}" aria-controls="{section}"' in row
+        panel = f'<section class="settings-card settings-panel" id="{section}" role="tabpanel" aria-labelledby="tab-{section}">'
+        assert html.count(panel) == 1
+        assert f'<header class="panel-head"><h2>{name}</h2><span class="summary-hint">' in html
+        assert f'html[data-settings-show="{section}"] #{section}' in html  # the rule that shows only the picked panel
+    assert "html[data-settings-show] .settings-panel { display: none; }" in html
+    # the script runs right after the tab row and before the first panel, so no panel is drawn and then hidden
+    assert html.index("/static/settings-tabs.js") < html.index('class="settings-card settings-panel"')
+    assert "<details" not in html[html.index('role="tablist"'):html.index('id="mirror"')]  # nothing left to fold
     assert ">Pi animal check shadow, BioCLIP 2 species check gate, Claude on<" in html and ">Off<" in html
+
+
+def test_every_save_on_settings_comes_back_to_its_own_tab(client, conn):
+    ids = {section for section, _ in SETTINGS_TABS}
+    for path, data in [("/settings/presence", {"mode": "gate"}), ("/settings/pi-only", {"mode": "shadow"}),
+                       ("/settings/mirror", {}), ("/settings/alerts", {"ntfy_topic": ""}),
+                       ("/settings/alerts/test", {})]:
+        r = client.post(path, data=data, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].rsplit("#", 1)[-1] in ids, path
+
+
+def test_the_camera_is_asked_only_when_its_tab_is_opened(client):
+    html = client.get("/settings").text
+    assert 'hx-get="/settings/camera" hx-trigger="intersect once"' in html and 'hx-trigger="load"' not in html
+
+
+def test_notes_sections_still_fold_and_show_a_status_when_closed(client, conn):
     notes = client.get("/notes").text
     for section in ("camera", "lessons"):
         assert f'<details class="settings-card" id="{section}" open>' in notes
     assert '<details class="settings-card prompt-preview" id="prompt">' in notes and ">No location set<" in notes
-    alert.save_settings(conn, topic="t", new_species=True, mammals=True, quiet_start="", quiet_end="")
     db.save_settings(conn, location="Vancouver, WA")
-    assert ">On: new species, raccoons and possums, out of season<" in client.get("/settings").text
     assert ">Vancouver, WA<" in client.get("/notes").text
+
+
+def test_the_notifications_panel_says_what_is_switched_on(client, conn):
+    alert.save_settings(conn, topic="t", new_species=True, mammals=True, quiet_start="", quiet_end="")
+    assert ">On: new species, raccoons and possums, out of season<" in client.get("/settings").text
 
 
 def test_a_limit_from_env_that_is_not_a_button_still_shows_selected(client, monkeypatch):

@@ -1,12 +1,29 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge %}
 {% block title %}Settings | Birdbrain{% endblock %}
+{% set settings_tabs = [('zones', 'Zones'), ('camera', 'Camera'), ('local', 'Pi checks'), ('storage', 'Storage'), ('alerts', 'Notifications'), ('mirror', 'Public mirror')] %}
+{% block head %}
+<style>
+  html[data-settings-show] .settings-panel { display: none; }
+  {% for id, label in settings_tabs %}html[data-settings-show="{{ id }}"] #{{ id }}{{ "," if not loop.last }}
+  {% endfor %}{ display: block; }
+</style>
+{% endblock %}
 {% block content %}
 <div class="page-head"><h1>Settings</h1>
   <a class="button-link solid" href="/?tour=1" data-tour-restart data-tip="Replays the guided tour of the main buttons, on the home page">Run the tour again</a></div>
 
-<details class="settings-card" id="zones" open data-m-closed>
-  <summary><h2>Zones</h2><span class="summary-hint">{{ ('Checked daily at ' ~ recal.labels | join(' and ')) if recal.auto and recal.times else 'Automatic checks off' }}</span></summary>
+{# One section at a time: the tab picked lives in the URL hash (#storage), so every /settings#... link and every
+   Save lands on its own tab. settings-tabs.js runs here, before the panels below are drawn, so nothing flashes. #}
+<div class="cam-tabs sp-tabs settings-tabs" role="tablist" aria-label="Settings sections">
+  {% for id, label in settings_tabs %}
+  <button type="button" role="tab" class="cam-tab" id="tab-{{ id }}" aria-controls="{{ id }}" aria-selected="false" tabindex="-1" data-settings-tab="{{ id }}">{{ label }}</button>
+  {% endfor %}
+</div>
+<script src="/static/settings-tabs.js?v={{ asset_version }}"></script>
+
+<section class="settings-card settings-panel" id="zones" role="tabpanel" aria-labelledby="tab-zones">
+  <header class="panel-head"><h2>Zones</h2><span class="summary-hint">{{ ('Checked daily at ' ~ recal.labels | join(' and ')) if recal.auto and recal.times else 'Automatic checks off' }}</span></header>
   <div class="settings-body">
   {% if zones_saved %}<p class="notice saved">Saved.</p>{% endif %}
   <p class="muted">Rocks get nudged and cameras shift. The watcher looks at the bath for about a minute, moves each
@@ -53,18 +70,18 @@
     <div class="actions"><button type="submit">Save</button></div>
   </form>
   </div>
-</details>
+</section>
 
-<details class="settings-card" id="camera" open data-m-closed>
-  <summary><h2>Camera</h2><span class="summary-hint">Picture, day and night</span></summary>
+<section class="settings-card settings-panel" id="camera" role="tabpanel" aria-labelledby="tab-camera">
+  <header class="panel-head"><h2>Camera</h2><span class="summary-hint">Picture, day and night</span></header>
   <div class="settings-body">
   <p class="muted">Changes the camera's own settings; they apply at once and stay after a restart.</p>
-  <div hx-get="/settings/camera" hx-trigger="load" hx-swap="outerHTML"><p class="muted small">Asking the camera…</p></div>
+  <div hx-get="/settings/camera" hx-trigger="intersect once" hx-swap="outerHTML"><p class="muted small">Asking the camera…</p></div>
   </div>
-</details>
+</section>
 
-<details class="settings-card" id="local" open>
-  <summary><h2>Pi checks</h2><span class="summary-hint">Pi animal check {{ presence_mode }}, BioCLIP 2 species check {{ classifier_mode if classifier_on else 'off' }}, Claude {{ 'off' if pi_only_mode == 'on' else 'on' }}</span></summary>
+<section class="settings-card settings-panel" id="local" role="tabpanel" aria-labelledby="tab-local">
+  <header class="panel-head"><h2>Pi checks</h2><span class="summary-hint">Pi animal check {{ presence_mode }}, BioCLIP 2 species check {{ classifier_mode if classifier_on else 'off' }}, Claude {{ 'off' if pi_only_mode == 'on' else 'on' }}</span></header>
   <div class="settings-body">
   {% if presence_saved or pi_only_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
   <p class="muted">The Pi checks every photo first; Claude is asked only when the Pi animal check and the BioCLIP 2 species check cannot settle the visit.</p>
@@ -132,10 +149,10 @@
     </form>
   </section>
   </div>
-</details>
+</section>
 
-<details class="settings-card" id="storage" open>
-  <summary><h2>Storage</h2><span class="summary-hint">Photos {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% endif %}</span></summary>
+<section class="settings-card settings-panel" id="storage" role="tabpanel" aria-labelledby="tab-storage">
+  <header class="panel-head"><h2>Storage</h2><span class="summary-hint">Photos {{ bd.used_bytes | mb }}{% if bd.budget_bytes %} of {{ bd.budget_bytes | mb }}{% endif %}</span></header>
   <div class="settings-body">
   {% if pruned is not none %}<p class="notice saved">Saved.{% if pruned %} Deleted {{ pruned }} false-trigger photo{{ 's' if pruned != 1 }} (confirmed ones first, then the oldest).{% endif %}</p>{% endif %}
   {% if limits_saved %}<p class="notice saved">Saved. The watcher picks the new limits up within about 10 minutes.</p>{% endif %}
@@ -234,11 +251,11 @@
     <div class="actions"><button type="submit">Save</button></div>
   </form>
   </div>
-</details>
+</section>
 
-<details class="settings-card" id="alerts" open>
+<section class="settings-card settings-panel" id="alerts" role="tabpanel" aria-labelledby="tab-alerts">
   {% set on = ['new species' if alerts.new_species, 'raccoons and possums' if alerts.mammals, 'out of season' if alerts.unusual] | select | list %}
-  <summary><h2>Notifications</h2><span class="summary-hint">{{ ('On: ' ~ on | join(', ')) if alerts.topic and on else 'Off' }}</span></summary>
+  <header class="panel-head"><h2>Notifications</h2><span class="summary-hint">{{ ('On: ' ~ on | join(', ')) if alerts.topic and on else 'Off' }}</span></header>
   <div class="settings-body">
   {% if alerts_saved %}<p class="notice saved">Saved.</p>{% endif %}
   <p class="muted">Push alerts via <a href="https://ntfy.sh" rel="noopener" target="_blank">ntfy</a>. Install the app on your phone and subscribe to the topic you enter here.</p>
@@ -288,10 +305,10 @@
     {% if alerts_test == 'no_topic' %}<p class="notice">Enter a topic first.</p>{% endif %}
   </form>
   </div>
-</details>
+</section>
 
-<details class="settings-card" id="mirror" open>
-  <summary><h2>Public mirror</h2><span class="summary-hint">{{ 'Circle checks shared' if mirror_owner_checks else 'Circle checks kept here' }}</span></summary>
+<section class="settings-card settings-panel" id="mirror" role="tabpanel" aria-labelledby="tab-mirror">
+  <header class="panel-head"><h2>Public mirror</h2><span class="summary-hint">{{ 'Circle checks shared' if mirror_owner_checks else 'Circle checks kept here' }}</span></header>
   <div class="settings-body">
   {% if mirror_saved %}<p class="notice saved">Saved. The next push to the mirror carries the change.</p>{% endif %}
   <p class="muted">What the read-only public copy gets, if one is set up (<code>scripts/push_public.sh</code>). Your notes for Claude, alert topics and the Pi's training data never go.</p>
@@ -311,7 +328,7 @@
     </div>
   </form>
   </div>
-</details>
+</section>
 
 <script src="/static/cam-live.js?v={{ asset_version }}"></script>
 <script>
@@ -322,17 +339,4 @@
   });
 </script>
 
-<script>
-  // Remember which sections are open; always open the one just saved or linked to.
-  document.querySelectorAll("details.settings-card[id]").forEach((d) => {
-    const key = "settings-open:" + d.id;
-    try { const v = localStorage.getItem(key); if (v !== null) d.open = v === "1"; } catch {}
-    if (location.hash === "#" + d.id || d.querySelector(".notice")) d.open = true;
-    d.addEventListener("toggle", () => { try { localStorage.setItem(key, d.open ? "1" : "0"); } catch {} });
-  });
-  window.addEventListener("hashchange", () => {
-    const d = document.getElementById(location.hash.slice(1));
-    if (d?.matches("details.settings-card")) { d.open = true; d.scrollIntoView(); }
-  });
-</script>
 {% endblock %}
