@@ -25,7 +25,7 @@ def test_the_shadow_sentence_says_what_the_pi_would_have_done_and_that_it_is_not
 def test_a_verdict_that_was_acted_on_says_claude_is_switched_off():
     on = lambda record: webapp.pi_only_words({"pi_only": record, "skipped_claude": True, "settled_by": "pi_only"})
     text, applied = on(HELD)
-    assert applied and text.startswith("Claude is switched off (PI_ONLY=on), so the Pi decided alone: ")
+    assert applied and text.startswith("Claude is switched off (Settings > Pi checks), so the Pi decided alone: ")
     assert "the Pi animal check scored it 0.93" in text and "held for you" in text
     assert "filed as a false trigger" in on(EMPTY)[0] and on(EMPTY)[1]
     assert "the tight look named it Dark-eyed Junco" in on(NAMED)[0]

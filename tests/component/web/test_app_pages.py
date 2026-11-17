@@ -92,7 +92,7 @@ def test_settings_sections_collapse_and_show_a_status_when_closed(client, conn):
     html = client.get("/settings").text
     for section in ("local", "storage", "alerts"):
         assert f'<details class="settings-card" id="{section}" open>' in html
-    assert ">Pi animal check shadow, BioCLIP 2 species check gate<" in html and ">Off<" in html
+    assert ">Pi animal check shadow, BioCLIP 2 species check gate, Claude on<" in html and ">Off<" in html
     notes = client.get("/notes").text
     for section in ("camera", "lessons"):
         assert f'<details class="settings-card" id="{section}" open>' in notes

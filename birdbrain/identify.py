@@ -430,7 +430,7 @@ PI_ONLY_MODEL = "bioclip-presence"  # presence.MODEL_NAME: the Pi animal check's
 
 
 def settled_by_pi_only(verdict: dict, check: dict | None) -> Result:
-    """config.PI_ONLY "on": Claude is not asked and nothing on the Pi could name the frame (birdbrain.pi_only's
+    """Pi only "on" (pi_only.mode): Claude is not asked and nothing on the Pi could name the frame (birdbrain.pi_only's
     verdict "held" or "empty"; a "named" one goes through settled_by_classifier). Held: stored as "other", which
     always waits for the owner in the review queue and is hidden from visitors until they name it. Empty: a false
     trigger, like one the Pi animal check judged empty."""
@@ -438,11 +438,11 @@ def settled_by_pi_only(verdict: dict, check: dict | None) -> Result:
     scored = f"scored it {score:.3f}" if score is not None else "gave no verdict"
     if verdict["verdict"] == "held":
         notes = (f"Held for you: the Pi animal check {scored}, so something is probably there, but the BioCLIP 2 "
-                 "species check could not name it and Claude is switched off (PI_ONLY=on).")
+                 "species check could not name it and Claude is switched off (Settings > Pi checks).")
         s = Sighting(visitor="other", species=None, count=0, confidence="low", notes=notes, circle=None, also=[])
     else:
         notes = (f"Filed as a false trigger: the Pi animal check {scored} (under the {config.PI_ONLY_HOLD_SCORE:.2f} "
-                 "that holds a frame for you), nothing could be named, and Claude is switched off (PI_ONLY=on).")
+                 "that holds a frame for you), nothing could be named, and Claude is switched off (Settings > Pi checks).")
         s = Sighting(visitor="none", species=None, count=0, confidence="medium", notes=notes, circle=None, also=[])
     raw = {"skipped_claude": True, "settled_by": "pi_only", "pi_only": verdict, **({"presence": check} if check else {})}
     return Result(s, (check or {}).get("model") or PI_ONLY_MODEL, escalated=False, needs_review=False, raw=raw)

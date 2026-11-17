@@ -256,7 +256,7 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
     elif guess_step and guess_step.get("gated"):
         lead = f"<b>Not asked:</b> the {SPECIES} named the visit."
     elif decision.get("pi_only_on"):
-        lead = f"<b>Not asked:</b> {CLAUDE} is switched off (PI_ONLY=on), so the Pi decided alone."
+        lead = f"<b>Not asked:</b> {CLAUDE} is switched off (Settings &gt; Pi checks), so the Pi decided alone."
     else:
         lead = f"<b>Not asked.</b>"
     if lesson:

@@ -71,7 +71,7 @@ def test_a_held_frame_is_an_other_that_waits_for_the_owner():
     assert (r.sighting.visitor, r.sighting.species, r.sighting.confidence) == ("other", None, "low")
     assert r.needs_review and not r.escalated and r.model == "bioclip-presence"  # "other" always waits (Result)
     assert r.raw == {"skipped_claude": True, "settled_by": "pi_only", "pi_only": v, "presence": check(0.934)}
-    assert "Held for you" in r.sighting.notes and "0.934" in r.sighting.notes and "PI_ONLY=on" in r.sighting.notes
+    assert "Held for you" in r.sighting.notes and "0.934" in r.sighting.notes and "Claude is switched off (Settings > Pi checks)" in r.sighting.notes
     # no animal check at all: still held, and the note says so
     r = identify.settled_by_pi_only({"verdict": "held", "score": None, "why": "unchecked"}, None)
     assert r.needs_review and r.model == "bioclip-presence" and "presence" not in r.raw

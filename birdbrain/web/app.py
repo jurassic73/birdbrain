@@ -22,7 +22,7 @@ from starlette.routing import Match
 
 from ..hailo import stats as hailo_stats  # no OpenCV or HailoRT behind it: the card reads two SQLite files
 from . import auth, news, steps, viewer
-from .. import alert, audience, camera, circle_check, classifier, clips, clock, config, db, identify, images, lessons, mirror, names, outlook, presence, privacy, refine, retention, species_info, weather, zones
+from .. import alert, audience, camera, circle_check, classifier, clips, clock, config, db, identify, images, lessons, mirror, names, outlook, pi_only, presence, privacy, refine, retention, species_info, weather, zones
 
 HERE = Path(__file__).parent
 log = logging.getLogger("birdbrain.web")
@@ -1104,7 +1104,7 @@ def tight_where_at(calls: dict) -> str:
 
 def pi_only_words(calls: dict) -> tuple[str, bool] | None:
     """The Pi-only verdict's sentence for the visit page (birdbrain.pi_only, calls.pi_only) and whether it was
-    acted on: (text, True) when Claude was switched off and the Pi decided alone (config.PI_ONLY "on"), (text,
+    acted on: (text, True) when Claude was switched off and the Pi decided alone (pi_only.mode "on"), (text,
     False) for the shadow record kept beside Claude's answer. None without a usable record."""
     record = calls.get("pi_only")
     if not isinstance(record, dict) or record.get("verdict") not in ("named", "held", "empty"):
@@ -1113,7 +1113,7 @@ def pi_only_words(calls: dict) -> tuple[str, bool] | None:
     scored = f"scored it {score:.2f}" if isinstance(score, (int, float)) else "gave no verdict"
     look = "the first look at the whole bowl" if record.get("by") == "bowl" else "the tight look"
     if calls.get("skipped_claude"):
-        text = "Claude is switched off (PI_ONLY=on), so the Pi decided alone: "
+        text = "Claude is switched off (Settings > Pi checks), so the Pi decided alone: "
         if record["verdict"] == "named":
             text += f"{look} named it {record.get('species')}, at the lower bar it uses when Claude is not asked."
         elif record["verdict"] == "held":
@@ -1680,7 +1680,7 @@ def stats(request: Request, conn=Depends(get_conn)):
         agreement=db.agreement_report(conn),
         second_frame=db.second_frame_report(conn),
         pi_only=db.pi_only_report(conn),
-        pi_only_mode=config.PI_ONLY,
+        pi_only_mode=pi_only.mode(conn),
         pi_only_bars=(config.PI_ONLY_MIN_SCORE, config.PI_ONLY_HOLD_SCORE),
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",
@@ -1831,7 +1831,7 @@ def about(request: Request, conn=Depends(get_conn)):
     return page(
         request,
         "about.html",
-        pi_only_mode=config.PI_ONLY,
+        pi_only_mode=pi_only.mode(conn),
         cfg=config,
         zones={**zone_shapes(zones.load(conn)), "dx": ZONE_SHIFT[0] * ZONE_W, "dy": ZONE_SHIFT[1] * ZONE_H},
         recal=zones.schedule(conn),
@@ -2178,7 +2178,7 @@ def clean_false_triggers(conn=Depends(get_conn)):
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request, pruned: int | None = None, limits_error: str = "", limits_saved: bool = False,
                   alerts_saved: bool = False, alerts_test: str = "", zones_saved: bool = False, presence_saved: bool = False,
-                  mirror_saved: bool = False, conn=Depends(get_conn)):
+                  mirror_saved: bool = False, pi_only_saved: bool = False, conn=Depends(get_conn)):
     storage = retention.usage(conn)
     limit = storage["limit_bytes"] / 1e6
     return page(
@@ -2190,6 +2190,9 @@ def settings_page(request: Request, pruned: int | None = None, limits_error: str
         presence_saved=presence_saved,
         presence_mode=presence.mode(conn),
         presence_report=db.presence_report(conn),
+        pi_only_saved=pi_only_saved,
+        pi_only_mode=pi_only.mode(conn),
+        pi_only=db.pi_only_report(conn, days=14),
         alerts_saved=alerts_saved,
         alerts_test=alerts_test,
         alerts=alert.get_settings(conn),
@@ -2219,6 +2222,16 @@ def save_presence(mode: str = Form(...), conn=Depends(get_conn)):
         raise HTTPException(400, "Unknown animal check mode")
     db.set_value(conn, "presence_mode", mode)
     return RedirectResponse("/settings?presence_saved=1#local", status_code=303)
+
+
+@app.post("/settings/pi-only")
+def save_pi_only(mode: str = Form(...), conn=Depends(get_conn)):
+    """Step 3 of Settings > Pi checks: whether the watcher asks Claude (birdbrain.pi_only). The watcher re-reads it
+    within 15 seconds. A POST, so the read-only guard keeps visitors out."""
+    if mode not in pi_only.MODES:
+        raise HTTPException(400, "Unknown Claude mode")
+    db.set_value(conn, pi_only.MODE_KEY, mode)
+    return RedirectResponse("/settings?pi_only_saved=1#local", status_code=303)
 
 
 @app.post("/settings/alerts/test")

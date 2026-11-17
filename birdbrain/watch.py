@@ -609,6 +609,25 @@ def presence_mode() -> str:
     return mode
 
 
+_pi_only_cache: tuple[float | None, str, str] = (None, "", "")
+
+
+def pi_only_mode() -> str:
+    """Pi only's mode from Settings (else .env), re-read at most every 15 s, like presence_mode. A database that
+    can't be read leaves Claude answering: the .env mode, never "on" by accident of a stale read."""
+    global _pi_only_cache
+    read_at, default, mode = _pi_only_cache
+    if read_at is None or time.monotonic() - read_at > 15 or default != config.PI_ONLY:
+        try:
+            with db.session() as conn:
+                mode = pi_only.mode(conn)
+        except Exception:
+            log_rarely("pi_only_mode", "couldn't read Pi only's mode; using PI_ONLY from .env")
+            return config.PI_ONLY
+        _pi_only_cache = (time.monotonic(), config.PI_ONLY, mode)
+    return mode
+
+
 _hold_cache: tuple[float | None, bool] = (None, False)  # (read at or None, held)
 
 
@@ -886,13 +905,14 @@ def _handle_burst(frames: list[bytes], captured_at: datetime, recording: clips.R
     # Pi only (birdbrain/pi_only.py): what the Pi alone would do with a frame that is headed for Claude. In shadow
     # mode the verdict is only stored beside Claude's answer (scored on Stats); "on" acts on it and Claude is not asked.
     solo = None
-    if not pick and not (pmode == "gate" and (empty or rain)) and config.PI_ONLY != "off":
+    solo_mode = pi_only_mode()  # Settings > Pi checks (step 3, Claude), else PI_ONLY in .env
+    if not pick and not (pmode == "gate" and (empty or rain)) and solo_mode != "off":
         solo = pi_only.verdict(check, tight, crowd, settled, night)
-        if config.PI_ONLY == "on" and solo["verdict"] == pi_only.NAMED:
+        if solo_mode == "on" and solo["verdict"] == pi_only.NAMED:
             pick, named = (solo["species"], solo["visitor"]), solo["by"]
             log.info("Pi only: Claude is switched off; the %s look names %s", "tight" if named == "tight" else "first",
                      pick[0])
-    solo_settled = solo is not None and config.PI_ONLY == "on"  # the Pi decided alone: nothing below asks Claude
+    solo_settled = solo is not None and solo_mode == "on"  # the Pi decided alone: nothing below asks Claude
     if pick:
         result = identify.settled_by_classifier(tight if named == "tight" else guess, pick, check)
         if solo_settled:

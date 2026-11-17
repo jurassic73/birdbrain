@@ -10,9 +10,10 @@ has in hand (no new model, no extra look):
   the check gave no verdict at all: it waits for the owner in the review queue, hidden from visitors;
 - empty: filed as a false trigger.
 
-config.PI_ONLY picks what happens with the verdict: "shadow" (the default) stores it beside Claude's answer as
-raw_json.calls.pi_only, scored on Stats by db.pi_only_report, and changes nothing; "on" acts on it and Claude is
-never asked by the watcher; "off" does neither.
+The mode (mode(): picked on Settings > Pi checks under step 3, Claude; else PI_ONLY in .env) says what happens
+with the verdict: "shadow" (the default) stores it beside Claude's answer as raw_json.calls.pi_only, scored on Stats
+by db.pi_only_report, and changes nothing; "on" acts on it and Claude is never asked by the watcher; "off" does
+neither.
 
 Where the numbers come from (2026-11-17, every stored photo checked by the owner, replayed on the 183 frames that
 went to Claude since 2026-11-07: 18 animals, 165 empty): the tight look at 0.75 named 6 of the animals and nothing
@@ -23,10 +24,17 @@ ground that no finder pointed at. No night visitor has come yet, so the night si
 
 from __future__ import annotations
 
-from . import classifier, config
+from . import classifier, config, db
 
 NAMED, HELD, EMPTY = "named", "held", "empty"
 MODES = ("off", "shadow", "on")
+MODE_KEY = "pi_only_mode"  # the settings row the Settings page writes
+
+
+def mode(conn) -> str:
+    """The mode picked on Settings > Pi checks, else PI_ONLY from .env (like presence.mode)."""
+    value = db.get_value(conn, MODE_KEY)
+    return value if value in MODES else config.PI_ONLY
 
 
 def verdict(check: dict | None, tight: dict | None, crowd: str | None, settled: dict[str, str], night: bool) -> dict:

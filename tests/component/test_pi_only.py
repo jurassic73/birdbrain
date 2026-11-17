@@ -8,7 +8,7 @@ import pytest
 
 from helpers.classifier import MOTION_CIRCLE, gate_yard, one_hot, sure  # noqa: F401  (a fixture)
 from helpers.clock import FROZEN_NOW
-from birdbrain import config, db, watch
+from birdbrain import config, db, pi_only, watch
 
 KEYS = {"frames", "animals", "named", "named_wrong", "named_empty", "held_real", "held_empty", "missed",
         "claude_named", "empty"}
@@ -111,6 +111,44 @@ def test_on_names_a_sure_first_look_that_only_the_crowd_stopped(alone, conn):
     row, calls = latest(conn)
     assert (row["species"], row["model"]) == ("Dark-eyed Junco", "bioclip-2")
     assert calls["pi_only"]["by"] == "bowl" and calls["gate_crowd"] == {"species": "Dark-eyed Junco", "animals": 2}
+
+
+# --- the mode: Settings first, then .env --------------------------------------------------------------------------
+
+def test_the_mode_saved_on_settings_wins_and_a_bad_value_falls_back_to_env(conn, monkeypatch):
+    assert pi_only.mode(conn) == config.PI_ONLY == "shadow"
+    db.set_value(conn, pi_only.MODE_KEY, "on")
+    assert pi_only.mode(conn) == "on"
+    db.set_value(conn, pi_only.MODE_KEY, "gate")  # not a mode: ignored
+    monkeypatch.setattr(config, "PI_ONLY", "off")
+    assert pi_only.mode(conn) == "off"
+
+
+def test_the_watcher_obeys_the_switch_saved_on_settings(gate_yard, conn, monkeypatch):
+    monkeypatch.setattr(watch, "_pi_only_cache", (None, "", ""))  # nothing read yet
+    db.set_value(conn, pi_only.MODE_KEY, "on")
+    conn.commit()
+    gate_yard["tight"] = sure("Dark-eyed Junco", 0.6)  # nothing names it; the animal check is sure (0.9)
+    watch.handle_event()
+    assert not gate_yard["asked"]  # Claude is off: .env still says shadow, Settings wins
+    row, calls = latest(conn)
+    assert row["visitor"] == "other" and calls["settled_by"] == "pi_only"
+    # the choice is cached for 15 s, so a burst of triggers does not read the database each time
+    db.set_value(conn, pi_only.MODE_KEY, "off")
+    conn.commit()
+    assert watch.pi_only_mode() == "on"
+    monkeypatch.setattr(watch, "_pi_only_cache", (None, "", ""))
+    assert watch.pi_only_mode() == "off"
+
+
+def test_an_unreadable_database_leaves_claude_answering(monkeypatch):
+    monkeypatch.setattr(watch, "_pi_only_cache", (None, "", ""))
+
+    def broken():
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(watch.db, "session", broken)
+    assert watch.pi_only_mode() == config.PI_ONLY == "shadow"
 
 
 # --- the Stats scorecard ----------------------------------------------------------------------------------------

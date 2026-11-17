@@ -39,7 +39,7 @@ ADMIN = {
     ("POST", "/notes/summary/accept"), ("POST", "/notes/summary/discard"),
     ("GET", "/lessons"), ("POST", "/lessons/{visit_id}/edit"), ("POST", "/lessons/{visit_id}/{state}"),
     # Settings: Pi checks, alerts, the mirror, storage, camera, zones, calibration pictures
-    ("GET", "/settings"), ("POST", "/settings/presence"), ("POST", "/settings/alerts/test"), ("POST", "/settings/alerts"),
+    ("GET", "/settings"), ("POST", "/settings/presence"), ("POST", "/settings/pi-only"), ("POST", "/settings/alerts/test"), ("POST", "/settings/alerts"),
     ("POST", "/settings/mirror"), ("POST", "/settings/storage"), ("POST", "/settings/storage/limits"),
     ("GET", "/settings/storage/preview"), ("POST", "/settings/storage/run"), ("GET", "/settings/storage/run"),
     ("GET", "/settings/camera"), ("POST", "/settings/camera/picture"), ("POST", "/settings/camera/daynight"),

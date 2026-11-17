@@ -64,9 +64,9 @@
 </details>
 
 <details class="settings-card" id="local" open>
-  <summary><h2>Pi checks</h2><span class="summary-hint">Pi animal check {{ presence_mode }}, BioCLIP 2 species check {{ classifier_mode if classifier_on else 'off' }}</span></summary>
+  <summary><h2>Pi checks</h2><span class="summary-hint">Pi animal check {{ presence_mode }}, BioCLIP 2 species check {{ classifier_mode if classifier_on else 'off' }}, Claude {{ 'off' if pi_only_mode == 'on' else 'on' }}</span></summary>
   <div class="settings-body">
-  {% if presence_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
+  {% if presence_saved or pi_only_saved %}<p class="notice saved">Saved. The watcher switches within 15 seconds.</p>{% endif %}
   <p class="muted">The Pi checks every photo first; Claude is asked only when the Pi animal check and the BioCLIP 2 species check cannot settle the visit.</p>
   {% set a = activity %}
   <ol class="local-flow" aria-label="Today's photos, step by step">
@@ -113,8 +113,23 @@
   </section>
 
   <section class="local-step" id="claude-step">
-    <h3><span class="step-n claude">3</span> Claude</h3>
-    <p class="muted small">Whatever the Pi animal check and the BioCLIP 2 species check do not settle goes to Haiku; anything short of high confidence (a doubtful "nothing there" included) goes to Sonnet with 3 frames; still unsure lands in the <a href="/review">review queue</a>.</p>
+    <h3><span class="step-n claude">3</span> Claude <span class="muted">(Whatever is left)</span></h3>
+    <p class="muted small">Whatever the Pi animal check and the BioCLIP 2 species check do not settle goes to Haiku; an unsure answer about an animal goes to Sonnet with 3 frames; still unsure (a doubtful "nothing there" included) lands in the <a href="/review">review queue</a>.
+      {% if pi_only.frames %}Of the {{ pi_only.frames }} photo{{ '' if pi_only.frames == 1 else 's' }} Claude answered in the last 14 days, the Pi alone would have named {{ pi_only.named }}, held {{ pi_only.held_real + pi_only.held_empty }} for you and missed {{ pi_only.missed }} animal{{ '' if pi_only.missed == 1 else 's' }}. <a href="/stats#pi-only">Details</a>{% endif %}</p>
+    <form class="settings-form" method="post" action="/settings/pi-only" id="claude-mode">
+      <div class="choices">
+        {% for key, label, hint in [('off', 'On', 'Claude answers what the Pi cannot settle'),
+                                    ('shadow', 'On, keeping score', 'the same, and each answer also records what the Pi alone would have done'),
+                                    ('on', 'Off', 'Claude is not asked: the Pi names what it can, holds what it is sure is an animal for you and files the rest as false triggers')] %}
+        <label class="choice">
+          <input type="radio" name="mode" value="{{ key }}" {% if key == pi_only_mode %}checked{% endif %}>
+          <span>{{ label }} <small>{{ hint }}</small></span>
+        </label>
+        {% endfor %}
+      </div>
+      <p class="advice">With Claude off, a held photo waits in the <a href="/review">review queue</a>, hidden from visitors until you name it. A species new to the yard or a night visitor arrives that way too, without an alert. The Ask buttons and species cards still use Claude when you press them.</p>
+      <div class="actions"><button type="submit">Save</button></div>
+    </form>
   </section>
   </div>
 </details>
