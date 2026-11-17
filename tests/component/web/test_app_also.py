@@ -1,6 +1,7 @@
 """Component tests of the web app through TestClient on a temp database: also."""
 
 import json
+import re
 
 from helpers.also import BUSHTITS
 from birdbrain import db
@@ -62,3 +63,25 @@ def test_visit_page_lists_other_animals_in_an_also_row(client, add_visit):
     html = client.get(f"/visit/{add_visit(also=json.dumps(BUSHTITS))}").text
     assert "<dt>Also</dt><dd>Bushtit x2 <span" in html and "<dt>Species</dt>" not in html
     assert "<dt>Also</dt>" not in client.get(f"/visit/{add_visit()}").text
+
+
+def test_each_circle_is_saved_with_the_animal_it_holds(client, conn, add_visit):
+    vid = add_visit(also=json.dumps(BUSHTITS))
+    page = client.get(f"/visit/{vid}").text
+    # a slot for the circles' numbers in front of the Species box and of every "Also in the photo" row
+    assert re.search(r'<div class="ask-wrap">\s*(\{#.*?#\}\s*)?<span class="circle-nums" hidden></span>\s*<div class="combo">\s*<input id="species"', page)
+    assert page.count('<li class="also-row">\n        <span class="circle-nums" hidden></span>') == 2  # the row and the template
+    circles = [{"x": 0.3, "y": 0.3, "r": 0.05, "label": "bushtit"}, {"x": 0.6, "y": 0.6, "r": 0.05, "label": "Dark-eyed Junco"},
+               {"x": 0.8, "y": 0.2, "r": 0.05, "label": "Steller's Jay"}]
+    client.post(f"/visit/{vid}/correct", data={"feedback": "two kinds", "marks": json.dumps(circles),
+                                               "also_species": ["Bushtit"], "also_count": ["2"]})
+    saved = db.parse_marks(db.get_visit(conn, vid)["marks"])
+    assert [m.get("label") for m in saved] == ["Bushtit", "Dark-eyed Junco", None]  # the jay isn't in this visit
+    lesson = db.recent_lessons(conn)[0]
+    assert "circle 1 (the owner drew it around the Bushtit)" in lesson and "circle 3 at 80% across" in lesson
+    # a new main species: its circle is renamed by the form before saving; a stale name is not kept
+    client.post(f"/visit/{vid}/correct", data={"visitor": "bird", "species": "Song Sparrow", "marks": json.dumps(saved),
+                                               "also_species": ["Bushtit"], "also_count": ["2"]})
+    assert [m.get("label") for m in db.parse_marks(db.get_visit(conn, vid)["marks"])] == ["Bushtit", None, None]
+    # the names reach the page for everyone who looks at the photo
+    assert "&#34;label&#34;: &#34;Bushtit&#34;" in client.get(f"/visit/{vid}").text

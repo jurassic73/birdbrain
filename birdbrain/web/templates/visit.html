@@ -339,6 +339,8 @@
         <div class="field species" id="species-field">
           <label for="species" class="tip-label">Species <span class="info-tip" tabindex="0" aria-label="About species" data-tip="Every animal seen here so far, then every bird species on the eBird list as you type (official names, so one species never gets two spellings). Picking a type lists that kind; picking a name sets the type. Not sure of the name? Type a clue and press Ask.">i</span></label>
           <div class="ask-wrap">
+          {# The numbers of the circles on the photo that hold this animal (filled in by the circles script). #}
+          <span class="circle-nums" hidden></span>
           <div class="combo">
             <input id="species" name="species" autocomplete="off" role="combobox" aria-expanded="false"
                    aria-controls="species-list" placeholder="Type to search, or pick a species seen here"
@@ -374,6 +376,7 @@
       {% endif %}
       {% macro also_row(name="", count=1) %}
       <li class="also-row">
+        <span class="circle-nums" hidden></span>
         <div class="combo">
           <input name="also_species" autocomplete="off" role="combobox" aria-expanded="false" aria-label="Species"
                  placeholder="Type to search, or pick one" value="{{ name }}">
@@ -391,7 +394,7 @@
       <div class="field also-field" id="also-field">
         <div class="also-head">
           <span class="field-title tip-label">Also in the photo</span>
-          <span class="info-tip" tabindex="0" aria-label="About other animals" data-tip="Other kinds of animal in the same photo, with how many. They count as sightings of their own species everywhere on the site. Squirrel, Raccoon, Possum or Other name a mammal or anything else; any other name is a bird.">i</span>
+          <span class="info-tip" tabindex="0" aria-label="About other animals" data-tip="Other kinds of animal in the same photo, with how many. They count as sightings of their own species everywhere on the site. Squirrel, Raccoon, Possum or Other name a mammal or anything else; any other name is a bird. The number in front of a row is its circle on the photo: tap it to hand that circle to the next animal.">i</span>
         </div>
         <ul class="also-rows" id="also-rows">
           {% for a in also_of(visit) %}{{ also_row(also_label(a), a.count or 1) }}{% endfor %}
@@ -792,8 +795,10 @@
     // The name that goes after a circle's number: the visit's own, unless it names no animal.
     const visitName = {{ (visit.label if visit.label and visit.label not in ('None', 'Other') else '') | tojson }};
     const oneKind = {{ (not also_of(visit)) | tojson }};
+    // The name on a circle: the one it was saved with, else the visit's own for a machine's circle or a visit of
+    // one kind. (For the owner every circle gets its name from the form, see stamp below.)
     const nameOf = m => {
-      const n = (m.pi || m.claude) ? (m.label || visitName) : (oneKind ? visitName : "");
+      const n = byRows ? (m.label || "") : (m.label || ((m.pi || m.claude || oneKind) ? visitName : ""));
       return n && !["none", "other"].includes(n.toLowerCase()) ? n : "";
     };
     // Admins can always draw (the note above the photo says how); visitors only look.
@@ -806,11 +811,86 @@
     const looks = () => editing && (pointing || touchOnly || !!drag);
     let cur = photo.dataset.frame ? +photo.dataset.frame : null;  // the burst frame in the big photo, null for Claude's
     const here = m => (m.frame || null) === cur;
+{% if request.state.admin %}
+    // Which animal each circle holds (admins: the correction form). Every circle belongs to one row of the form,
+    // the Species box first, then each "Also in the photo" row; the row shows its circles' numbers in front, the
+    // circle shows the row's name on the photo, and Save stores that name with the circle. A circle saved with a
+    // name goes back to that row. Any other goes to the first row that has no circle yet, or waits on the Species
+    // row (spare) until a row turns up without one. A tap on a number hands the circle to the next row.
+    const form = document.querySelector("form.review"), byRows = !!form;
+    const speciesRow = form && document.getElementById("species-field");
+    const visitorAtLoad = form?.querySelector('input[name="visitor"]:checked')?.value ?? "";
+    const rowsOf = () => !form ? []
+      : [speciesRow, ...(document.getElementById("also-field").hidden ? [] : form.querySelectorAll("#also-rows .also-row"))];
+    const rowName = row => {
+      if (row !== speciesRow) return row.querySelector('[name="also_species"]').value.trim();
+      const picked = form.querySelector('input[name="visitor"]:checked')?.value ?? "";
+      if (!picked || ["none", "other"].includes(picked)) return "";
+      // No species typed: the visit's own name, or the type just picked ("Squirrel").
+      return document.getElementById("species").value.trim()
+        || (picked === visitorAtLoad ? visitName : picked[0].toUpperCase() + picked.slice(1));
+    };
+    const bound = new WeakMap(), spare = new WeakSet(), known = new WeakSet();
+    const bind = () => {
+      const rows = rowsOf();
+      for (const m of marks) {
+        if (bound.has(m) && !rows.includes(bound.get(m))) { bound.delete(m); spare.delete(m); }  // its row is gone
+        if (!known.has(m)) {
+          known.add(m);
+          const row = m.label && rows.find(r => rowName(r).toLowerCase() === m.label.toLowerCase());
+          if (row) bound.set(m, row);
+        }
+      }
+      for (const m of marks) {
+        if (bound.has(m) && !spare.has(m)) continue;
+        const free = rows.find(r => !marks.some(o => o !== m && bound.get(o) === r));
+        bound.set(m, free || rows[0]);
+        if (free) spare.delete(m); else spare.add(m);
+      }
+    };
+    const badges = () => {
+      const many = rowsOf().length > 1;
+      form.classList.toggle("has-circles", marks.length > 0);
+      form.querySelectorAll(".circle-nums").forEach(slot => {
+        const row = slot.closest(".also-row") || speciesRow;
+        const mine = marks.flatMap((m, i) => bound.get(m) === row ? [i] : []);
+        const sig = mine.map(i => i + (marks[i].claude || marks[i].pi ? "m" : "")).join(",") + (many ? "+" : "");
+        if (slot.dataset.sig === sig) return;  // nothing new: leave the buttons (and an open tip) alone
+        slot.dataset.sig = sig;
+        slot.hidden = !mine.length;
+        slot.replaceChildren(...mine.map(i => {
+          const b = document.createElement("button");
+          b.type = "button"; b.className = "circle-num" + (marks[i].claude || marks[i].pi ? " by-machine" : "");
+          b.dataset.i = i; b.textContent = i + 1;
+          b.setAttribute("aria-label", `Circle ${i + 1}`);
+          b.dataset.tip = `Circle ${i + 1} on the photo holds this animal. ` + (many
+            ? "Tap to hand the circle to the next animal in the list."
+            : "With another kind of animal in the photo, add it under Also in the photo; a tap on this number then hands the circle to it.");
+          return b;
+        }));
+      });
+    };
+    // Names on the circles, numbers on the rows, and the field Save posts.
+    const stamp = () => {
+      if (form) {
+        bind();
+        for (const m of marks) {
+          const n = rowName(bound.get(m));
+          if (n && !["none", "other"].includes(n.toLowerCase())) m.label = n.slice(0, 60); else delete m.label;
+        }
+        badges();
+      }
+      field.value = JSON.stringify(marks);
+    };
+{% else %}
+    const byRows = false, stamp = () => {};  // visitors only look: no form, nothing to name or post
+{% endif %}
     // Fingers on the photo: a second one means a pinch, which zooms and never draws.
     const fingers = new Set();
     const NS = "http://www.w3.org/2000/svg";
     const el = (tag, attrs) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
     const draw = () => {
+      stamp();
       const w = img.naturalWidth || 1920, h = img.naturalHeight || 1080;
       svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
       svg.replaceChildren();
@@ -899,7 +979,6 @@
           if (sx < 0) tile.setAttribute("x", lx + rad - wide);
         }
       });
-      field.value = JSON.stringify(marks);
       // The Ask buttons (and the unsaved-changes guard) follow the owner's own circles, on any frame.
       photo.dispatchEvent(new CustomEvent("birdbrain:marks", {detail: {owner: marks.some(m => !m.claude && !m.pi)}}));
       const shown = marks.filter(here).length;
@@ -973,6 +1052,28 @@
       if (photo.dataset.dragged || !e.target.closest(".del")) return;
       marks.splice(+hit.dataset.i, 1); draw();
     });
+{% if request.state.admin %}
+    if (form) {
+      // The circles as the page loaded them, named: the unsaved-changes guard starts from here, not from a page
+      // that looks changed before anyone touched it.
+      stamp();
+      bbUnsaved.clean();
+      form.addEventListener("click", e => {
+        const b = e.target.closest(".circle-num"), rows = rowsOf(), m = b && marks[+b.dataset.i];
+        if (!m || rows.length < 2) return;
+        bound.set(m, rows[(rows.indexOf(bound.get(m)) + 1) % rows.length]); spare.delete(m);
+        draw();
+      });
+      // A name typed or picked, a row added or removed, another type: the circles and numbers follow. Whatever was
+      // done in the form (several scripts set its boxes), compare the rows' names once it has settled.
+      let names = rowsOf().map(rowName).join("\n");
+      const refresh = () => {
+        const now = rowsOf().map(rowName).join("\n");
+        if (now !== names) { names = now; draw(); }
+      };
+      for (const ev of ["input", "change", "click", "keyup", "focusout"]) form.addEventListener(ev, () => requestAnimationFrame(refresh));
+    }
+{% endif %}
     img.addEventListener("load", draw);  // also when the filmstrip swaps in a frame of another size
     if (img.complete) draw();
     new ResizeObserver(() => { if (marks.length) draw(); }).observe(img);

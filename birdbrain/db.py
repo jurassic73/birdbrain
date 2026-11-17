@@ -1249,6 +1249,7 @@ MAX_FRAME = 60  # a burst frame number past this isn't one (bursts are 6 frames)
 
 def parse_marks(text: str | None, claude_frame: int | None = None) -> list[dict]:
     """The owner's numbered circles on a photo: [{x, y, r}] as fractions of the width, height and width. At most 9.
+    `label` says which of the visit's animals a circle holds (the visit page's form gives every circle one).
     A circle drawn on another frame of the burst carries `frame` (1-based, as the visit page's filmstrip counts);
     none means the photo Claude saw. `claude_frame` (that photo's place in the burst) folds `frame` back into none."""
     try:
@@ -1267,8 +1268,8 @@ def parse_marks(text: str | None, claude_frame: int | None = None) -> list[dict]
         for by in ("claude", "pi"):
             if m.get(by) is True:
                 mark[by] = True
-        if (mark.get("claude") or mark.get("pi")) and isinstance(m.get("label"), str) and m["label"].strip():
-            mark["label"] = m["label"].strip()[:60]  # which animal, when there are several
+        if isinstance(m.get("label"), str) and m["label"].strip():
+            mark["label"] = m["label"].strip()[:60]  # which animal is in it
         frame = m.get("frame")
         if (isinstance(frame, int) and not isinstance(frame, bool) and 1 <= frame <= MAX_FRAME
                 and frame != claude_frame and not (mark.get("claude") or mark.get("pi"))):
@@ -1305,8 +1306,30 @@ def _drew(mark: dict) -> str:
     if mark.get("pi"):  # Claude didn't draw it: the Pi did, from the motion, on a visit it named itself
         return " (drawn on the Pi where it saw motion)"
     if not mark.get("claude"):
-        return ""
+        return f" (the owner drew it around the {mark['label']})" if mark.get("label") else ""
     return f" (you drew it around the {mark['label']})" if mark.get("label") else " (the one you drew)"
+
+
+def names_after(visit, visitor: str | None, species: str | None, also: list[dict] | None) -> list[str]:
+    """What a visit calls its animals once a correction is stored (correct_visit's visitor, species and also): the
+    main label first, as label_expr gives it, then each other animal in the photo. For name_marks."""
+    main = species or (visitor.capitalize() if visitor else None) or visit["species"] or visit["visitor"].capitalize()
+    others = also if also is not None else also_of({"corrected_also": None, "also": visit["also"]})
+    return [main, *(also_label(a) for a in others)]
+
+
+def name_marks(marks: list[dict], names: list[str]) -> list[dict]:
+    """The circles with each label spelled the way the visit names that animal (`names`, from names_after), and no
+    label on a circle whose animal the visit doesn't name: a label never says something the visit doesn't."""
+    spelled = {n.lower(): n for n in names if n}
+    out = []
+    for mark in marks:
+        mark = dict(mark)
+        label = spelled.get((mark.pop("label", None) or "").lower())
+        if label:
+            mark["label"] = label
+        out.append(mark)
+    return out
 
 
 def _spoken_name(species: str | None, visitor: str) -> str:

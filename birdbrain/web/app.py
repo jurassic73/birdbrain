@@ -1286,8 +1286,11 @@ def correct(
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
     also = db.plan_also(v, also_species, also_count, visitor.strip() or None)
-    db.correct_visit(conn, visit_id, new_visitor, new_species, feedback,
-                     db.parse_marks(marks, db.claude_frame(v["raw_json"])), also)
+    # Each circle comes with the animal it holds (the numbers in front of the form's rows): kept in the visit's own
+    # spelling, and dropped for a name the visit doesn't have.
+    circles = db.name_marks(db.parse_marks(marks, db.claude_frame(v["raw_json"])),
+                            db.names_after(v, new_visitor, new_species, also))
+    db.correct_visit(conn, visit_id, new_visitor, new_species, feedback, circles, also)
     lessons.maybe_auto(conn)  # every AUTO_EVERY new notes, Claude distills them in the background
     return Response(headers=REFRESH)
 
@@ -1928,7 +1931,8 @@ def lesson_edit(
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
     also = json.loads(v["corrected_also"]) if v["corrected_also"] is not None else None
-    db.correct_visit(conn, visit_id, new_visitor, new_species, feedback, db.parse_marks(v["marks"]), also)
+    circles = db.name_marks(db.parse_marks(v["marks"]), db.names_after(v, new_visitor, new_species, also))
+    db.correct_visit(conn, visit_id, new_visitor, new_species, feedback, circles, also)
     lessons.maybe_auto(conn)
     return Response(headers=REFRESH)
 

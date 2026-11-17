@@ -126,3 +126,22 @@ def test_skipped_by_says_when_the_pi_took_a_frame_for_rain():
     calls = {"skipped_claude": True, "settled_by": "rain", "presence": {"score": 0.05, "empty": False}}
     assert db.skipped_by(json.dumps({"calls": calls})) == "rain" and "rain on the water" in db.SKIPPED_BY["rain"]
     assert db.skipped_by(json.dumps({"calls": {**calls, "skipped_claude": False}})) is None
+
+
+def test_a_circle_keeps_the_animal_it_holds_and_lessons_say_so():
+    marks = db.parse_marks(json.dumps([{"x": 0.5, "y": 0.4, "r": 0.03, "label": "  Red-breasted Nuthatch "},
+                                       {"x": 0.2, "y": 0.2, "r": 0.05, "claude": True, "label": "dark-eyed junco"},
+                                       {"x": 0.7, "y": 0.7, "r": 0.05, "label": "Bushtit"},
+                                       {"x": 0.1, "y": 0.9, "r": 0.05, "label": 7}]))
+    assert [m.get("label") for m in marks] == ["Red-breasted Nuthatch", "dark-eyed junco", "Bushtit", None]
+    said = db.describe_marks(marks)
+    assert "circle 1 (the owner drew it around the Red-breasted Nuthatch) at 50% across" in said
+    assert "circle 4 at 10% across" in said  # no name, nothing added
+    # saved in the visit's own spelling; a name the visit doesn't have is dropped
+    named = db.name_marks(marks, ["Dark-eyed Junco", "Red-breasted Nuthatch", ""])
+    assert [m.get("label") for m in named] == ["Red-breasted Nuthatch", "Dark-eyed Junco", None, None]
+    assert named[1]["claude"] is True and "label" in marks[2]  # the circles given are left as they were
+    visit = {"visitor": "bird", "species": "Dark-eyed Junco", "also": json.dumps([{"visitor": "squirrel", "species": None}])}
+    assert db.names_after(visit, None, None, None) == ["Dark-eyed Junco", "Squirrel"]
+    assert db.names_after(visit, "bird", "Bushtit", [{"visitor": "bird", "species": "Song Sparrow"}]) == ["Bushtit", "Song Sparrow"]
+    assert db.names_after(visit, "raccoon", None, []) == ["Raccoon"]

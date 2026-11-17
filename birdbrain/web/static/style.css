@@ -893,6 +893,21 @@ html.circles-off svg.marks, html.circles-off .mark-legend { display: none; }
 .field .also-row input.also-count[type="number"] { width: 4.5em; flex: none; padding: 10px 6px 10px 10px; }
 .review button.also-remove { padding: 4px 8px; font-size: 1.3rem; line-height: 1; }
 .review button.also-add { align-self: flex-start; padding: 2px 0; }
+/* Which numbered circle on the photo holds an animal: the photo's own number disc (.marks .num-bg; grey for a circle
+   Claude or the Pi drew), in front of the Species box and of each "Also in the photo" row. A tap hands the circle
+   to the next animal. While the photo has circles, a row without one keeps the slot's width, so the boxes line up. */
+.circle-nums { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.circle-nums[hidden] { display: none; }
+.review.has-circles .circle-nums[hidden] { display: inline-flex; width: 26px; }
+.review button.circle-num {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 26px; height: 26px; min-height: 0; padding: 0; border-radius: 50%;
+  background: #ffd23f; color: #111; border: 1px solid rgba(0, 0, 0, .55); box-shadow: none;
+  font: inherit; font-size: .85rem; font-weight: 700; line-height: 1; cursor: pointer;
+  text-box: trim-both cap alphabetic;
+}
+.review button.circle-num.by-machine { background: #e9edf0; }
+.review button.circle-num:hover, .review button.circle-num:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .also-line { margin: 0 0 4px; }
 .card-title .also-name { font-weight: 500; }
 .combo { position: relative; }
