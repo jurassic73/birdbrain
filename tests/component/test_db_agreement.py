@@ -17,10 +17,11 @@ def test_counts_at_each_bar_on_the_seeded_yard(conn, add_visit):
     assert report["bars"] == EXPECTED["bars"]
 
 
-def test_default_bars_are_90_93_and_95_over_all_time(conn, add_visit):
+def test_default_bars_run_from_75_up_to_the_live_90_over_all_time(conn, add_visit):
     seed(add_visit)
-    assert db.agreement_report(conn) == db.agreement_report(conn, bars=(0.90, 0.93, 0.95), days=None)
-    assert [b["bar"] for b in db.agreement_report(conn)["bars"]] == [0.90, 0.93, 0.95]
+    assert db.agreement_report(conn) == db.agreement_report(conn, bars=(0.75, 0.80, 0.85, 0.90), days=None)
+    assert [b["bar"] for b in db.agreement_report(conn)["bars"]] == [0.75, 0.80, 0.85, 0.90]
+    assert db.AGREEMENT_BARS[-1] == 0.90  # the last row is the live bar (config.GATE_MIN_SCORE_TIGHT's default)
 
 
 def test_empty_database_gives_zero_looks_and_zero_rows(conn):

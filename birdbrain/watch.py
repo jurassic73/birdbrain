@@ -24,8 +24,8 @@ os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 import cv2  # noqa: E402  (must come after the capture options are set)
 import numpy as np  # noqa: E402
 
-from . import (alert, autocal, classifier, clips, config, db, finder, identify, images, motion_circle, presence,  # noqa: E402
-               retention, species_info, stay, weather, zones)
+from . import (alert, autocal, classifier, clips, config, db, finder, identify, images, motion_circle, pi_only,  # noqa: E402
+               presence, retention, species_info, stay, weather, zones)
 
 log = logging.getLogger("birdbrain.watch")
 
@@ -733,7 +733,8 @@ def second_frame_look(frames_ranked: list[bytes], circle, crop, night, tight_vec
             mean = classifier.normalize(np.mean([classifier.normalize(tight_vec), classifier.normalize(vec)], axis=0))
             both = classifier.from_embedding(mean, night)
             if both:
-                combined = {"top": both.get("top") or [], "local_share": both.get("local_share")}
+                combined = {"top": both.get("top") or [], "local_share": both.get("local_share"),
+                            "kin_share": both.get("kin_share")}
         record = {**guess, "crop": classifier.TIGHT_CROP, "frame": "second", "combined": combined,
                   "seconds": round(time.perf_counter() - start, 3)}
         top = (guess.get("top") or [{}])[0]
@@ -815,6 +816,7 @@ def _handle_burst(frames: list[bytes], captured_at: datetime, recording: clips.R
         return PROBE_EMPTY
     empty = bool(check and check.get("empty"))
     guess = pick = looked = tight = None
+    settled: dict[str, str] = {}  # the species settled here (db.settled_species), read once the frame is not empty
     animal_boxes: list = []  # where each counted animal was, kept when there are several (replaying a miscount)
     animals = None if empty else count_animals(scene, best, crop, animal_boxes)
     crowded = bool(animals and animals > 1)
@@ -881,8 +883,20 @@ def _handle_burst(frames: list[bytes], captured_at: datetime, recording: clips.R
             else:
                 log.info("species gate: no finder found a patch for a tight look (%s); asking Claude",
                          finder.tried_text(finding))
+    # Pi only (birdbrain/pi_only.py): what the Pi alone would do with a frame that is headed for Claude. In shadow
+    # mode the verdict is only stored beside Claude's answer (scored on Stats); "on" acts on it and Claude is not asked.
+    solo = None
+    if not pick and not (pmode == "gate" and (empty or rain)) and config.PI_ONLY != "off":
+        solo = pi_only.verdict(check, tight, crowd, settled, night)
+        if config.PI_ONLY == "on" and solo["verdict"] == pi_only.NAMED:
+            pick, named = (solo["species"], solo["visitor"]), solo["by"]
+            log.info("Pi only: Claude is switched off; the %s look names %s", "tight" if named == "tight" else "first",
+                     pick[0])
+    solo_settled = solo is not None and config.PI_ONLY == "on"  # the Pi decided alone: nothing below asks Claude
     if pick:
         result = identify.settled_by_classifier(tight if named == "tight" else guess, pick, check)
+        if solo_settled:
+            result.raw["pi_only"] = solo
         if named == "tight":
             # The tight look's square was around the circle the finder chain found: that circle is the visit's.
             result.raw["circle"] = circle
@@ -899,6 +913,10 @@ def _handle_burst(frames: list[bytes], captured_at: datetime, recording: clips.R
             result.raw["motion_circle"] = found  # the Motion detector's attempt, as before (motion_circle.pending reads it)
     elif pmode == "gate" and (empty or rain):
         result = identify.settled_by_presence(check, None, rain=config.RAIN_SCORE_MAX if rain else None)
+    elif solo_settled:
+        result = identify.settled_by_pi_only(solo, check)
+        log.info("Pi only: Claude is switched off; %s", "held for the owner (the animal check is sure, nothing named "
+                 "it)" if solo["verdict"] == pi_only.HELD else "kept as a false trigger")
     else:
         with db.session() as conn:
             lessons = db.recent_lessons(conn)
@@ -923,10 +941,12 @@ def _handle_burst(frames: list[bytes], captured_at: datetime, recording: clips.R
             result = identify.unanswered(e)
         if check:
             result.raw["presence"] = check
+        if solo:
+            result.raw["pi_only"] = solo  # shadow: what the Pi alone would have done, scored on Stats
     unanswered = "error" in result.raw
     # When Claude answered, the classifier records its guess from Claude's circle for the Stats scorecard (already
     # made on Haiku's circle when it decided whether to ask Sonnet; again on Sonnet's circle if Sonnet answered).
-    if not pick and result.sighting.visitor != "none":
+    if not pick and not solo_settled and result.sighting.visitor != "none":
         # The tight square around Claude's circle is also kept as training data: the look the stored guess is of.
         circle_model = "sonnet" if result.escalated else "haiku"
         if result.escalated or "classifier" not in result.raw:

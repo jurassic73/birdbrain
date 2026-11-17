@@ -86,7 +86,7 @@ def components() -> list[dict]:
                  f"the first look falls short, the {SPECIES} takes one tight look at a square around the patch that moved "
                  f"(about 6 seconds more on the Pi), which must reach {tight}. The {MOTION} points at that patch; when "
                  f"the {MOTION} can't, the Pi tries the crowd counter's outline, then a small object detector (YOLOX-tiny) "
-                 f"on the crop box. Either way, at least {share} of the belief on local species.</li>"
+                 f"on the crop box. Either way, at least {share} of the belief on local species or their close relatives elsewhere.</li>"
                  f"<li>The species is settled here: at least {settled} earlier visits answered with high confidence by {CLAUDE} "
                  f"or labelled by you. Visits the {SPECIES} named itself count only after you checked them.</li>"
                  f"<li>Only one animal in view.</li></ul>"
@@ -100,7 +100,8 @@ def components() -> list[dict]:
          "short": f"{CLAUDE} gets the photo only when the {SPECIES} did not settle the visit. {CLAUDE} reads all of "
                   f"{CLAUDE}&rsquo;s Notes fresh with every photo.",
          "does": f"<p>{CLAUDE} gets the photo only when the {SPECIES} did not settle the visit. Haiku answers first; Sonnet "
-                 f"takes a second look when Haiku is unsure.</p>"
+                 f"takes a second look when Haiku is unsure which animal it is (a doubtful &ldquo;nothing there&rdquo; "
+                 f"waits for your check instead).</p>"
                  f"<p>Sent to {CLAUDE} every time: the photo plus all of {CLAUDE}&rsquo;s Notes (the Your yard boxes, the Lessons "
                  f"summary, and the newest {limit} lessons word for word; a lesson is one of your corrections or Notes for {CLAUDE}).</p>",
          "train": f"<p>{CLAUDE} is not trained; {CLAUDE} reads the notes fresh with every photo. A Note for {CLAUDE} "
@@ -135,7 +136,7 @@ def miss_text(code: str | None, guess: dict, settled: dict | None = None, view: 
     if code == "score":
         return f"its top guess was {_pct(top.get('score') or 0)}, under the {_pct(classifier.gate_bar(view))} it needs"
     if code == "local":
-        return f"less than {_share(classifier.GATE_MIN_LOCAL)} of its belief was on local species"
+        return f"less than {_share(classifier.GATE_MIN_LOCAL)} of its belief was on local species or their close relatives"
     if code == "unsettled":
         return f"{top.get('name')} is not settled here yet ({db.CONFIRMED_MIN} sure visits needed)"
     if code == "crowd":
@@ -234,7 +235,7 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
             why2 = miss_text(tight_step.get("why"), record, view="tight")
             name2 = ((record.get("top") or [{}])[0]).get("name") or "nothing local"
             body += f" Then {TIGHT} guessed {e(name2)}, but {e(why2)}."
-        body += f" {CLAUDE} was asked."
+        body += f" {CLAUDE} is switched off." if decision.get("pi_only_on") else f" {CLAUDE} was asked."
     else:
         pill = ("no guess", "step-muted")
         why = ("night photos are infrared" if visit["is_night"] else
@@ -254,6 +255,8 @@ def for_visit(visit, decision: dict, teaches: dict | None, lesson: dict | None, 
         lead = f"<b>Not asked:</b> the {PI} called the photo empty."
     elif guess_step and guess_step.get("gated"):
         lead = f"<b>Not asked:</b> the {SPECIES} named the visit."
+    elif decision.get("pi_only_on"):
+        lead = f"<b>Not asked:</b> {CLAUDE} is switched off (PI_ONLY=on), so the Pi decided alone."
     else:
         lead = f"<b>Not asked.</b>"
     if lesson:

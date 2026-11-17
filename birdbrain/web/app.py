@@ -1102,6 +1102,33 @@ def tight_where_at(calls: dict) -> str:
     return steps.tight_at(finder)
 
 
+def pi_only_words(calls: dict) -> tuple[str, bool] | None:
+    """The Pi-only verdict's sentence for the visit page (birdbrain.pi_only, calls.pi_only) and whether it was
+    acted on: (text, True) when Claude was switched off and the Pi decided alone (config.PI_ONLY "on"), (text,
+    False) for the shadow record kept beside Claude's answer. None without a usable record."""
+    record = calls.get("pi_only")
+    if not isinstance(record, dict) or record.get("verdict") not in ("named", "held", "empty"):
+        return None
+    score = record.get("score")
+    scored = f"scored it {score:.2f}" if isinstance(score, (int, float)) else "gave no verdict"
+    look = "the first look at the whole bowl" if record.get("by") == "bowl" else "the tight look"
+    if calls.get("skipped_claude"):
+        text = "Claude is switched off (PI_ONLY=on), so the Pi decided alone: "
+        if record["verdict"] == "named":
+            text += f"{look} named it {record.get('species')}, at the lower bar it uses when Claude is not asked."
+        elif record["verdict"] == "held":
+            text += (f"nothing could name it, but the Pi animal check {scored}, so the photo is held for you and "
+                     "hidden from visitors until you name it.")
+        else:
+            text += (f"nothing could name it and the Pi animal check {scored}, too low to hold the photo for you, so "
+                     "it was filed as a false trigger.")
+        return text, True
+    would = (f"named it {record.get('species')} on {look}" if record["verdict"] == "named" else
+             f"held this photo for you (the Pi animal check {scored})" if record["verdict"] == "held" else
+             f"filed this as a false trigger (the Pi animal check {scored})")
+    return f"Pi only (shadow): without Claude the Pi would have {would}. Not used.", False
+
+
 def second_frame_words(record: dict | None) -> str | None:
     """The shadow second-frame look's sentence for the tight look step: "A second frame said NAME (0.xx); averaged
     NAME (0.xx). Shadow only: not used." (the averaged part only when the combined guess exists). None without a
@@ -1235,7 +1262,10 @@ def decision_steps(raw_json: str | None) -> dict:
             "tried": finders_tried(record) if record and not pointed else "",  # only when no finder found the patch
             "seconds": found.get("seconds"),
         })
+    solo = pi_only_words(calls)
     return {"steps": steps, "lessons": calls.get("lessons", 0), "trigger": TRIGGERS.get(raw.get("trigger")),
+            # birdbrain.pi_only: the Pi's own verdict; pi_only_on when it was acted on (Claude switched off)
+            "pi_only": solo[0] if solo else None, "pi_only_on": bool(solo and solo[1]),
             "owner_checks": owner_checks(calls), "failed": any(s.get("error") for s in steps),
             "has_first_look": any(st.get("first_look") and not st.get("gated") for st in steps),
             "has_tight_look": any(st.get("tight") for st in steps),
@@ -1649,6 +1679,9 @@ def stats(request: Request, conn=Depends(get_conn)):
         finder_words=FINDER_WORDS,
         agreement=db.agreement_report(conn),
         second_frame=db.second_frame_report(conn),
+        pi_only=db.pi_only_report(conn),
+        pi_only_mode=config.PI_ONLY,
+        pi_only_bars=(config.PI_ONLY_MIN_SCORE, config.PI_ONLY_HOLD_SCORE),
         presence_mode=presence.mode(conn),
         classifier_on=config.CLASSIFIER != "off",
         classifier_mode=config.CLASSIFIER,
@@ -1798,6 +1831,7 @@ def about(request: Request, conn=Depends(get_conn)):
     return page(
         request,
         "about.html",
+        pi_only_mode=config.PI_ONLY,
         cfg=config,
         zones={**zone_shapes(zones.load(conn)), "dx": ZONE_SHIFT[0] * ZONE_W, "dy": ZONE_SHIFT[1] * ZONE_H},
         recal=zones.schedule(conn),

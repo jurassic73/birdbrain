@@ -2,6 +2,7 @@
 "Tight look bars (shadow)" in the BioCLIP 2 section, and the sentence shown when there are no looks yet."""
 import re
 
+from birdbrain import db
 from helpers.agreement import EXPECTED, seed
 from helpers.classifier import raw
 
@@ -37,10 +38,13 @@ def test_stats_page_shows_the_table_with_data(client, add_visit):
     for column in ("Named", "Wrong", *AGREE_COLUMNS):
         assert column in section
     rows = table_rows(section)
-    assert len(rows) == 3, rows
-    for row, want in zip(rows, EXPECTED["bars"]):
-        bar = f"{want['bar']:.2f}"
-        assert bar in row[0] or f"{round(want['bar'] * 100)}" in row[0], row  # 0.90 or 90%
+    # The page shows db.AGREEMENT_BARS (0.75 up to the live 0.90). Every seeded look scores 0.92 or more, so each
+    # row counts what the seed's 0.90 bar does.
+    assert len(rows) == len(db.AGREEMENT_BARS) == 4, rows
+    want = EXPECTED["bars"][0]
+    for row, value in zip(rows, db.AGREEMENT_BARS):
+        bar = f"{value:.2f}"
+        assert bar in row[0] or f"{round(value * 100)}" in row[0], row  # 0.90 or 90%
         assert row[-4:] == [str(want["named"]), str(want["wrong"]), str(want["agree_named"]), str(want["agree_wrong"])], row
 
 

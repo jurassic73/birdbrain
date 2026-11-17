@@ -31,6 +31,7 @@ def test_pi_verdicts():
     assert circle_check.pi_verdict(sure, 0.9, animal) == "sure"
     assert circle_check.pi_verdict(sure, 0.9, None) == "sure"           # the animal check not trained yet
     assert circle_check.pi_verdict(sure, 0.1, animal) == "unsure"       # mostly on species that aren't local
+    assert circle_check.pi_verdict(sure, 0.1, animal, 0.6) == "sure"    # ...unless they are its close relatives
     assert circle_check.pi_verdict(sure, 0.9, empty) == "unsure"        # the two disagree
     assert circle_check.pi_verdict(weak, 0.9, animal) == "unsure"
     assert circle_check.pi_verdict(weak, 0.9, empty) == "empty"

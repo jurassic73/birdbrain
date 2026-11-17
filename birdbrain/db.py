@@ -1343,13 +1343,15 @@ def _spoken_also(rows: list[dict]) -> str:
 # What settled a visit on the Pi without asking Claude (identify.settled_*), as a lesson line tells Claude.
 SKIPPED_BY = {"presence": "the Pi animal check judged this frame empty",
               "rain": "the Pi saw nothing new on land and took the movement for rain on the water",
-              "detector": "the Pi's local detector found no animal"}
+              "detector": "the Pi's local detector found no animal",
+              "pi_only": "you were switched off and the Pi decided on its own"}
 
 
 def skipped_by(raw_json: str | None) -> str | None:
     """How the Pi settled a visit without asking Claude: "presence" (the local animal check judged it empty),
-    "rain" (a low score and nothing new on land: rain on the water), "detector" (the local detector found nothing)
-    or "classifier" (the local classifier named it). None when
+    "rain" (a low score and nothing new on land: rain on the water), "detector" (the local detector found nothing),
+    "classifier" (the local classifier named it) or "pi_only" (Claude was switched off, config.PI_ONLY "on", and
+    nothing named the frame: held for the owner or filed as empty). None when
     Claude was asked, or the saved trail is missing or unreadable."""
     try:
         calls = (json.loads(raw_json or "{}") or {}).get("calls")
@@ -1357,7 +1359,7 @@ def skipped_by(raw_json: str | None) -> str | None:
         return None
     if not isinstance(calls, dict) or not calls.get("skipped_claude"):
         return None
-    if calls.get("settled_by") in ("classifier", "rain"):
+    if calls.get("settled_by") in ("classifier", "rain", "pi_only"):
         return calls["settled_by"]
     presence = calls.get("presence")
     return "presence" if isinstance(presence, dict) and presence.get("empty") else "detector"
@@ -2071,7 +2073,8 @@ def finder_report(conn: sqlite3.Connection, days: int = 14) -> dict:
     return {"days": days, "looks": looks, "none": none, "by_finder": by_finder}
 
 
-AGREEMENT_BARS = (0.90, 0.93, 0.95)  # tight-look bars the Stats scorecard tries; the live one is GATE_MIN_SCORE_TIGHT
+# Tight-look bars the Stats scorecard tries: lower ones, then the live one (GATE_MIN_SCORE_TIGHT's default).
+AGREEMENT_BARS = (0.75, 0.80, 0.85, 0.90)
 
 
 def agreement_report(conn: sqlite3.Connection, bars: tuple[float, ...] = AGREEMENT_BARS, days: int | None = None) -> dict:
@@ -2079,8 +2082,8 @@ def agreement_report(conn: sqlite3.Connection, bars: tuple[float, ...] = AGREEME
     bowl, kept as calls.classifier_gate, and the tight look around the motion circle, calls.classifier_tight when it
     missed or calls.classifier with crop "motion" when it named the visit) and a final species label (owner
     correction wins, else Claude's; visits the Pi named count only once confirmed or corrected, as in
-    classifier_report), how many the tight look would have named at each bar (top score >= bar and local_share >=
-    classifier.GATE_MIN_LOCAL; the settled-species rule is left out) and how many of those wrongly, plus the same
+    classifier_report), how many the tight look would have named at each bar (top score >= bar and
+    classifier.local_enough; the settled-species rule is left out) and how many of those wrongly, plus the same
     two counts over the visits where the wide look's top guess agrees with the tight look's. Changes nothing.
     {"looks": n, "bars": [{"bar", "named", "wrong", "agree_named", "agree_wrong"}, ...]}."""
     from . import classifier  # classifier imports db; only its bar is wanted here
@@ -2118,7 +2121,7 @@ def agreement_report(conn: sqlite3.Connection, bars: tuple[float, ...] = AGREEME
         same = (lambda n: n == k) if k not in ("raccoon", "possum") else (lambda n: n.endswith(k))
         wrong = not same(name)
         agree = _name_key(bowl["top"][0].get("name")) == name
-        local = (tight.get("local_share") or 0) >= classifier.GATE_MIN_LOCAL
+        local = classifier.local_enough(tight)
         for b, c in counts.items():
             if local and (top.get("score") or 0) >= b:
                 c["named"] += 1
@@ -2135,7 +2138,7 @@ def second_frame_report(conn: sqlite3.Connection, days: int | None = None) -> di
     count only once confirmed or corrected, as in classifier_report), how often the tight look's first frame, the
     second frame and the average of the two embeddings (calls.classifier_second.combined) put the label first, and
     how many visits the second frame and the average would have named (top score >= classifier.GATE_MIN_SCORE_TIGHT
-    and local_share >= GATE_MIN_LOCAL) and how many of those wrongly. Changes nothing. {"looks", "first_right",
+    and classifier.local_enough) and how many of those wrongly. Changes nothing. {"looks", "first_right",
     "second_right", "combined_right", "combined_named", "combined_wrong", "second_named", "second_wrong"}."""
     from . import classifier  # classifier imports db; only its bars are wanted here
 
@@ -2157,8 +2160,7 @@ def second_frame_report(conn: sqlite3.Connection, days: int | None = None) -> di
 
     def named(look: dict | None) -> bool:
         top = ((look or {}).get("top") or [{}])[0]
-        return ((top.get("score") or 0) >= classifier.GATE_MIN_SCORE_TIGHT
-                and ((look or {}).get("local_share") or 0) >= classifier.GATE_MIN_LOCAL)
+        return (top.get("score") or 0) >= classifier.GATE_MIN_SCORE_TIGHT and classifier.local_enough(look)
 
     for r in rows:
         k = _name_key(r["label"])
@@ -2186,6 +2188,47 @@ def second_frame_report(conn: sqlite3.Connection, days: int | None = None) -> di
         if named(combined):
             out["combined_named"] += 1
             out["combined_wrong"] += not right(combined)
+    return out
+
+
+def pi_only_report(conn: sqlite3.Connection, days: int | None = None) -> dict:
+    """Shadow scorecard for switching Claude off (birdbrain.pi_only): over the frames Claude answered that carry
+    the Pi's own verdict (calls.pi_only), what that verdict would have done, judged against the final label (owner
+    correction wins, else Claude's). named: the Pi would have named the visit; named_wrong: with another species
+    than the label (a generic label like "Squirrel" matches any species ending in it); named_empty: on a frame that
+    was empty. held_real / held_empty: frames it would have held for the owner. missed: animals it would have filed
+    as false triggers, of which `claude_named` Claude put a name to (the rest Claude called empty too and the owner
+    corrected). empty: empty frames it would have filed as such. Changes nothing. All time unless `days`."""
+    where, args = "", ()
+    if days:
+        where, args = "AND captured_at >= ?", ((clock.today() - timedelta(days=days - 1)).isoformat(),)
+    rows = conn.execute(
+        f"""SELECT {LABEL} AS label, {REAL} AS real, visitor,
+                   json_extract(raw_json, '$.calls.pi_only.verdict') AS verdict,
+                   json_extract(raw_json, '$.calls.pi_only.species') AS species
+            FROM visits
+            WHERE json_extract({valid_json('raw_json')}, '$.calls.pi_only.verdict') IS NOT NULL
+              AND json_extract(raw_json, '$.calls.settled_by') IS NULL {where}""",
+        args,
+    ).fetchall()
+    out = {"frames": len(rows), "animals": 0, "named": 0, "named_wrong": 0, "named_empty": 0, "held_real": 0,
+           "held_empty": 0, "missed": 0, "claude_named": 0, "empty": 0}
+    for r in rows:
+        out["animals"] += bool(r["real"])
+        if r["verdict"] == "named":
+            out["named"] += 1
+            k, n = _name_key(r["label"]), _name_key(r["species"])
+            if not r["real"]:
+                out["named_empty"] += 1
+            elif not (n == k or (k in MAMMALS and n.endswith(k)) or k in ("", "bird", "other")):
+                out["named_wrong"] += 1
+        elif r["verdict"] == "held":
+            out["held_real" if r["real"] else "held_empty"] += 1
+        elif r["real"]:
+            out["missed"] += 1
+            out["claude_named"] += r["visitor"] != "none"
+        else:
+            out["empty"] += 1
     return out
 
 

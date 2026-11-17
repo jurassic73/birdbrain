@@ -23,6 +23,41 @@ def test_rank_keeps_local_species_and_renormalizes():
     assert r["masked"] and r["species"] == 3 and r["local_share"] == pytest.approx(0.65, abs=1e-3)
 
 
+SQUIRRELS = [("Sciurus carolinensis", "Eastern Gray Squirrel", True), ("Sciurus lis", "Japanese Squirrel", True),
+             ("Sciurotamias davidianus", "Pere David's Rock Squirrel", True), ("Junco hyemalis", "Dark-eyed Junco", True),
+             ("Sorex vagrans", "Vagrant Shrew", True), ("Rattus rattus", "Black Rat", True)]
+YARD = {"Sciurus carolinensis": "Eastern Gray Squirrel", "Junco hyemalis": "Dark-eyed Junco", "Rattus rattus": "Black Rat"}
+
+
+def test_rank_counts_belief_on_the_top_guesses_relatives_elsewhere_as_kin():
+    # A clear gray squirrel: most of the belief is on squirrels of other continents (same genus, or "... Squirrel").
+    r = classifier.rank(np.array([0.2, 0.5, 0.25, 0.01, 0.04, 0.0]), SQUIRRELS, YARD)
+    assert r["top"][0]["name"] == "Eastern Gray Squirrel" and r["top"][0]["score"] == pytest.approx(0.2 / 0.21, abs=1e-3)
+    assert r["local_share"] == pytest.approx(0.21, abs=1e-3) and r["kin_share"] == pytest.approx(0.75, abs=1e-3)
+    assert classifier.local_enough(r)  # 0.21 alone would not do; with its relatives it does
+    # The shrew is neither local nor a relative of the squirrel: it stays outside both shares.
+    r = classifier.rank(np.array([0.2, 0.0, 0.0, 0.01, 0.79, 0.0]), SQUIRRELS, YARD)
+    assert r["kin_share"] == 0.0 and not classifier.local_enough(r)
+    # The top guess decides whose relatives count: a junco on top gets nothing from the squirrels.
+    r = classifier.rank(np.array([0.1, 0.4, 0.2, 0.3, 0.0, 0.0]), SQUIRRELS, YARD)
+    assert r["top"][0]["name"] == "Dark-eyed Junco" and r["kin_share"] == 0.0 and not classifier.local_enough(r)
+    # No local list, or nothing local at all: no kin share.
+    assert classifier.rank(np.array([0.2, 0.5, 0.25, 0.01, 0.04, 0.0]), SQUIRRELS, None)["kin_share"] is None
+    assert classifier.rank(np.array([0.0, 0.5, 0.25, 0.0, 0.25, 0.0]), SQUIRRELS, YARD)["kin_share"] is None
+
+
+def test_local_enough_adds_the_kin_share_and_reads_guesses_stored_before_it():
+    assert classifier.local_enough({"local_share": 0.5}) and not classifier.local_enough({"local_share": 0.49})
+    assert classifier.local_enough({"local_share": 0.1, "kin_share": 0.4})
+    assert not classifier.local_enough({"local_share": 0.1, "kin_share": 0.39})
+    assert not classifier.local_enough({"local_share": None, "kin_share": None}) and not classifier.local_enough(None)
+    # The gate names a settled species whose belief leaked to relatives abroad, and still stops a real stranger.
+    settled = {"Eastern Gray Squirrel": "squirrel"}
+    leaked = {"top": [{"name": "Eastern Gray Squirrel", "score": 0.97}], "local_share": 0.1, "kin_share": 0.77}
+    assert classifier.gate_pick(leaked, settled, False, view="tight") == ("Eastern Gray Squirrel", "squirrel")
+    assert classifier.gate_miss(dict(leaked, kin_share=0.2), settled, False, view="tight") == "local"
+
+
 def test_rank_without_a_local_list_uses_every_species():
     r = classifier.rank(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 0.1]), LABELS, None)
     assert r["top"][0]["name"] == "Eurasian Jay" and r["top"][0]["score"] == 1.0
@@ -116,7 +151,7 @@ def test_gate_miss_and_pick_judge_each_look_against_its_own_bar(monkeypatch):
     assert classifier.first_look(middling, settled, False)["why"] is None
     assert classifier.first_look(middling, settled, False, view="tight")["why"] == "score"
     # the bars come from .env through config, like the other tunables
-    assert config.GATE_MIN_SCORE_BOWL == 0.8 and config.GATE_MIN_SCORE_TIGHT == 0.95
+    assert config.GATE_MIN_SCORE_BOWL == 0.8 and config.GATE_MIN_SCORE_TIGHT == 0.90
 
 
 def test_tight_check_classifies_a_square_around_the_motion_circle(monkeypatch):

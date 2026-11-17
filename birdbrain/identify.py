@@ -248,13 +248,15 @@ def needs_second_look(s: Sighting | None, confirmed: set[str] = frozenset()) -> 
     """Escalate anything short of a confident answer about an actual animal, except a medium answer
     naming a species already confirmed here several times (db.confirmed_species): on 2026-10-27 Sonnet
     agreed with every such Haiku answer, while the wrong Haiku guesses were all new names.
-    A low-confidence guess at a second animal in the photo gets the second look too, and so does "no animal"
-    at low confidence: that means something in the photo might be one (a half-hidden junco was being filed
-    as a false trigger that way)."""
+    A low-confidence guess at a second animal in the photo gets the second look too. "No animal" never does,
+    whatever its confidence: until 2026-11-17 a low one went to Sonnet (something in the photo might be an
+    animal), but against the owner's check of every stored photo the 31 such second looks found no animal
+    (Sonnet agreed 30 times and made one up) while costing most of the bill. A low "no animal" still waits for
+    the owner (identify's needs_review), who is the second look now."""
     if s is None:
         return True
     if s.visitor == "none":
-        return s.confidence == "low"
+        return False
     if any(a.confidence == "low" for a in s.also):
         return True
     if s.confidence == "high":
@@ -285,7 +287,7 @@ def local_confirms(s: Sighting, guess: dict | None, confirmed: set[str]) -> bool
     if not top or s.visitor != "bird" or not s.species or s.count != 1 or s.also or s.species not in confirmed:
         return False
     return (local_disagrees(s, guess) is None and top[0]["score"] >= classifier.GATE_MIN_SCORE_TIGHT
-            and (guess.get("local_share") or 0) >= classifier.GATE_MIN_LOCAL)
+            and classifier.local_enough(guess))
 
 
 def identify(
@@ -422,6 +424,28 @@ def settled_by_classifier(guess: dict, pick: tuple[str, str], check: dict | None
     raw = {"classifier": guess, "skipped_claude": True, "settled_by": "classifier",
            **({"presence": check} if check else {})}
     return Result(s, guess["model"], escalated=False, needs_review=False, raw=raw)
+
+
+PI_ONLY_MODEL = "bioclip-presence"  # presence.MODEL_NAME: the Pi animal check's score decided both results below
+
+
+def settled_by_pi_only(verdict: dict, check: dict | None) -> Result:
+    """config.PI_ONLY "on": Claude is not asked and nothing on the Pi could name the frame (birdbrain.pi_only's
+    verdict "held" or "empty"; a "named" one goes through settled_by_classifier). Held: stored as "other", which
+    always waits for the owner in the review queue and is hidden from visitors until they name it. Empty: a false
+    trigger, like one the Pi animal check judged empty."""
+    score = verdict.get("score")
+    scored = f"scored it {score:.3f}" if score is not None else "gave no verdict"
+    if verdict["verdict"] == "held":
+        notes = (f"Held for you: the Pi animal check {scored}, so something is probably there, but the BioCLIP 2 "
+                 "species check could not name it and Claude is switched off (PI_ONLY=on).")
+        s = Sighting(visitor="other", species=None, count=0, confidence="low", notes=notes, circle=None, also=[])
+    else:
+        notes = (f"Filed as a false trigger: the Pi animal check {scored} (under the {config.PI_ONLY_HOLD_SCORE:.2f} "
+                 "that holds a frame for you), nothing could be named, and Claude is switched off (PI_ONLY=on).")
+        s = Sighting(visitor="none", species=None, count=0, confidence="medium", notes=notes, circle=None, also=[])
+    raw = {"skipped_claude": True, "settled_by": "pi_only", "pi_only": verdict, **({"presence": check} if check else {})}
+    return Result(s, (check or {}).get("model") or PI_ONLY_MODEL, escalated=False, needs_review=False, raw=raw)
 
 
 def main() -> None:

@@ -34,7 +34,7 @@ def test_the_combined_guess_averages_the_two_embeddings(shadow, conn, monkeypatc
     assert watch.handle_event() == "bird" and shadow["asked"] == [False]
     row, calls = latest(conn)
     combined = calls["classifier_second"]["combined"]
-    assert set(combined) == {"top", "local_share"}
+    assert set(combined) == {"top", "local_share", "kin_share"}
     assert combined["top"][0]["name"] == "Dark-eyed Junco"  # the junco direction dominates the averaged vector
     assert combined["local_share"] is not None and row["species"] == "Bushtit"
 

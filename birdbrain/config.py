@@ -278,7 +278,7 @@ if CLASSIFIER not in ("off", "shadow", "gate"):
 # Gate mode's two bars for the top guess (birdbrain/classifier.py, rule H): the first look on the Pi animal check's
 # wide view of the bowl, and the tight look around the motion circle made when the first falls short.
 GATE_MIN_SCORE_BOWL = float(_env("GATE_MIN_SCORE_BOWL", "0.8"))
-GATE_MIN_SCORE_TIGHT = float(_env("GATE_MIN_SCORE_TIGHT", "0.95"))
+GATE_MIN_SCORE_TIGHT = float(_env("GATE_MIN_SCORE_TIGHT", "0.90"))
 for _name, _bar in (("GATE_MIN_SCORE_BOWL", GATE_MIN_SCORE_BOWL), ("GATE_MIN_SCORE_TIGHT", GATE_MIN_SCORE_TIGHT)):
     if not 0 < _bar <= 1:
         raise ValueError(f"{_name} must be between 0 and 1, not {_bar!r}")
@@ -289,6 +289,20 @@ _second = _env("SECOND_FRAME_MIN").strip().lower() or "0.8"  # blank means the d
 SECOND_FRAME_MIN = 0.0 if _second in ("0", "off", "no", "false") else float(_second)
 if not 0 <= SECOND_FRAME_MIN <= 1:
     raise ValueError(f"SECOND_FRAME_MIN must be between 0 and 1 (or off), not {_second!r}")
+# Pi only (birdbrain/pi_only.py): what the Pi would decide about a frame if Claude were never asked. "shadow" (the
+# default) stores that verdict beside Claude's answer for the Stats scorecard and changes nothing; "on" acts on it,
+# so the watcher never asks Claude; "off" does neither.
+PI_ONLY = _env("PI_ONLY").strip().lower() or "shadow"
+if PI_ONLY not in ("off", "shadow", "on"):
+    raise ValueError(f"PI_ONLY must be off, shadow or on, not {PI_ONLY!r}")
+# Its two bars: the tight look's top guess that names a visit when Claude is not there to ask (lower than
+# GATE_MIN_SCORE_TIGHT, which only decides whether Claude is asked), and the Pi animal check's score from which a
+# frame nothing could name is held for the owner instead of being filed as a false trigger.
+PI_ONLY_MIN_SCORE = float(_env("PI_ONLY_MIN_SCORE").strip() or "0.75")
+PI_ONLY_HOLD_SCORE = float(_env("PI_ONLY_HOLD_SCORE").strip() or "0.9")
+for _name, _bar in (("PI_ONLY_MIN_SCORE", PI_ONLY_MIN_SCORE), ("PI_ONLY_HOLD_SCORE", PI_ONLY_HOLD_SCORE)):
+    if not 0 < _bar <= 1:
+        raise ValueError(f"{_name} must be between 0 and 1, not {_bar!r}")
 PRESENCE = _env("PRESENCE", "shadow").strip().lower()  # local animal check: off, shadow or gate (Settings wins)
 if PRESENCE not in ("off", "shadow", "gate"):
     raise ValueError(f"PRESENCE must be off, shadow or gate, not {PRESENCE!r}")

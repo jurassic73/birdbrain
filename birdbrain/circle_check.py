@@ -80,10 +80,12 @@ def visitor_of(name: str, scientific: str, mammals: set[str]) -> str:
     return "other"
 
 
-def pi_verdict(top: list[dict], local_share: float | None, check: dict | None) -> str:
-    """sure: a strong first guess mostly on local species, and the animal check doesn't say empty;
+def pi_verdict(top: list[dict], local_share: float | None, check: dict | None, kin_share: float | None = None) -> str:
+    """sure: a strong first guess mostly on local species (counting the top guess's close relatives elsewhere,
+    `kin_share`, as classifier.local_enough does), and the animal check doesn't say empty;
     empty: the animal check says empty (or there's no guess) and the guess is weak; else unsure."""
-    strong = bool(top) and top[0]["score"] >= SURE and (local_share is None or local_share >= classifier.GATE_MIN_LOCAL)
+    strong = bool(top) and top[0]["score"] >= SURE and (
+        local_share is None or local_share + (kin_share or 0) >= classifier.GATE_MIN_LOCAL)
     empty = bool(check and check.get("score") is not None and check.get("empty"))
     if not top or (empty and not strong):
         return "empty"
@@ -118,7 +120,7 @@ def ask_pi(conn, jpeg: bytes, circle: dict, night: bool, clf=None, local=None) -
     check = presence.check(conn, emb)
     mammals = getattr(clf, "mammals", set())
     top = [{**g, "visitor": visitor_of(g["name"], g["scientific"], mammals)} for g in guess["top"]]
-    verdict = pi_verdict(top, guess.get("local_share"), check)
+    verdict = pi_verdict(top, guess.get("local_share"), check, guess.get("kin_share"))
     with _lock:
         _last_used = time.monotonic()
     return {"source": "pi", "model": classifier.MODEL_NAME, "verdict": verdict, "say": pi_say(verdict, top),

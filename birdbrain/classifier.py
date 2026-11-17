@@ -225,6 +225,26 @@ def ebird_name(*candidates: str | None) -> str | None:
     return given[0] if given else None
 
 
+def _kind(common: str | None) -> str:
+    """The kind of animal a common name ends in ("Eastern Gray Squirrel": "squirrel", "Dark-eyed Junco": "junco")."""
+    words = (common or "").replace("-", " ").split()
+    return words[-1].casefold() if words else ""
+
+
+def kin_share(scores: dict[str, float], commons: dict[str, str], allowed: dict, best: str | None) -> float | None:
+    """Of everything the model believed, the share on species that are not local but are the top guess's close
+    relatives: the same genus, or a common name ending in the same kind ("... Squirrel"). The model knows every
+    species on Earth, so a clear photo of a gray squirrel spreads much of its belief over squirrels of other
+    continents (Japanese, Allen's, rock squirrels): on 2026-11-17 seven right squirrel guesses at 0.86 to 0.99
+    had only 2 to 46% of their belief on local species, and 83 to 99% once those relatives were counted."""
+    if allowed is None or best is None:
+        return None
+    genus, kind = best.split()[0], _kind(allowed.get(best) or commons.get(best))
+    kin = sum(p for s, p in scores.items()
+              if s not in allowed and (s.split()[0] == genus or (kind and _kind(commons.get(s)) == kind)))
+    return round(kin / max(sum(scores.values()), 1e-9), 3)
+
+
 def rank(probs: np.ndarray, labels: list[tuple[str, str, bool]], local: dict[str, str] | None, top: int = TOP) -> dict:
     """Top guesses from the raw outputs, limited to the local species and renormalized among them."""
     scores, commons, background = group_species(probs, labels)
@@ -243,6 +263,9 @@ def rank(probs: np.ndarray, labels: list[tuple[str, str, bool]], local: dict[str
         "top": guesses,
         # How much of the model's belief went to local species: low means it saw something it doesn't know.
         "local_share": round(total / max(sum(scores.values()), 1e-9), 3) if allowed is not None else None,
+        # ...and how much went to the top guess's close relatives that don't live here (kin_share): counted with
+        # the local share by local_enough.
+        "kin_share": kin_share(scores, commons, allowed, best[0][0] if best and best[0][1] > 0 else None),
         "background": round(background, 3),
         "masked": allowed is not None,
         "species": len(pool),
@@ -571,15 +594,29 @@ def with_embedding(fn, *args, **kwargs):
 # a higher bar. Before 2026-11-05 the one bar was 0.93 (checked 2026-10-31 on 66 visits re-scored from the crop box:
 # 30 named, no mistakes). The one confident miss then (a junco called a California Scrub-Jay at 0.98) is stopped by
 # requiring a species already settled in the yard. Both bars can be overridden from .env (config.py).
+# 2026-11-17, with every stored photo checked by the owner: the tight bar came down from 0.95 to 0.90 and the
+# local-share rule began counting the top guess's close relatives (kin_share). Replayed on the 119 stored tight
+# looks (68 animals, 51 empty frames) that names 48 instead of 42, none wrongly and no empty frame; on empty frames
+# the tight look never topped 0.83, and those guesses were species not settled here.
 GATE_MIN_SCORE_BOWL = config.GATE_MIN_SCORE_BOWL    # the first look, on the Pi animal check's wide view
 GATE_MIN_SCORE_TIGHT = config.GATE_MIN_SCORE_TIGHT  # the tight look, around the motion circle
-GATE_MIN_LOCAL = 0.5  # share of its belief on local species; low means it saw something it doesn't know
+# Share of its belief on local species and the top guess's close relatives (local_enough); low means it saw
+# something it doesn't know.
+GATE_MIN_LOCAL = 0.5
 GATE_VIEWS = ("bowl", "tight")  # the two looks, in the order the gate makes them
 
 
 def gate_bar(view: str = "bowl") -> float:
     """The top-guess bar for a look: GATE_MIN_SCORE_TIGHT for the tight look, GATE_MIN_SCORE_BOWL for the first."""
     return GATE_MIN_SCORE_TIGHT if view == "tight" else GATE_MIN_SCORE_BOWL
+
+
+def local_enough(guess: dict | None) -> bool:
+    """Whether enough of a guess's belief (GATE_MIN_LOCAL) was on local species, counting the top guess's close
+    relatives elsewhere (kin_share; a guess stored before 2026-11-17 has none, and a guess with no local list has
+    no shares at all and never passes)."""
+    guess = guess or {}
+    return (guess.get("local_share") or 0) + (guess.get("kin_share") or 0) >= GATE_MIN_LOCAL
 
 
 def from_embedding(emb: np.ndarray, night: bool, local=None, clf=None) -> dict | None:
@@ -596,21 +633,23 @@ def from_embedding(emb: np.ndarray, night: bool, local=None, clf=None) -> dict |
             "seconds": 0.0}
 
 
-def gate_miss(guess: dict | None, settled: dict[str, str], night: bool, crowd=None, view: str = "bowl") -> str | None:
+def gate_miss(guess: dict | None, settled: dict[str, str], night: bool, crowd=None, view: str = "bowl",
+              bar: float | None = None) -> str | None:
     """Why a guess would not name the visit without Claude, in the order the gate tests it: "night", "none" (no
     local species at all), "score" (top guess under the look's bar, gate_bar(view)), "local" (under GATE_MIN_LOCAL
-    of its belief on local species), "unsettled" (the species isn't settled here yet) or "crowd" (`crowd` is
+    of its belief on local species and the top guess's close relatives, local_enough), "unsettled" (the species isn't settled here yet) or "crowd" (`crowd` is
     truthy: several animals in view). None when it would name it. `view` is which look this is: "bowl" (the first
-    look, GATE_MIN_SCORE_BOWL) or "tight" (the look around the motion circle, GATE_MIN_SCORE_TIGHT). One place for
-    the order: gate_pick, the watcher's stored looks and the visit page all read it."""
+    look, GATE_MIN_SCORE_BOWL) or "tight" (the look around the motion circle, GATE_MIN_SCORE_TIGHT); `bar` replaces
+    the look's bar (birdbrain.pi_only names at a lower one when Claude is not asked). One place for the order:
+    gate_pick, the watcher's stored looks and the visit page all read it."""
     if night:
         return "night"
     if not guess or not guess.get("top"):
         return "none"
     top = guess["top"][0]
-    if top["score"] < gate_bar(view):
+    if top["score"] < (gate_bar(view) if bar is None else bar):
         return "score"
-    if (guess.get("local_share") or 0) < GATE_MIN_LOCAL:
+    if not local_enough(guess):
         return "local"
     visitor = settled.get(top["name"])
     if not visitor or visitor in ("none", "other"):
@@ -618,11 +657,12 @@ def gate_miss(guess: dict | None, settled: dict[str, str], night: bool, crowd=No
     return "crowd" if crowd else None
 
 
-def gate_pick(guess: dict | None, settled: dict[str, str], night: bool, view: str = "bowl") -> tuple[str, str] | None:
+def gate_pick(guess: dict | None, settled: dict[str, str], night: bool, view: str = "bowl",
+              bar: float | None = None) -> tuple[str, str] | None:
     """(species, visitor) when the guess is trusted to name the visit without Claude: daytime only (it hasn't
-    seen infrared), a strong first guess (the look's bar, gate_bar(view)) mostly on local species, and a species
-    with enough settled visits here (`settled`: label -> visitor type, from db.settled_species)."""
-    if gate_miss(guess, settled, night, view=view):
+    seen infrared), a strong first guess (the look's bar, gate_bar(view), or `bar`) mostly on local species, and a
+    species with enough settled visits here (`settled`: label -> visitor type, from db.settled_species)."""
+    if gate_miss(guess, settled, night, view=view, bar=bar):
         return None
     name = guess["top"][0]["name"]
     return name, settled[name]

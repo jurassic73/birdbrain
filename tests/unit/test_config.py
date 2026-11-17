@@ -75,6 +75,18 @@ def _fresh_config(monkeypatch, **env) -> dict:
     return runpy.run_path(config.__file__, run_name="birdbrain.config")
 
 
+def test_pi_only_defaults_to_shadow_and_reads_its_mode_and_bars_from_the_env(monkeypatch):
+    assert (config.PI_ONLY, config.PI_ONLY_MIN_SCORE, config.PI_ONLY_HOLD_SCORE) == ("shadow", 0.75, 0.9)
+    fresh = _fresh_config(monkeypatch, PI_ONLY=" On ", PI_ONLY_MIN_SCORE="0.8", PI_ONLY_HOLD_SCORE="0.95")
+    assert (fresh["PI_ONLY"], fresh["PI_ONLY_MIN_SCORE"], fresh["PI_ONLY_HOLD_SCORE"]) == ("on", 0.8, 0.95)
+    blank = _fresh_config(monkeypatch, PI_ONLY="", PI_ONLY_MIN_SCORE=" ", PI_ONLY_HOLD_SCORE="")
+    assert (blank["PI_ONLY"], blank["PI_ONLY_MIN_SCORE"], blank["PI_ONLY_HOLD_SCORE"]) == ("shadow", 0.75, 0.9)
+    with pytest.raises(ValueError, match="PI_ONLY must be"):
+        _fresh_config(monkeypatch, PI_ONLY="gate")
+    with pytest.raises(ValueError, match="PI_ONLY_HOLD_SCORE"):
+        _fresh_config(monkeypatch, PI_ONLY="shadow", PI_ONLY_HOLD_SCORE="1.5")
+
+
 def test_finders_default_to_motion_blob_yolox_in_that_order():
     assert tuple(config.FINDERS) == ("motion", "blob", "yolox")
     assert config.FINDER_YOLOX_MIN_SCORE == 0.15

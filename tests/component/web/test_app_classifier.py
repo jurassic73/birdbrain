@@ -41,7 +41,7 @@ def test_visit_page_says_the_pi_named_it(client, add_visit):
     assert "Claude wasn't asked" in html and 'data-tip="RPi:' in html
 
 
-def tight_raw(why="score", name="Dark-eyed Junco", score=0.9, named=False, **first):
+def tight_raw(why="score", name="Dark-eyed Junco", score=0.85, named=False, **first):
     """A visit's raw_json with a first look on the bowl, a tight look, and either Claude's answers with the
     scorecard look or (named) the tight look as the guess that named the visit."""
     tight = {"model": classifier.MODEL_NAME, "crop": "motion", "night": False, "seconds": 5.9,
@@ -66,21 +66,21 @@ def test_visit_page_shows_the_tight_look_between_the_first_look_and_claude(clien
     vid = add_visit(species="Bushtit", raw_json=tight_raw())
     html = client.get(f"/visit/{vid}").text
     steps = html[html.index("How it was decided"):]
-    order = ["Black-capped Chickadee (61%)", "Dark-eyed Junco (90%)", "<strong>Haiku</strong>", "<strong>Sonnet</strong>",
+    order = ["Black-capped Chickadee (61%)", "Dark-eyed Junco (85%)", "<strong>Haiku</strong>", "<strong>Sonnet</strong>",
              "Bushtit (50%)"]
     assert [steps.index(s) for s in order] == sorted(steps.index(s) for s in order)
     assert 'data-tip="First look:' in html and 'data-tip="Tight look:' in html and 'data-tip="Second look:' in html
     assert "Did not name the visit: its top guess was 61%, under the 80% it needs. The Pi took a tight look" in html
-    assert "Did not name the visit either: its top guess was 90%, under the 95% it needs. Claude was asked." in html
+    assert "Did not name the visit either: its top guess was 85%, under the 90% it needs. Claude was asked." in html
     assert "on a tight square around the patch that moved, 5.9 s, before Claude" in html
     flow = html[html.index('aria-label="Detection path"'):]
     flow = flow[:flow.index("</ol>")]
-    order = ["Black-capped Chickadee (61%)", "tight look", "Dark-eyed Junco (90%)", "Haiku", "Sonnet", "2nd look", "Bushtit (50%)"]
+    order = ["Black-capped Chickadee (61%)", "tight look", "Dark-eyed Junco (85%)", "Haiku", "Sonnet", "2nd look", "Bushtit (50%)"]
     assert [flow.index(s) for s in order] == sorted(flow.index(s) for s in order)
     assert pills_explained(html)
     # the What this photo trains box tells both looks apart
     assert ("but did not name the visit: its top guess was 61%, under the 80% it needs. Then a tight look at the patch "
-            "that moved guessed Dark-eyed Junco, but its top guess was 90%, under the 95% it needs. Claude was asked.") in html
+            "that moved guessed Dark-eyed Junco, but its top guess was 85%, under the 90% it needs. Claude was asked.") in html
 
 
 def test_visit_page_says_the_tight_look_named_it(client, add_visit):
@@ -103,7 +103,7 @@ def test_visit_page_says_the_tight_look_named_it(client, add_visit):
 def finder_raw(found, named, *tried, circle=None):
     """tight_raw plus the finder chain's record: `found` pointed at the patch (None: no finder did)."""
     import json
-    raw = json.loads(tight_raw(named=named, score=0.97 if named else 0.9))
+    raw = json.loads(tight_raw(named=named, score=0.97 if named else 0.85))
     calls = raw["calls"]
     calls["finder"] = {"finder": found, "motion": {"found": found == "motion", "why": None if found == "motion" else "nothing"},
                        "tried": [{"finder": n, "found": n == found, "why": None if n == found else ("no box" if n == "blob" else "nothing"),
@@ -320,14 +320,14 @@ def test_stats_page_shows_the_tight_look_bars(client, add_visit):
     html = client.get("/stats").text
     assert "Tight look bars (shadow)" in html and "No tight look to score yet" in html
     assert "<table class=\"classifier-species agree-bars\"" not in html
-    add_visit(species="Dark-eyed Junco", raw_json=tight_raw(score=0.92, name="Black-capped Chickadee"))  # agrees, wrong
+    add_visit(species="Dark-eyed Junco", raw_json=tight_raw(score=0.87, name="Black-capped Chickadee"))  # agrees, wrong
     add_visit(species="Bushtit", raw_json=tight_raw(score=0.96))  # disagrees, wrong
     html = client.get("/stats").text
     table = html[html.index("Tight look bars (shadow)"):]
     table = table[:table.index("</section>")]
     assert "<th>Bar</th>" in table and "Named when the bowl look agrees" in table and "Wrong when it agrees" in table
-    assert table.index("<td>90%</td>") < table.index("<td>93%</td>") < table.index("<td>95%</td>")
-    assert "<td>90%</td><td class=\"num\">2</td><td class=\"num\">2</td><td class=\"num\">1</td><td class=\"num\">1</td>" in table
-    assert "<td>95%</td><td class=\"num\">1</td><td class=\"num\">1</td><td class=\"num\">0</td><td class=\"num\">0</td>" in table
+    assert table.index("<td>75%</td>") < table.index("<td>80%</td>") < table.index("<td>85%</td>") < table.index("<td>90%</td>")
+    assert "<td>85%</td><td class=\"num\">2</td><td class=\"num\">2</td><td class=\"num\">1</td><td class=\"num\">1</td>" in table
+    assert "<td>90%</td><td class=\"num\">1</td><td class=\"num\">1</td><td class=\"num\">0</td><td class=\"num\">0</td>" in table
     assert "changes nothing" in table and "settled-species rule is left out" in table
     assert "No tight look to score yet" not in table

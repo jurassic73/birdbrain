@@ -215,9 +215,9 @@
           {% elif step.gated %}
           <div class="step-why">Sure enough of a species already settled in this yard, so it named the visit and Claude wasn't asked. If it's wrong, correct it below.</div>
           {% elif step.tight %}
-          <div class="step-why">Did not name the visit either: {{ step.reason }}. Claude was asked.{% if step.second_frame %} <span class="muted" data-tip="Shadow second-frame look: the Pi also embedded the next sharpest photo of the burst on the same circle, and averaged the two embeddings (like a fingerprint), only to keep score on the Stats page of whether a second pose would name more visits. It names nothing.">{{ step.second_frame }}</span>{% endif %}</div>
+          <div class="step-why">Did not name the visit either: {{ step.reason }}. {{ "Claude is switched off." if decision.pi_only_on else "Claude was asked." }}{% if step.second_frame %} <span class="muted" data-tip="Shadow second-frame look: the Pi also embedded the next sharpest photo of the burst on the same circle, and averaged the two embeddings (like a fingerprint), only to keep score on the Stats page of whether a second pose would name more visits. It names nothing.">{{ step.second_frame }}</span>{% endif %}</div>
           {% elif step.first_look %}
-          <div class="step-why">Did not name the visit: {{ step.reason }}. {% if decision.has_tight_look %}The Pi took a tight look {{ step.tight_at or "at the patch that moved" }} next.{% elif decision.rain %}No finder found a patch for a tight look, and the frame was taken for rain on the water (step 1), so Claude wasn't asked.{% else %}Claude was asked.{% endif %}</div>
+          <div class="step-why">Did not name the visit: {{ step.reason }}. {% if decision.has_tight_look %}The Pi took a tight look {{ step.tight_at or "at the patch that moved" }} next.{% elif decision.rain %}No finder found a patch for a tight look, and the frame was taken for rain on the water (step 1), so Claude wasn't asked.{% elif decision.pi_only_on %}Claude is switched off.{% else %}Claude was asked.{% endif %}</div>
           {% if step.backfilled %}<div class="muted step-notes">Worked out afterwards from the stored embedding (like a fingerprint) of this photo, using today's settled species{% if step.view_note %}; {{ step.view_note }}{% endif %}.</div>{% endif %}
           {% elif step.crowd and not decision.has_first_look %}
           <div class="step-why">Sure it was {{ step.crowd.species }}, but the Pi saw {{ step.crowd.animals }} animals in view, so Claude was asked to count them and name any other kind.</div>
@@ -292,6 +292,7 @@
         </li>
         {% endfor %}
       </ol>
+      {% if decision.pi_only %}<p class="step-why{{ '' if decision.pi_only_on else ' muted' }}" id="pi-only-note">{{ decision.pi_only }}</p>{% endif %}
       {% if visit.needs_review and decision.failed %}<p class="step-why">Claude couldn't answer, so the photo was kept and sent to you for review.</p>
       {% elif visit.needs_review %}<p class="step-why">Still unsure, so it was sent to you for review.</p>{% endif %}
       {% if decision.owner_checks %}

@@ -79,7 +79,8 @@ def test_second_frame_look_embeds_the_second_frame_and_averages_with_the_tight_l
     # the combined guess comes from the normalized mean of the two unit vectors
     (emb, night), = asked
     assert night is False and np.allclose(emb, [1 / np.sqrt(2), 1 / np.sqrt(2), 0.0])
-    assert record["combined"] == {"top": [{"name": "Dark-eyed Junco", "scientific": "", "score": 0.91}], "local_share": 0.8}
+    assert record["combined"] == {"top": [{"name": "Dark-eyed Junco", "scientific": "", "score": 0.91}], "local_share": 0.8,
+                                  "kin_share": None}
 
 
 

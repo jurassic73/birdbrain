@@ -36,22 +36,12 @@ def test_unsure_bird_escalates_to_sonnet_with_all_burst_frames(fake_ask, confide
     assert r.raw["sonnet"]["frames"] == 3
 
 
-def test_a_doubtful_empty_frame_gets_sonnets_look_and_waits_for_review_if_still_doubtful(fake_ask):
+def test_a_doubtful_empty_frame_stays_haikus_answer_and_waits_for_review(fake_ask):
     doubt = sighting(visitor="none", species=None, confidence="low")
-    calls = fake_ask({HAIKU: doubt, SONNET: doubt})
+    calls = fake_ask({HAIKU: doubt, SONNET: sighting()})
     r = identify.identify(jpeg(), WHEN, extra_frames=[jpeg(), jpeg()])
-    assert [(m, n) for m, _, n in calls] == [(HAIKU, 1), (SONNET, 3)]
-    assert (r.sighting.visitor, r.model, r.escalated, r.needs_review) == ("none", SONNET, True, True)
-
-
-def test_sonnet_settling_a_doubtful_empty_frame_either_way_needs_no_review(fake_ask):
-    fake_ask({HAIKU: sighting(visitor="none", species=None, confidence="low"), SONNET: sighting()})
-    r = identify.identify(jpeg(), WHEN)
-    assert (r.sighting.species, r.needs_review) == ("Dark-eyed Junco", False)
-    fake_ask({HAIKU: sighting(visitor="none", species=None, confidence="low"),
-              SONNET: sighting(visitor="none", species=None, confidence="high")})
-    r = identify.identify(jpeg(), WHEN)
-    assert (r.sighting.visitor, r.needs_review) == ("none", False)
+    assert [(m, n) for m, _, n in calls] == [(HAIKU, 1)]  # Sonnet is not asked about an empty frame
+    assert (r.sighting.visitor, r.model, r.escalated, r.needs_review) == ("none", HAIKU, False, True)
 
 
 def test_names_are_never_downloaded_while_identifying(fake_ask, monkeypatch, tmp_path):

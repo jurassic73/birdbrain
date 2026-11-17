@@ -37,9 +37,9 @@ def test_visit_page_names_the_finder_of_a_tight_look_that_named_the_visit(client
 
 @pytest.mark.parametrize("found", ["motion", "blob", "yolox"])
 def test_visit_page_names_the_finder_of_a_tight_look_that_missed(client, add_visit, found):
-    vid = add_visit(species="Bushtit", raw_json=finder_raw(found, score=0.9))
+    vid = add_visit(species="Bushtit", raw_json=finder_raw(found, score=0.85))
     html = client.get(f"/visit/{vid}").text
-    assert "Did not name the visit either: its top guess was 90%, under the 95% it needs. Claude was asked." in html
+    assert "Did not name the visit either: its top guess was 85%, under the 90% it needs. Claude was asked." in html
     assert IN_WORDS[found] in tight_step(html).replace("&#39;", "'")
     assert pills_explained(html)
 

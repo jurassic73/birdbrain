@@ -143,10 +143,13 @@ def test_a_confident_empty_frame_does_not_escalate(fake_ask, confidence):
     assert (r.model, r.needs_review) == (HAIKU, False) and len(calls) == 1
 
 
-def test_sonnet_failing_on_a_doubtful_empty_frame_leaves_it_in_review(fake_ask):
-    fake_ask({HAIKU: sighting(visitor="none", species=None, confidence="low"), SONNET: None})
-    r = identify.identify(jpeg(), WHEN)
-    assert (r.sighting.visitor, r.model, r.needs_review) == ("none", HAIKU, True)
+def test_a_doubtful_empty_frame_never_goes_to_sonnet_and_waits_for_review(fake_ask):
+    # Sonnet's 31 second looks at low-confidence empties found no animal (2026-11-17): the owner is the second look.
+    calls = fake_ask({HAIKU: sighting(visitor="none", species=None, confidence="low"), SONNET: sighting()})
+    r = identify.identify(jpeg(), WHEN, extra_frames=[jpeg(), jpeg()])
+    assert [m for m, _, _ in calls] == [HAIKU] and "sonnet" not in r.raw
+    assert (r.sighting.visitor, r.model, r.escalated, r.needs_review) == ("none", HAIKU, False, True)
+    assert not identify.needs_second_look(sighting(visitor="none", species=None, confidence="low"))
 
 
 @pytest.mark.parametrize("said, official", [
@@ -377,7 +380,7 @@ def test_low_haiku_answer_backed_by_the_local_look_on_its_circle_skips_sonnet(fa
 
 
 @pytest.mark.parametrize("guess, confirmed, circle", [
-    (strong("Dark-eyed Junco", score=0.9), {"Dark-eyed Junco"}, True),   # under the tight look's bar
+    (strong("Dark-eyed Junco", score=0.85), {"Dark-eyed Junco"}, True),  # under the tight look's bar
     (strong("Dark-eyed Junco", share=0.3), {"Dark-eyed Junco"}, True),   # mostly species not seen here
     (strong("House Finch"), {"Dark-eyed Junco"}, True),                  # a different species
     (strong("Dark-eyed Junco"), set(), True),                            # species not confirmed here yet

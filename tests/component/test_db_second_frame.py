@@ -21,7 +21,8 @@ def test_report_is_all_zeros_with_the_exact_key_set_on_an_empty_database(conn, a
     assert db.second_frame_report(conn, days=14) == dict.fromkeys(KEYS, 0)
 
 
-def test_report_scores_first_second_and_averaged_against_the_final_label(conn, add_visit):
+def test_report_scores_first_second_and_averaged_against_the_final_label(conn, add_visit, monkeypatch):
+    monkeypatch.setattr(classifier, "GATE_MIN_SCORE_TIGHT", 0.95)  # the report reads the live bar; pinned for the seeds
     bar, local = classifier.GATE_MIN_SCORE_TIGHT, classifier.GATE_MIN_LOCAL
     assert (bar, local) == (0.95, 0.5)  # the seeds below sit on either side of these bars
     # 1. all three right; the second and the average would both have named it

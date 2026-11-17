@@ -155,7 +155,7 @@ def test_the_tight_look_that_names_the_visit_keeps_its_fingerprint(prints, conn)
 
 
 def test_an_unsure_tight_look_and_claudes_circle_keep_both(prints, conn):
-    prints["tight"] = sure("Dark-eyed Junco", 0.9)  # under the tight bar: Claude is asked
+    prints["tight"] = sure("Dark-eyed Junco", 0.85)  # under the tight bar: Claude is asked
     assert watch.handle_event() == "bird" and prints["asked"] == [False]
     row = stored(conn, last_id(conn))
     assert np.allclose(decode(row["tight_vec"]), vec(1), atol=1e-3)

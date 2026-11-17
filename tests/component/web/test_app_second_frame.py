@@ -31,9 +31,9 @@ def test_stats_page_scores_the_second_frame_look(client, add_visit):
                                                                    ("Bushtit", 0.97)))
     add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Dark-eyed Junco", 0.9), ("Bushtit", 0.5),
                                                                    ("Dark-eyed Junco", 0.96)))
-    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Dark-eyed Junco", 0.88), ("Bushtit", 0.9),
-                                                                   ("Bushtit", 0.9)))
-    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Bushtit", 0.9), ("Dark-eyed Junco", 0.9)))
+    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Dark-eyed Junco", 0.88), ("Bushtit", 0.85),
+                                                                   ("Bushtit", 0.85)))
+    add_visit(species="Dark-eyed Junco", raw_json=second_frame_raw(("Bushtit", 0.9), ("Dark-eyed Junco", 0.85)))
     html = client.get("/stats").text
     assert "Second-frame look (shadow)" in html
     seg = html[html.index("Second-frame look (shadow)"):]
@@ -56,7 +56,7 @@ def test_visit_page_adds_one_sentence_for_the_second_frame_look(client, add_visi
     sentence = "A second frame said Bushtit (0.61); averaged Dark-eyed Junco (0.96). Shadow only: not used."
     assert sentence in html
     steps = html[html.index("How it was decided"):]
-    assert steps.index("Did not name the visit either: its top guess was 85%, under the 95% it needs.") < steps.index(sentence)
+    assert steps.index("Did not name the visit either: its top guess was 85%, under the 90% it needs.") < steps.index(sentence)
     assert badges(html) == badges(before) and pills_explained(html)  # no new pill
 
 
@@ -71,4 +71,4 @@ def test_visits_without_a_second_frame_look_render_as_before(client, add_visit):
     vid = add_visit(species="Bushtit", raw_json=second_frame_raw(("Dark-eyed Junco", 0.85), None, with_second=False))
     html = client.get(f"/visit/{vid}").text
     assert "A second frame said" not in html and "Shadow only" not in html
-    assert "Did not name the visit either: its top guess was 85%, under the 95% it needs. Claude was asked." in html
+    assert "Did not name the visit either: its top guess was 85%, under the 90% it needs. Claude was asked." in html

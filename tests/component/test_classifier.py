@@ -260,13 +260,13 @@ def test_watcher_names_the_visit_on_the_tight_look(gate_yard, conn):
 
 
 def test_tight_look_that_is_not_sure_stores_itself_and_asks_claude(gate_yard, conn):
-    gate_yard["tight"] = sure("Dark-eyed Junco", 0.9)  # over the bowl's 80% but under the tight look's 95%
+    gate_yard["tight"] = sure("Dark-eyed Junco", 0.85)  # over the bowl's 80% but under the tight look's 90%
     assert watch.handle_event() == "bird" and gate_yard["asked"] == [False]
     row, calls = latest_calls(conn)
     assert row["species"] == "Bushtit" and row["model"] == "claude-haiku-5-5"
     assert calls["classifier_gate"]["why"] == "score"
     tight = calls["classifier_tight"]
-    assert tight["why"] == "score" and tight["crop"] == "motion" and tight["top"][0]["score"] == 0.9
+    assert tight["why"] == "score" and tight["crop"] == "motion" and tight["top"][0]["score"] == 0.85
     assert tight["circle"] == MOTION_CIRCLE and tight["seconds"] == 5.9
     assert "settled_by" not in calls and "circle" not in calls and "motion_circle" not in calls
     # unsettled on the tight look: the same, with its reason

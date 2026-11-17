@@ -64,7 +64,7 @@ def test_the_tight_look_runs_on_the_blob_circle_when_motion_finds_nothing(finder
 
 def test_a_tight_miss_on_the_blob_circle_records_its_finder(finders, conn):
     finders["circle"] = (None, MISS)
-    finders["tight"] = sure("Dark-eyed Junco", 0.9)  # under the tight look's bar: Claude is asked
+    finders["tight"] = sure("Dark-eyed Junco", 0.85)  # under the tight look's bar: Claude is asked
     assert watch.handle_event() == "bird"
     # the tight look, then the shadow second-frame look (SECOND_FRAME_MIN 0.8) on the same blob circle
     assert finders["tight_calls"] == [(BLOB_CIRCLE, config.CROP_ROI, False)] * 2
@@ -130,7 +130,7 @@ def test_finders_motion_only_stores_todays_json_plus_the_finder_key(finders, con
     finders["circle"], finders["asked"][:], finders["tight_calls"][:] = (None, MISS), [], []
     assert watch.handle_event() == "bird" and finders["asked"] == [False]
     row, calls = latest(conn)
-    assert set(calls) == TODAY_NO_PATCH | {"finder"}
+    assert set(calls) == TODAY_NO_PATCH | {"finder", "pi_only"}  # Claude answered: the Pi's own verdict rides along
     assert not finders["tight_calls"] and finders["yolox_calls"] == []
     assert calls["motion_circle"] == MISS and calls["finder"]["finder"] is None and names(calls["finder"]) == ["motion"]
 
