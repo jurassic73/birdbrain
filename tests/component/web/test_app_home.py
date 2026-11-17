@@ -620,44 +620,72 @@ def test_species_and_home_show_how_long_ago(client, add_visit):
     assert 'src="/static/ago.js' in page
 
 
-def test_the_unconfirmed_and_rpi_chips_are_the_owners_lists_of_visits_to_check(client, conn, add_visit, monkeypatch):
+def test_the_unconfirmed_toggle_and_the_rpi_chip_make_the_owners_lists_of_visits_to_check(client, conn, add_visit, monkeypatch):
     old = add_visit(captured_at="2026-10-24T09:00:00", model=db.CLASSIFIER_MODEL)
     claude = add_visit(captured_at="2026-10-24T10:00:00", species="Bushtit")
     new = add_visit(captured_at="2026-10-24T11:00:00", model=db.CLASSIFIER_MODEL)
+    db.mark_reviewed(conn, old)
+
+    def chip(html: str, name: str) -> tuple[str, str]:
+        """(href, the rest of the tag) of the quick filter chip called `name`."""
+        return re.search(rf'<a href="([^"]*)"([^>]*)>{name}</a>', html).groups()
+
+    def on(html: str, name: str) -> bool:
+        return 'aria-current="page"' in chip(html, name)[1]
+
     home = client.get("/").text
-    chip = re.search(r'<a href="/\?kind=rpi"[^>]*>RPi</a>', home).group(0)
-    assert "data-tip=" in chip and "aria-current" not in chip
-    assert f'href="/visit/{new}"' in home  # no scope on the plain list
+    assert chip(home, "RPi")[0] == "/?kind=rpi" and "data-tip=" in chip(home, "RPi")[1]
+    assert "data-toggle" not in chip(home, "RPi")[1]
+    assert chip(home, "Unconfirmed")[0] == "/?unchecked=1" and "data-toggle" in chip(home, "Unconfirmed")[1]
+    assert "data-tip=" in chip(home, "Unconfirmed")[1] and not on(home, "Unconfirmed") and on(home, "All")
+    assert f'href="/visit/{new}"' in home  # a plain list's cards carry no list
+    # RPi alone: every visit the Pi named, confirmed or not
     listed = client.get("/?kind=rpi").text
-    assert card_ids(listed) == [new, old] and "2 matching" in listed
-    assert f'href="/visit/{new}?kind=rpi"' in listed and 'aria-current="page" data-tip' in listed
+    assert card_ids(listed) == [new, old] and on(listed, "RPi") and not on(listed, "Unconfirmed")
+    assert chip(listed, "Unconfirmed")[0] == "/?kind=rpi&amp;unchecked=1"
     assert '<option value="rpi" selected>' in listed  # More filters keeps it on Apply
-    # the visit page stays inside the list: arrows, the bar, and Confirm or Save moving on
+    # Unconfirmed alone: every visit nobody checked; it stays on while the other chips change
+    every = client.get("/?unchecked=1").text
+    assert card_ids(every) == [new, claude] and "2 matching" in every
+    assert f'href="/visit/{claude}?unchecked=1"' in every
+    assert on(every, "Unconfirmed") and chip(every, "Unconfirmed")[0] == "/"  # a second tap turns it off
+    assert on(every, "All") and chip(every, "All")[0] == "/?unchecked=1"
+    assert chip(every, "RPi")[0] == "/?kind=rpi&amp;unchecked=1" and chip(every, "Birds")[0] == "/?kind=bird&amp;unchecked=1"
+    assert '<input type="hidden" name="unchecked" value="1">' in every  # More filters keeps it on Apply
+    assert card_ids(client.get("/?kind=unconfirmed").text) == [new, claude]  # the chip's first address still works
+    assert card_ids(client.get("/?kind=bird&unchecked=1").text) == [new, claude]
+    # both at once: the Pi's own names still to check
+    both = client.get("/?kind=rpi&unchecked=1").text
+    assert card_ids(both) == [new] and on(both, "RPi") and on(both, "Unconfirmed") and not on(both, "All")
+    assert f'href="/visit/{new}?kind=rpi&amp;unchecked=1"' in both
+    assert chip(both, "Unconfirmed")[0] == "/?kind=rpi"
+    # the visit page stays inside the list it was opened from: arrows, the bar with what is left, Confirm moving on
+    page = client.get(f"/visit/{new}?unchecked=1").text
+    assert f'href="/visit/{claude}?unchecked=1" id="nav-next"' in page
+    assert 'href="/?unchecked=1"' in page and "Browsing: Unconfirmed (2)" in page
+    assert 'location.href = next ? next.href : "/?unchecked=1"' in page
     page = client.get(f"/visit/{new}?kind=rpi").text
-    assert f'href="/visit/{old}?kind=rpi" id="nav-next"' in page and "Browsing: RPi, unconfirmed" in page
-    assert 'location.href = next ? next.href : "/?kind=rpi"' in page
+    assert f'href="/visit/{old}?kind=rpi" id="nav-next"' in page and "Browsing: RPi (1)" in page
+    page = client.get(f"/visit/{new}?kind=rpi&unchecked=1").text
+    assert 'id="nav-next"' not in page and "Browsing: RPi, unconfirmed (1)" in page
+    assert 'href="/?kind=rpi&amp;unchecked=1"' in page
+    assert 'location.href = next ? next.href : "/?kind=rpi\\u0026unchecked=1"' in page
+    assert "Browsing: Unconfirmed (2)" in client.get(f"/visit/{new}?kind=unconfirmed").text  # an address open from before
     plain = client.get(f"/visit/{new}").text
     assert f'href="/visit/{claude}" id="nav-next"' in plain and "Browsing:" not in plain
     assert "location.href = next ?" not in plain
-    # Unconfirmed: the same, over every visit nobody checked, whoever named it
-    assert re.search(r'<a href="/\?kind=unconfirmed"[^>]*data-tip="[^"]+"[^>]*>Unconfirmed</a>', home)
-    every = client.get("/?kind=unconfirmed").text
-    assert card_ids(every) == [new, claude, old] and f'href="/visit/{claude}?kind=unconfirmed"' in every
-    page = client.get(f"/visit/{new}?kind=unconfirmed").text
-    assert f'href="/visit/{claude}?kind=unconfirmed" id="nav-next"' in page and "Browsing: Unconfirmed" in page
-    assert 'location.href = next ? next.href : "/?kind=unconfirmed"' in page
-    assert "Browsing:" not in client.get(f"/visit/{new}?kind=nonsense").text
-    # confirmed: off both lists
+    assert "Browsing:" not in client.get(f"/visit/{new}?kind=bird").text  # an everyday filter is not a to-do list
+    # confirmed: off the list, and one fewer left
     client.post(f"/visit/{new}/reviewed")
-    assert card_ids(client.get("/?kind=unconfirmed").text) == [claude, old]
-    assert card_ids(client.get("/?kind=rpi").text) == [old]
-    assert card_ids(client.get("/visits/more?kind=rpi").text) == [old]
-    assert f'href="/visit/{old}?kind=rpi"' in client.get("/visits/more?kind=rpi").text
-    # a visitor has no chip, and the address does nothing for them
+    assert card_ids(client.get("/?unchecked=1").text) == [claude]
+    more = client.get("/visits/more?unchecked=1").text
+    assert card_ids(more) == [claude] and f'href="/visit/{claude}?unchecked=1"' in more
+    assert "Browsing: Unconfirmed (1)" in client.get(f"/visit/{new}?unchecked=1").text
+    # a visitor has neither chip, and the addresses do nothing for them
     monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
-    visitor = client.get("/?kind=rpi").text
-    assert "kind=rpi" not in visitor and ">RPi</a>" not in visitor and "Unconfirmed" not in visitor
-    assert card_ids(client.get("/?kind=unconfirmed").text) == [new, claude, old]
+    visitor = client.get("/?kind=rpi&unchecked=1").text
+    assert "kind=rpi" not in visitor and "unchecked=1" not in visitor
+    assert ">RPi</a>" not in visitor and "Unconfirmed" not in visitor
     assert card_ids(visitor) == [new, claude, old]
-    page = client.get(f"/visit/{old}?kind=rpi").text
-    assert "Browsing:" not in page and "kind=rpi" not in page
+    page = client.get(f"/visit/{old}?unchecked=1").text
+    assert "Browsing:" not in page and "unchecked=1" not in page

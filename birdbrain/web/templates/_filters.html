@@ -1,13 +1,15 @@
 {# Pieces of the quick-filter row and the More filters form, shared by the home page and a species' Visits tab. #}
 {# A chip whose name alone doesn't say what it lists explains itself on hover. #}
 {% set chip_tips = {
-  "Unconfirmed": "Visits nobody has confirmed or corrected yet, whoever named them. Open one: Confirm (or the C key) moves on to the next.",
-  "RPi": "Unconfirmed visits the BioCLIP 2 species check named on the Raspberry Pi, without Claude. Open one: Confirm (or the C key) moves on to the next.",
+  "RPi": "Visits the BioCLIP 2 species check named on the Raspberry Pi, without Claude. Turn on Unconfirmed as well for only the ones still to check.",
+  "Unconfirmed": "On or off, together with any other chip: only visits nobody has confirmed or corrected yet. Open one: Confirm (or the C key) moves on to the next.",
 } %}
+{# A chip that is a switch: it turns itself on or off and leaves the other chips as they are (home.html). #}
+{% set chip_toggles = ["Unconfirmed"] %}
 {% macro chips_nav(chips) %}
 <nav class="chips" aria-label="Quick filters">
   {% for name, href, is_active in chips %}
-  <a href="{{ href }}" data-track="filter_chip" {% if is_active %}aria-current="page"{% endif %}{% if chip_tips[name] %} data-tip="{{ chip_tips[name] }}"{% endif %}>{{ name }}</a>
+  <a href="{{ href }}" data-track="filter_chip" {% if is_active %}aria-current="page"{% endif %}{% if chip_tips[name] %} data-tip="{{ chip_tips[name] }}"{% endif %}{% if name in chip_toggles %} data-toggle{% endif %}>{{ name }}</a>
   {% endfor %}
 </nav>
 {%- endmacro %}

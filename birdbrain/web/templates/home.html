@@ -100,8 +100,9 @@
         <option value="mammal" {% if filters.kind == 'mammal' %}selected{% endif %}>Mammals</option>
         <option value="multiple" {% if filters.kind == 'multiple' %}selected{% endif %}>Multiple animals</option>
         {% if filters.kind == 'clip' %}<option value="clip" selected>With a clip</option>{% endif %}
-        {% if scope_kind %}<option value="{{ scope_kind }}" selected>{{ 'Named on the Pi, unconfirmed' if scope_kind == 'rpi' else 'Unconfirmed' }}</option>{% endif %}
+        {% if filters.kind == 'rpi' %}<option value="rpi" selected>Named on the Pi</option>{% endif %}
       </select>
+      {% if filters.unchecked %}<input type="hidden" name="unchecked" value="1">{% endif %}
       {{ tod_select(filters) }}
       {{ date_range(filters) }}
       <button type="submit">Apply</button>
@@ -404,7 +405,14 @@
       const mine = ++token, y = scrollY, top = chipsTop();
       const nav = document.querySelector(".chips");
       busy?.classList.add("sending");
-      if (chip) { nav.querySelectorAll("a").forEach(a => a.removeAttribute("aria-current")); chip.setAttribute("aria-current", "page"); }
+      // A switch chip (data-toggle) flips by itself; any other chip takes over from the rest but leaves
+      // the switch as it is. The fresh row from the server follows.
+      if (chip?.hasAttribute("data-toggle")) {
+        if (chip.hasAttribute("aria-current")) chip.removeAttribute("aria-current"); else chip.setAttribute("aria-current", "page");
+      } else if (chip) {
+        nav.querySelectorAll("a:not([data-toggle])").forEach(a => a.removeAttribute("aria-current"));
+        chip.setAttribute("aria-current", "page");
+      }
       try {
         const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10000) });
         if (!r.ok) throw new Error(r.status);
@@ -453,7 +461,7 @@
       const a = e.target.closest?.(".chips a");
       if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target) return;
       e.preventDefault();
-      if (a.getAttribute("aria-current") === "page") return;
+      if (a.getAttribute("aria-current") === "page" && !a.hasAttribute("data-toggle")) return;
       show(a.href, true, a);
     });
     addEventListener("popstate", () => show(location.href, false, null));
