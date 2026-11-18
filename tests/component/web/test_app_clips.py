@@ -41,6 +41,22 @@ def test_the_visit_page_offers_the_clip_and_the_file_plays(client, clip_visit):
     assert part.status_code == 206 and part.content == VIDEO[:10]
 
 
+def test_the_star_stays_on_top_of_the_clip_playing_in_place(client, clip_visit):
+    # The in-place clip covers the photo (z-index 3) and its magnifier takes the star's corner: while it shows, the
+    # star and its pill sit above it, left of the magnifier, so a clip can be starred without stopping it.
+    vid, _ = clip_visit()
+    page = client.get(f"/visit/{vid}").text
+    assert 'id="clip-inline"' in page and 'class="fav-star"' in page
+    css = client.get("/static/style.css").text
+    layer = int(re.search(r"\.vclip-inline \{[^}]*z-index: (\d+)", css).group(1))
+    playing = re.escape(".visit-photo:has(.vclip-inline:not([hidden]))")
+    for part in ("button.fav-star", ".fav-pill"):
+        rule = re.search(playing + " " + re.escape(part) + r" \{([^}]*)\}", css).group(1)
+        assert int(re.search(r"z-index: (\d+)", rule).group(1)) > layer and "right:" in rule, part
+    # An unset star hides until hovered on a laptop; over the playing clip it shows without hovering.
+    assert "opacity: 1" in re.search(playing + r" button\.fav-star \{([^}]*)\}", css).group(1)
+
+
 def test_a_visit_without_a_clip_shows_no_player(client, stored_visit):
     page = client.get(f"/visit/{stored_visit()}").text
     assert "clip-play" not in page and "clip.js" not in page and clips.NOT_CAPTURED not in page
