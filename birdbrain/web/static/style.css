@@ -769,6 +769,9 @@ main.wide { max-width: 1600px; }
 .visit-nav-btn.disabled { color: var(--muted); cursor: default; }
 .visit-nav-back { color: var(--accent); text-decoration: none; font-size: 0.9rem; }
 .visit-nav-back:hover { text-decoration: underline; }
+/* The Review pop-up's count of what is left, right of the arrows and as tall as they are. */
+.visit-nav-left { display: inline-flex; align-items: center; gap: .35em; height: 36px; color: var(--muted); font-size: .9rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.visit-nav-left b { color: var(--text); font-size: 1.1em; }
 /* Back with a left chevron: the chevron and the word sit centred together. */
 .back-home { display: inline-flex; align-items: center; gap: 3px; }
 .back-home .back-chev { width: 1.15em; height: 1.15em; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; margin-left: -4px; }

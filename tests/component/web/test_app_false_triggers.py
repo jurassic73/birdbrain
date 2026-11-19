@@ -190,16 +190,22 @@ def test_confirm_from_the_pool_only_lands_on_one_still_to_do(client, add_visit, 
     # From the newest, Older skips the corrected bird; from there it skips the confirmed one, to the false trigger.
     html = client.get(f"/visit/{bird}?pool=all&embed=1").text
     assert f'href="/visit/{unsure}?pool=all&amp;embed=1" id="nav-next"' in html and 'id="nav-prev"' not in html
+    # Right of the arrows, the pop-up says how many of the list are left (this one included).
+    assert re.search(r'id="nav-next"[^>]*>[^<]*</a>\s*<span class="visit-nav-left" id="pool-left"[^>]*><b>3</b> left to review</span>', html)
     html = client.get(f"/visit/{unsure}?pool=all&embed=1").text
     assert f'href="/visit/{empty}?pool=all&amp;embed=1" id="nav-next"' in html
     assert f'href="/visit/{bird}?pool=all&amp;embed=1" id="nav-prev"' in html
     # One list on its own stays inside it: nothing else waits for review, so the pop-up closes after this one.
     html = client.get(f"/visit/{unsure}?pool=review&embed=1").text
     assert 'id="nav-next"' not in html and 'id="nav-prev"' not in html and "else if (true) close();" in html
+    assert "<b>1</b> left to review" in html
     # Confirmed, it has left the pool, and its page still knows what comes next.
     assert client.post(f"/visit/{unsure}/reviewed").status_code == 200
     assert db.pool_counts(conn) == {"review": 0, "false": 1, "visits": 1, "all": 2}
-    assert f'href="/visit/{empty}?pool=all" id="nav-next"' in client.get(f"/visit/{unsure}?pool=all").text
+    page = client.get(f"/visit/{unsure}?pool=all").text
+    assert f'href="/visit/{empty}?pool=all" id="nav-next"' in page
+    assert 'id="pool-left"' not in page and "Review: All (2)" in page  # in a tab of its own the bar's link counts
+    assert "<b>2</b> left to review" in client.get(f"/visit/{empty}?pool=all&embed=1").text
     # In a tab of its own: the bar names the list, and Confirm or C goes on to the next, then back to the list.
     page = client.get(f"/visit/{empty}?pool=false").text
     assert 'href="/review?only=false"' in page and "Review: False triggers (1)" in page
