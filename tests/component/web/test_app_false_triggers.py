@@ -199,12 +199,14 @@ def test_confirm_from_the_pool_only_lands_on_one_still_to_do(client, add_visit, 
     html = client.get(f"/visit/{unsure}?pool=review&embed=1").text
     assert 'id="nav-next"' not in html and 'id="nav-prev"' not in html and "else if (true) close();" in html
     assert "<b>1</b> left to review" in html
+    # Phones hide the arrows row, so the count also sits in the title line, just before Close.
+    assert re.search(r'class="m-only title-left" id="pool-left-m"[^>]*><b>1</b> left</span><a class="m-only title-back embed-close"', html)
     # Confirmed, it has left the pool, and its page still knows what comes next.
     assert client.post(f"/visit/{unsure}/reviewed").status_code == 200
     assert db.pool_counts(conn) == {"review": 0, "false": 1, "visits": 1, "all": 2}
     page = client.get(f"/visit/{unsure}?pool=all").text
     assert f'href="/visit/{empty}?pool=all" id="nav-next"' in page
-    assert 'id="pool-left"' not in page and "Review: All (2)" in page  # in a tab of its own the bar's link counts
+    assert 'id="pool-left"' not in page and 'id="pool-left-m"' not in page and "Review: All (2)" in page  # in a tab of its own the bar's link counts
     assert "<b>2</b> left to review" in client.get(f"/visit/{empty}?pool=all&embed=1").text
     # In a tab of its own: the bar names the list, and Confirm or C goes on to the next, then back to the list.
     page = client.get(f"/visit/{empty}?pool=false").text

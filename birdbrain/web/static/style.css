@@ -1459,6 +1459,10 @@ details.review-fold > summary { display: none; }
   .label-block h1 .title-text { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .label-block h1 .title-count { flex: none; }
   .label-block h1 .title-back { flex: none; margin: 0 0 0 auto; white-space: nowrap; }
+  /* Review pop-up: how many are left, pinned at the right just before Close (the arrows row is hidden on phones). */
+  .label-block h1 .title-left { flex: none; margin: 0 0 0 auto; white-space: nowrap; font-size: .85rem; font-weight: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .label-block h1 .title-left b { color: var(--text); }
+  .label-block h1 .title-left + .title-back { margin-left: 4px; }
   .label-block h1 .back-home { align-self: center; }
   .visit-head .label-block { flex: 1 1 100%; }
   .photo-arrow { display: flex; }
