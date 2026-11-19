@@ -272,7 +272,7 @@ def test_images_are_served(client, stored_visit, conn):
 
 def test_latest_visit_api_ignores_false_triggers(client, add_visit):
     assert client.get("/api/latest-visit").json() == {"id": 0, "label": None, "captured_at": None, "any_id": 0,
-                                                   "waiting": {"review": 0, "false": 0}}
+                                                   "waiting": {"review": 0}}
     bird = add_visit(species="Bushtit")
     empty = add_visit(visitor="none", species=None)
     got = client.get("/api/latest-visit").json()
@@ -475,13 +475,16 @@ def test_nav_shows_waiting_counts_for_admin(client, add_visit):
         add_visit(needs_review=1)
     for _ in range(2):
         add_visit(visitor="none", species=None)
+    add_visit()  # a real visit nobody has confirmed yet waits too
+    add_visit(confirmed_at="2026-11-01T10:00:00")  # a confirmed one doesn't
     nav = _nav(client.get("/").text)
-    assert re.search(r'href="/review"[^>]*class="waiting"[^>]*title="3 waiting for review".*?<span class="nav-n"[^>]*>3</span>', nav, re.S)
-    assert re.search(r'href="/false-triggers"[^>]*class="waiting"[^>]*title="2 false triggers to check".*?<span class="nav-n"[^>]*>2</span>', nav, re.S)
+    # One Review tab, one count: everything in the pool.
+    assert re.search(r'href="/review"[^>]*class="waiting"[^>]*title="6 waiting for review".*?<span class="nav-n"[^>]*>6</span>', nav, re.S)
+    assert "/false-triggers" not in nav and nav.count("nav-n") == 1
 
 
 def test_nav_has_no_bubbles_when_nothing_waits(client, add_visit):
-    add_visit()
+    add_visit(confirmed_at="2026-11-01T10:00:00")
     nav = _nav(client.get("/").text)
     assert "nav-n" not in nav and "waiting" not in nav
 
@@ -502,9 +505,9 @@ def test_nav_counts_not_shown_to_visitors(client, add_visit, monkeypatch):
 def test_latest_visit_api_has_waiting_counts_and_nav_hooks(client, add_visit):
     add_visit(needs_review=1)
     add_visit(visitor="none", species=None)
-    assert client.get("/api/latest-visit").json()["waiting"] == {"review": 1, "false": 1}
+    assert client.get("/api/latest-visit").json()["waiting"] == {"review": 2}
     nav = _nav(client.get("/").text)
-    assert 'data-nav="review"' in nav and 'data-nav="false"' in nav
+    assert 'data-nav="review"' in nav and 'data-nav="false"' not in nav
 
 
 def test_visits_paging_ties_and_bad_cursor(client, add_visit, monkeypatch):

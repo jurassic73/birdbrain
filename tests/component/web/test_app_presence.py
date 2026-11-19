@@ -36,7 +36,7 @@ def test_false_triggers_confirm_all_shown_skips_real_visits(client, conn, add_vi
     assert "Motion, but no animal found. Open each photo to check it." in page and 'id="ft-visit"' in page
     r = client.post("/false-triggers/confirm", data={"ids": ",".join(map(str, [*empty[:2], real]))},
                     follow_redirects=False)
-    assert r.headers["location"] == "/false-triggers?confirmed=2"
+    assert r.headers["location"] == "/review?only=false&confirmed=2"
     assert [bool(db.get_visit(conn, i)["confirmed_at"]) for i in [*empty, real]] == [True, True, False, False]
     assert db.count_unchecked_false_triggers(conn) == 1
 

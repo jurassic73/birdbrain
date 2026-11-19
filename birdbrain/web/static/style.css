@@ -232,11 +232,6 @@ h2 { font-size: 1.1rem; margin: 0 0 8px; }
   .topbar { flex-wrap: nowrap; }
   .topbar nav { min-width: 0; }
 }
-/* Laptop-width windows (to 1180px): "False triggers" shortens to "False" so the whole admin nav fits (Visits, Species, Live, Stats, Review, False, Claude's Notes). */
-@media (max-width: 1180px) {
-  .topbar nav a[data-nav="false"] .long { display: none; }
-  .topbar nav a[data-nav="false"] .short { display: inline; }
-}
 /* Laptop widths, admin (7 tabs, up to 7 buttons): the species arrows, the keyboard button and the Log out button
    come on top of the nav, so each of these was needed (measured at 1000px to 1400px, with and without the Log out
    button): "Claude's Notes" reads "Notes", and the tabs and buttons sit a little closer. The position counter
@@ -531,6 +526,11 @@ section.visits { border-top: 1px solid var(--line); padding-top: 16px; }
 }
 .chips a:hover { border-color: var(--accent); }
 .chips a[aria-current] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+/* Review tab: a chip per list, each with how many wait in it. */
+.review-chips { margin: 0 0 12px; flex-wrap: wrap !important; overflow: visible !important; }  /* phones too: all four in sight, no sideways scroll */
+.review-chips a { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.review-chips .chip-n { color: var(--muted); font-size: .85em; font-variant-numeric: tabular-nums; }
+.review-chips a[aria-current] .chip-n { color: inherit; opacity: .85; }
 /* Home: More filters is a toggle right after the quick-filter chips, styled apart from them (funnel, accent text, chevron),
    and the filter boxes it opens get their own line under the row. */
 .visits-head { justify-content: flex-start; }

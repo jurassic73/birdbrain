@@ -2,7 +2,7 @@
 // swipe left = next tab, swipe right = previous tab (no wrap-around at the ends).
 //
 // Where it runs: base.html puts data-swipe on <body> only on the top-level pages (/, /species, /stats, /review,
-// /false-triggers, /notes) and never in embeds. The value picks the targets:
+// /notes) and never in embeds. The value picks the targets:
 //   data-swipe="nav"   (default) the links of <header.topbar> <nav>, current one found by aria-current="page"
 //   data-swipe="links" the page's own <link rel="prev"> and <link rel="next"> in <head> (for the species detail page; the
 //                      current #hash is kept, so the Visits tab stays on Visits)

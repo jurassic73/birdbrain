@@ -154,6 +154,36 @@ def test_neighbors_stay_within_real_or_false_trigger_set(conn, add_visit):
     assert db.is_false_trigger(conn, ft_old) and not db.is_false_trigger(conn, mid)
 
 
+def test_review_pool_lists_never_share_a_visit(conn, add_visit):
+    done = "2026-11-02T08:00:00"
+    empty = add_visit(captured_at=at(0, 1), visitor="none", species=None)
+    doubt = add_visit(captured_at=at(0, 2), visitor="none", species=None, confidence="low", needs_review=1)
+    add_visit(captured_at=at(0, 3), visitor="none", species=None, confirmed_at=done)             # checked
+    add_visit(captured_at=at(0, 4), visitor="none", species=None, photo_deleted_at=done)         # nothing to look at
+    bird = add_visit(captured_at=at(0, 5))
+    add_visit(captured_at=at(0, 6), confirmed_at=done)                                            # checked
+    add_visit(captured_at=at(0, 7), corrected_visitor="bird", corrected_species="Bushtit")      # checked
+    unsure = add_visit(captured_at=at(0, 8), confidence="low", needs_review=1)
+    held = add_visit(captured_at=at(0, 9), needs_review=1, held=1)
+    ids = lambda **f: [r["id"] for r in db.list_visits(conn, **f)]
+    # A doubtful "no animal" and an unsure or held visit wait for review, and in no other list.
+    assert ids(pool="review") == [held, unsure, doubt]
+    assert ids(pool="false") == [empty] and ids(pool="visits") == [bird]
+    assert ids(pool="all") == [held, unsure, bird, doubt, empty]  # one pool, newest first
+    assert db.pool_counts(conn) == {"review": 3, "false": 1, "visits": 1, "all": 5}
+    assert db.count_visits(conn, pool="all") == 5
+    # The arrows walk the list whatever kind each visit is, also from a visit that has just left it.
+    assert db.get_neighbors(conn, bird, pool="all") == (unsure, doubt)
+    assert db.get_neighbors(conn, bird, pool="review") == (unsure, doubt)
+    assert db.get_neighbors(conn, held, pool="visits") == (None, bird)
+    db.mark_reviewed(conn, doubt)
+    assert db.get_neighbors(conn, bird, pool="all") == (unsure, empty) and db.pool_counts(conn)["review"] == 2
+    assert [r["id"] for r in db.listed_cards(conn, [doubt, empty, bird], pool="false")] == [empty]
+    assert [r["id"] for r in db.listed_after(conn, bird, pool="all")] == [held, unsure]
+    with db.visitor_view():  # the owner's alone
+        assert ids(pool="all") == [] and db.pool_counts(conn)["all"] == 0
+
+
 def test_filters(conn, add_visit):
     add_visit(species="Bushtit", captured_at=at(0, 9))
     add_visit(visitor="raccoon", species=None, is_night=1, captured_at=at(1, 2))

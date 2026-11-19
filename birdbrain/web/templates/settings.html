@@ -116,7 +116,7 @@
         </label>
         {% endfor %}
       </div>
-      <p class="advice">In gate mode, frames the Pi animal check skips are kept as false triggers marked {{ badge("pi only", "pi-only") }}: check them on <a href="/false-triggers">False triggers</a> and correct any with an animal.</p>
+      <p class="advice">In gate mode, frames the Pi animal check skips are kept as false triggers marked {{ badge("pi only", "pi-only") }}: check them on <a href="/review?only=false">Review &gt; False triggers</a> and correct any with an animal.</p>
       <div class="actions"><button type="submit">Save</button></div>
     </form>
   </section>
@@ -131,7 +131,7 @@
 
   <section class="local-step" id="claude-step">
     <h3><span class="step-n claude">3</span> Claude <span class="muted">(Whatever is left)</span></h3>
-    <p class="muted small">Whatever the Pi animal check and the BioCLIP 2 species check do not settle goes to Haiku; an unsure answer about an animal goes to Sonnet with 3 frames; still unsure (a doubtful "nothing there" included) lands in the <a href="/review">review queue</a>.
+    <p class="muted small">Whatever the Pi animal check and the BioCLIP 2 species check do not settle goes to Haiku; an unsure answer about an animal goes to Sonnet with 3 frames; still unsure (a doubtful "nothing there" included) lands in the <a href="/review?only=review">review queue</a>.
       {% if pi_only.frames %}Of the {{ pi_only.frames }} photo{{ '' if pi_only.frames == 1 else 's' }} Claude answered in the last 14 days, the Pi alone would have named {{ pi_only.named }}, held {{ pi_only.held_real + pi_only.held_empty }} for you and missed {{ pi_only.missed }} animal{{ '' if pi_only.missed == 1 else 's' }}. <a href="/stats#pi-only">Details</a>{% endif %}</p>
     <form class="settings-form" method="post" action="/settings/pi-only" id="claude-mode">
       <div class="choices">
@@ -144,7 +144,7 @@
         </label>
         {% endfor %}
       </div>
-      <p class="advice">With Claude off, a held photo waits in the <a href="/review">review queue</a>, hidden from visitors until you name it. A species new to the yard or a night visitor arrives that way too, without an alert. The Ask buttons and species cards still use Claude when you press them.</p>
+      <p class="advice">With Claude off, a held photo waits in the <a href="/review?only=review">review queue</a>, hidden from visitors until you name it. A species new to the yard or a night visitor arrives that way too, without an alert. The Ask buttons and species cards still use Claude when you press them.</p>
       <div class="actions"><button type="submit">Save</button></div>
     </form>
   </section>

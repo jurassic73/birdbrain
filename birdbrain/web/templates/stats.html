@@ -16,7 +16,7 @@
       <span class="sub">rain, wind, leaves and animals</span>
     </div>
     <div class="arrow">
-      <span class="drop" data-tip="Motion with no animal in it.{% if presence_mode != 'off' %} {{ a.empty_on_pi }} were settled on the Pi by the Pi animal check, for free.{% endif %}{% if a.empty_by_claude %} Claude was asked about {{ a.empty_by_claude }} and found nothing.{% endif %}"><b>&minus;{{ empty }}</b> {% if request.state.admin %}<a href="/false-triggers">empty</a>{% else %}empty{% endif %}</span>
+      <span class="drop" data-tip="Motion with no animal in it.{% if presence_mode != 'off' %} {{ a.empty_on_pi }} were settled on the Pi by the Pi animal check, for free.{% endif %}{% if a.empty_by_claude %} Claude was asked about {{ a.empty_by_claude }} and found nothing.{% endif %}"><b>&minus;{{ empty }}</b> {% if request.state.admin %}<a href="/review?only=false">empty</a>{% else %}empty{% endif %}</span>
       <svg viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7h22M18 2l6 5-6 5"/></svg>
       {% if empty and presence_mode == 'off' %}
       <span class="drop">checked by Claude</span>

@@ -33,7 +33,7 @@ ADMIN = {
     ("GET", "/api/photo-reminder"), ("POST", "/species/{name}/photo"), ("GET", "/species/{name}/cover-compare"),
     ("POST", "/species-info/{name}/sound-broken"),
     # Review, False triggers, Claude's Notes and Lessons
-    ("GET", "/review"), ("GET", "/false-triggers"), ("GET", "/false-triggers/cards"), ("GET", "/false-triggers/more"),
+    ("GET", "/review"), ("GET", "/review/cards"), ("GET", "/review/more"), ("GET", "/false-triggers"),
     ("POST", "/false-triggers/confirm"), ("POST", "/false-triggers/clean"),
     ("GET", "/notes"), ("POST", "/notes"), ("POST", "/notes/refine"), ("POST", "/notes/summary/distill"),
     ("POST", "/notes/summary/accept"), ("POST", "/notes/summary/discard"),

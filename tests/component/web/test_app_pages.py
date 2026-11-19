@@ -179,7 +179,7 @@ def test_stats_today_card_says_when_claude_checked_empties_and_gate_would_help(c
     assert "checked by Claude" in stats and "Claude was asked about 1 and found nothing" in stats
     assert "gate mode would have kept 1 on the Pi, saving about" in stats
     assert "50%</b> of motion was a real animal" in stats
-    assert 'href="/false-triggers">empty</a>' in stats  # no password set: everyone is the admin
+    assert 'href="/review?only=false">empty</a>' in stats  # no password set: everyone is the admin
     monkeypatch.setattr(config, "PRESENCE", "gate")
     assert "gate mode would have kept" not in client.get("/stats").text
     monkeypatch.setattr(config, "PRESENCE", "off")

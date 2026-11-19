@@ -481,7 +481,7 @@ def test_false_trigger_page_moves_on_after_save_but_normal_visits_reload(client,
     vid = add_visit(visitor="none", species=None)
     bird = add_visit(visitor="bird", species="Bushtit")
     ft = client.get(f"/visit/{vid}?ft=1").text
-    assert 'location.href = next ? next.href : "/false-triggers"' in ft
+    assert 'location.href = next ? next.href : "/review?only=false"' in ft
     assert "check-save" in ft
     assert 'location.href = next ?' not in client.get(f"/visit/{bird}").text
 
@@ -505,12 +505,12 @@ def test_visit_page_keeps_visits_nav_highlighted(client, add_visit):
 
 
 def test_review_heading_shows_the_real_total(client, add_visit, monkeypatch):
-    monkeypatch.setattr(webapp, "REVIEW_SHOWN", 2)
+    monkeypatch.setattr(webapp, "FT_PAGE", 2)
     for i in range(3):
         add_visit(needs_review=1, captured_at=f"2026-11-01T10:00:{i:02d}")
-    html = client.get("/review").text
-    assert 'Review queue <span class="muted">3</span>' in html and html.count('class="card"') == 2
-    assert "Showing the first 2 of 3" in html
+    html = client.get("/review?only=review").text
+    assert re.search(r'<h1>Review <span class="muted ft-count" id="ft-unchecked"[^>]*>3</span>', html)
+    assert html.count('class="card"') == 2 and "/review/more?before=" in html  # the third comes with Load more
 
 
 def test_embedded_visit_page_does_not_swipe(client, add_visit):

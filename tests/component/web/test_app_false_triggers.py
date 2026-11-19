@@ -1,5 +1,6 @@
 """Component tests of the web app through TestClient on a temp database: false triggers."""
 
+import json
 import re
 
 from helpers.web import FOUR, card_ids, more_link
@@ -21,7 +22,9 @@ def test_visit_page_arrows_step_through_false_triggers(client, add_visit):
     ft_old = add_visit(captured_at="2026-10-24T09:00:00", visitor="none", species=None)
     add_visit(captured_at="2026-10-24T10:00:00")
     ft_new = add_visit(captured_at="2026-10-24T11:00:00", visitor="none", species=None)
-    assert f'href="/visit/{ft_new}?ft=1"' in client.get("/false-triggers").text
+    # In the list of what is left to check the cards carry their list; with Show confirmed, every false trigger.
+    assert f'href="/visit/{ft_new}?pool=false"' in client.get("/review?only=false").text
+    assert f'href="/visit/{ft_new}?ft=1"' in client.get("/review?only=false&show=all").text
     html = client.get(f"/visit/{ft_new}").text
     assert f'href="/visit/{ft_old}?ft=1" id="nav-next"' in html and 'id="nav-prev"' not in html
 
@@ -38,10 +41,10 @@ def test_false_triggers_page_shows_storage_and_cleans_up(client, stored_visit, c
     html = client.get("/false-triggers").text
     assert ">Delete</button>" in html and "1 photo you confirmed empty" in html
     r = client.post("/false-triggers/clean", follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/false-triggers?cleared=1"
+    assert r.status_code == 303 and r.headers["location"] == "/review?only=false&cleared=1"
     html = client.get("/false-triggers?cleared=1").text
     assert "Deleted 1 photo. The Pi keeps what it learned from them." in html
-    assert "without photos" not in html and f'href="/visit/{vid}?ft=1"' not in html
+    assert "without photos" not in html and f'href="/visit/{vid}?' not in html
     assert db.count_visits(conn, false_triggers=True) == 3  # the record stays
     page = client.get(f"/visit/{vid}").text
     assert "Photo deleted to save space" in page and "/images/" + db.get_visit(conn, vid)["image_path"] not in page
@@ -52,19 +55,22 @@ def test_false_triggers_come_in_pages(client, add_visit, monkeypatch):
     for _ in range(3):
         add_visit(visitor="none", species=None)
     html = client.get("/false-triggers").text
-    assert html.count('class="card"') == 2 and "/false-triggers/more?before=" in html
+    assert html.count('class="card"') == 2 and "/review/more?before=" in html
     more = client.get(more_link(html)).text
-    assert more.count('class="card"') == 1 and "?ft=1" in more and "load-more" not in more
+    assert more.count('class="card"') == 1 and "?pool=false" in more and "load-more" not in more
 
 
 def test_false_trigger_cards_refresh_after_the_pop_up(client, add_visit, conn):
     keep = add_visit(visitor="none", species=None)
     real = add_visit(visitor="none", species=None, corrected_visitor="bird", corrected_species="Bushtit")
     db.confirm_visits(conn, [keep])
-    r = client.get(f"/false-triggers/cards?ids={keep},{real},abc")
+    # Confirmed: it has left the list of what is still to check, so the page lets its card go.
+    r = client.get(f"/review/cards?ids={keep},{real},abc&only=false")
+    assert 'data-id="' not in r.text and json.loads(r.headers["X-Counts"])["false"] == 0
+    # With Show confirmed it stays, with its pill; one that turned out to be a real visit is gone either way.
+    r = client.get(f"/review/cards?ids={keep},{real},abc&only=false&show=all")
     assert f'data-id="{keep}"' in r.text and f'data-id="{real}"' not in r.text
     assert "Confirmed No Animal" in r.text
-    assert r.headers["X-Unchecked"] == "0"
 
 
 def test_false_trigger_cards_after_returns_only_newer_false_triggers(client, add_visit, conn):
@@ -73,13 +79,13 @@ def test_false_trigger_cards_after_returns_only_newer_false_triggers(client, add
     new = add_visit(captured_at="2026-10-24T11:00:00", visitor="none", species=None)
     done = add_visit(captured_at="2026-10-24T12:00:00", visitor="none", species=None)
     db.confirm_visits(conn, [done])
-    r = client.get(f"/false-triggers/cards?after={old}")
+    r = client.get(f"/review/cards?after={old}&only=false")
     assert f'data-id="{new}"' in r.text and f'data-id="{old}"' not in r.text
     assert f'data-id="{real}"' not in r.text and f'data-id="{done}"' not in r.text
-    assert r.headers["X-Unchecked"] == "2" and r.headers["X-Total"] == "3"
-    shown = client.get(f"/false-triggers/cards?after={old}&show=all").text
+    assert json.loads(r.headers["X-Counts"])["false"] == 2 and r.headers["X-Total"] == "3"
+    shown = client.get(f"/review/cards?after={old}&only=false&show=all").text
     assert f'data-id="{done}"' in shown and f'data-id="{new}"' in shown
-    assert 'data-id="' not in client.get(f"/false-triggers/cards?after={done}").text
+    assert 'data-id="' not in client.get(f"/review/cards?after={done}&only=false").text
 
 
 def test_false_trigger_paging_survives_confirming_between_pages(client, add_visit, conn, monkeypatch):
@@ -137,3 +143,72 @@ def test_last_confirm_with_autoplay_on_sends_the_popup_page_home(client, add_vis
     vid = add_visit(visitor="none")
     visit = client.get(f"/visit/{vid}?todo=1&embed=1").text
     assert 'localStorage.getItem("birdbrain.burstAuto") === "1"' in visit and "last: !next, home" in visit
+
+
+DONE = "2026-11-02T08:00:00"
+
+
+def _pool(add_visit):
+    """One of each, oldest first: a false trigger, a confirmed bird, a visit waiting for review, a corrected
+    bird, an unconfirmed bird."""
+    empty = add_visit(captured_at="2026-11-01T09:00:00", visitor="none", species=None)
+    add_visit(captured_at="2026-11-01T10:00:00", species="Bushtit", confirmed_at=DONE)
+    unsure = add_visit(captured_at="2026-11-01T11:00:00", confidence="low", needs_review=1)
+    add_visit(captured_at="2026-11-01T12:00:00", corrected_visitor="bird", corrected_species="Bushtit")
+    bird = add_visit(captured_at="2026-11-01T13:00:00", species="Bushtit")
+    return empty, unsure, bird
+
+
+def test_review_is_one_pool_with_a_chip_per_list(client, add_visit):
+    empty, unsure, bird = _pool(add_visit)
+    html = client.get("/review").text
+    # Everything still to do, newest first, whatever its kind; nothing confirmed or corrected.
+    assert card_ids(html) == [bird, unsure, empty] and f'href="/visit/{bird}?pool=all"' in html
+    chips = html[html.index('<nav class="chips review-chips"'):]
+    chips = chips[:chips.index("</nav>")]
+    assert re.findall(r'data-list="(\w+)"[^>]*>([^<]+)<span class="chip-n">(\d+)</span>', chips) == [
+        ("all", "All", "3"), ("review", "Needs review", "1"), ("false", "False triggers", "1"),
+        ("visits", "Confirm visits", "1")]
+    assert 'href="/review" data-list="all" aria-current="page"' in chips
+    for only, vid in (("review", unsure), ("false", empty), ("visits", bird)):
+        page = client.get(f"/review?only={only}").text
+        assert card_ids(page) == [vid] and f'href="/visit/{vid}?pool={only}"' in page
+        assert f'href="/review?only={only}" data-list="{only}" aria-current="page"' in page
+    # The False triggers list alone keeps its tools; the pop-up is on every list.
+    assert 'id="ft-storage"' not in html and "Confirm all shown" not in html and 'id="ft-visit"' in html
+    assert 'id="ft-storage"' in client.get("/review?only=false").text
+    assert "needs review" in html and card_ids(client.get("/review?only=bogus").text) == [bird, unsure, empty]
+
+
+def test_the_old_false_triggers_address_opens_that_list(client):
+    r = client.get("/false-triggers?show=all&x=1", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/review?only=false&show=all"
+
+
+def test_confirm_from_the_pool_only_lands_on_one_still_to_do(client, add_visit, conn):
+    empty, unsure, bird = _pool(add_visit)
+    # From the newest, Older skips the corrected bird; from there it skips the confirmed one, to the false trigger.
+    html = client.get(f"/visit/{bird}?pool=all&embed=1").text
+    assert f'href="/visit/{unsure}?pool=all&amp;embed=1" id="nav-next"' in html and 'id="nav-prev"' not in html
+    html = client.get(f"/visit/{unsure}?pool=all&embed=1").text
+    assert f'href="/visit/{empty}?pool=all&amp;embed=1" id="nav-next"' in html
+    assert f'href="/visit/{bird}?pool=all&amp;embed=1" id="nav-prev"' in html
+    # One list on its own stays inside it: nothing else waits for review, so the pop-up closes after this one.
+    html = client.get(f"/visit/{unsure}?pool=review&embed=1").text
+    assert 'id="nav-next"' not in html and 'id="nav-prev"' not in html and "else if (true) close();" in html
+    # Confirmed, it has left the pool, and its page still knows what comes next.
+    assert client.post(f"/visit/{unsure}/reviewed").status_code == 200
+    assert db.pool_counts(conn) == {"review": 0, "false": 1, "visits": 1, "all": 2}
+    assert f'href="/visit/{empty}?pool=all" id="nav-next"' in client.get(f"/visit/{unsure}?pool=all").text
+    # In a tab of its own: the bar names the list, and Confirm or C goes on to the next, then back to the list.
+    page = client.get(f"/visit/{empty}?pool=false").text
+    assert 'href="/review?only=false"' in page and "Review: False triggers (1)" in page
+    assert 'location.href = next ? next.href : "/review?only=false"' in page
+
+
+def test_the_pool_is_the_owners_alone(client, add_visit, locked):
+    old = add_visit(captured_at="2026-11-01T09:00:00", species="Bushtit", confirmed_at=DONE)
+    new = add_visit(captured_at="2026-11-01T10:00:00", species="Bushtit")
+    # A visitor's ?pool is dropped: the arrows walk the visits as always, and nothing mentions the Review tab.
+    html = client.get(f"/visit/{new}?pool=all").text
+    assert f'href="/visit/{old}" id="nav-next"' in html and "pool=" not in html and "/review" not in html

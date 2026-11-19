@@ -54,7 +54,7 @@
     {% if not lv %}<p class="muted">No visitor photo yet. <a href="/live">See the live view</a> to check the camera.</p>{% endif %}
 
     {% if today.review and request.state.admin %}
-    <a class="notice" href="/review">{{ today.review }} visit{{ 's' if today.review != 1 }} waiting for review</a>
+    <a class="notice" href="/review?only=review">{{ today.review }} visit{{ 's' if today.review != 1 }} waiting for review</a>
     {% endif %}
 
     {# Interesting facts about the latest visitor's species, from its cached card. static/home-facts.js hides the whole box
@@ -122,7 +122,7 @@
     {% if today.last_motion %}
     <p class="muted">Last motion {{ today.last_motion.captured_at | short_time }}:
       {{ 'no animal' if today.last_motion.label == 'None' else today.last_motion.label }}.
-      {% if request.state.admin %}<a href="/false-triggers">See false triggers</a>{% endif %}</p>
+      {% if request.state.admin %}<a href="/review?only=false">See false triggers</a>{% endif %}</p>
     {% endif %}
   </div>
   {% endif %}

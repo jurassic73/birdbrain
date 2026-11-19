@@ -44,10 +44,11 @@ def test_the_admin_finds_it_under_review_only_and_confirm_shows_it_again(client,
     home = client.get("/").text
     assert card_ids(home) == [bird] and "Eastern Gray Squirrel" not in home  # not the latest visitor either
     assert client.get("/api/latest-visit").json()["id"] == bird
-    review = client.get("/review").text
+    review = client.get("/review?only=review").text
     assert card_ids(review) == [squirrel] and "held for review" in review
+    assert card_ids(client.get("/review").text) == [squirrel, bird]  # the whole pool: the unconfirmed bird as well
     page = client.get(f"/visit/{squirrel}")
     assert page.status_code == 200 and "held for review" in page.text and "Video not captured" in page.text
     assert client.post(f"/visit/{squirrel}/reviewed").status_code == 200
-    assert card_ids(client.get("/").text) == [squirrel, bird] and card_ids(client.get("/review").text) == []
+    assert card_ids(client.get("/").text) == [squirrel, bird] and card_ids(client.get("/review?only=review").text) == []
     assert "held for review" not in client.get(f"/visit/{squirrel}").text

@@ -1,5 +1,5 @@
 <!doctype html>
-{# embed=1: a visit inside the admin's False triggers pop-up; visitors always get the plain page. #}
+{# embed=1: a visit inside the admin's Review pop-up; visitors always get the plain page. #}
 {% set embed = request.state.admin and request.query_params.get('embed') == '1' %}
 <html lang="en">
 <head>
@@ -103,7 +103,7 @@
 </head>
 {# Phone swipe between the top nav tabs (static/swipe.js). "nav" on the top-level pages; a page can set
    `{% set swipe = "off" %}` or `"links"` (its own <link rel="prev"/"next">) before extending. #}
-{% set swipe_mode = swipe|default("nav" if request.url.path in ("/", "/live", "/species", "/stats", "/review", "/false-triggers", "/notes") else "off") %}
+{% set swipe_mode = swipe|default("nav" if request.url.path in ("/", "/live", "/species", "/stats", "/review", "/notes") else "off") %}
 <body{% if embed %} class="embed"{% endif %}{% if request.state.admin %} data-admin="1"{% endif %}{% if not embed and swipe_mode != "off" %} data-swipe="{{ swipe_mode }}"{% endif %}>
   {% if not embed %}
   <header class="topbar">
@@ -118,7 +118,6 @@
       {% if request.state.admin %}
       {% set waiting = nav_waiting(request) %}
       <a href="/review" data-nav="review" {% if request.url.path == '/review' %}aria-current="page"{% endif %}{% if waiting.review %} class="waiting" title="{{ waiting.review }} waiting for review" aria-label="Review, {{ waiting.review }} waiting for review"{% endif %}>Review{% if waiting.review %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.review) }}</span>{% endif %}</a>
-      <a href="/false-triggers" data-nav="false" {% if request.url.path == '/false-triggers' %}aria-current="page"{% endif %}{% if waiting.false %} class="waiting" title="{{ waiting.false }} false triggers to check" aria-label="False triggers, {{ waiting.false }} to check"{% endif %}><span class="long">False triggers</span><span class="short">False</span>{% if waiting.false %}<span class="nav-n" aria-hidden="true">{{ count_label(waiting.false) }}</span>{% endif %}</a>
       <a href="/notes" {% if request.url.path == '/notes' %}aria-current="page" {% endif %}aria-label="Claude's Notes"><span class="who">Claude's</span><span class="long"> Notes</span></a>
       <a href="{{ guests_path }}" {% if request.url.path == guests_path %}aria-current="page"{% endif %}>{{ guests_name }}</a>
       {% endif %}

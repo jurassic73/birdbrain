@@ -48,7 +48,7 @@ def test_the_admin_sees_other_visits_everywhere(client, yard, locked):
     assert "All time: 2 visits since " in client.get("/stats").text
 
 
-def test_the_admins_review_page_starts_with_the_other_visits(client, conn, add_visit, locked):
+def test_the_admins_review_page_lists_the_other_visits(client, conn, add_visit, locked):
     unsure = add_visit(captured_at="2026-10-01T08:00:00", confidence="low", needs_review=1)
     cat = other(add_visit, needs_review=1)
     assert client.post("/login", data={"password": "s3cret!"}, follow_redirects=False).status_code == 303

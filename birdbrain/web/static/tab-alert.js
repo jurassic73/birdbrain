@@ -30,10 +30,9 @@
     if (!document.hidden) clearTimer = setTimeout(clear, SHOW_WHILE_VISIBLE_MS);
   }
 
-  // Keep the nav's Review / False triggers bubbles in step with the server (same wording as base.html).
+  // Keep the nav's Review bubble in step with the server (same wording as base.html).
   const NAV = {
     review: { title: n => `${n} waiting for review`, label: n => `Review, ${n} waiting for review` },
-    false: { title: n => `${n} false triggers to check`, label: n => `False triggers, ${n} to check` },
   };
   function shown(a) {
     const t = a.querySelector(".nav-n")?.textContent || "0";

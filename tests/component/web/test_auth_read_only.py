@@ -17,7 +17,7 @@ def test_visitors_browse_but_change_nothing(client, add_visit, conn, locked):
                  "/settings/zones/manual"):
         assert client.post(path).status_code == 403
     assert db.get_visit(conn, vid) is not None
-    for path in ("/settings", "/notes", "/review", "/false-triggers", "/false-triggers/cards?after=0",
+    for path in ("/settings", "/notes", "/review", "/false-triggers", "/review/cards?after=0", "/review/more",
                  "/settings/camera", "/lessons"):
         r = client.get(path, follow_redirects=False)
         assert r.status_code == 303 and r.headers["location"].startswith("/login")
@@ -129,10 +129,10 @@ def test_latest_visit_api_waiting_counts_only_for_admin(client, add_visit, locke
     add_visit(needs_review=1)
     add_visit(visitor="none", species=None)
     add_visit(visitor="none", species=None)
-    zero = {"review": 0, "false": 0}
+    zero = {"review": 0}
     assert client.get("/api/latest-visit").json()["waiting"] == zero  # visitor
     client.post("/login", data={"password": "s3cret!"})
-    assert client.get("/api/latest-visit").json()["waiting"] == {"review": 1, "false": 2}
+    assert client.get("/api/latest-visit").json()["waiting"] == {"review": 3}
     monkeypatch.setenv("BIRDBRAIN_PUBLIC", "1")  # the public mirror never shows counts
     assert client.get("/api/latest-visit").json()["waiting"] == zero
 

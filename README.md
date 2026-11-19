@@ -126,7 +126,7 @@ uv run python -m birdbrain.watch                       # the watcher (Ctrl-C to 
 
 ## The four steps a photo goes through
 
-Every photo meets four components in this order. The website says the same thing in the same words on the False triggers page, each visit's "What this photo trains" box and the About page.
+Every photo meets four components in this order. The website says the same thing in the same words on the Review tab ("What trains what?"), each visit's "What this photo trains" box and the About page. The Review tab is the owner's one to-do list: visits Claude was unsure about, false triggers to check and visits nobody has confirmed yet, each a chip at the top, and Confirm always moves on to the next one still to do.
 
 1. **Motion detector** (OpenCV frame differencing on the camera's small stream). Takes a burst of photos when enough pixels change inside the zones for 3 frames in a row. It can't be trained; you control it with the zones (Settings > Zones) and the thresholds.
 2. **Pi animal check** ("Anything there?": BioCLIP 2 turns the dashed box into an embedding (like a fingerprint), and a small yes/no scorer judges it). On "no", the photo goes to False triggers and Claude isn't asked. It *is* trained, from your labels: Confirm labels a photo empty, picking an animal labels it animal, and your labels count 3 times as much as Claude's. It retrains about a minute after labels change. Notes, names, circles on an empty photo and the Ask BioCLIP 2 button don't train it.

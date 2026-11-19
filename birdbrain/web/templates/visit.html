@@ -4,7 +4,7 @@
 {% block title %}{{ 'No animal' if visit.label == 'None' else visit.label }} | Birdbrain{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block head %}
-  {% for id in [prev_id, next_id] if id %}<link rel="prefetch" href="/visit/{{ id }}{{ '?ft=1' if is_ft else ('?species=' ~ (scope | urlencode) if scope else ('?' ~ listed_query if listed else '')) }}">
+  {% for id in [prev_id, next_id] if id %}<link rel="prefetch" href="/visit/{{ id }}{{ ('?pool=' ~ pool) if pool else '?ft=1' if is_ft else ('?species=' ~ (scope | urlencode) if scope else ('?' ~ listed_query if listed else '')) }}">
   {% endfor %}{% for path in neighbor_images %}<link rel="prefetch" href="/images/{{ path }}" as="image">
   {% endfor %}
 {% endblock %}
@@ -44,16 +44,17 @@
 {% set note_tip %}{% if claude_skipped %}Claude wasn't asked about this visit: the Pi judged it empty. {% else %}Nothing is sent to Claude now.{% endif %} A Note for Claude becomes a lesson on Claude's Notes: sent word for word with every photo while it is among the newest {{ lesson_limit }} lessons, and folded into the Lessons summary. The Pi animal check never reads notes: it learns only from the answer you pick above.{% endset %}
 {% set note_placeholder %}{% if claude_skipped %}Claude didn't look at this one. Describe each numbered circle, e.g. 1: spiderweb moving in the wind{% else %}Describe each numbered circle, e.g. 1: spiderweb moving in the wind{% endif %}{% endset %}
 {% set embed = request.state.admin and request.query_params.get('embed') == '1' %}
-{# In the False triggers pop-up every link keeps embed=1 (and todo=1, unconfirmed only), so the arrows stay inside it. #}
-{% set ft_args = (['ft=1'] if is_ft else []) + (['todo=1'] if todo else []) + (['embed=1'] if embed else []) + (['species=' ~ (scope | urlencode)] if scope else []) + ([listed_query] if listed else []) %}
+{# In the Review tab's pop-up every link keeps embed=1 and its list (pool=...: only what is still to do; ft=1 and
+   todo=1 are the older links to false triggers), so the arrows stay inside it. #}
+{% set ft_args = (['pool=' ~ pool] if pool else (['ft=1'] if is_ft else []) + (['todo=1'] if todo else [])) + (['embed=1'] if embed else []) + (['species=' ~ (scope | urlencode)] if scope else []) + ([listed_query] if listed else []) %}
 {% set ft_param = ('?' ~ ft_args | join('&')) if ft_args else '' %}
 {% set settled = not visit.needs_review and visit.confidence == 'high' and not has_correction %}
 <nav class="visit-nav" aria-label="Visit navigation">
   {% if prev_id %}<a class="visit-nav-btn" data-track="visit_arrows" href="/visit/{{ prev_id }}{{ ft_param }}" id="nav-prev" title="Newer (←)">&#8592;</a>{% else %}<span class="visit-nav-btn disabled">&#8592;</span>{% endif %}
-  {% if not embed %}{% if scope %}<a class="visit-nav-back" href="/species/{{ scope | urlencode }}" data-tip="The arrows only step through {{ scope }} visits. Back to its page.">Browsing: {{ scope }}</a>{% elif listed %}<a class="visit-nav-back" href="/?{{ listed_query }}" data-tip="The arrows only step through this list. {{ listed_left }} of its visits {{ 'is' if listed_left == 1 else 'are' }} still unconfirmed. Confirm or Save moves on to the next. Back to the list.">Browsing: {{ listed_name }} ({{ listed_left }})</a>{% else %}{% if is_ft %}<a class="visit-nav-back" href="/false-triggers">False triggers</a>{% else %}<a class="visit-nav-back back-home" href="/" data-back-home><svg class="back-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg><span>Back</span></a>{% endif %}{% endif %}{% endif %}
+  {% if not embed %}{% if pool %}<a class="visit-nav-back" href="{{ pool_url }}" data-tip="The arrows only step through this list of the Review tab. {{ pool_left }} {{ 'is' if pool_left == 1 else 'are' }} still to do. Confirm or Save moves on to the next. Back to the list.">Review: {{ pool_name }} ({{ pool_left }})</a>{% elif scope %}<a class="visit-nav-back" href="/species/{{ scope | urlencode }}" data-tip="The arrows only step through {{ scope }} visits. Back to its page.">Browsing: {{ scope }}</a>{% elif listed %}<a class="visit-nav-back" href="/?{{ listed_query }}" data-tip="The arrows only step through this list. {{ listed_left }} of its visits {{ 'is' if listed_left == 1 else 'are' }} still unconfirmed. Confirm or Save moves on to the next. Back to the list.">Browsing: {{ listed_name }} ({{ listed_left }})</a>{% else %}{% if is_ft %}<a class="visit-nav-back" href="/review?only=false">False triggers</a>{% else %}<a class="visit-nav-back back-home" href="/" data-back-home><svg class="back-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg><span>Back</span></a>{% endif %}{% endif %}{% endif %}
   {% if next_id %}<a class="visit-nav-btn" data-track="visit_arrows" href="/visit/{{ next_id }}{{ ft_param }}" id="nav-next" title="Older (→)">&#8594;</a>{% else %}<span class="visit-nav-btn disabled">&#8594;</span>{% endif %}
-  {% if embed %}<p class="embed-keys muted">Keys: <kbd>&#8592;</kbd> newer <kbd>&#8594;</kbd> older{% if request.state.admin %} · <kbd>C</kbd> confirmed no animal, next photo{% endif %}{% if burst %} · <kbd>P</kbd> play burst{% endif %} · <kbd>Esc</kbd> close</p>{% endif %}
-  {% if embed %}<a class="visit-nav-back embed-close-btn" href="/false-triggers" id="embed-close" title="Close (Esc)">&times; Close</a>{% endif %}
+  {% if embed %}<p class="embed-keys muted">Keys: <kbd>&#8592;</kbd> newer <kbd>&#8594;</kbd> older{% if request.state.admin %} · <kbd>C</kbd> {{ 'confirmed no animal' if visit.label == 'None' else 'confirm' }}, next photo{% endif %}{% if burst %} · <kbd>P</kbd> play burst{% endif %} · <kbd>Esc</kbd> close</p>{% endif %}
+  {% if embed %}<a class="visit-nav-back embed-close-btn" href="{{ pool_url or '/review?only=false' }}" id="embed-close" title="Close (Esc)">&times; Close</a>{% endif %}
   {{ flow("in-nav") }}
 </nav>
 <article class="visit">
@@ -175,7 +176,7 @@
         {% if visit.confirmed_at %}
         <span class="confirmed-pair">{{ badge("Confirmed No Animal" if visit.label == 'None' else "confirmed by human", "checked") }}<button class="link-btn" hx-post="/visit/{{ visit.id }}/unconfirm">Undo</button></span>
         {% elif not (visit.corrected_species or visit.corrected_visitor) %}
-        <span class="confirm-pair">{% if visit.label == 'None' %}<span class="confirm-hint">No animal in image:</span>{% endif %}<button hx-post="/visit/{{ visit.id }}/reviewed" id="confirm-btn" data-tip="Says this answer is right: it leaves the review queue (and the False triggers list), and the Pi animal check trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi). Press C to confirm and go to the next older visit.">Confirm</button></span>
+        <span class="confirm-pair">{% if visit.label == 'None' %}<span class="confirm-hint">No animal in image:</span>{% endif %}<button hx-post="/visit/{{ visit.id }}/reviewed" id="confirm-btn" data-tip="Says this answer is right: it leaves the Review tab's lists, and the Pi animal check trains on it, counting it extra. If it's wrong, correct it below instead (that teaches both Claude and the Pi). Press C to confirm and go to the next older visit.">Confirm</button></span>
         {% endif %}
         {% if settled %}<button type="button" class="m-only secondary" id="correct-open">Not right? Correct it</button>{% endif %}
         <button class="danger m-hide" hx-post="/visit/{{ visit.id }}/delete" hx-confirm="Its photo is deleted too. This can't be undone." data-confirm-title="Delete this visit?" data-confirm-ok="Delete">Delete visit</button>
@@ -1344,7 +1345,7 @@
   // On the newest visit, a visitor that arrives (tab-alert.js checks every 20 s) turns on the Newer arrows:
   // the bar's, the phone ones on the photo and the full-screen viewer's, each pulsing briefly.
   document.addEventListener("birdbrain:visits", async e => {
-    if ({{ 'true' if scope or listed else 'false' }} || document.getElementById("nav-prev") || !e.detail.{{ 'any' if is_ft else 'real' }}) return;
+    if ({{ 'true' if scope or listed or pool else 'false' }} || document.getElementById("nav-prev") || !e.detail.{{ 'any' if is_ft else 'real' }}) return;
     try {
       const r = await fetch(location.pathname + location.search, { cache: "no-store" });
       if (!r.ok) return;
@@ -1361,10 +1362,11 @@
     } catch (err) { /* atmos unreachable; the next check tries again */ }
   });
 </script>
-{% if (is_ft or listed) and not embed and request.state.admin %}
+{% if (is_ft or listed or pool) and not embed and request.state.admin %}
 <script>
   // A false trigger opened on its own: Save or Confirm moves on to the next one (or the list), like the pop-up does.
-  // The same for a visit opened from one of the owner's to-do lists (Unconfirmed on, or the RPi chip).
+  // The same for a visit opened from one of the owner's to-do lists (Unconfirmed on, or the RPi chip) or, in a tab
+  // of its own, from the Review tab (pool).
   // preventDefault on beforeOnLoad stops the answer's HX-Refresh from reloading this page first.
   (() => {
     let busy = false;
@@ -1374,7 +1376,7 @@
       if (!(el.matches?.("form.review") || el.id === "confirm-btn")) return;
       busy = true; e.preventDefault();
       const next = document.getElementById("nav-next") || document.getElementById("nav-prev");
-      location.href = next ? next.href : {{ (('/?' ~ listed_query) if listed else '/false-triggers') | tojson }};
+      location.href = next ? next.href : {{ (pool_url if pool else ('/?' ~ listed_query) if listed else '/review?only=false') | tojson }};
     });
   })();
 </script>
@@ -1401,16 +1403,16 @@
         const r = await fetch(btn.getAttribute("hx-post"), { method: "POST" }).catch(() => null);
         if (!r || !r.ok) { btn.classList.remove("sending"); busy = false; return; }
       }
-      const next = document.getElementById("nav-next");
+      const next = document.getElementById("nav-next"){{ ' || document.getElementById("nav-prev")' if pool }};
       if (next) location.href = next.href;
-      else location.reload();
+      else {{ ('location.href = ' ~ (pool_url | tojson)) if pool else 'location.reload()' }};
     });
   })();
 </script>
 {% endif %}
 {% if embed %}
 <script>
-  // Inside the False triggers pop-up: Close and Esc tell the page to close it (Esc on the big photo just closes that).
+  // Inside the Review tab's pop-up: Close and Esc tell the page to close it (Esc on the big photo just closes that).
   // Every way out asks the unsaved-changes guard first: the links and arrows through its click handler, Esc and the
   // parent's own Close (the dimmed edge, Esc with focus outside this frame) through closeAsked(): the parent sends
   // "birdbrain:closing" and waits for "birdbrain:close"; "birdbrain:hold" tells it the owner is being asked.
@@ -1459,12 +1461,12 @@
     // Save (a correction) or Confirm: tell the page it was saved for training, then on to the next photo.
     function advance() {
       const next = document.getElementById("nav-next") || document.getElementById("nav-prev");
-      // Auto-play on and that was the last one: the False triggers page sends the owner back to the front page.
+      // Auto-play on and that was the last one: the Review page sends the owner back to the front page.
       let home = false;
       try { home = !next && localStorage.getItem("birdbrain.burstAuto") === "1"; } catch (e) {}
       parent.postMessage({ saved: true, last: !next, home }, location.origin);
       if (next) goto(next.href);
-      else if ({{ 'true' if todo else 'false' }}) close();
+      else if ({{ 'true' if todo or pool else 'false' }}) close();
       else location.reload();
     }
     // beforeOnLoad: the answer's HX-Refresh would reload this page before afterRequest fires.

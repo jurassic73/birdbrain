@@ -322,6 +322,42 @@ def shown() -> str:
     return f"{PUBLIC if hiding_other() else REAL} AND {NOT_HELD}"
 
 
+# The owner's review pool (the Review tab): everything still waiting for a look, as three lists that never share a
+# visit, so their counts add up to the pool's. "review": Claude was unsure, couldn't name the animal, or the visit
+# is held. "false": false triggers nobody has confirmed or corrected, with a photo left to look at. "visits": real
+# visits nobody has confirmed or corrected. A confirmed or corrected visit is in none of them (mark_reviewed and
+# correct_visit both clear needs_review), which is what lets Confirm always move on to one still to do.
+POOLS = ("review", "false", "visits")
+POOL_ALL = "all"
+
+
+def pool_terms() -> dict[str, str]:
+    """Each review list's WHERE term (see POOLS). The admin's only: for a visitor every list is empty."""
+    if hiding_other():
+        return dict.fromkeys(POOLS, "0")
+    return {
+        "review": "needs_review = 1",
+        "false": f"({FALSE_TRIGGER} AND {HAS_PHOTO} AND {UNCHECKED} AND needs_review = 0)",
+        "visits": f"({shown()} AND {UNCHECKED} AND needs_review = 0)",
+    }
+
+
+def pool_where(pool: str) -> str:
+    """The WHERE term of one review list, or of the whole pool (POOL_ALL, and any name that isn't a list)."""
+    terms = pool_terms()
+    return terms.get(pool) or f"({' OR '.join(terms.values())})"
+
+
+def pool_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """How many visits wait in each review list, and in the whole pool ("all")."""
+    terms = pool_terms()
+    row = conn.execute(
+        f"SELECT {', '.join(f'COALESCE(SUM({t}), 0)' for t in terms.values())} FROM visits "
+        f"WHERE needs_review = 1 OR {UNCHECKED}").fetchone()
+    counts = dict(zip(terms, row))
+    return {**counts, POOL_ALL: sum(counts.values())}
+
+
 def ensure_wal(conn: sqlite3.Connection, tries: int = 5, pause: float = 0.2) -> None:
     """Make the database use WAL without ever failing a request over it.
 
@@ -864,10 +900,13 @@ def _where(
     false_triggers: bool = False,
     has_photo: bool = False,
     unchecked: bool = False,
+    pool: str | None = None,
 ) -> tuple[str, list]:
     # The review queue holds every visit waiting for the owner, false triggers included: "no animal" at low
     # confidence means something might have been one.
     where = [FALSE_TRIGGER] if false_triggers else ([] if review else [shown()])
+    if pool:  # one of the Review tab's lists, or all of them (pool_where): false triggers and held visits included
+        where = [pool_where(pool)]
     if review and hiding_other():
         where.extend([NOT_OTHER, NOT_HELD])
     args: list = []
@@ -1077,7 +1116,8 @@ def is_admin_only_photo(conn: sqlite3.Connection, image_rel: str) -> bool:
 
 
 def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool = False,
-                  unchecked: bool = False, species: str | None = None, **filters) -> tuple[int | None, int | None]:
+                  unchecked: bool = False, species: str | None = None, pool: str | None = None,
+                  **filters) -> tuple[int | None, int | None]:
     """Return (prev_id, next_id) for a visit within the same set (real or false triggers), ordered newest-first.
 
     unchecked: only those nobody has confirmed or corrected yet (the False triggers list as shown, or one of the
@@ -1086,12 +1126,16 @@ def get_neighbors(conn: sqlite3.Connection, visit_id: int, false_triggers: bool 
     visit itself needn't be in it (relabelled): its position by time is used.
     filters: the home page's other filters (_where's kind, tod, date_from, date_to) for a real visit opened from
     a filtered list. The visit itself needn't be in it either (just confirmed).
+    pool: one of the Review tab's lists or the whole pool (pool_where), whatever kind the visits in it are; it
+    wins over the rest. The visit itself has usually just left it (confirmed).
     """
     where, args = (f"{FALSE_TRIGGER} AND {HAS_PHOTO}", []) if false_triggers else (shown(), [])
     if not false_triggers and (species or unchecked or any(filters.values())):
         where, args = _where(species=species, unchecked=bool(unchecked), **filters)
     if false_triggers and unchecked:
         where += f" AND {UNCHECKED}"
+    if pool:
+        where, args = pool_where(pool), []
     row = conn.execute("SELECT captured_at FROM visits WHERE id = ?", (visit_id,)).fetchone()
     if not row:
         return None, None
@@ -1197,22 +1241,24 @@ def count_unchecked_false_triggers(conn: sqlite3.Connection) -> int:
     return count_visits(conn, false_triggers=True, has_photo=True, unchecked=True)
 
 
-def false_trigger_cards(conn: sqlite3.Connection, ids: list[int]) -> list[sqlite3.Row]:
-    """These visits, newest first, if they're still false triggers with a photo."""
+def listed_cards(conn: sqlite3.Connection, ids: list[int], **filters) -> list[sqlite3.Row]:
+    """These visits, newest first, if they are still in the list `filters` describes (_where): one of the Review
+    tab's lists (pool=...), or every false trigger with a photo."""
     if not ids:
         return []
+    where, args = _where(**filters)
     return conn.execute(
         f"""SELECT *, {LABEL} AS label FROM visits WHERE id IN ({','.join('?' * len(ids))})
-            AND {FALSE_TRIGGER} AND {HAS_PHOTO} ORDER BY captured_at DESC, id DESC""", ids).fetchall()
+            AND {where} ORDER BY captured_at DESC, id DESC""", (*ids, *args)).fetchall()
 
 
-def false_triggers_after(conn: sqlite3.Connection, after: int, unchecked: bool = True) -> list[sqlite3.Row]:
-    """False triggers with a photo newer than this id (the newest the page already shows), newest first.
-    unchecked: leave out the confirmed or corrected ones, as the page does without Show confirmed."""
-    where = f"id > ? AND {FALSE_TRIGGER} AND {HAS_PHOTO}" + (f" AND {UNCHECKED}" if unchecked else "")
+def listed_after(conn: sqlite3.Connection, after: int, **filters) -> list[sqlite3.Row]:
+    """The visits of the list `filters` describes (_where) newer than this id (the newest the page already
+    shows), newest first."""
+    where, args = _where(**filters)
     return conn.execute(
-        f"SELECT *, {LABEL} AS label FROM visits WHERE {where} ORDER BY captured_at DESC, id DESC LIMIT 200",
-        (after,)).fetchall()
+        f"SELECT *, {LABEL} AS label FROM visits WHERE id > ? AND {where} ORDER BY captured_at DESC, id DESC LIMIT 200",
+        (after, *args)).fetchall()
 
 
 def confirm_visits(conn: sqlite3.Connection, ids: list[int], on: bool = True) -> None:

@@ -27,7 +27,6 @@ from .. import alert, audience, camera, circle_check, classifier, clips, clock, 
 HERE = Path(__file__).parent
 log = logging.getLogger("birdbrain.web")
 PAGE_SIZE = 24
-REVIEW_SHOWN = 200  # the review queue is oldest first and short; it shows this many and says so
 SPECIES_PAGE = 48  # a species page loads this many at a time (a common bird has thousands)
 FT_PAGE = 48  # false triggers come in pages too, so a rainy week isn't one 20,000 px scroll on a phone
 
@@ -374,12 +373,12 @@ def get_conn(request: Request):
 
 
 def nav_waiting(request: Request) -> dict:
-    """Review and False triggers counts for the nav bubbles. Admins only, and only when base.html renders
-    (full pages; the partials never extend it)."""
+    """The Review tab's count for its nav bubble: everything in the review pool (db.POOLS). Admins only, and only
+    when base.html renders (full pages; the partials never extend it)."""
     conn = getattr(request.state, "conn", None)
     if conn is None or not request.state.admin or auth.public():
-        return {"review": 0, "false": 0}
-    return {"review": db.count_visits(conn, review=True), "false": db.count_unchecked_false_triggers(conn)}
+        return {"review": 0}
+    return {"review": db.pool_counts(conn)[db.POOL_ALL]}
 
 
 def count_label(n: int) -> str:
@@ -778,7 +777,7 @@ def more_visits(request: Request, before: str = "", conn=Depends(get_conn)):
 
 @app.get("/visit/{visit_id}", response_class=HTMLResponse)
 def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool = False,
-                 species: str = "", conn=Depends(get_conn)):
+                 species: str = "", pool: str = "", conn=Depends(get_conn)):
     visit = db.get_visit(conn, visit_id)
     if not visit:
         raise HTTPException(404)
@@ -796,10 +795,16 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
     # Opened from one of the owner's to-do lists on the home page (todo_list: Unconfirmed on, or the RPi chip): the
     # card's link carries the list's filters, so the arrows, Confirm and C stay inside that list.
     filters = filters_from(request)
-    listed = not is_ft and todo_list(filters)
+    # pool: opened from the Review tab (one of its lists, or all of them): the arrows, Confirm, Save and C stay
+    # inside that list, whatever kind of visit comes next, so they only ever land on one still to do. The owner's.
+    pool = pool if request.state.admin and pool in (*db.POOLS, db.POOL_ALL) else ""
+    listed = not is_ft and not pool and todo_list(filters)
     # species: opened from that species' page, so the arrows step through only its visits.
-    scope = "" if is_ft or listed else species
-    if listed:
+    scope = "" if is_ft or listed or pool else species
+    if pool:
+        todo = False
+        prev_id, next_id = db.get_neighbors(conn, visit_id, pool=pool)
+    elif listed:
         prev_id, next_id = db.get_neighbors(conn, visit_id, **filters)
     else:
         prev_id, next_id = db.get_neighbors(conn, visit_id, false_triggers=is_ft, unchecked=todo,
@@ -828,6 +833,10 @@ def visit_detail(request: Request, visit_id: int, ft: bool = False, todo: bool =
         listed_name=list_name(filters) if listed else "",
         # how many visits of the list are still to check (the visit shown too, until it is confirmed)
         listed_left=db.count_visits(conn, **{**filters, "unchecked": "1"}) if listed else 0,
+        pool=pool,
+        pool_url=review_url(pool) if pool else "",
+        pool_name=REVIEW_NAMES.get(pool, "") if pool else "",
+        pool_left=db.pool_counts(conn)[pool] if pool else 0,
         confirmed=db.confirmed_species(conn),
         burst=burst_frames(visit),
         clip=clip_info(visit, request.state.admin),
@@ -1501,7 +1510,7 @@ def confirm_false_triggers(ids: str = Form(""), conn=Depends(get_conn)):
     keep = {r[0] for r in conn.execute(
         f"SELECT id FROM visits WHERE id IN ({','.join('?' * len(wanted))}) AND NOT {db.REAL}", wanted)} if wanted else set()
     db.confirm_visits(conn, sorted(keep))
-    return RedirectResponse(f"/false-triggers?confirmed={len(keep)}", status_code=303)
+    return RedirectResponse(f"{review_url('false')}&confirmed={len(keep)}", status_code=303)
 
 
 @app.post("/visit/{visit_id}/delete")
@@ -1853,12 +1862,6 @@ def about(request: Request, conn=Depends(get_conn)):
     )
 
 
-@app.get("/review", response_class=HTMLResponse)
-def review(request: Request, conn=Depends(get_conn)):
-    return page(request, "review.html", visits=db.list_visits(conn, review=True, limit=REVIEW_SHOWN),
-                total=db.count_visits(conn, review=True), shown=REVIEW_SHOWN)
-
-
 @app.get("/notes", response_class=HTMLResponse)
 def notes(request: Request, saved: bool = False, accepted: bool = False, conn=Depends(get_conn)):
     """Claude's Notes: everything Claude is told about this yard, in one place."""
@@ -2116,63 +2119,112 @@ def storage_context(conn) -> dict:
     return {"bd": bd, "bar": storage_bar(bd), "forecast": forecast_blurb(retention.forecast(conn), bd)}
 
 
-@app.get("/false-triggers", response_class=HTMLResponse)
-def false_triggers(request: Request, cleared: int | None = None, confirmed: int | None = None, show: str = "",
-                   conn=Depends(get_conn)):
-    """Only the photos nobody has confirmed or corrected yet, unless ?show=all (then the confirmed ones show dimmed)."""
-    show_all = show == "all"
-    visits = db.list_visits(conn, false_triggers=True, has_photo=True, unchecked=not show_all, limit=FT_PAGE)
+# ---- Review: everything waiting for the owner, in one pool (db.POOLS) ----
+# The tab's lists, in chip order: key ("" is the whole pool), chip name, and what the chip's tooltip says.
+REVIEW_LISTS = [
+    ("", "All", "Everything still waiting for you, in one list: the three others together."),
+    ("review", "Needs review", "Visits Claude was unsure about or couldn't name, and visits held back until you look."),
+    ("false", "False triggers", "Motion with no animal found, waiting to be confirmed empty."),
+    ("visits", "Confirm visits", "Real visits nobody has confirmed or corrected yet."),
+]
+REVIEW_NAMES = {key or db.POOL_ALL: name for key, name, _ in REVIEW_LISTS}
+
+
+def review_url(only: str = "", **extra) -> str:
+    """The Review tab showing one list (a db.POOLS name; anything else is the whole pool)."""
+    q = urlencode({k: v for k, v in {"only": only if only in db.POOLS else "", **extra}.items() if v})
+    return f"/review?{q}" if q else "/review"
+
+
+def review_list(only: str, show: str = "") -> tuple[str, bool, dict]:
+    """A review request's list: its key ("" for the whole pool), whether confirmed false triggers show too
+    (?show=all, the False triggers list only), and the filters that select its visits (db._where)."""
+    only = only if only in db.POOLS else ""
+    show_all = only == "false" and show == "all"
+    return only, show_all, ({"false_triggers": True, "has_photo": True} if show_all else {"pool": only or db.POOL_ALL})
+
+
+def review_cards(request: Request, only: str, show_all: bool, visits: list, **ctx) -> HTMLResponse:
+    """Review cards: each opens in the page's pop-up, scoped to the list it came from."""
+    return page(request, "_cards.html", visits=visits, ft_cards=only == "false",
+                pool_cards="" if show_all else (only or db.POOL_ALL), **ctx)
+
+
+def _review_more(visits: list, only: str, show_all: bool) -> str | None:
+    return more_url("/review/more", visits, FT_PAGE, only=only, show=("all" if show_all else ""))
+
+
+@app.get("/review", response_class=HTMLResponse)
+def review(request: Request, only: str = "", show: str = "", cleared: int | None = None,
+           confirmed: int | None = None, conn=Depends(get_conn)):
+    """The Review tab: one pool of everything still waiting for the owner, newest first, with a chip per list
+    (needs review, false triggers, visits to confirm). Only what nobody has confirmed or corrected yet, unless
+    ?show=all on the False triggers list (then its confirmed photos show dimmed)."""
+    only, show_all, filters = review_list(only, show)
+    visits = db.list_visits(conn, **filters, limit=FT_PAGE)
+    counts = db.pool_counts(conn)
+    false_only = only == "false"
     return page(
         request,
-        "false_triggers.html",
+        "review.html",
         visits=visits,
+        only=only,
+        lists=[(key, name, tip, counts[key or db.POOL_ALL], review_url(key)) for key, name, tip in REVIEW_LISTS],
         show_all=show_all,
-        next_url=_ft_more(visits, show_all),
-        hourly=db.hourly_counts(conn, false_triggers=True),
-        total=db.count_visits(conn, false_triggers=True, has_photo=True),
-        storage=retention.usage(conn),
-        **storage_context(conn),
+        next_url=_review_more(visits, only, show_all),
+        # The False triggers list alone carries its tools: triggers by hour, storage, Show confirmed.
+        hourly=db.hourly_counts(conn, false_triggers=True) if false_only else [],
+        total=db.count_visits(conn, false_triggers=True, has_photo=True) if false_only else 0,
+        storage=retention.usage(conn) if false_only else None,
+        **(storage_context(conn) if false_only else {}),
         cleared=cleared,
         confirmed=confirmed,
-        unchecked=db.count_unchecked_false_triggers(conn),
-        ft_cards=True,
+        unchecked=counts[only or db.POOL_ALL],
+        ft_cards=false_only,
+        pool_cards="" if show_all else (only or db.POOL_ALL),
         four=steps.components(),
     )
 
 
-@app.get("/false-triggers/cards", response_class=HTMLResponse)
-def false_trigger_cards(request: Request, ids: str = "", after: int | None = None, show: str = "",
-                        conn=Depends(get_conn)):
-    """Fresh cards for visits opened in the pop-up: ones that stopped being false triggers are left out.
-    ?after=<id>: instead, the false triggers newer than that id, filtered like the page (?show=all keeps
-    confirmed ones), which the open page slides in at the top."""
+@app.get("/review/cards", response_class=HTMLResponse)
+def review_cards_fresh(request: Request, ids: str = "", after: int | None = None, only: str = "", show: str = "",
+                       conn=Depends(get_conn)):
+    """Fresh cards for visits opened in the pop-up: ones that left the list (confirmed, corrected) are left out.
+    ?after=<id>: instead, the list's visits newer than that id, which the open page slides in at the top.
+    The counts ride along in headers, for the chips."""
+    only, show_all, filters = review_list(only, show)
     if after is not None:
-        visits = db.false_triggers_after(conn, after, unchecked=show != "all")
+        visits = db.listed_after(conn, after, **filters)
     else:
         wanted = [int(i) for i in ids.split(",") if i.strip().isdigit()][:200]
-        visits = db.false_trigger_cards(conn, wanted)
-    resp = page(request, "_cards.html", visits=visits, ft_cards=True)
-    resp.headers["X-Unchecked"] = str(db.count_unchecked_false_triggers(conn))
-    resp.headers["X-Total"] = str(db.count_visits(conn, false_triggers=True, has_photo=True))
+        visits = db.listed_cards(conn, wanted, **filters)
+    resp = review_cards(request, only, show_all, visits)
+    resp.headers["X-Counts"] = json.dumps(db.pool_counts(conn))
+    if only == "false":
+        resp.headers["X-Total"] = str(db.count_visits(conn, false_triggers=True, has_photo=True))
     return resp
 
 
-def _ft_more(visits: list, show_all: bool) -> str | None:
-    return more_url("/false-triggers/more", visits, FT_PAGE, show=("all" if show_all else ""))
+@app.get("/review/more", response_class=HTMLResponse)
+def more_review(request: Request, before: str = "", only: str = "", show: str = "", conn=Depends(get_conn)):
+    """The next page of the list, after the card with the `before` cursor. Confirming while paging removes cards
+    from the list, so a position count would skip unseen ones; the cursor does not."""
+    only, show_all, filters = review_list(only, show)
+    visits = visits_before(conn, before, limit=FT_PAGE, **filters)
+    return review_cards(request, only, show_all, visits, next_url=_review_more(visits, only, show_all))
 
 
-@app.get("/false-triggers/more", response_class=HTMLResponse)
-def more_false_triggers(request: Request, before: str = "", show: str = "", conn=Depends(get_conn)):
-    """The next page of the list, after the card with the `before` cursor. Confirming photos while paging removes
-    them from the list, so a position count would skip unseen ones; the cursor does not."""
-    show_all = show == "all"
-    visits = visits_before(conn, before, limit=FT_PAGE, false_triggers=True, has_photo=True, unchecked=not show_all)
-    return page(request, "_cards.html", visits=visits, next_url=_ft_more(visits, show_all), ft_cards=True)
+@app.get("/false-triggers")
+def false_triggers(request: Request):
+    """The old False triggers tab (2026-11-18: it is a list of the Review tab now). Old links and bookmarks land
+    on that list, keeping ?show=all."""
+    extra = {k: v for k, v in request.query_params.items() if k in ("show", "cleared", "confirmed")}
+    return RedirectResponse(review_url("false", **extra), status_code=307)
 
 
 @app.post("/false-triggers/clean")
 def clean_false_triggers(conn=Depends(get_conn)):
-    return RedirectResponse(f"/false-triggers?cleared={retention.clear(conn)}", status_code=303)
+    return RedirectResponse(f"{review_url('false')}&cleared={retention.clear(conn)}", status_code=303)
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -2543,8 +2595,8 @@ def identify_prompt_preview(site: dict, lessons: list[str]) -> str:
 
 @app.get("/api/latest-visit")
 def latest_visit(request: Request, conn=Depends(get_conn)):
-    """Newest real visitor (not false triggers), plus the newest visit of any kind (`any_id`, the admin's False
-    triggers page refreshes on it). Visitors and the public mirror never learn of a false trigger: their any_id is
+    """Newest real visitor (not false triggers), plus the newest visit of any kind (`any_id`, the admin's Review
+    tab refreshes on it). Visitors and the public mirror never learn of a false trigger: their any_id is
     the real visitor's id, so it only ever moves along with a real visit (static/tab-alert.js).
 
     Pages poll this to flag new arrivals in the tab and to pull in new cards, numbers and arrows."""
@@ -2552,7 +2604,7 @@ def latest_visit(request: Request, conn=Depends(get_conn)):
     newest = {"id": row["id"], "label": row["label"], "captured_at": row["captured_at"]} if row else \
         {"id": 0, "label": None, "captured_at": None}
     any_id = db.newest_id(conn) if request.state.admin else newest["id"]
-    # Nav bubble counts: zeros for visitors and the public mirror (nav_waiting checks both).
+    # Nav bubble count: zero for visitors and the public mirror (nav_waiting checks both).
     return {**newest, "any_id": any_id, "waiting": nav_waiting(request)}
 
 

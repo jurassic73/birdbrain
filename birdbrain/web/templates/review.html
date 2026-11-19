@@ -1,13 +1,307 @@
 {% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% import "_steps.html" as steps_ui %}
 {% block title %}Review | Birdbrain{% endblock %}
+{% block head %}{% if only == "false" %}<script src="/static/vendor/chart-4.4.1.umd.js"></script>{% endif %}{% endblock %}
 {% block content %}
-<div class="page-head"><h1>Review queue <span class="muted">{{ total }}</span></h1></div>
-<p class="muted">Animals Claude couldn't name ("Other", hidden from visitors) come first, then visits it was unsure about, each oldest first, including photos it couldn't call empty with any confidence. A visit whose video came through choppy is held here too and shows nowhere else until you confirm or correct it. Open one to confirm or correct it.{% if total > visits | length %} Showing the first {{ visits | length }} of {{ total }}; the rest follow as you review these.{% endif %}</p>
+<div class="page-head ft-head"><h1>Review{% if (total if show_all else unchecked) %} <span class="muted ft-count" id="ft-unchecked" data-tip="How many are listed below. Each leaves the list once you confirm or correct it.">{{ total if show_all else unchecked }}</span>{% endif %}</h1>
+{% if only == "false" and (total > unchecked or not show_all) %}<a class="link-btn" id="ft-show"{% if total == unchecked %} hidden{% endif %} href="/review?only=false{{ '' if show_all else '&show=all' }}" data-tip="Photos you already confirmed (or corrected but still empty) are hidden so the list is only what's left to check. Show them dimmed, or hide them again.">{{ 'Hide confirmed' if show_all else 'Show confirmed (' ~ (total - unchecked) ~ ')' }}</a>{% endif %}</div>
+{# One pool, a chip per list: each chip shows only its part, All shows everything. The counts add up. #}
+<nav class="chips review-chips" aria-label="What to review">
+  {% for key, name, tip, n, href in lists %}
+  <a href="{{ href }}" data-list="{{ key or 'all' }}" {% if key == only %}aria-current="page" {% endif %}data-tip="{{ tip }}">{{ name }}<span class="chip-n">{{ n }}</span></a>
+  {% endfor %}
+</nav>
+<p class="muted">{% if only == "false" %}Motion, but no animal found. Open each photo to check it.
+{%- elif only == "review" %}Animals Claude couldn't name ("Other", hidden from visitors) and visits it was unsure about, including photos it couldn't call empty with any confidence. A visit whose video came through choppy is held here too and shows nowhere else until you confirm or correct it.
+{%- elif only == "visits" %}Real visits nobody has confirmed or corrected yet. Confirm says the name is right.
+{%- else %}Everything still waiting for you, newest first: visits Claude was unsure about, false triggers to check and visits to confirm.{% endif %}
+Open one: <b>Confirm</b> (or the <kbd>C</kbd> key) moves on to the next one still to do. <a href="#" id="ft-trains-link" data-tip="Which of the Motion detector, Pi animal check, BioCLIP 2 species check and Claude does what, and which ones learn from your answers">What trains what?</a></p>
+<dialog class="popup ft-trains-popup" id="ft-trains" aria-labelledby="ft-trains-title">
+  <button type="button" class="popup-close" aria-label="Close" data-tip="Close"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false"><path d="M3 3 13 13M13 3 3 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+  <h2 class="popup-title" id="ft-trains-title">What trains what</h2>
+  <p class="muted small">If the answer is right (an empty photo is empty, the animal is the one named), press <b>Confirm</b>; if not, pick what it was. The Pi animal check learns from your answer and the photo leaves this list.</p>
+  {{ steps_ui.strips(four) }}
+  <div class="popup-actions"><button type="button" class="popup-cancel">Close</button></div>
+</dialog>
+<script>
+  (() => {
+    const dlg = document.getElementById("ft-trains");
+    document.getElementById("ft-trains-link").addEventListener("click", (e) => { e.preventDefault(); dlg.showModal(); });
+    dlg.querySelectorAll(".popup-close, .popup-cancel").forEach((b) => b.addEventListener("click", () => dlg.close()));
+    dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+  })();
+</script>
+{% if only == "false" %}
+<p class="muted small">Confirmed photos have done their job: the Pi animal check has already learned from them, so <a href="#ft-storage" id="ft-delete-link">delete confirmed photos to save space</a>{% if storage.confirmed_count %} ({{ storage.confirmed_count }} photo{{ 's' if storage.confirmed_count != 1 }}, {{ storage.confirmed_bytes | mb }}){% else %} (none waiting yet){% endif %}.</p>
+{% endif %}
+{% if confirmed is not none %}<p class="notice saved">Confirmed {{ confirmed }} as empty. The Pi animal check trains on them.</p>{% endif %}
+{% if request.state.admin and only == "false" and unchecked and not show_all %}
+<form class="ft-confirm" method="post" action="/false-triggers/confirm" id="ft-confirm">
+  <input type="hidden" name="ids">
+  <button type="submit" data-tip="Marks every photo loaded below as empty, in one go (more load as you scroll; only loaded ones count). The Pi animal check counts confirmed photos 3 times when it learns, so open and correct any photo with an animal first.">Confirm all shown false triggers have no animals</button>
+</form>
+<script>
+  document.getElementById("ft-confirm").addEventListener("submit", e => {
+    const ids = [...document.querySelectorAll("#ft-grid .card[data-unchecked]")].map(c => c.dataset.id);
+    const n = ids.length, s = n === 1 ? "" : "s", one = n === 1;
+    if (!n) { e.preventDefault(); return; }
+    e.target.ids.value = ids.join(",");
+    birdbrain.confirmSubmit(e, {
+      title: one ? "Confirm this photo is empty?" : `Confirm all ${n} photos are empty?`,
+      message: `You are confirming that ${one ? "this photo does" : `all ${n} photos shown here do`} not contain an animal.\n\n`
+        + `The Pi animal check will train on ${one ? "it" : "them"} as empty photo${s}. If any has an animal, press Cancel and correct ${one ? "it" : "that one"} first.`,
+      ok: one ? "Confirm empty" : `Confirm ${n} empty`,
+    });
+  });
+</script>
+{% endif %}
+{% if cleared is not none %}<p class="notice saved">Deleted {{ cleared }} photo{{ 's' if cleared != 1 }}. The Pi keeps what it learned from them.</p>{% endif %}
+{% if only == "false" %}
+<details class="m-fold" id="ft-storage">
+  <summary>Storage and triggers by hour</summary>
+  {% set show_forecast = false %}
+  {% include "_storage_bar.html" %}
+  {% include "_storage.html" %}
+  <div class="charts single">
+    <figure><figcaption>False triggers by hour of day <span class="muted">· lots from one spot? Adjust the <a href="/settings#zones" data-tip="The zones are where the camera watches for motion: the rim, the rocks, the open water and the ground. Nothing changes them automatically because of false triggers. Move or shrink one by hand if it keeps firing on leaves or ripples.">zones</a></span></figcaption><canvas id="hourly"></canvas></figure>
+  </div>
+</details>
+{% endif %}
 {% if visits %}
-<div class="grid">
+<div class="grid ft-grid" id="ft-grid" data-only="{{ only }}" data-total="{{ total }}"{% if show_all %} data-show-all{% endif %}>
   {% include "_cards.html" %}
 </div>
 {% else %}
-<p class="empty">Nothing to review.</p>
+<p class="empty">{% if only != "false" %}Nothing to review.{% elif total %}Nothing left to check: every false trigger here is confirmed.{% else %}No false triggers recorded.{% endif %}</p>
+{% endif %}
+
+{% if only == "false" %}
+<script>
+  // The intro's delete link opens the folded Storage section and points at its Delete button.
+  (() => {
+    const fold = document.getElementById("ft-storage");
+    const show = () => {
+      fold.open = true;
+      const target = fold.querySelector(".storage-delete") || fold;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.remove("flash"); void target.offsetWidth; target.classList.add("flash");
+    };
+    document.getElementById("ft-delete-link")?.addEventListener("click", e => { e.preventDefault(); history.replaceState(null, "", "#ft-storage"); show(); });
+    if (location.hash === "#ft-storage") show();
+  })();
+</script>
+{% endif %}
+
+<script>
+// The counts that ride on a /review/cards answer: put them on the chips, and return this page's own (as text, or
+// null when the answer carried none).
+window.birdbrainReview = {
+  only: {{ (only or "all") | tojson }},
+  counts(r) {
+    let c;
+    try { c = JSON.parse(r.headers.get("X-Counts")); } catch (e) { return null; }
+    if (!c) return null;
+    document.querySelectorAll(".review-chips a[data-list]").forEach(a => {
+      const n = c[a.dataset.list];
+      if (n !== undefined) a.querySelector(".chip-n").textContent = n;
+    });
+    // The nav's bubble follows at once (tab-alert.js would only catch up on its next check, and handles zero).
+    const bubble = document.querySelector('nav a[data-nav="review"] .nav-n');
+    if (bubble && c.all) bubble.textContent = c.all > 99 ? "99+" : c.all;
+    return c[this.only] === undefined ? null : String(c[this.only]);
+  },
+};
+</script>
+<!-- A visit opens in a pop-up over this page, so reviewing never loses your place in the grid. -->
+<dialog class="popup ft-visit" id="ft-visit" aria-label="Visit">
+  <iframe title="Visit" src="about:blank"></iframe>
+  <iframe title="Visit" src="about:blank" class="ft-spare" aria-hidden="true" tabindex="-1"></iframe>
+</dialog>
+<script>
+(() => {
+  const grid = document.getElementById("ft-grid"), dlg = document.getElementById("ft-visit");
+  if (!grid) return;
+  const listQuery = "&only=" + grid.dataset.only + ("showAll" in grid.dataset ? "&show=all" : "");
+  // Two frames: the next visit loads in the hidden one and swaps in once loaded, so moving on never flashes white.
+  let [frame, spare] = dlg.querySelectorAll("iframe");
+  const seen = new Set();  // visits opened this time, refreshed in the grid on close
+  grid.addEventListener("click", e => {
+    const card = e.target.closest("a.card");
+    if (!card || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;  // new tab still works
+    e.preventDefault();
+    // The card's link names its list (pool=...), so the pop-up's arrows, Confirm and C walk the same list as the
+    // grid: only what is still to do. (With Show confirmed, ft=1: every false trigger.)
+    frame.src = card.href + (card.href.includes("?") ? "&" : "?") + "embed=1";
+    dlg.showModal();
+    document.body.style.overflow = "hidden";
+  });
+  const loaded = f => {
+    let path;
+    try { path = f.contentWindow.location.pathname; } catch (err) { return; }
+    if (path === "blank" || !dlg.open) return;
+    if (f === spare) {  // swap it in
+      spare.classList.remove("ft-spare"); spare.removeAttribute("aria-hidden"); spare.removeAttribute("tabindex");
+      frame.classList.add("ft-spare"); frame.setAttribute("aria-hidden", "true"); frame.tabIndex = -1;
+      frame.src = "about:blank";
+      [frame, spare] = [spare, frame];
+    }
+    const m = path.match(/^\/visit\/(\d+)/);
+    if (m) { seen.add(m[1]); f.contentWindow.focus(); }
+    else dlg.close();  // the visit was deleted (it sends you home)
+  };
+  [frame, spare].forEach(f => f.addEventListener("load", () => loaded(f)));
+  // Closing from this page (the dimmed edge, Esc with focus out here) asks the visit page first: with unsaved
+  // changes it shows Save / Discard / Keep editing and only then answers "birdbrain:close" ("birdbrain:hold" means
+  // the owner is being asked). A frame that can't answer (blank, an error page) is closed after a moment anyway.
+  // The arrows and the C key live in the visit page, so its guard covers them on its own.
+  let closeTimer = null;
+  const askClose = () => {
+    if (!dlg.open) return;
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => dlg.close(), 400);
+    try { frame.contentWindow.postMessage("birdbrain:closing", location.origin); } catch (err) { dlg.close(); }
+  };
+  // P with the focus on this page (not in the frame): play or stop the burst in the visit.
+  document.addEventListener("keydown", e => {
+    if (!dlg.open || e.key.toLowerCase() !== "p" || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.repeat || e.defaultPrevented) return;
+    if (document.querySelector("dialog[open]:not(#ft-visit)")) return;
+    e.preventDefault();
+    try { frame.contentWindow.postMessage("birdbrain:play", location.origin); } catch (err) {}
+  });
+  window.addEventListener("message", e => {
+    if (e.origin !== location.origin || !dlg.open) return;
+    if (e.data === "birdbrain:close") { clearTimeout(closeTimer); dlg.close(); }
+    else if (e.data === "birdbrain:hold") clearTimeout(closeTimer);
+    else if (e.data?.saved && e.source === frame.contentWindow) {
+      if (e.data.home) location.href = "/";  // auto-play on and the last one confirmed: back to the front page
+      else savedNote(e.data.last);
+    }
+    else if (e.data?.goto && e.source === frame.contentWindow) spare.src = e.data.goto;
+  });
+  // A short note after Save or Confirm: it went to training, and the next photo is coming. OK or 5 s hides it.
+  let noteTimer;
+  function savedNote(last) {
+    document.querySelector(".ft-saved")?.remove();
+    const n = document.createElement("div");
+    n.className = "ft-saved"; n.setAttribute("role", "status");
+    n.innerHTML = '<p><b>Saved for training data.</b> <span></span></p><button type="button">OK</button>';
+    n.querySelector("span").textContent = last ? "That was the last one to check." : "Showing the next one.";
+    n.querySelector("button").addEventListener("click", e => { e.stopPropagation(); n.remove(); });
+    // Inside the pop-up while it's open (it sits in the top layer); on the page once it closes.
+    (dlg.open && !last ? dlg : document.body).append(n);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => n.remove(), 5000);
+  }
+  dlg.addEventListener("click", e => { if (e.target === dlg) askClose(); });  // the dimmed edge
+  dlg.addEventListener("cancel", e => { e.preventDefault(); askClose(); });  // Esc with focus outside the frame
+  dlg.addEventListener("close", async () => {
+    clearTimeout(closeTimer);
+    document.body.style.overflow = "";
+    frame.src = spare.src = "about:blank";
+    const ids = [...seen];
+    seen.clear();
+    if (!ids.length) return;
+    // Swap in fresh cards: a confirmed pill, a new label, or gone once it has left this list (confirmed,
+    // corrected). Without Show confirmed, one confirmed in the pop-up fades out of the list.
+    const r = await fetch("/review/cards?ids=" + ids.join(",") + listQuery, { cache: "no-store" });
+    if (!r.ok) return;
+    const tpl = document.createElement("template");
+    tpl.innerHTML = await r.text();
+    const fresh = new Map([...tpl.content.querySelectorAll("a.card")].map(c => [c.dataset.id, c]));
+    for (const id of ids) {
+      const old = grid.querySelector(`a.card[data-id="${id}"]`);
+      if (!old) continue;
+      const card = fresh.get(id);
+      if (card && (card.hasAttribute("data-unchecked") || "showAll" in grid.dataset)) { old.replaceWith(card); continue; }
+      old.classList.add("leaving");
+      setTimeout(() => old.remove(), 300);
+    }
+    const left = birdbrainReview.counts(r), count = document.getElementById("ft-unchecked");
+    // The last one of this list is done: reload so the server draws the empty state (no count, no Confirm all).
+    if (left === "0" && !("showAll" in grid.dataset)) { setTimeout(() => location.reload(), 350); return; }
+    if (count && left !== null && !("showAll" in grid.dataset)) count.textContent = left;
+    const show = document.getElementById("ft-show");
+    if (show && left !== null && !("showAll" in grid.dataset)) {
+      const done = +grid.dataset.total - +left;
+      show.textContent = `Show confirmed (${done})`;
+      show.hidden = !done;
+    }
+  });
+})();
+</script>
+<script>
+// New ones for this list while the page is open (tab-alert.js checks every 20 s): fetch only the cards newer than
+// the newest one shown, slide them in at the top with a glow. Scrolled down, the view stays put and a pill
+// offers a jump back up.
+(() => {
+  const grid = document.getElementById("ft-grid"), showAll = {{ 'true' if show_all else 'false' }};
+  const noun = {{ ("false trigger" if only == "false" else ("visit" if only == "visits" else "to review")) | tojson }};
+  let busy = false, again = false, pill = null, waiting = 0;
+  const topbar = () => document.querySelector(".topbar");
+  const gridAbove = () => grid.getBoundingClientRect().top < topbar().getBoundingClientRect().bottom;
+  const hidePill = () => { pill?.remove(); pill = null; waiting = 0; };
+  function showPill(n) {
+    waiting += n;
+    if (!pill) {
+      pill = document.createElement("button");
+      pill.type = "button";
+      pill.className = "new-visits-pill";
+      pill.addEventListener("click", () => { document.querySelector(".page-head").scrollIntoView({ behavior: "smooth" }); hidePill(); });
+      document.body.append(pill);
+    }
+    pill.style.top = Math.max(8, topbar().getBoundingClientRect().bottom + 8) + "px";
+    pill.textContent = `\u2191 ${waiting} new ${noun}${noun.includes(" ") && noun !== "false trigger" || waiting === 1 ? "" : "s"}`;
+  }
+  if (grid) addEventListener("scroll", () => { if (pill && !gridAbove()) hidePill(); }, { passive: true });
+
+  async function update() {
+    if (busy) { again = true; return; }
+    busy = true;
+    try {
+      const ids = grid ? [...grid.querySelectorAll("a.card")].map(c => +c.dataset.id) : [];
+      const r = await fetch(`/review/cards?after=${ids.length ? Math.max(...ids) : 0}&only={{ only }}${showAll ? "&show=all" : ""}`, { cache: "no-store" });
+      if (!r.ok) return;
+      const tpl = document.createElement("template");
+      tpl.innerHTML = await r.text();
+      const cards = [...tpl.content.querySelectorAll("a.card")];
+      if (!grid) { if (cards.length) location.reload(); return; }  // the empty page has no grid to add to
+      const have = new Set(ids.map(String));
+      const added = cards.filter(c => !have.has(c.dataset.id));
+      if (!added.length) return;
+      added.forEach(c => c.classList.add("card-new"));
+      const scrolled = gridAbove();
+      const anchor = [...grid.querySelectorAll(".card")].find(c => c.getBoundingClientRect().bottom > 0);
+      const before = anchor?.getBoundingClientRect().top;
+      grid.prepend(...added);
+      const left = birdbrainReview.counts(r), total = r.headers.get("X-Total");
+      const count = document.getElementById("ft-unchecked");
+      if (total !== null) grid.dataset.total = total;
+      if (count && (showAll ? total : left) !== null) count.textContent = showAll ? total : left;
+      const show = document.getElementById("ft-show");
+      if (show && !showAll && total !== null) {
+        show.textContent = `Show confirmed (${+total - +left})`;
+        show.hidden = +total === +left;
+      }
+      if (scrolled) {
+        const shift = anchor ? anchor.getBoundingClientRect().top - before : 0;  // for browsers without scroll anchoring
+        if (shift) scrollBy(0, shift);
+        showPill(added.length);
+      }
+    } catch (e) { /* atmos unreachable; the next check tries again */ }
+    finally { busy = false; if (again) { again = false; update(); } }
+  }
+  document.addEventListener("birdbrain:visits", e => { if (e.detail?.any) update(); });
+
+  // Safety net: never show the same card twice (Load more pages by time, so it should not happen).
+  document.addEventListener("htmx:afterSettle", () => {
+    const seen = new Set();
+    grid?.querySelectorAll("a.card").forEach(c => { if (seen.has(c.dataset.id)) c.remove(); else seen.add(c.dataset.id); });
+  });
+})();
+</script>
+{% if only == "false" %}
+<script src="/static/charts.js?v={{ asset_version }}"></script>
+<script>barChart("hourly", hourLabels(), {{ hourly | tojson }});</script>
 {% endif %}
 {% endblock %}
