@@ -1,6 +1,7 @@
 """Component tests of the web app through TestClient on a temp database: presence."""
 
 import json
+import re
 
 from fastapi.testclient import TestClient
 
@@ -18,6 +19,34 @@ def test_looks_right_confirms_and_undo_takes_it_back(client, conn, add_visit):
     assert "confirmed by human" in page and ">Confirm</button>" not in page
     client.post(f"/visit/{vid}/unconfirm")
     assert db.get_visit(conn, vid)["confirmed_at"] is None
+
+
+def _card(html, vid):
+    return re.search(r'<a class="card[^"]*"[^>]*data-id="%d".*?</a>' % vid, html, re.S).group(0)
+
+
+def test_a_confirmed_card_still_says_who_identified_it(client, conn, add_visit, monkeypatch):
+    """The photo card keeps the pill and mark of whoever identified the visit (Claude or the Pi); that a human
+    confirmed it is on the visit page, for visitors too."""
+    claude, pi, skipped = add_visit(), add_visit(model="bioclip-2"), add_visit(model="bioclip-presence")
+    bare = add_visit(model=None, confidence=None)  # nobody to name: the card falls back to the confirmation
+    db.confirm_visits(conn, [claude, pi, bare])
+    home = client.get("/").text
+    card = _card(home, claude)
+    assert ">confirmed by human<" not in card and "by-claude" in card and "claude-mark" in card
+    assert "Claude was sure of this answer. Confirmed by human: you looked at this photo" in card
+    card = _card(home, pi)
+    assert ">confirmed by human<" not in card and "rpi-icon" in card and "</svg>RPi</span>" in card
+    assert "Confirm it or correct it" not in card and "Confirmed by human:" in card
+    card = _card(home, skipped)  # not confirmed: the Pi's mark, and the tip still asks for a check
+    assert "rpi-icon" in card and "</svg>pi only</span>" in card and "Check it, then confirm it" in card
+    assert ">confirmed by human<" in _card(home, bare)
+    page = client.get(f"/visit/{claude}").text
+    assert ">confirmed by human</span><button" in page and f"/visit/{claude}/unconfirm" in page
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret!")
+    page = client.get(f"/visit/{claude}").text
+    assert ">confirmed by human</span>" in page and "unconfirm" not in page
+    assert ">confirmed by human<" not in _card(client.get("/").text, claude)
 
 
 def test_confirm_says_no_animal_only_on_empty_frames(client, add_visit):

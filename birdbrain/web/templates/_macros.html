@@ -31,7 +31,8 @@
 
 {# A status pill. Every pill says what it means in a hover tooltip (static/tips.js); add new pills here. #}
 {# `key` picks the tooltip when the text alone is ambiguous (the alert pills' "on"/"off" vs the local step's "off"). #}
-{% macro badge(text, cls, tag="span", key=none, by="Claude") -%}
+{# `confirmed`: the owner confirmed this answer. The pill still names who gave it (photo cards); the tooltip adds the confirmation. #}
+{% macro badge(text, cls, tag="span", key=none, by="Claude", confirmed=false) -%}
 {%- set tips = {
   "high": "High confidence: Claude was sure of this answer.",
   "your photo": "Your photo: you picked this burst frame as the visit's photo, so the big photo and the card show it. Claude saw another frame, and its answer, its circle and what the Pi animal check learns still go by that one. Use Claude's photo puts it back.",
@@ -76,8 +77,10 @@
   "Confirmed No Animal": "Confirmed no animal: you looked at this photo and said it's empty. It leaves the False triggers list, and the Pi animal check trains on it as an empty photo, counting it extra. Undo takes it back.",
   "confirmed by human": "Confirmed by human: you looked at this photo and said the answer is right. It leaves the False triggers list, and the Pi animal check trains on it, counting it extra. Undo takes it back.",
   "RPi": "RPi: the BioCLIP 2 species check on the Raspberry Pi was sure of a species already settled in this yard, so Claude wasn't asked. Confirm it or correct it.",
+  "RPi confirmed": "RPi: the BioCLIP 2 species check on the Raspberry Pi was sure of a species already settled in this yard, so Claude wasn't asked.",
   "pi circle": "Pi circle: the circle the Pi drew around the patch one of its finders pointed at (the Motion detector's biggest patch of change against an empty view of the scene, else the outline the crowd counter drew, else a small object detector's box; the step says which), or a note that no finder found a patch. Free and sometimes wrong, so check it; when the look fell short, Claude was asked and may have drawn the circle shown.",
   "pi only": "Pi only: the Pi decided this one without Claude (the Pi animal check judged the frame empty, or Claude is switched off). Check it, then confirm it or correct it.",
+  "pi only confirmed": "Pi only: the Pi decided this one without Claude (the Pi animal check judged the frame empty, or Claude is switched off).",
   "your check": "Your check: you circled part of the photo and asked what's in it. Only an answer; the label changes when you save a correction.",
   "first look": "First look: the BioCLIP 2 species check guessed from the Pi animal check's own view of the photo, before Claude. It was not sure enough to name the visit, so the Pi took a tight look next, or Claude was asked (unless the Pi took the frame for rain on the water).",
   "tight look": "Tight look: the first look at the whole bowl was not sure enough, so the BioCLIP 2 species check looked once more at a tight square around the patch one of the Pi's finders pointed at (the step says which), with a higher bar. A sure guess of a species settled here names the visit without Claude; when the look falls short, Claude is asked.",
@@ -114,10 +117,13 @@
   "medium": "Medium confidence: the " ~ by ~ " thought this was likely, but was not fully sure.",
   "low": "Low confidence: the " ~ by ~ " was only guessing at this answer.",
 } -%}
-<{{ tag }} class="badge {{ cls }}{{ ' by-claude' if by_claude }}{{ ' has-rpi' if text == 'RPi' or by_pi }}"{% if by_pi %} data-tip="{{ pi_tips[text] }}"{% elif tips[key or text] %} data-tip="{{ tips[key or text] }}"{% endif %}>{% if by_claude %}{{ claude_mark() }}{% endif %}{% if text == "RPi" or by_pi %}{{ rpi_icon() }}{% endif %}{{ text }}</{{ tag }}>
+{%- set tip = pi_tips[text] if by_pi else tips[key or text] -%}
+{%- if tip and confirmed %}{% set tip = (tips[text ~ " confirmed"] or tip) ~ " Confirmed by human: you looked at this photo and said the answer is right." %}{% endif -%}
+{%- set pi_mark = by_pi or text in ("RPi", "pi only") -%}
+<{{ tag }} class="badge {{ cls }}{{ ' by-claude' if by_claude }}{{ ' has-rpi' if pi_mark }}"{% if tip %} data-tip="{{ tip }}"{% endif %}>{% if by_claude %}{{ claude_mark() }}{% endif %}{% if pi_mark %}{{ rpi_icon() }}{% endif %}{{ text }}</{{ tag }}>
 {%- endmacro %}
 
-{# The Raspberry Pi mark: on the RPi pill and on a confidence pill the Pi gave. #}
+{# The Raspberry Pi mark: on the RPi and pi only pills and on a confidence pill the Pi gave. #}
 {% macro rpi_icon() -%}
 <svg class="rpi-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6" r="2.200" fill="#4c9a3a"/><g fill="#d6224f"><circle cx="8.500" cy="11" r="3.200"/><circle cx="15.500" cy="11" r="3.200"/><circle cx="12" cy="13.500" r="3.200"/><circle cx="8.500" cy="17" r="3"/><circle cx="15.500" cy="17" r="3"/><circle cx="12" cy="19.500" r="2.500"/></g></svg>
 {%- endmacro %}

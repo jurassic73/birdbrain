@@ -25,10 +25,12 @@
     <div class="card-meta">
       <span class="card-when">{{ v.captured_at | nice_time }}</span>
       {% if v.corrected_species or v.corrected_visitor or v.corrected_also is not none %}{{ badge("corrected", "corrected") }}
-      {% elif v.confirmed_at %}{{ badge("Confirmed No Animal" if v.label == 'None' else "confirmed by human", "checked") }}
-      {% elif v.model == "bioclip-presence" %}{{ badge("pi only", "pi-only") }}
-      {% elif v.model == "bioclip-2" %}{{ badge("RPi", "pi-only") }}
-      {% elif v.confidence %}{{ badge(v.confidence, "conf-" ~ v.confidence) }}{% endif %}
+      {# A confirmed visit keeps the pill of whoever identified it (the Pi or Claude); the visit page says a human confirmed it. #}
+      {% elif v.confirmed_at and v.label == 'None' %}{{ badge("Confirmed No Animal", "checked") }}
+      {% elif v.model == "bioclip-presence" %}{{ badge("pi only", "pi-only", confirmed=v.confirmed_at) }}
+      {% elif v.model == "bioclip-2" %}{{ badge("RPi", "pi-only", confirmed=v.confirmed_at) }}
+      {% elif v.confidence %}{{ badge(v.confidence, "conf-" ~ v.confidence, by=answerer(v.model), confirmed=v.confirmed_at) }}
+      {% elif v.confirmed_at %}{{ badge("confirmed by human", "checked") }}{% endif %}
       {% if v.is_night %}{{ badge("night", "night") }}{% endif %}
       {% if v.clip_path %}{{ badge("clip", "clip") }}{% endif %}
       {% if v.held %}{{ badge("held for review", "private") }}{% elif in_pool and v.needs_review %}{{ badge("needs review", "conf-low") }}{% endif %}
