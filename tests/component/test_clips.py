@@ -115,6 +115,24 @@ def with_clips(conn) -> set[int]:
     return {r["id"] for r in rows}
 
 
+def test_a_false_triggers_clip_goes_after_its_grace_unless_corrected_or_starred(conn, add_visit):
+    """The watcher keeps a false trigger's clip on loan (CLIP_FALSE_MINUTES) in case it is corrected to a raccoon."""
+    mins = 1 / 1440
+    false = dict(visitor="none", species="", model="bioclip-presence")
+    fresh = clip_visit(add_visit, conn, 1, 10 * mins, **false)
+    stale = clip_visit(add_visit, conn, 2, 45 * mins, **false)
+    fixed = clip_visit(add_visit, conn, 3, 45 * mins, **false)
+    starred = clip_visit(add_visit, conn, 4, 45 * mins, **false)
+    real = clip_visit(add_visit, conn, 5, 45 * mins)
+    conn.execute("UPDATE visits SET corrected_visitor = 'raccoon' WHERE id = ?", (fixed,))
+    conn.execute("UPDATE visits SET keep = 1 WHERE id = ?", (starred,))
+    conn.commit()
+    stale_file = config.CLIPS_DIR / db.get_visit(conn, stale)["clip_path"]
+    assert clips.prune_false(conn, FROZEN_NOW, minutes=30) == 1
+    assert with_clips(conn) == {fresh, fixed, starred, real} and not stale_file.exists()
+    assert db.get_visit(conn, stale)["clip_path"] is None and conn.execute("SELECT COUNT(*) FROM visits").fetchone()[0] == 5
+
+
 def test_prune_deletes_old_clips_but_never_the_visit(conn, add_visit):
     old = clip_visit(add_visit, conn, 1, 30)
     new = clip_visit(add_visit, conn, 2, 3)

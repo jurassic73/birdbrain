@@ -787,15 +787,16 @@ def handle_event(motion: float | None = None, probe: bool = False, trigger: str 
             fail_soft("tidying the clip recording", recording.discard)
 
 
-def keep_clip(visit_id: int, image_rel: str, recording: clips.Recording) -> None:
+def keep_clip(visit_id: int, image_rel: str, recording: clips.Recording, real: bool = True) -> None:
     """Wait for the visit's clip to finish recording (a few seconds at most) and file it with the visit. A
-    recording that failed or came through with a hole in it (choppy) is not kept: the visit gets a note instead."""
+    recording that failed or came through with a hole in it (choppy) is not kept: the visit gets a note instead.
+    A false trigger's clip is only on loan (clips.prune_false): a choppy one there holds nothing for review."""
     src = recording.finish()
     if src is None:
         log.info("visit %d: no clip (%s)", visit_id, recording.problem)
         with db.session() as conn:
             db.set_clip(conn, visit_id, None, note=recording.problem)
-            if getattr(recording, "choppy", False):
+            if real and getattr(recording, "choppy", False):
                 # The stream stalled: the owner looks before the visit shows anywhere (the push comes after this).
                 db.hold_for_review(conn, visit_id)
                 log.info("visit %d: held for review (choppy video)", visit_id)
@@ -1067,10 +1068,11 @@ def _handle_burst(frames: list[bytes], captured_at: datetime, recording: clips.R
     fail_soft("noting the stored photo", retention.note_stored, image_rel, thumb_rel)
     if alert_reason:
         fail_soft("sending the alert", send_alert, visit_id, alert_reason, best)
-    if recording is not None and not false_trigger:
+    if recording is not None and (not false_trigger or config.CLIP_FALSE_MINUTES > 0):
+        # A false trigger keeps its clip for a short while too (clips.prune_false), in case the owner corrects it.
         # After the alert, which never waits for the recording to end, and before the push, so the visit reaches
         # the public mirror with its clip (a few seconds later) instead of without it until the next push.
-        fail_soft("keeping the clip", keep_clip, visit_id, image_rel, recording)
+        fail_soft("keeping the clip", keep_clip, visit_id, image_rel, recording, not false_trigger)
     if not false_trigger:
         fail_soft("pushing to the public mirror", push_public)
     for _, label, _ in seen:

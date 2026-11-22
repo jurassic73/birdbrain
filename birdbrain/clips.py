@@ -264,6 +264,28 @@ def prune(conn: sqlite3.Connection, now: datetime | None = None, *, days: int | 
     return {"deleted": deleted, "orphans": orphans, "freed_bytes": freed}
 
 
+def prune_false(conn: sqlite3.Connection, now: datetime | None = None, *, minutes: int | None = None,
+                clips_dir: Path | None = None) -> int:
+    """Delete the clips of false triggers once they are `minutes` old (config.CLIP_FALSE_MINUTES): the watcher
+    keeps them that long in case the owner corrects the visit to a real animal. A visit corrected since is no
+    false trigger and keeps its clip under the ordinary rules; a starred one keeps it too. Returns how many went."""
+    minutes = config.CLIP_FALSE_MINUTES if minutes is None else minutes
+    now = now or datetime.now()
+    cutoff = (now - timedelta(minutes=minutes)).isoformat(timespec="seconds")
+    rows = conn.execute(f"SELECT id, clip_path FROM visits WHERE clip_path IS NOT NULL AND {db.FALSE_TRIGGER} "
+                        "AND keep IS NOT 1 AND captured_at < ?", (cutoff,)).fetchall()
+    gone = 0
+    for vid, rel in rows:
+        with db.writing(conn):
+            # Checked again under the write lock: a correction or star since the list was made keeps the clip.
+            cur = conn.execute(f"UPDATE visits SET clip_path = NULL WHERE id = ? AND {db.FALSE_TRIGGER} "
+                               "AND keep IS NOT 1", (vid,))
+        if cur.rowcount == 1:
+            delete(rel, clips_dir or config.CLIPS_DIR)
+            gone += 1
+    return gone
+
+
 def recheck(conn: sqlite3.Connection, *, clips_dir: Path | None = None, dry_run: bool = False) -> list[tuple]:
     """Look through every kept clip for missing frames and drop the choppy ones, leaving the visit its "not
     captured" note and holding it for review, as the watcher does: for clips kept before the check existed.

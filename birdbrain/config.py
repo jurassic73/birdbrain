@@ -188,6 +188,12 @@ if not 0 <= CLIP_SECONDS <= 60:
 CLIP_DAYS = int(_env("CLIP_DAYS", "21"))
 if CLIP_DAYS < 0:
     raise ValueError(f"CLIP_DAYS must be 0 or more, not {CLIP_DAYS!r}")
+# A false trigger's clip is kept this many minutes, so a visit the owner corrects to a real animal (a night raccoon
+# the Pi animal check scored 0.00) still has its video; one never corrected loses it (clips.prune_false). 0 = no
+# grace: false triggers keep no clip.
+CLIP_FALSE_MINUTES = int(_env("CLIP_FALSE_MINUTES", "30"))
+if CLIP_FALSE_MINUTES < 0:
+    raise ValueError(f"CLIP_FALSE_MINUTES must be 0 or more, not {CLIP_FALSE_MINUTES!r}")
 CLIP_KEEP_PER_SPECIES = int(_env("CLIP_KEEP_PER_SPECIES", "20"))
 if CLIP_KEEP_PER_SPECIES < 0:
     raise ValueError(f"CLIP_KEEP_PER_SPECIES must be 0 or more, not {CLIP_KEEP_PER_SPECIES!r}")

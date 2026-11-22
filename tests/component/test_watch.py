@@ -159,8 +159,23 @@ def test_a_real_visit_keeps_its_clip(pipeline, recording):
     assert rec.discarded == 1  # the temporary folder never outlives the event
 
 
-def test_a_false_trigger_keeps_no_clip(pipeline, recording, monkeypatch):
+def test_a_false_trigger_keeps_its_clip_on_loan(pipeline, recording, monkeypatch):
+    """So a visit the owner later corrects to a real animal still has its video (clips.prune_false ends the loan)."""
     conn, asked, set_detector = pipeline
+    set_detector(True)
+    from birdbrain.identify import Result, Sighting
+    monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(
+        Sighting(visitor="none", species="", count=0, confidence="high", notes="", circle=None, also=[]), "claude-haiku-5-5", False, False, {}))
+    rec = recording()
+    assert watch.handle_event() == "none"
+    visit = watch.db.latest_visit(conn, real_only=False)
+    assert visit["clip_path"] == watch.clips.rel_for(visit["image_path"]) and rec.discarded == 1
+
+
+def test_a_false_trigger_keeps_no_clip_with_no_grace(pipeline, recording, monkeypatch):
+    conn, asked, set_detector = pipeline
+    monkeypatch.setattr(watch.config, "CLIP_FALSE_MINUTES", 0)
+    set_detector(True)
     set_detector(True)
     from birdbrain.identify import Result, Sighting
     monkeypatch.setattr(watch.identify, "identify", lambda *a, **k: Result(

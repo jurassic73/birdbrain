@@ -1018,10 +1018,21 @@ def prune_clips(conn: sqlite3.Connection, now: datetime | None = None) -> None:
         log.exception("clip pruning failed")
 
 
+def _drop_false_clips(conn: sqlite3.Connection, now: datetime | None = None) -> None:
+    """On every check (ten minutes): false triggers' clips past their short grace (clips.prune_false). A failure
+    here never stops the photo budget's own work."""
+    try:
+        if config.CLIP_FALSE_MINUTES > 0 and (n := clips.prune_false(conn, now)):
+            log.info("clips: dropped %d of false triggers past %d minutes", n, config.CLIP_FALSE_MINUTES)
+    except Exception:
+        log.exception("false-trigger clip pruning failed")
+
+
 def tick(conn: sqlite3.Connection, now: datetime | None = None, busy: threading.Event | None = None) -> str | None:
     """One check: the daily run when it's due, else free space only if the cached usage or the disk says so.
     Returns "daily", "enforce" or None."""
     try:
+        _drop_false_clips(conn, now)
         if daily_due(conn, now):
             prune_clips(conn, now)
             r = daily(conn, now, busy, log.info)
