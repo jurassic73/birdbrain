@@ -13,6 +13,9 @@
   if (!box) return;
   const REFRESH_MS = Number(box.dataset.refreshMs) || 5000;
   const STALE_S = Number(box.dataset.stale) || 30;
+  // The picture is faded only when the frame is older than it should be: the public mirror's frame is minutes old
+  // by design (it arrives by push), so there the label says Last frame and its time, but the picture stays bright.
+  const DIM_S = Number(box.dataset.dim) || STALE_S;
   const img = document.getElementById("live");
   const status = document.getElementById("live-status");
   const age = document.getElementById("live-age");
@@ -46,7 +49,7 @@
     const a = ageNow();
     const offline = isOffline();
     const stale = a !== null && a > STALE_S;
-    box.classList.toggle("stale", stale && !offline);
+    box.classList.toggle("stale", a !== null && a > DIM_S && !offline);
     box.classList.toggle("offline", offline && a === null);
     status.textContent = offline ? "Offline" : stale ? "Last frame" : "Live";
     age.textContent = a === null ? "" : stale ? clock(a) : `updated ${Math.round(a)} s ago`;

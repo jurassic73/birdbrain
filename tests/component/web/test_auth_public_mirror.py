@@ -11,6 +11,7 @@ test_every_route_is_classified until someone decides whether the mirror may serv
 import io
 import json
 import re
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -160,6 +161,16 @@ def pages(seeded: dict) -> list[str]:
             f"/visit/{vid}?ft=1", "/species", "/species/Bushtit", "/species/Bushtit/more", "/species-info/Bushtit",
             "/species-info/Bushtit?mini=1", "/species-info/Bushtit?fold=1", "/stats", "/weather", "/about",
             "/guest-login"]
+
+
+def test_the_mirrors_live_frame_is_not_faded_for_being_minutes_old(mirror, seeded):
+    """The mirror's frame arrives by push every few minutes, so it is always older than the Pi's stale limit: the page
+    still labels it Last frame, but fades the picture only once several pushes have been missed."""
+    html = mirror.get("/live").text
+    assert f'data-stale="{webapp.LIVE_STALE}" data-dim="{webapp.LIVE_DIM_PUBLIC}"' in html
+    assert webapp.LIVE_DIM_PUBLIC >= 10 * 60 > webapp.LIVE_STALE
+    js = (Path(webapp.__file__).parent / "static" / "live-view.js").read_text()
+    assert 'box.classList.toggle("stale", a !== null && a > DIM_S && !offline)' in js
 
 
 def test_mirror_pages_carry_no_admin_controls_links_or_scripts(mirror, seeded):

@@ -7,7 +7,7 @@
    static/live-view.js refreshes the frame, the badge, the frame age and the light pill; a new visitor swaps #live-visits. #}
 {% set lv = today.latest %}
 <div class="live-page">
-  <div class="live" id="live-box" data-refresh-ms="{{ live_refresh * 1000 }}" data-stale="{{ live_stale }}">
+  <div class="live" id="live-box" data-refresh-ms="{{ live_refresh * 1000 }}" data-stale="{{ live_stale }}" data-dim="{{ live_dim }}">
     <img id="live" src="/live/latest.jpg" alt="Live view of the birdbath" fetchpriority="high">
     <button type="button" class="live-zoom" data-track="live_zoom" aria-label="Open the live view big"></button>
     {{ zoom_btn() }}

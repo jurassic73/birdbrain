@@ -599,6 +599,7 @@ def test_live_tab_sits_right_after_species_and_renders(client, add_visit):
     assert 'href="/live" aria-current="page">Live<' in _nav(client.get("/live").text)
     html = client.get("/live").text
     assert html.count('id="live-box"') == 1 and 'id="live-viewer"' in html and "/static/live-view.js" in html
+    assert f'data-stale="{webapp.LIVE_STALE}" data-dim="{webapp.LIVE_STALE}"' in html  # at home a stale frame is faded
     assert "0</span>" in html and "Last visitor" not in html  # no visitor yet
     vid = add_visit(species="Bushtit", count=3)
     html = client.get("/live").text

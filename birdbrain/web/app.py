@@ -709,6 +709,7 @@ def live_page(request: Request, conn=Depends(get_conn)):
         light=frame_light(),
         live_refresh=config.LIVE_REFRESH,
         live_stale=LIVE_STALE,
+        live_dim=LIVE_DIM_PUBLIC if auth.public() else LIVE_STALE,
     )
 
 
@@ -2708,6 +2709,9 @@ def favicon():
 LIVE_MAX_AGE = max(config.LIVE_REFRESH - 1, 1)
 # A frame older than this means the camera is down; say so instead of serving it as live.
 LIVE_STALE = max(3 * config.LIVE_REFRESH, 30)
+# The page fades a frame that is older than it should be. At home that is a stale one; the public mirror's frame
+# arrives by push every few minutes, so there it fades only after about three missed pushes.
+LIVE_DIM_PUBLIC = 15 * 60
 _live = {"jpeg": None, "at": 0.0, "tried": 0.0}
 _live_lock = asyncio.Lock()
 
