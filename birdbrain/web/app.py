@@ -2757,16 +2757,31 @@ def frame_light() -> str | None:
     return _live["light"]
 
 
-def frame_response() -> Response:
-    """The cached frame plus its age and light, so the page can label stale frames honestly."""
+def frame_response(request: Request) -> Response:
+    """The cached frame plus its age and light, so the page can label stale frames honestly.
+
+    A page that already shows this very frame (it sends the frame's ETag back as If-None-Match) gets a 304 with the
+    same headers and no picture: the full-size frame is about half a megabyte, and on the public mirror it only
+    changes when the Pi pushes a new one, while the page asks every few seconds."""
     age = max(0.0, time.time() - _live["at"])
-    headers = {"Cache-Control": "no-store", "X-Frame-Age": f"{age:.1f}"}
+    etag = f'"{int(_live["at"] * 1000)}"'
+    headers = {"Cache-Control": "no-store", "X-Frame-Age": f"{age:.1f}", "ETag": etag}
     if light := frame_light():
         headers["X-Frame-Light"] = light
+    if request.headers.get("if-none-match", "").strip().removeprefix("W/") == etag:
+        return Response(status_code=304, headers=headers)
     return Response(_live["jpeg"], media_type="image/jpeg", headers=headers)
 
 
 async def grab_live_frame() -> bytes:
+    """One frame for the live view: the camera's own full-size snapshot (one web request, no video session), or,
+    when that can't be had (no API key, a camera without one), a frame from the small stream as before."""
+    if out := await asyncio.to_thread(camera.snapshot):
+        return out
+    return await grab_stream_frame()
+
+
+async def grab_stream_frame() -> bytes:
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-rtsp_transport", "tcp",
         "-i", config.rtsp_url(config.RTSP_SUB), "-frames:v", "1", "-f", "image2", "-c:v", "mjpeg", "pipe:1",
@@ -2782,12 +2797,12 @@ async def grab_live_frame() -> bytes:
 
 
 @app.api_route("/live/latest.jpg", methods=["GET", "HEAD"])
-def live_latest():
+def live_latest(request: Request):
     """Whatever frame we already have, however old, without touching the camera: paints instantly."""
     load_saved_frame()
     if _live["jpeg"] is None:
         raise HTTPException(404, "no frame yet")
-    return frame_response()
+    return frame_response(request)
 
 
 async def fresh_frame() -> bytes | None:
@@ -2807,8 +2822,8 @@ async def fresh_frame() -> bytes | None:
 
 
 @app.get("/live.jpg")
-async def live_jpg():
+async def live_jpg(request: Request):
     """A fresh frame (at most LIVE_MAX_AGE old), or 503 if the camera is down."""
     if await fresh_frame() is None:
         raise HTTPException(503, "camera unavailable")
-    return frame_response()
+    return frame_response(request)

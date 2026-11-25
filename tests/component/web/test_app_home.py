@@ -1,5 +1,6 @@
 """Component tests of the web app through TestClient on a temp database: home."""
 
+import asyncio
 import pytest
 import json
 import re
@@ -318,6 +319,40 @@ def test_fresh_frames_are_saved_and_report_their_age(client, live, frame_file):
     r = client.get("/live.jpg")
     assert r.content == b"fresh" and float(r.headers["X-Frame-Age"]) < 1
     assert frame_file.read_bytes() == b"fresh"
+
+
+def test_a_frame_already_on_screen_is_not_sent_again(client, live, frame_file):
+    """The page sends the frame's ETag back; the same frame answers 304 with its age and no picture (a full-size
+    frame is about half a megabyte, and the mirror's only changes every few minutes). A new frame is sent whole."""
+    state, script, grabs = live
+    script.append(b"frame-1")
+    first = client.get("/live.jpg")
+    etag = first.headers["ETag"]
+    for path in ("/live.jpg", "/live/latest.jpg"):
+        same = client.get(path, headers={"If-None-Match": etag})
+        assert same.status_code == 304 and same.content == b"" and same.headers["ETag"] == etag
+        assert "X-Frame-Age" in same.headers
+        assert client.get(path, headers={"If-None-Match": "W/" + etag}).status_code == 304  # a proxy may weaken it
+    assert client.head("/live/latest.jpg").headers["ETag"] == etag  # how the page learns what it painted first
+    state.update(jpeg=b"frame-2", at=state["at"] + 5)
+    new = client.get("/live.jpg", headers={"If-None-Match": etag})
+    assert new.status_code == 200 and new.content == b"frame-2" and new.headers["ETag"] != etag
+
+
+def test_live_frame_is_the_cameras_snapshot_or_else_a_stream_frame(monkeypatch):
+    """The full-size snapshot needs no video session, so it is tried first; without one (no API key, the camera
+    didn't answer) the frame comes from the stream as before."""
+    stream = []
+
+    async def from_stream():
+        stream.append(1)
+        return b"stream-frame"
+
+    monkeypatch.setattr(webapp, "grab_stream_frame", from_stream)
+    monkeypatch.setattr(webapp.camera, "snapshot", lambda: b"snapshot")
+    assert asyncio.run(webapp.grab_live_frame()) == b"snapshot" and stream == []
+    monkeypatch.setattr(webapp.camera, "snapshot", lambda: b"")
+    assert asyncio.run(webapp.grab_live_frame()) == b"stream-frame" and stream == [1]
 
 
 def test_latest_frame_paints_instantly_without_touching_the_camera(client, live, frame_file):

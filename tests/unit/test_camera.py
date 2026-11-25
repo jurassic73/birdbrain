@@ -30,6 +30,41 @@ def test_toggles_and_times_are_checked():
     assert camera.clean_picture({"anti_flicker": "1", "hue": "999"}) == {"anti_flicker": 1, "hue": 255}
 
 
+def test_snapshot_is_a_jpeg_or_nothing(monkeypatch):
+    """The live view's full-size frame: only a real JPEG counts; no key, an error page, a refusal or a camera that
+    doesn't answer all give b"" (the live view then falls back to a stream frame), and nothing is raised."""
+    jpeg = b"\xff\xd8\xff\xe0 a picture"
+    asked = []
+
+    class Answer:
+        def __init__(self, status, content):
+            self.status_code, self.content = status, content
+
+    def client(answer):
+        class Client:
+            def __init__(self, **kw): pass
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def get(self, url, params=None):
+                asked.append((url, params))
+                if isinstance(answer, Exception):
+                    raise answer
+                return answer
+        return Client
+
+    monkeypatch.setattr(camera.config, "CAM_HOST", "cam.example")
+    monkeypatch.setattr(camera.config, "CAM_API_KEY", "")
+    monkeypatch.setattr(camera.httpx, "Client", client(Answer(200, jpeg)))
+    assert camera.snapshot() == b"" and asked == []  # no key: the camera isn't asked at all
+    monkeypatch.setattr(camera.config, "CAM_API_KEY", "k3y")
+    assert camera.snapshot() == jpeg
+    assert asked == [("http://cam.example/x/ch0.jpg", {"token": "k3y"})]
+    for bad in (Answer(200, b"<html>login</html>"), Answer(401, jpeg), Answer(200, b""),
+                camera.httpx.ConnectTimeout("no answer")):
+        monkeypatch.setattr(camera.httpx, "Client", client(bad))
+        assert camera.snapshot() == b""
+
+
 def test_camera_status_survives_string_time_now(monkeypatch):
     def call(name, *a, **kw):
         if name == "json-daynight-sensors.cgi":

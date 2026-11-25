@@ -4,6 +4,8 @@
 // downloaded and decoded off-screen and swapped in only when complete, so the box never blanks. Clicking the frame
 // opens it big (it keeps refreshing there); Escape, the x or a click closes it. The badge says Live, Last frame or
 // Offline with the frame's age; the panel repeats the age and the light (X-Frame-Light, judged from the picture).
+// A frame already on screen is never downloaded again: the page sends its ETag back and the server answers 304
+// (the public mirror's frame only changes every few minutes, and a full-size frame is about half a megabyte).
 // Nothing runs in a background tab, and the page catches up the moment it comes back. When a new visitor arrives
 // (tab-alert.js fires birdbrain:visits) the panel's Today and Last visitor parts are fetched again and swapped in.
 (() => {
@@ -29,6 +31,7 @@
   // Say Offline only after a while with no good frame and repeated failures: one slow camera grab isn't an outage.
   const OFFLINE_AFTER_MS = 15000;
   let frameAge = null, receivedAt = 0, failures = 0, lastOkAt = Date.now(), busy = false;
+  let etag = null;  // of the frame on screen
   const isOffline = () => failures >= 2 && Date.now() - lastOkAt > OFFLINE_AFTER_MS;
 
   const ageNow = () => frameAge === null ? null : frameAge + (Date.now() - receivedAt) / 1000;
@@ -58,7 +61,15 @@
     if (busy) return;
     busy = true;
     try {
-      const r = await fetch("/live.jpg", { cache: "no-store", signal: AbortSignal.timeout(10000) });
+      const r = await fetch("/live.jpg", { cache: "no-store", signal: AbortSignal.timeout(10000),
+                                           headers: etag ? { "If-None-Match": etag } : {} });
+      if (r.status === 304) {  // the frame on screen is still the newest: only its age moves on
+        const a = parseFloat(r.headers.get("X-Frame-Age"));
+        if (!Number.isNaN(a)) { frameAge = a; receivedAt = Date.now(); }
+        showLight(r.headers.get("X-Frame-Light"));
+        lastOkAt = Date.now(); failures = 0;
+        return;
+      }
       if (!r.ok) throw new Error(r.status);
       const serverAge = parseFloat(r.headers.get("X-Frame-Age") || "0");
       const url = URL.createObjectURL(await r.blob());
@@ -70,6 +81,7 @@
       big.src = url;
       if (old.startsWith("blob:")) URL.revokeObjectURL(old);
       showLight(r.headers.get("X-Frame-Light"));
+      etag = r.headers.get("ETag");
       frameAge = serverAge; receivedAt = lastOkAt = Date.now(); failures = 0;
     } catch (e) {
       failures++;  // keep showing the last frame; labeled Offline only once failures add up
@@ -79,17 +91,29 @@
     }
   }
 
-  // Age of the instantly painted saved frame, so it is labeled honestly until the fresh one lands.
-  fetch("/live/latest.jpg", { method: "HEAD", cache: "no-store" }).then(r => {
+  // Age of the instantly painted saved frame, so it is labeled honestly until the fresh one lands, and its ETag,
+  // so the first refresh doesn't download the same frame a second time: the first refresh waits for both the
+  // answer and the saved frame itself (8 s at most), and trusts the ETag only if that frame really is on screen.
+  let savedEtag = null;
+  const head = fetch("/live/latest.jpg", { method: "HEAD", cache: "no-store", signal: AbortSignal.timeout(5000) }).then(r => {
     if (r.ok && frameAge === null) {
       frameAge = parseFloat(r.headers.get("X-Frame-Age") || "0"); receivedAt = Date.now();
+      savedEtag = r.headers.get("ETag");
       showLight(r.headers.get("X-Frame-Light"));
       render();
     }
   }).catch(() => {});
-  img.addEventListener("error", () => { if (frameAge === null) { failures++; render(); } });
-
-  refresh();
+  const painted = new Promise(done => {
+    if (img.complete) return done();
+    img.addEventListener("load", done, { once: true });
+    img.addEventListener("error", done, { once: true });
+    setTimeout(done, 8000);
+  });
+  img.addEventListener("error", () => { etag = null; if (frameAge === null) { failures++; render(); } });
+  Promise.all([head, painted]).then(() => {
+    if (img.complete && img.naturalWidth && !img.src.startsWith("blob:")) etag = savedEtag;
+    refresh();
+  });
   // Not in a background tab: each fetch past the frame's max age makes the Pi grab a new one. The handler below catches up on return.
   setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
   setInterval(render, 1000);

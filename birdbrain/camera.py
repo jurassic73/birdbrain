@@ -9,6 +9,8 @@ The key is /etc/thingino-api.key on the camera (made in its web UI) and CAM_API_
   day/night json-config-daynight.cgi (the "daynight" key of /etc/thingino.json; reloads daynightd;
             nested sections like "schedule" are merged, so a partial one is safe)
   status    json-daynight-sensors.cgi (mode, light, camera clock), json-system-usage.cgi (memory)
+  snapshot  ch0.jpg (the main stream's picture as one JPEG, for the live view; the camera keeps one ready
+            whether or not anyone asks, so fetching it opens no video session)
 
 Every change is logged in the settings table (camera_log) with the values it replaced, so it
 can be undone: picture changes move the motion zones' background and the IR switch.
@@ -94,6 +96,8 @@ FIELDS = {f.key: f for f in IMAGE + DAYNIGHT}
 LOG_KEY = "camera_log"
 LOG_KEEP = 20
 TIMEOUT = 10
+SNAPSHOT = "ch0.jpg"
+SNAPSHOT_TIMEOUT = 4  # short: the live view falls back to a video-stream frame, and the page waits 10 s in all
 
 
 class CameraError(Exception):
@@ -151,6 +155,19 @@ def _nest(values: dict) -> dict:
         else:
             out[k] = v
     return out
+
+
+def snapshot() -> bytes:
+    """What the camera sees right now as one full-size JPEG, or b"" when it can't be had (no API key, the camera
+    didn't answer, or the answer isn't a JPEG). Never raises and never logs the URL: it holds the key."""
+    if not configured():
+        return b""
+    try:
+        with httpx.Client(timeout=SNAPSHOT_TIMEOUT) as client:
+            r = client.get(_url(SNAPSHOT), params={"token": config.CAM_API_KEY})
+    except httpx.HTTPError:
+        return b""
+    return r.content if r.status_code == 200 and r.content[:2] == b"\xff\xd8" else b""
 
 
 def picture() -> dict[str, int]:
